@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;">
+  <title>宾馆比较助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="header-left">
+        <h1 class="app-title">🏨 宾馆比较助手</h1>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-secondary" onclick="openTemplateManager()">
+          <span>📋</span> 模板管理
+        </button>
+        <button class="btn btn-secondary" onclick="openPersonalization()">
+          <span>🎨</span> 个性化
+        </button>
+        <button class="btn btn-secondary" onclick="openSettings()">
+          <span>⚙️</span> 设置
+        </button>
+        <button class="btn btn-secondary" onclick="openDataTransfer()">
+          <span>💾</span> 数据管理
+        </button>
+        <button class="btn btn-secondary" onclick="openAbout()">
+          <span>ℹ️</span> 关于
+        </button>
+      </div>
+      <div id="windowControls" class="window-controls" aria-label="窗口控制">
+        <button id="windowMinimizeBtn" class="window-control-btn" type="button" aria-label="最小化" onclick="minimizeWindow()">
+          <span class="window-control-icon minimize-icon" aria-hidden="true"></span>
+        </button>
+        <button id="windowMaximizeBtn" class="window-control-btn" type="button" aria-label="最大化" onclick="toggleMaximizeWindow()">
+          <span class="window-control-icon maximize-icon" aria-hidden="true"></span>
+        </button>
+        <button id="windowCloseBtn" class="window-control-btn window-control-close" type="button" aria-label="关闭" onclick="closeWindow()">
+          <span class="window-control-icon close-icon" aria-hidden="true"></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <aside class="side-panel">
+        <div class="panel-section">
+          <h2 class="section-title">搜索筛选</h2>
+          <div class="filter-grid">
+            <div class="filter-group filter-group-full">
+              <label>宾馆名称</label>
+              <select id="filterName" class="input">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>价格排序</label>
+              <select id="priceSort" class="input">
+                <option value="">默认</option>
+                <option value="asc">从低到高</option>
+                <option value="desc">从高到低</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>携程评分</label>
+              <select id="filterScore" class="input">
+                <option value="">全部</option>
+                <option value="4.5">4.5分以上</option>
+                <option value="4.0">4.0分以上</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>收藏状态</label>
+              <select id="filterFavorite" class="input">
+                <option value="">全部</option>
+                <option value="1">已收藏</option>
+                <option value="0">未收藏</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>按模板筛选</label>
+              <select id="filterTemplate" class="input">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>公共交通时间</label>
+              <select id="filterTransportTime" class="input">
+                <option value="">全部</option>
+                <option value="20">20分钟以内</option>
+                <option value="40">40分钟以内</option>
+                <option value="60">60分钟以内</option>
+                <option value="80">80分钟以内</option>
+                <option value="100">100分钟以内</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>最近地铁站距离</label>
+              <select id="filterSubwayDistance" class="input">
+                <option value="">全部</option>
+                <option value="none">无</option>
+                <option value="0.3">300米以内</option>
+                <option value="0.5">500米以内</option>
+                <option value="1">1km以内</option>
+                <option value="1.5">1.5km以内</option>
+              </select>
+            </div>
+          </div>
+          <div class="filter-spacer"></div>
+          <button class="btn btn-secondary btn-full" onclick="clearFilters()">
+            清除筛选
+          </button>
+        </div>
+
+        <div class="panel-section panel-section-compact">
+          <h2 class="section-title">排名设置</h2>
+          <div class="ranking-mode">
+            <label>
+              <input type="radio" name="rankingMode" value="auto" checked onchange="changeRankingMode('auto')">
+              自动排名
+            </label>
+            <label>
+              <input type="radio" name="rankingMode" value="manual" onchange="changeRankingMode('manual')">
+              自定义权重
+            </label>
+          </div>
+          <div id="weightSettings" style="display: none;">
+            <div class="weight-item">
+              <label>价格权重: <span id="priceWeightValue">0.25</span></label>
+              <input type="range" id="weightPrice" min="0" max="1" step="0.05" value="0.25" 
+                     oninput="updateWeight('price', this.value)">
+            </div>
+            <div class="weight-item">
+              <label>评分权重: <span id="scoreWeightValue">0.35</span></label>
+              <input type="range" id="weightScore" min="0" max="1" step="0.05" value="0.35" 
+                     oninput="updateWeight('score', this.value)">
+            </div>
+            <div class="weight-item">
+              <label>距离权重: <span id="distanceWeightValue">0.2</span></label>
+              <input type="range" id="weightDistance" min="0" max="1" step="0.05" value="0.2" 
+                     oninput="updateWeight('distance', this.value)">
+            </div>
+            <div class="weight-item">
+              <label>交通权重: <span id="transportWeightValue">0.2</span></label>
+              <input type="range" id="weightTransport" min="0" max="1" step="0.05" value="0.2" 
+                     oninput="updateWeight('transport', this.value)">
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <button class="btn btn-primary btn-full" onclick="openAddHotelModal()">
+            <span>➕</span> 添加宾馆
+          </button>
+          <button class="btn btn-accent btn-full" onclick="exportRankingImage()">
+            <span>📷</span> 导出排名图片
+          </button>
+        </div>
+      </aside>
+
+      <section class="content-area">
+        <div class="content-header">
+          <h2 class="content-title">宾馆列表</h2>
+          <span class="hotel-count">共 <strong id="hotelCount">0</strong> 家宾馆，<strong id="roomTypeCount">0</strong> 种房型</span>
+          <div class="view-controls">
+            <button id="viewToggle" class="btn btn-secondary btn-sm" onclick="toggleViewMode()">
+              <span id="viewIcon">🛏️</span> <span id="viewText">卡片</span>
+            </button>
+            <button id="refreshPageBtn" class="btn btn-secondary btn-sm btn-icon" onclick="refreshCurrentPage()" title="刷新当前页面" aria-label="刷新当前页面">
+              <span id="refreshPageIcon">↻</span>
+            </button>
+            <button id="ruleDeleteBtn" class="btn btn-danger btn-sm" onclick="openRuleDeleteModal()">
+              <span>🗑️</span> 规则删除
+            </button>
+            <button id="batchDeleteBtn" class="btn btn-danger btn-sm" style="display: none;" onclick="confirmBatchDelete()">
+              <span>🗑️</span> 删除选中
+            </button>
+          </div>
+        </div>
+        <div id="hotelList" class="hotel-list">
+        </div>
+      </section>
+    </main>
+
+    <div id="hotelModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modalTitle">添加宾馆</h2>
+          <button class="modal-close" onclick="closeHotelModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="hotelForm">
+            <input type="hidden" id="hotelId">
+
+            <div class="form-group">
+              <label>选择模板（可选）</label>
+              <select id="hotelTemplateSelect" class="input" onchange="applyTemplateToForm()">
+                <option value="">不使用模板</option>
+              </select>
+            </div>
+            
+            <div class="form-row form-row-wide">
+              <div class="form-group form-span-2">
+                <label for="hotelName">宾馆名称 *</label>
+                <input type="text" id="hotelName" class="input" placeholder="请输入宾馆名称">
+              </div>
+              <div class="form-group">
+                <label for="hotelAddress">地址</label>
+                <input type="text" id="hotelAddress" class="input" placeholder="请输入地址">
+              </div>
+            </div>
+
+            <div class="form-group full-width">
+              <label for="hotelWebsite">网址</label>
+              <input type="url" id="hotelWebsite" class="input" placeholder="如: https://www.example.com">
+            </div>
+
+            <div class="form-row form-row-compact">
+              <div class="form-group">
+                <label for="totalPrice">总价格 (元)</label>
+                <input type="number" id="totalPrice" step="0.01" min="0" class="input" placeholder="总价格" oninput="calculateDailyPrice()">
+              </div>
+              <div class="form-group">
+                <label for="dailyPrice">日均价格 (元)</label>
+                <input type="number" id="dailyPrice" step="0.01" min="0" class="input" placeholder="日均价格" oninput="calculateTotalPrice()">
+              </div>
+            </div>
+
+            <div class="form-row form-row-dates">
+              <div class="form-group">
+                <label for="checkInDate">入住日期</label>
+                <input type="date" id="checkInDate" class="input" onchange="onCheckInChange()">
+              </div>
+              <div class="form-group">
+                <label for="checkOutDate">离店日期</label>
+                <input type="date" id="checkOutDate" class="input" onchange="onCheckOutChange()">
+              </div>
+              <div class="form-group">
+                <label for="days">住宿天数</label>
+                <input type="number" id="days" min="1" class="input" placeholder="天数" oninput="onDaysChange()">
+              </div>
+              <div class="form-group">
+                <label for="ctripScore">携程评分 (0-5分)</label>
+                <input type="number" id="ctripScore" step="0.1" min="0" max="5" class="input" placeholder="如: 4.5" oninput="validateScore(this)" onblur="formatScoreOnBlur(this)">
+              </div>
+            </div>
+
+            <div class="form-row form-row-transport">
+              <div class="form-group">
+                <label for="destination">目的地</label>
+                <input type="text" id="destination" class="input" placeholder="如: 天安门">
+              </div>
+              <div class="form-group">
+                <label for="distance">距离目的地 (公里)</label>
+                <input type="text" id="distance" class="input" placeholder="如: 2.5">
+              </div>
+              <div class="form-group">
+                <label for="transportTime">公共交通时间 (分钟)</label>
+                <input type="text" id="transportTime" class="input" placeholder="如: 30">
+              </div>
+            </div>
+
+            <div class="form-row form-row-compact form-row-subway">
+              <div class="form-group">
+                <label for="subwayStation">最近地铁站</label>
+                <input type="text" id="subwayStation" class="input" placeholder="如: 徐泾东站">
+              </div>
+              <div class="form-group">
+                <label for="subwayDistance">距离最近地铁站 (公里)</label>
+                <input type="text" id="subwayDistance" class="input" placeholder="如: 0.6，填 0 表示无较近地铁站">
+              </div>
+            </div>
+
+            <div class="form-group full-width form-group-transport-route">
+              <label for="busRoute">公交路线</label>
+              <textarea id="busRoute" class="input" rows="3" placeholder="如: 步行8分钟至 XX 站\n乘地铁2号线直达\n出站后步行5分钟到达"></textarea>
+              <span class="help-text">支持多行填写完整换乘方案，便于记录步行、换乘和到站信息。</span>
+            </div>
+
+            <div class="form-row form-row-compact">
+              <div class="form-group">
+                <label for="roomType">房间类型</label>
+                <select id="roomType" class="input">
+                  <option value="">请选择</option>
+                  <option value="大床房">大床房</option>
+                  <option value="双床房">双床房</option>
+                  <option value="大床房/双床房">大床房/双床房</option>
+                  <option value="家庭房">家庭房</option>
+                  <option value="三床房">三床房</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="originalRoomType">原始房型</label>
+                <input type="text" id="originalRoomType" class="input" placeholder="如: 三人间、商务双床房">
+              </div>
+              <div class="form-group">
+                <label for="roomCount">入住人数</label>
+                <select id="roomCount" class="input">
+                  <option value="1">单人</option>
+                  <option value="2">双人</option>
+                  <option value="3">三人</option>
+                  <option value="4">四人</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="roomArea">房间面积 (㎡)</label>
+                <input type="text" id="roomArea" class="input" placeholder="如: 35">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="notes">备注</label>
+              <textarea id="notes" class="input" rows="3" placeholder="其他需要记录的信息"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="isFavorite"> 收藏此宾馆
+              </label>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeHotelModal()">取消</button>
+          <button type="button" class="btn btn-primary" onclick="saveHotel()">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ruleDeleteModal" class="modal">
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h2>规则删除</h2>
+          <button class="modal-close" onclick="closeRuleDeleteModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ruleDeletePrice">总价格高于（元）</label>
+              <input type="number" id="ruleDeletePrice" class="input" min="0" step="0.01" placeholder="留空表示不限制" oninput="updateRuleDeletePreview()">
+            </div>
+            <div class="form-group">
+              <label for="ruleDeleteSubwayDistance">最近地铁站距离高于（公里）</label>
+              <input type="number" id="ruleDeleteSubwayDistance" class="input" min="0" step="0.1" placeholder="留空表示不限制" oninput="updateRuleDeletePreview()">
+            </div>
+            <div class="form-group">
+              <label for="ruleDeleteTransportTime">公共交通时间高于（分钟）</label>
+              <input type="number" id="ruleDeleteTransportTime" class="input" min="0" step="1" placeholder="留空表示不限制" oninput="updateRuleDeletePreview()">
+            </div>
+          </div>
+          <div class="rule-delete-summary">
+            <div id="ruleDeleteSummaryText">当前卡片结果 0 条，命中规则 0 条</div>
+            <div class="rule-delete-hint">留空表示不启用该规则；填写多个规则时，只要超过任一已填写阈值就会被删除。</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeRuleDeleteModal()">取消</button>
+          <button type="button" id="ruleDeleteConfirmBtn" class="btn btn-danger" onclick="confirmRuleDelete()">删除命中项</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="templateModal" class="modal">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h2>模板管理</h2>
+          <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="template-actions">
+            <button class="btn btn-primary" onclick="openAddTemplateForm()">
+              <span>➕</span> 新建模板
+            </button>
+          </div>
+          <div id="templateList" class="template-list">
+          </div>
+          
+          <div id="templateForm" style="display: none;">
+            <hr class="divider">
+            <h3 id="templateFormTitle">新建模板</h3>
+            <input type="hidden" id="templateId">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="templateName">模板名称 *</label>
+                <input type="text" id="templateName" required class="input" placeholder="如: 春节出行">
+              </div>
+              <div class="form-group">
+                <label for="templateDestination">目的地</label>
+                <input type="text" id="templateDestination" class="input" placeholder="目的地">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="templateCheckIn">入住日期</label>
+                <input type="date" id="templateCheckIn" class="input">
+              </div>
+              <div class="form-group">
+                <label for="templateCheckOut">离店日期</label>
+                <input type="date" id="templateCheckOut" class="input">
+              </div>
+              <div class="form-group">
+                <label for="templateRoomCount">房间人数</label>
+                <select id="templateRoomCount" class="input">
+                  <option value="1">单人</option>
+                  <option value="2">双人</option>
+                  <option value="3">三人</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary" onclick="cancelTemplateForm()">取消</button>
+              <button type="button" class="btn btn-primary" onclick="saveTemplate()">保存模板</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>设置</h2>
+          <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>采集偏好</label>
+            <div class="setting-switch-container">
+              <label class="switch-label">
+                <input type="checkbox" id="includeFourPersonRoomsForThreePersonTemplate" onchange="toggleIncludeFourPersonRoomsForThreePersonTemplate()">
+                <span class="switch-slider"></span>
+              </label>
+              <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText">关闭</span>
+            </div>
+            <small class="help-text">开启后，当模板入住人数为 3 人时，采集器仍会额外保留携程页面上明确显示可住 4 人的房型；查询参数仍按 3 人发起。</small>
+          </div>
+          <div class="form-group">
+            <label>数据存储位置</label>
+            <div class="data-path-container">
+              <input type="text" id="dataPathInput" class="input" readonly placeholder="加载中...">
+              <div class="data-path-actions">
+                <button class="btn btn-secondary btn-sm" onclick="showDataInFolder()">
+                  <span>📁</span> 查看位置
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="changeDataPath(event)">
+                  <span>📂</span> 更改位置
+                </button>
+              </div>
+            </div>
+            <small class="help-text">更改数据存储位置后，数据将迁移到新位置</small>
+          </div>
+          <div class="form-group">
+            <label>快捷链接</label>
+            <button class="btn btn-primary btn-full" onclick="openCtripWebsite()">
+              <span>🌐</span> 访问携程官网
+            </button>
+            <button class="btn btn-primary btn-full" onclick="openFliggyWebsite()" style="margin-top: 8px;">
+              <span>🌐</span> 访问飞猪官网
+            </button>
+          </div>
+          <div class="form-group">
+            <label>AI提示词</label>
+            <button class="btn btn-primary btn-full" onclick="openAIPrompts()">
+              <span>🤖</span> AI提示词管理
+            </button>
+            <small class="help-text">包含保护性提示词和数据填充指南</small>
+          </div>
+          <div class="form-group">
+            <label>应用说明书</label>
+            <button class="btn btn-primary btn-full" onclick="openManual()">
+              <span>📖</span> 查看完整功能说明
+            </button>
+            <small class="help-text">了解应用的所有功能和使用方法</small>
+          </div>
+          <div class="form-group">
+            <button class="btn btn-secondary btn-full" onclick="resetSettings(event)">
+              恢复默认设置
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="personalizationModal" class="modal">
+      <div class="modal-content modal-medium">
+        <div class="modal-header">
+          <h2>个性化</h2>
+          <button class="modal-close" onclick="closePersonalizationModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="personalization-section">
+            <div class="theme-picker-inline" role="radiogroup" aria-label="界面主题">
+              <span class="theme-picker-label">主题</span>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="totoro-blue" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">龙猫蓝</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="sweet-lime" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">甜柠青</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="grass-green" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">小草绿</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="pineapple-yellow" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">菠萝黄</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="oak-brown" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">橡木棕</span>
+              </label>
+              <span class="theme-picker-spacer" aria-hidden="true"></span>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="cloud-white" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">云朵白</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="autumn-gold" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">秋仪金</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="diehard-pink" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">铁杆粉</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="grape-purple" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">葡萄紫</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="themeOption" value="colorful-mode" onchange="changeTheme(this.value)">
+                <span class="theme-option-indicator"></span>
+                <span class="theme-option-text">彩色</span>
+              </label>
+            </div>
+            <small class="help-text">主题会即时应用到当前界面，并自动保存到本地设置。</small>
+          </div>
+
+          <div class="personalization-section">
+            <div class="personalization-section-title">应用图标</div>
+            <div class="data-path-container">
+              <input type="text" id="appIconPathInput" class="input" readonly placeholder="当前使用默认图标">
+              <div class="data-path-actions">
+                <button class="btn btn-secondary btn-sm" onclick="chooseAppIcon()">
+                  <span>🖼️</span> 更换图标
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="resetAppIcon()">
+                  <span>↺</span> 恢复默认
+                </button>
+              </div>
+            </div>
+            <small class="help-text" id="appIconStatus">当前使用内置默认图标</small>
+            <small class="help-text">支持选择 .ico、.png、.jpg、.jpeg、.bmp、.webp 文件；选择后会复制到当前数据目录内，删除原图不会影响窗口图标，导出 JSON 时也会一并带上当前自定义图标。</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 宾馆详情模态框 -->
+    <div id="hotelDetailsModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>宾馆详情</h2>
+          <button class="modal-close" onclick="closeHotelDetails()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="hotelDetailsContent"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeHotelDetails()">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="aiPromptsModal" class="modal">
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h2>AI提示词</h2>
+          <button class="modal-close" onclick="closeAIPrompts()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="ai-prompts-options">
+            <div class="prompt-option" onclick="openPromptContent('protective')">
+              <div class="prompt-icon">🛡️</div>
+              <div class="prompt-info">
+                <h3>保护性提示词</h3>
+                <p>给接手AI的提示词，确保不破坏原有功能</p>
+              </div>
+            </div>
+            <div class="prompt-option" onclick="openPromptContent('guide')">
+              <div class="prompt-icon">📋</div>
+              <div class="prompt-info">
+                <h3>数据填充指南</h3>
+                <p>告诉AI如何正确填充宾馆数据</p>
+              </div>
+            </div>
+            <div class="prompt-option" onclick="openPromptContent('optimize')">
+              <div class="prompt-icon">⚡</div>
+              <div class="prompt-info">
+                <h3>AI优化提示词</h3>
+                <p>让AI在保护功能前提下优化程序性能</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="promptContentModal" class="modal">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h2 id="promptContentTitle">提示词内容</h2>
+          <button class="modal-close" onclick="closePromptContent()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="prompt-content-container">
+            <textarea id="promptContentText" class="prompt-textarea" readonly></textarea>
+          </div>
+          <div class="prompt-actions">
+            <button class="btn btn-secondary" onclick="togglePromptEdit()">
+              <span id="promptEditBtn">✏️</span> <span id="promptEditText">编辑</span>
+            </button>
+            <button class="btn btn-accent" id="promptSaveBtn" style="display: none;" onclick="savePromptContent()">
+              <span>💾</span> 保存
+            </button>
+            <button class="btn btn-primary" onclick="copyPromptContent()">
+              <span>📋</span> 复制内容
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="dataTransferModal" class="modal">
+      <div class="modal-content modal-small">
+        <div class="modal-header">
+          <h2>数据管理</h2>
+          <button class="modal-close" onclick="closeDataTransfer()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="data-transfer-options">
+            <div class="transfer-option" onclick="handleExportData()">
+              <div class="transfer-icon">📤</div>
+              <div class="transfer-info">
+                <h3>导出数据</h3>
+                <p>将所有宾馆、模板和设置导出到 JSON 文件</p>
+              </div>
+            </div>
+            <div class="transfer-option transfer-option-static" id="importTransferOption">
+              <div class="transfer-icon">📥</div>
+              <div class="transfer-info">
+                <h3>导入数据</h3>
+                <p>从 JSON 文件导入数据。直接在这里选择覆盖导入或追加导入，不再弹出导入方式选择框。</p>
+                <div class="transfer-option-actions">
+                  <button class="btn btn-primary" onclick="handleImportData('replace')">覆盖导入</button>
+                  <button class="btn btn-primary" onclick="handleImportData('append')">追加导入</button>
+                </div>
+                <div class="transfer-option-note">覆盖会替换当前数据；追加会保留当前设置和图标，并自动跳过重复宾馆与模板。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="aboutModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>关于</h2>
+          <button class="modal-close" onclick="closeAbout()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="author-info-modal">
+            <div class="author-section">
+              <h3>作者信息</h3>
+              <div class="author-item">
+                <span class="author-label">作者：</span>
+                <span class="author-name">Sea</span>
+              </div>
+              <div class="author-item">
+                <span class="author-label">感谢：</span>
+                <span>WorkBuddy、Trae、GitHub Copilot、Codex</span>
+              </div>
+              <div class="author-item">
+                <span class="author-label">特别感谢：</span>
+                  <span><span class="thanks-name thanks-asagirl">Asagiri</span>、<span class="thanks-name thanks-moli">墨离</span></span>
+              </div>
+            </div>
+            <div class="version-section">
+              <h3>版本信息</h3>
+              <div class="version-item">
+                <span>版本号：</span>
+                <span id="aboutVersionText">v6.6</span>
+              </div>
+              <div class="version-item">
+                <span>更新日期：</span>
+                <span id="aboutUpdateDateText">2026-04-16</span>
+              </div>
+            </div>
+            <div class="algorithm-section">
+              <h3>排名算法说明</h3>
+              <div class="algorithm-content">
+                <p><strong>自定义权重排名算法：</strong></p>
+                <p>系统根据四个维度计算每家宾馆的综合得分，得分越高排名越靠前。</p>
+                
+                <p class="formula-title">一、各维度归一化公式：</p>
+                <div class="formula-box">
+                  <p>价格得分 = (maxPrice - 当前价格) / (maxPrice - minPrice)</p>
+                  <p>评分得分 = 当前评分 / 5</p>
+                  <p>距离得分 = (maxDistance - 当前距离) / (maxDistance - minDistance)</p>
+                  <p>交通得分 = (maxTime - 当前时间) / (maxTime - minTime)</p>
+                </div>
+                
+                <p class="formula-title">二、综合得分公式：</p>
+                <div class="formula-box">
+                  <p>S = W<sub>p</sub> × S<sub>p</sub> + W<sub>s</sub> × S<sub>s</sub> + W<sub>d</sub> × S<sub>d</sub> + W<sub>t</sub> × S<sub>t</sub></p>
+                </div>
+                
+                <p><strong>参数说明：</strong></p>
+                <ul>
+                  <li>S：综合得分（0-1之间）</li>
+                  <li>W<sub>p</sub>：价格权重，S<sub>p</sub>：价格得分</li>
+                  <li>W<sub>s</sub>：评分权重，S<sub>s</sub>：评分得分</li>
+                  <li>W<sub>d</sub>：距离权重，S<sub>d</sub>：距离得分</li>
+                  <li>W<sub>t</sub>：交通权重，S<sub>t</sub>：交通得分</li>
+                </ul>
+                
+                <p class="formula-note"><strong>注：</strong>归一化确保各维度在0-1之间，消除量纲影响，使权重设置更有意义。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="manualModal" class="modal">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h2>📖 应用说明书</h2>
+          <button class="modal-close" onclick="closeManual()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="manual-content">
+            <div class="manual-section">
+              <h3>🏨 宾馆管理</h3>
+              <ul>
+                <li><strong>添加宾馆：</strong>点击左侧"添加宾馆"按钮，填写宾馆信息后保存</li>
+                <li><strong>编辑宾馆：</strong>点击宾馆卡片上的"编辑"按钮，修改信息后保存</li>
+                <li><strong>补充交通信息：</strong>可填写最近地铁站名称、距离最近地铁站的距离与公交路线，地铁距离填 0 时界面会显示“无较近地铁站”</li>
+                <li><strong>原始房型：</strong>可单独记录平台原始展示房型名，卡片会显示在宾馆名称下方，便于区分标准房型和平台原文</li>
+                <li><strong>卡片删除：</strong>卡片视图中每个宾馆都带删除按钮，第一次点击进入黄色确认态，再点一次才会删除</li>
+                <li><strong>行式删除：</strong>行式视图请勾选左侧复选框后，使用右上角"删除选中"统一删除</li>
+                <li><strong>收藏宾馆：</strong>点击"收藏"按钮，宾馆会显示金色边框标识</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>📋 模板系统</h3>
+              <ul>
+                <li><strong>创建模板：</strong>点击"模板管理" → "新建模板"，设置常用的入住日期、目的地等信息</li>
+                <li><strong>模板列表：</strong>每个模板会显示目的地、入住日期、离店日期和房间人数，方便快速核对行程范围</li>
+                <li><strong>应用模板：</strong>添加宾馆时选择模板，自动填充预设信息</li>
+                <li><strong>模板关联：</strong>宾馆只会使用你显式选择或写入的模板，不再根据日期自动猜测模板</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>🔍 搜索筛选</h3>
+              <ul>
+                <li><strong>宾馆名称：</strong>程序会自动汇总当前已有宾馆名称，直接选择即可筛选</li>
+                <li><strong>价格排序：</strong>按总价格升序或降序排列</li>
+                <li><strong>携程评分：</strong>筛选4.0分或4.5分以上的宾馆</li>
+                <li><strong>收藏状态：</strong>筛选已收藏或未收藏的宾馆</li>
+                <li><strong>按模板筛选：</strong>显示使用特定模板的宾馆</li>
+                <li><strong>公共交通时间：</strong>筛选20/40/60/80/100分钟以内的宾馆</li>
+                <li><strong>交通补充信息：</strong>详情中可查看最近地铁站名称、最近地铁站距离与公交路线，地铁距离为 0 时显示“无较近地铁站”</li>
+                <li><strong>列表信息展示：</strong>卡片视图会在宾馆名称下显示原始房型，地址固定在左侧保留可读宽度，网址固定从右侧信息列起始位置开始显示并保持单行省略；若填写了公交路线，会在卡片信息区独占整行显示；行式视图不显示地址和公交路线，只在名称下补充原始房型</li>
+                <li><strong>最近地铁站筛选：</strong>支持筛选无、300米、500米、1km、1.5km 以内的宾馆</li>
+                <li><strong>网址展示：</strong>卡片中网址显示在地址右侧独立列，默认只显示首行并自动省略，但点击后仍会直接打开原网页</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>📊 排名算法</h3>
+              <ul>
+                <li><strong>自动排名：</strong>系统根据默认权重自动计算排名</li>
+                <li><strong>自定义权重：</strong>手动调整价格、评分、距离、交通的权重值</li>
+                <li><strong>排名规则：</strong>综合得分越高排名越靠前，前三名显示金色徽章</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>🎨 个性化与设置</h3>
+              <ul>
+                <li><strong>个性化：</strong>点击顶部“个性化”按钮，可切换龙猫蓝、甜柠青、小草绿、菠萝黄、橡木棕、云朵白、秋仪金、铁杆粉、葡萄紫、彩色十套主题，并管理应用图标</li>
+                <li><strong>采集偏好：</strong>可控制“3人模板时是否额外保留携程显示可住4人的房型”</li>
+                <li><strong>应用图标：</strong>支持在个性化面板中选择本地图片作为窗口图标；所选图片会自动复制到当前数据目录内，删除原图也不会让窗口图标失效，也可以一键恢复默认图标</li>
+                <li><strong>数据存储位置：</strong>查看和更改数据存储路径</li>
+                <li><strong>快捷链接：</strong>快速访问携程、飞猪官网</li>
+                <li><strong>AI提示词：</strong>查看和编辑保护性提示词、数据填写指南、优化提示词</li>
+                <li><strong>开发者工具：</strong>按 F12 打开后会优先切到中文界面，便于调试页面结构和脚本</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>💾 数据管理</h3>
+              <ul>
+                <li><strong>导出数据：</strong>将所有宾馆、模板和设置导出为JSON文件备份；如果当前启用了自定义窗口图标，也会一起写进导出文件</li>
+                <li><strong>导入数据：</strong>从本应用自己导出的 JSON 恢复数据，可选择覆盖当前宾馆、模板和设置，或仅把宾馆与模板追加到现有数据中；追加模式会保留当前设置和窗口图标，并自动重排冲突 ID，避免模板关联串号；任一步失败时都会回滚</li>
+                <li><strong>导出排名图片：</strong>将当前排名列表导出为PNG图片；为避免文字重叠，图片中不显示宾馆地址和交通路线，总价与日均会合并到同一信息格上下显示，其余字段按每行三个信息格重排，最近地铁站以“距地铁”显示且仅展示距离</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>🤖 AI辅助功能</h3>
+              <ul>
+                <li><strong>保护性提示词：</strong>明确不能破坏数据结构、IPC 与模板同步逻辑</li>
+                <li><strong>数据填写指南：</strong>指导 AI 以结构化 JSON 方式稳定补全宾馆数据</li>
+                <li><strong>AI优化提示词：</strong>强调先定位根因，再优化卡顿、体积、DevTools 调试体验和维护性</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>💡 使用技巧</h3>
+              <ul>
+                <li>使用模板可以快速添加多个行程相似的宾馆</li>
+                <li>手动添加或编辑宾馆时，模板只会按你当前表单里的选择保存，不会再被程序自动改绑</li>
+                <li>收藏功能可以标记心仪的宾馆，方便对比</li>
+                <li>列表右上角的刷新图标会重新拉取当前窗口内的宾馆、模板和设置数据，不需要重启应用</li>
+                <li>需要批量删除时，先切到行式视图勾选多家宾馆，再使用右上角删除选中</li>
+                <li>导出数据可以备份重要信息，防止数据丢失</li>
+                <li>排名图片可以分享给朋友一起讨论</li>
+              </ul>
+            </div>
+
+            <div class="manual-section">
+              <h3>ℹ️ 关于应用</h3>
+              <ul>
+                <li><strong>版本：</strong><span id="manualVersionText">v6.6</span></li>
+                <li><strong>作者：</strong>Sea</li>
+                <li><strong>感谢：</strong>WorkBuddy、Trae、GitHub Copilot、Codex</li>
+                  <li><strong>特别感谢：</strong><span class="thanks-name thanks-asagirl">Asagiri</span>、<span class="thanks-name thanks-moli">墨离</span></li>
+                <li><strong>技术栈：</strong>Electron + HTML/CSS/JavaScript</li>
+                <li><strong>数据存储：</strong>本地JSON文件</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div class="manual-footer" id="manualFooter">
+            <label class="checkbox-label">
+              <input type="checkbox" id="dontShowManualAgain">
+              <span>以后不再自动弹出说明书</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  <script type="module" src="./app.module.js"></script>
+</body>
+</html>

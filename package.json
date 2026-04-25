@@ -1,0 +1,113 @@
+{
+  "name": "hotel-comparison-app",
+  "version": "6.6.0",
+  "description": "宾馆比较终极版应用程序",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win --x64 --publish never",
+    "build:nsis": "electron-builder --win nsis --x64 --publish never",
+    "test": "node --test tests/hotel-storage.test.js tests/ipc-handler-registry.test.js tests/shared-compare-app.test.js tests/runtime-paths.test.js tests/service-container.test.js tests/package-scripts.test.js tests/bundled-setup.test.js"
+  },
+  "keywords": [
+    "hotel",
+    "comparison",
+    "electron"
+  ],
+  "author": "Sea",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0"
+  },
+  "build": {
+    "appId": "com.hotel.comparison.desktop",
+    "productName": "宾馆比较终极版",
+    "artifactName": "${productName} Setup ${version}.${ext}",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!node_modules/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history,LICENSE,license,license.md,license.txt}",
+      "!node_modules/*/{.github,.travis.yml,.gitignore,.eslintrc,.eslintrc.js,.eslintrc.json,.npmignore}",
+      "!node_modules/*/test/**/*",
+      "!node_modules/*/tests/**/*",
+      "!node_modules/*/__tests__/**/*",
+      "!node_modules/*/src/**/*",
+      "!node_modules/*/example/**/*",
+      "!node_modules/*/examples/**/*",
+      "!node_modules/*/demo/**/*",
+      "!node_modules/*/*.ts",
+      "!node_modules/*/*.map",
+      "!node_modules/*/{.editorconfig,.gitkeep,.jshintrc,.npmignore,.travis.yml}",
+      "!node_modules/*/docs/**/*",
+      "!node_modules/*/doc/**/*",
+      "!node_modules/*/{Makefile,makefile,Gruntfile.js,Gulpfile.js,gulpfile.js}",
+      "!node_modules/*/{karma.conf.js,webpack.config.js,rollup.config.js,.babelrc,.babelrc.js,.babelrc.json}",
+      "!**/*.md",
+      "!**/*.ts",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "shared/compare-app",
+        "to": "shared/compare-app",
+        "filter": [
+          "**/*.js"
+        ]
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/uninstallerIcon.ico",
+        "to": "uninstallerIcon.ico"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "differentialPackage": false,
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "uninstallerIcon.ico",
+      "installerHeaderIcon": "icon.ico",
+      "installerSidebar": "installerSidebar.bmp",
+      "uninstallerSidebar": "installerSidebar.bmp",
+      "shortcutName": "宾馆比较终极版",
+      "uninstallDisplayName": "宾馆比较终极版",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "electronDist": null,
+    "electronVersion": "28.0.0",
+    "compression": "maximum",
+    "removePackageScripts": true,
+    "removePackageKeywords": true,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false
+  }
+}

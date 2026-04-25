@@ -1,0 +1,21 @@
+node_modules/
+.playwright-cli/
+dist/
+dist-verify*/
+_bundle/
+package.json.bak
+*.log
+*.tmp
+
+# Runtime data generated locally
+output/
+state/
+scraper-data/output/
+scraper-data/state/
+
+# Local tooling/cache
+.workbuddy/
+_first_launch_verify/
+
+# Local app data
+**/hotel-data.json
