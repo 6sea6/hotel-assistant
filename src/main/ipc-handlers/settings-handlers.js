@@ -2,6 +2,7 @@ const path = require('path');
 const { dialog } = require('electron');
 const { APP_CONFIG } = require('../config');
 const appIconManager = require('../app-icon-manager');
+const { normalizeAiProviderConfig } = require('../ai/provider-presets');
 
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
@@ -38,6 +39,7 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     };
     delete normalizedSettings.autoMatchTemplate;
     normalizedSettings.theme = normalizeThemeSetting(normalizedSettings.theme);
+    normalizedSettings.ai_provider_config = normalizeAiProviderConfig(normalizedSettings.ai_provider_config);
 
     const managedReference = appIconManager.toManagedIconReference(normalizedSettings.app_icon_path);
     if (managedReference) {

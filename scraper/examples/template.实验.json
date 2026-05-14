@@ -1,0 +1,10 @@
+{
+  "ctrip_url": "https://hotels.ctrip.com/hotels/detail/?cityEnName=Shanghai&cityId=2&hotelId=111681060&checkIn=2026-07-08&checkOut=2026-07-10&adult=2&children=0&crn=1&curr=CNY&barcurr=CNY",
+  "destination": "新国际博览中心",
+  "check_in_date": "2026-07-08",
+  "check_out_date": "2026-07-10",
+  "room_type": "大床房",
+  "room_count": 2,
+  "template_name": "实验",
+  "notes": "实验模板采集，2人入住，新国际博览中心，原始hotelId=111681060"
+}

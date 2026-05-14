@@ -1,7 +1,7 @@
 const path = require('path');
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
 const { BASE_COMPARE_APP_SETTINGS, DEFAULT_COMPARE_APP_FILES } = requireSharedCompareAppModule('constants.js');
-const { PROMPT_CONTRACT } = requireSharedCompareAppModule('prompt-contract.js');
+const { getDefaultAiProviderConfig } = require('./ai/provider-presets');
 
 const HOTEL_EDITABLE_FIELDS = [
   { key: 'name', label: '宾馆名称', type: 'string', required: true, description: '必填，宾馆名称' },
@@ -79,7 +79,8 @@ const APP_CONFIG = {
     settings: {
       ...BASE_COMPARE_APP_SETTINGS,
       app_icon_path: '',
-      app_icon_file_name: ''
+      app_icon_file_name: '',
+      ai_provider_config: getDefaultAiProviderConfig()
     }
   },
 
@@ -117,8 +118,7 @@ const getPaths = () => {
     PACKAGED_FALLBACK_ICON_NAME: 'uninstallerIcon.ico',
 
     // 数据文件
-    STORE_NAME: path.parse(DEFAULT_COMPARE_APP_FILES.storeFileName).name,
-    PROMPTS_FILE: PROMPT_CONTRACT.compareAppPromptsFileName
+    STORE_NAME: path.parse(DEFAULT_COMPARE_APP_FILES.storeFileName).name
   };
 };
 

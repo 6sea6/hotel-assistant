@@ -16,8 +16,8 @@ const HANDLER_REGISTRATIONS = [
     modulePath: './ipc-handlers/data-handlers'
   },
   {
-    id: 'prompt',
-    modulePath: './ipc-handlers/prompt-handlers'
+    id: 'ai',
+    modulePath: './ipc-handlers/ai-handlers'
   },
   {
     id: 'other',

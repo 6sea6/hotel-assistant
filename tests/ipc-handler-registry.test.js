@@ -6,7 +6,7 @@ const { HANDLER_REGISTRATIONS, getHandlerRegistrations } = require('../src/main/
 test('IPC handler registry keeps a stable registration order', () => {
   assert.deepEqual(
     HANDLER_REGISTRATIONS.map((registration) => registration.id),
-    ['hotel', 'template', 'settings', 'data', 'prompt', 'other']
+    ['hotel', 'template', 'settings', 'data', 'ai', 'other']
   );
 });
 
@@ -28,6 +28,6 @@ test('IPC handler registry declares dependency shapes centrally', () => {
   assert.deepEqual(contextMap.template, context);
   assert.deepEqual(contextMap.settings, context);
   assert.deepEqual(contextMap.data, context);
-  assert.deepEqual(contextMap.prompt, context);
+  assert.deepEqual(contextMap.ai, context);
   assert.deepEqual(contextMap.other, context);
 });

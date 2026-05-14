@@ -8,7 +8,9 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win --x64 --publish never",
     "build:nsis": "electron-builder --win nsis --x64 --publish never",
-    "test": "node --test tests/hotel-storage.test.js tests/ipc-handler-registry.test.js tests/shared-compare-app.test.js tests/runtime-paths.test.js tests/service-container.test.js tests/package-scripts.test.js tests/bundled-setup.test.js"
+    "test": "npm run test:app && npm run test:scraper",
+    "test:app": "node --test tests/hotel-storage.test.js tests/ipc-handler-registry.test.js tests/shared-compare-app.test.js tests/runtime-paths.test.js tests/service-container.test.js tests/package-scripts.test.js tests/bundled-setup.test.js tests/ai-provider.test.js",
+    "test:scraper": "node --test scraper/tests/compare-app-bridge.test.js scraper/tests/cli-modules.test.js scraper/tests/room-logic.test.js scraper/tests/room-type-rules.test.js scraper/tests/amap-geo.test.js scraper/tests/hotel-record.test.js scraper/tests/html-parser.test.js scraper/tests/structured-extractor.test.js scraper/tests/template-loader.test.js scraper/tests/facade-exports.test.js"
   },
   "keywords": [
     "hotel",
@@ -22,7 +24,10 @@
     "electron-builder": "^24.9.1"
   },
   "dependencies": {
-    "electron-store": "^8.1.0"
+    "axios": "^1.16.1",
+    "cheerio": "^1.0.0",
+    "electron-store": "^8.1.0",
+    "ws": "^8.20.1"
   },
   "build": {
     "appId": "com.hotel.comparison.desktop",

@@ -47,10 +47,9 @@ function withMockedElectron(mockedElectron, fn) {
   }
 }
 
-test('setupBundledModules deploys prompt seed, unified prompt, and skill into packaged paths', (t) => {
+test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
   const tempRoot = makeTempRoot();
   const scraperDir = path.join(tempRoot, 'scraper');
-  const skillDir = path.join(scraperDir, '.workbuddy', 'skills', PROMPT_CONTRACT.bundledSkillName);
   const installDir = path.join(tempRoot, 'install-root');
   const appDataRoot = path.join(tempRoot, 'appdata-root');
   const homeRoot = path.join(tempRoot, 'home-root');
@@ -58,7 +57,6 @@ test('setupBundledModules deploys prompt seed, unified prompt, and skill into pa
 
   fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
   fs.mkdirSync(path.join(scraperDir, 'examples'), { recursive: true });
-  fs.mkdirSync(path.join(skillDir, 'references'), { recursive: true });
   fs.mkdirSync(installDir, { recursive: true });
   fs.mkdirSync(appDataRoot, { recursive: true });
   fs.mkdirSync(homeRoot, { recursive: true });
@@ -69,15 +67,6 @@ test('setupBundledModules deploys prompt seed, unified prompt, and skill into pa
   fs.writeFileSync(path.join(scraperDir, 'README.md'), '# fixture readme\n', 'utf-8');
   fs.writeFileSync(path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName), '# bundled guide\n', 'utf-8');
   fs.writeFileSync(path.join(scraperDir, 'examples', 'sample.json'), '{}\n', 'utf-8');
-  fs.writeFileSync(path.join(skillDir, 'references', 'field-rules.md'), '数据目录：E:\\实验\\1\\宾馆比较助手\n', 'utf-8');
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), [
-    '# Skill',
-    'E:\\实验\\1\\宾馆比较助手',
-    'E:\\实验\\2\\README.md',
-    'node _run.js',
-    'node src/edge-session.js',
-    '## 执行流程'
-  ].join('\n'), 'utf-8');
 
   const prepared = prepareFullBundle({
     projectRoot: path.resolve(__dirname, '..'),
@@ -114,13 +103,6 @@ test('setupBundledModules deploys prompt seed, unified prompt, and skill into pa
 
   const dataDir = path.join(installDir, '宾馆比较助手');
   const workDir = path.join(dataDir, 'scraper-data');
-  const skillTargetDir = path.join(homeRoot, '.workbuddy', 'skills', PROMPT_CONTRACT.bundledSkillName);
-  const skillContent = fs.readFileSync(path.join(skillTargetDir, 'SKILL.md'), 'utf-8');
 
-  assert.equal(fs.existsSync(path.join(dataDir, PROMPT_CONTRACT.compareAppPromptsFileName)), true);
   assert.equal(fs.existsSync(path.join(workDir, PROMPT_CONTRACT.unifiedPromptFileName)), true);
-  assert.equal(fs.existsSync(path.join(skillTargetDir, 'SKILL.md')), true);
-  assert.match(skillContent, /打包版专用说明/);
-  assert.match(skillContent, new RegExp(dataDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(skillContent, new RegExp(workDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });

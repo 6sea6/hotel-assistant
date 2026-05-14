@@ -1,6 +1,6 @@
 const { createBundleService } = require('./bundle-service');
+const { createAiService } = require('./ai-service');
 const { createDataService } = require('./data-service');
-const { createPromptService } = require('./prompt-service');
 const { createWindowService } = require('./window-service');
 
 function createServiceContainer({ cache } = {}) {
@@ -9,9 +9,9 @@ function createServiceContainer({ cache } = {}) {
 
   return {
     cache,
+    aiService: createAiService({ dataService, windowService }),
     bundleService: createBundleService(),
     dataService,
-    promptService: createPromptService({ dataService }),
     windowService
   };
 }

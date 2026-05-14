@@ -196,9 +196,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('window:stateChanged', (event, state) => callback(state));
   },
 
-  // AI提示词相关
-  getPrompt: (type) => ipcRenderer.invoke('prompt:get', type),
-  savePrompt: (type, content) => ipcRenderer.invoke('prompt:save', type, content),
+  // 采集助手相关
+  ai: {
+    getConfig: () => ipcRenderer.invoke('ai:config:get'),
+    getPresets: () => ipcRenderer.invoke('ai:config:presets'),
+    saveConfig: async (config) => {
+      invalidateCache('settings');
+      return ipcRenderer.invoke('ai:config:save', config);
+    },
+    testConnection: (config) => ipcRenderer.invoke('ai:config:test', config),
+    sendChat: (payload) => ipcRenderer.invoke('ai:chat:send', payload),
+    startTask: (payload) => ipcRenderer.invoke('ai:task:start', payload),
+    analyzeCollection: (payload) => ipcRenderer.invoke('ai:collect:analyze', payload),
+    applyCollectionReview: (payload) => ipcRenderer.invoke('ai:collect:apply-review', payload),
+    cancelTask: () => ipcRenderer.invoke('ai:task:cancel'),
+    getTaskStatus: () => ipcRenderer.invoke('ai:task:status'),
+    onTaskEvent: (callback) => {
+      ipcRenderer.on('ai:task:event', (event, data) => callback(data));
+    }
+  },
   
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);

@@ -11,8 +11,7 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
 const DEFAULT_COMPARE_APP_FILES = Object.freeze({
   appFolderName: '宾馆比较助手',
   pointerFileName: 'hotel-app-pointer.json',
-  storeFileName: 'hotel-data.json',
-  promptsFileName: 'ai-prompts.json'
+  storeFileName: 'hotel-data.json'
 });
 
 function createBaseCompareAppStore() {

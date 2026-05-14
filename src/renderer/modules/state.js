@@ -30,14 +30,35 @@ export const state = {
   pendingRenderInteractionFirst: false,
   lastEditedPriceField: null,
 
-  // AI 提示词编辑
-  currentPromptType: '',
-  isPromptEditing: false,
-  promptContentBackup: '',
-  customPromptContent: {
-    protective: null,
-    guide: null,
-    optimize: null
+  // 采集助手
+  aiTaskEvents: [],
+  aiTaskConsole: {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  },
+  aiProviderPresets: [],
+  aiProviderConfig: null,
+  aiAssistantInitialized: false,
+  aiTaskInProgress: false,
+  aiTaskQueue: [],
+  aiTaskQueueCounter: 0,
+  aiSelectedQueueTaskId: '',
+  aiReview: {
+    isOpen: false,
+    inProgress: false,
+    applyInProgress: false,
+    result: null,
+    reviewId: '',
+    userConcern: '',
+    error: ''
   }
 };
 
@@ -47,12 +68,6 @@ export const LARGE_HOTEL_RENDER_THRESHOLD = 120;
 export const TEMPLATE_SELECT_BATCH_SIZE = 180;
 export const TEMPLATE_FILTER_BATCH_SIZE = 180;
 export const INTERACTION_FIRST_RENDER_DELAY = 260;
-
-export const PROMPT_TITLES = {
-  protective: '🛡️ 保护性提示词',
-  guide: '📋 数据填充指南',
-  optimize: '⚡ AI优化提示词'
-};
 
 /* ---- 排名缓存 ---- */
 export const rankingCache = {

@@ -1,0 +1,14 @@
+{
+  "ctrip_url": "https://hotels.ctrip.com/hotels/983212.html?checkIn=2026-07-09&checkOut=2026-07-12&fromfavorites=1&crn=1&adult=3&children=0",
+  "destination": "上海国家会展中心",
+  "check_in_date": "2026-07-09",
+  "check_out_date": "2026-07-12",
+  "room_count": 3,
+  "template_name": "bw",
+  "notes": "示例：复用程序维护的持久化 Edge 登录态",
+  "edge_user_data_dir": "./state/edge-profile",
+  "edge_profile_directory": "Default",
+  "edge_debugger_url": "",
+  "edge_debugging_port": 9222,
+  "edge_headless": false
+}

@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 
 const { DEFAULT_COMPARE_APP_FILES } = require('../shared/compare-app/constants');
-const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT, PROMPT_TYPES, getBundledSkillTargetDir } = require('../shared/compare-app/prompt-contract');
+const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT } = require('../shared/compare-app/prompt-contract');
 const {
   buildCompareAppDataPaths,
   getBundledResourcePaths,
@@ -20,15 +20,9 @@ function makeTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'compare-app-runtime-'));
 }
 
-test('prompt contract keeps protected prompt and bundle file names stable', () => {
-  assert.deepEqual(PROMPT_TYPES, ['protective', 'guide', 'optimize']);
-  assert.equal(PROMPT_CONTRACT.compareAppPromptsFileName, 'ai-prompts.json');
+test('prompt contract keeps scraper bundle file names stable', () => {
   assert.equal(PROMPT_CONTRACT.unifiedPromptFileName, '00-后续AI统一提示词.md');
-  assert.equal(PROMPT_CONTRACT.bundledSkillName, 'hotel-data-filler');
-  assert.equal(PROMPT_CONTRACT.bundledSkillEntryFileName, 'SKILL.md');
   assert.equal(BUNDLE_RESOURCE_MAP.scraperDirName, 'scraper');
-  assert.equal(BUNDLE_RESOURCE_MAP.skillDirName, 'skill');
-  assert.equal(BUNDLE_RESOURCE_MAP.compareAppDirName, 'compare-app');
   assert.equal(BUNDLE_RESOURCE_MAP.runtimeWorkDirName, 'scraper-data');
 });
 
@@ -151,33 +145,25 @@ test('resolveCompareAppDataFolder respects explicit, workspace, pointer, install
   );
 });
 
-test('shared bundled resource paths keep prompt, skill, and scraper locations stable', () => {
+test('shared bundled resource paths keep prompt and scraper locations stable', () => {
   const resourcesPath = path.join('E:/实验', 'hotel-comparison-app', 'resources');
   const appDataPath = path.join('E:/实验', 'hotel-comparison-app', DEFAULT_COMPARE_APP_FILES.appFolderName);
-  const homeDir = path.join('C:/Users', 'tester');
 
   const resourcePaths = getBundledResourcePaths({
     resourcesPath,
-    appDataPath,
-    homeDir
+    appDataPath
   });
 
   assert.equal(resourcePaths.scraperPath, path.join(resourcesPath, 'scraper'));
-  assert.equal(resourcePaths.skillSourcePath, path.join(resourcesPath, 'skill'));
-  assert.equal(resourcePaths.compareAppResourcePath, path.join(resourcesPath, 'compare-app'));
   assert.equal(resourcePaths.bundledWorkDir, path.join(appDataPath, 'scraper-data'));
-  assert.equal(resourcePaths.promptSeedPath, path.join(resourcesPath, 'compare-app', 'ai-prompts.json'));
-  assert.equal(resourcePaths.promptTargetPath, path.join(appDataPath, 'ai-prompts.json'));
   assert.equal(resourcePaths.unifiedPromptSourcePath, path.join(resourcesPath, 'scraper', '00-后续AI统一提示词.md'));
   assert.equal(resourcePaths.unifiedPromptTargetPath, path.join(appDataPath, 'scraper-data', '00-后续AI统一提示词.md'));
-  assert.equal(resourcePaths.bundledSkillTargetPath, getBundledSkillTargetDir(homeDir));
 
   const compareAppPaths = buildCompareAppDataPaths({
     dataFolder: appDataPath,
     storeFileName: DEFAULT_COMPARE_APP_FILES.storeFileName
   });
   assert.equal(compareAppPaths.storePath, path.join(appDataPath, 'hotel-data.json'));
-  assert.equal(compareAppPaths.promptsPath, path.join(appDataPath, 'ai-prompts.json'));
 });
 
 test('shared bundled scraper detection only depends on bundled cli presence', (t) => {

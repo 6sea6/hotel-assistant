@@ -10,8 +10,8 @@ test('service container wires stable main-process service façades', () => {
   assert.equal(services.cache, cache);
   assert.equal(typeof services.dataService.getStore, 'function');
   assert.equal(typeof services.dataService.getDataFolderManager, 'function');
-  assert.equal(typeof services.promptService.getPromptsFilePath, 'function');
-  assert.equal(typeof services.promptService.loadPrompt, 'function');
+  assert.equal(typeof services.aiService.getProviderConfig, 'function');
+  assert.equal(typeof services.aiService.sendChat, 'function');
   assert.equal(typeof services.bundleService.ensureBootstrapResources, 'function');
   assert.equal(typeof services.bundleService.scheduleSetup, 'function');
   assert.equal(typeof services.windowService.createWindow, 'function');

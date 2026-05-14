@@ -14,17 +14,20 @@
         <h1 class="app-title">🏨 宾馆比较助手</h1>
       </div>
       <div class="header-right">
+        <button class="btn btn-secondary" onclick="openAiAssistant()">
+          <span>🤖</span> 采集助手
+        </button>
         <button class="btn btn-secondary" onclick="openTemplateManager()">
           <span>📋</span> 模板管理
+        </button>
+        <button class="btn btn-secondary" onclick="openDataTransfer()">
+          <span>💾</span> 数据管理
         </button>
         <button class="btn btn-secondary" onclick="openPersonalization()">
           <span>🎨</span> 个性化
         </button>
         <button class="btn btn-secondary" onclick="openSettings()">
           <span>⚙️</span> 设置
-        </button>
-        <button class="btn btn-secondary" onclick="openDataTransfer()">
-          <span>💾</span> 数据管理
         </button>
         <button class="btn btn-secondary" onclick="openAbout()">
           <span>ℹ️</span> 关于
@@ -43,7 +46,7 @@
       </div>
     </header>
 
-    <main class="app-main">
+    <main id="hotelMain" class="app-main">
       <aside class="side-panel">
         <div class="panel-section">
           <h2 class="section-title">搜索筛选</h2>
@@ -181,6 +184,76 @@
         <div id="hotelList" class="hotel-list">
         </div>
       </section>
+    </main>
+
+    <main id="aiAssistantPage" class="ai-assistant-page" style="display: none;">
+      <header class="ai-assistant-header">
+        <div class="ai-header-copy">
+          <span class="task-header-icon" aria-hidden="true">
+            <span class="task-bot-face"></span>
+          </span>
+          <div>
+            <h2>携程酒店采集助手</h2>
+            <p>任务执行中心</p>
+          </div>
+        </div>
+        <div class="ai-header-actions">
+          <button class="ai-ghost-button" type="button" onclick="clearAiTaskRecords()">
+            <span aria-hidden="true">⌫</span>
+            清空记录
+          </button>
+          <button class="ai-ghost-button" type="button" onclick="closeAiAssistant()">
+            <span aria-hidden="true">↩</span>
+            返回列表
+          </button>
+        </div>
+      </header>
+
+      <div class="task-console-layout">
+        <div class="task-workspace-grid">
+          <section class="current-task-card">
+            <div class="task-card-header">
+              <div>
+                <span class="task-card-eyebrow">CURRENT TASK</span>
+                <h2>当前任务</h2>
+              </div>
+              <button class="task-clear-button" type="button" onclick="clearAiTaskRecords()">清空记录</button>
+            </div>
+            <div id="aiCurrentTaskPanel" class="current-task-content"></div>
+          </section>
+
+          <aside id="aiTaskQueuePanel" class="task-queue-card" aria-label="任务队列"></aside>
+        </div>
+
+        <section class="task-start-card" aria-label="任务启动栏">
+          <div class="task-start-title">
+            <div>
+              <span class="task-card-eyebrow">TASK START BAR</span>
+              <h2>任务启动栏</h2>
+            </div>
+            <span class="task-start-hint">按 Enter 键加入队列</span>
+          </div>
+          <div class="task-start-grid">
+            <label class="task-field task-field-template" for="aiTemplateSelect">
+              <span>模板</span>
+              <select id="aiTemplateSelect" class="input ai-template-select">
+                <option value="">请选择模板</option>
+              </select>
+            </label>
+            <label class="task-field task-field-url" for="aiHotelUrlInput">
+              <span>链接</span>
+              <div class="task-url-input-wrap">
+                <span class="task-url-icon" aria-hidden="true">↗</span>
+                <input id="aiHotelUrlInput" class="input task-url-input" type="url" maxlength="2000" placeholder="粘贴携程酒店详情页链接" oninput="updateAiInputCount()" onkeydown="handleAiTaskInputKeydown(event)">
+                <span id="aiInputCount" class="task-input-count">0 / 2000</span>
+              </div>
+            </label>
+            <div class="task-start-action">
+              <button id="aiStartTaskBtn" class="task-start-button" type="button" onclick="enqueueAiCollectTask()">加入队列</button>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <div id="hotelModal" class="modal">
@@ -459,12 +532,27 @@
               <span>🌐</span> 访问飞猪官网
             </button>
           </div>
-          <div class="form-group">
-            <label>AI提示词</label>
-            <button class="btn btn-primary btn-full" onclick="openAIPrompts()">
-              <span>🤖</span> AI提示词管理
-            </button>
-            <small class="help-text">包含保护性提示词和数据填充指南</small>
+          <div class="form-group" id="aiInterfaceSettings">
+            <label>AI接口</label>
+            <div class="ai-config-grid">
+              <label class="setting-switch-container ai-config-enabled">
+                <span>启用 AI</span>
+                <label class="switch-label">
+                  <input type="checkbox" id="aiEnabledInput">
+                  <span class="switch-slider"></span>
+                </label>
+              </label>
+              <select id="aiProviderSelect" class="input" onchange="onAiProviderChange()"></select>
+              <input type="text" id="aiBaseUrlInput" class="input" placeholder="Base URL">
+              <input type="text" id="aiModelInput" class="input" list="aiModelOptions" placeholder="模型名称">
+              <datalist id="aiModelOptions"></datalist>
+              <input type="password" id="aiApiKeyInput" class="input" placeholder="API Key">
+            </div>
+            <small class="help-text" id="aiApiKeyHint">尚未加载 AI 接口设置</small>
+            <div class="data-path-actions">
+              <button class="btn btn-secondary btn-sm" onclick="saveAiConfig()">保存接口</button>
+              <button id="aiTestBtn" class="btn btn-secondary btn-sm" onclick="testAiConnection()">测试连接</button>
+            </div>
           </div>
           <div class="form-group">
             <label>应用说明书</label>
@@ -583,65 +671,6 @@
       </div>
     </div>
 
-    <div id="aiPromptsModal" class="modal">
-      <div class="modal-content modal-small">
-        <div class="modal-header">
-          <h2>AI提示词</h2>
-          <button class="modal-close" onclick="closeAIPrompts()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="ai-prompts-options">
-            <div class="prompt-option" onclick="openPromptContent('protective')">
-              <div class="prompt-icon">🛡️</div>
-              <div class="prompt-info">
-                <h3>保护性提示词</h3>
-                <p>给接手AI的提示词，确保不破坏原有功能</p>
-              </div>
-            </div>
-            <div class="prompt-option" onclick="openPromptContent('guide')">
-              <div class="prompt-icon">📋</div>
-              <div class="prompt-info">
-                <h3>数据填充指南</h3>
-                <p>告诉AI如何正确填充宾馆数据</p>
-              </div>
-            </div>
-            <div class="prompt-option" onclick="openPromptContent('optimize')">
-              <div class="prompt-icon">⚡</div>
-              <div class="prompt-info">
-                <h3>AI优化提示词</h3>
-                <p>让AI在保护功能前提下优化程序性能</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="promptContentModal" class="modal">
-      <div class="modal-content modal-large">
-        <div class="modal-header">
-          <h2 id="promptContentTitle">提示词内容</h2>
-          <button class="modal-close" onclick="closePromptContent()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="prompt-content-container">
-            <textarea id="promptContentText" class="prompt-textarea" readonly></textarea>
-          </div>
-          <div class="prompt-actions">
-            <button class="btn btn-secondary" onclick="togglePromptEdit()">
-              <span id="promptEditBtn">✏️</span> <span id="promptEditText">编辑</span>
-            </button>
-            <button class="btn btn-accent" id="promptSaveBtn" style="display: none;" onclick="savePromptContent()">
-              <span>💾</span> 保存
-            </button>
-            <button class="btn btn-primary" onclick="copyPromptContent()">
-              <span>📋</span> 复制内容
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div id="dataTransferModal" class="modal">
       <div class="modal-content modal-small">
         <div class="modal-header">
@@ -690,7 +719,7 @@
               </div>
               <div class="author-item">
                 <span class="author-label">感谢：</span>
-                <span>WorkBuddy、Trae、GitHub Copilot、Codex</span>
+                <span>Trae、GitHub Copilot、Codex</span>
               </div>
               <div class="author-item">
                 <span class="author-label">特别感谢：</span>
@@ -808,7 +837,7 @@
                 <li><strong>应用图标：</strong>支持在个性化面板中选择本地图片作为窗口图标；所选图片会自动复制到当前数据目录内，删除原图也不会让窗口图标失效，也可以一键恢复默认图标</li>
                 <li><strong>数据存储位置：</strong>查看和更改数据存储路径</li>
                 <li><strong>快捷链接：</strong>快速访问携程、飞猪官网</li>
-                <li><strong>AI提示词：</strong>查看和编辑保护性提示词、数据填写指南、优化提示词</li>
+                <li><strong>AI接口：</strong>在设置中选择供应商并填写自己的 API Key，用于采集结果复核和失败诊断</li>
                 <li><strong>开发者工具：</strong>按 F12 打开后会优先切到中文界面，便于调试页面结构和脚本</li>
               </ul>
             </div>
@@ -819,15 +848,6 @@
                 <li><strong>导出数据：</strong>将所有宾馆、模板和设置导出为JSON文件备份；如果当前启用了自定义窗口图标，也会一起写进导出文件</li>
                 <li><strong>导入数据：</strong>从本应用自己导出的 JSON 恢复数据，可选择覆盖当前宾馆、模板和设置，或仅把宾馆与模板追加到现有数据中；追加模式会保留当前设置和窗口图标，并自动重排冲突 ID，避免模板关联串号；任一步失败时都会回滚</li>
                 <li><strong>导出排名图片：</strong>将当前排名列表导出为PNG图片；为避免文字重叠，图片中不显示宾馆地址和交通路线，总价与日均会合并到同一信息格上下显示，其余字段按每行三个信息格重排，最近地铁站以“距地铁”显示且仅展示距离</li>
-              </ul>
-            </div>
-
-            <div class="manual-section">
-              <h3>🤖 AI辅助功能</h3>
-              <ul>
-                <li><strong>保护性提示词：</strong>明确不能破坏数据结构、IPC 与模板同步逻辑</li>
-                <li><strong>数据填写指南：</strong>指导 AI 以结构化 JSON 方式稳定补全宾馆数据</li>
-                <li><strong>AI优化提示词：</strong>强调先定位根因，再优化卡顿、体积、DevTools 调试体验和维护性</li>
               </ul>
             </div>
 
@@ -849,7 +869,7 @@
               <ul>
                 <li><strong>版本：</strong><span id="manualVersionText">v6.6</span></li>
                 <li><strong>作者：</strong>Sea</li>
-                <li><strong>感谢：</strong>WorkBuddy、Trae、GitHub Copilot、Codex</li>
+                <li><strong>感谢：</strong>Trae、GitHub Copilot、Codex</li>
                   <li><strong>特别感谢：</strong><span class="thanks-name thanks-asagirl">Asagiri</span>、<span class="thanks-name thanks-moli">墨离</span></li>
                 <li><strong>技术栈：</strong>Electron + HTML/CSS/JavaScript</li>
                 <li><strong>数据存储：</strong>本地JSON文件</li>

@@ -1,0 +1,21 @@
+{
+  "name": "ctrip-hotel-importer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "携程酒店信息采集并写入宾馆比较助手数据的独立工具",
+  "main": "src/cli.js",
+  "scripts": {
+    "start": "node src/cli.js",
+    "scrape": "node src/cli.js",
+    "edge-session": "node src/edge-session.js",
+    "test": "node --test tests/compare-app-bridge.test.js tests/cli-modules.test.js tests/room-logic.test.js tests/room-type-rules.test.js tests/amap-geo.test.js tests/hotel-record.test.js tests/html-parser.test.js tests/structured-extractor.test.js tests/template-loader.test.js tests/facade-exports.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "cheerio": "1.0.0",
+    "ws": "^8.20.0"
+  }
+}

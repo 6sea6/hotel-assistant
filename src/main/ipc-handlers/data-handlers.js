@@ -6,6 +6,7 @@ const appIconManager = require('../app-icon-manager');
 const hotelStorage = require('../hotel-storage');
 const hotelHandlers = require('./hotel-handlers');
 const templateHandlers = require('./template-handlers');
+const { normalizeAiProviderConfig, redactAiProviderConfig } = require('../ai/provider-presets');
 
 const EXPORT_SCHEMA_VERSION = 3;
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
@@ -46,10 +47,24 @@ function allocateImportedId(preferredId, usedIds, nextIdState) {
 }
 
 function normalizeImportedSettings(settings) {
-  return {
+  const normalizedSettings = {
     ...APP_CONFIG.STORE_DEFAULTS.settings,
     ...(isPlainObject(settings) ? settings : {})
   };
+  normalizedSettings.ai_provider_config = normalizeAiProviderConfig(normalizedSettings.ai_provider_config);
+  return normalizedSettings;
+}
+
+function redactSettingsForExport(settings) {
+  const exportedSettings = {
+    ...settings
+  };
+
+  if (isPlainObject(exportedSettings.ai_provider_config)) {
+    exportedSettings.ai_provider_config = redactAiProviderConfig(exportedSettings.ai_provider_config);
+  }
+
+  return exportedSettings;
 }
 
 function buildTemplateInfoFromTemplate(template) {
@@ -240,12 +255,13 @@ function buildExportPayload(store) {
   );
   const templates = (store.get('templates') || []).map(template => normalizeTemplatePayload(template));
   const settings = normalizeImportedSettings(store.get('settings'));
+  const exportedSettings = redactSettingsForExport(settings);
   const customAppIcon = appIconManager.readCustomIconExportPayload(settings);
 
   return {
     hotels,
     templates,
-    settings,
+    settings: exportedSettings,
     exportedAt,
     appVersion: APP_CONFIG.VERSION,
     schemaVersion: EXPORT_SCHEMA_VERSION,

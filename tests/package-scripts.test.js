@@ -4,7 +4,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { getDefaultPrompt } = require('../src/main/default-prompts');
 const { PROMPT_CONTRACT } = require('../shared/compare-app/prompt-contract');
 const { getBundleManifest, getSetupArtifactName } = require('../scripts/package/bundle-manifest');
 const { createBuilderConfig } = require('../scripts/package/create-builder-config');
@@ -24,9 +23,7 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
     manifest.expectations.fullOnlyResources,
     [
       path.join('scraper', 'src', 'cli.js'),
-      path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName),
-      path.join('skill', PROMPT_CONTRACT.bundledSkillEntryFileName),
-      path.join('compare-app', PROMPT_CONTRACT.compareAppPromptsFileName)
+      path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
     ]
   );
 });
@@ -68,20 +65,17 @@ test('createBuilderConfig only injects full-bundle extra resources in full mode'
   );
 });
 
-test('prepareFullBundle preserves protected prompt and skill assets and seeds ai-prompts.json', (t) => {
+test('prepareFullBundle preserves scraper prompt assets', (t) => {
   const tempRoot = makeTempRoot();
   const scraperDir = path.join(tempRoot, 'scraper');
-  const skillDir = path.join(scraperDir, '.workbuddy', 'skills', PROMPT_CONTRACT.bundledSkillName);
 
   fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
   fs.mkdirSync(path.join(scraperDir, 'examples'), { recursive: true });
-  fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
   fs.writeFileSync(path.join(scraperDir, 'package.json'), JSON.stringify({ name: 'fixture-scraper' }, null, 2), 'utf-8');
   fs.writeFileSync(path.join(scraperDir, 'README.md'), '# fixture\n', 'utf-8');
   fs.writeFileSync(path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName), '# guide\n', 'utf-8');
   fs.writeFileSync(path.join(scraperDir, 'examples', 'sample.json'), '{}\n', 'utf-8');
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# protected skill\n', 'utf-8');
 
   const prepared = prepareFullBundle({
     projectRoot: path.resolve(__dirname, '..'),
@@ -93,18 +87,8 @@ test('prepareFullBundle preserves protected prompt and skill assets and seeds ai
     fs.rmSync(prepared.bundleRoot, { recursive: true, force: true });
   });
 
-  const promptSeedPath = path.join(
-    prepared.manifest.directories.compareAppRoot,
-    PROMPT_CONTRACT.compareAppPromptsFileName
-  );
-  const promptSeed = JSON.parse(fs.readFileSync(promptSeedPath, 'utf-8'));
-
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'src', 'cli.js')), true);
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName)), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.skillRoot, 'SKILL.md')), true);
-  assert.equal(promptSeed.protective.content, getDefaultPrompt('protective'));
-  assert.equal(promptSeed.guide.content, getDefaultPrompt('guide', { dataPath: '当前数据目录中的 hotel-data.json' }));
-  assert.equal(promptSeed.optimize.content, getDefaultPrompt('optimize'));
 });
 
 test('verifyPackageLayout distinguishes base and full resource layouts', (t) => {
@@ -133,9 +117,7 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
 
   [
     path.join('scraper', 'src', 'cli.js'),
-    path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName),
-    path.join('skill', 'SKILL.md'),
-    path.join('compare-app', PROMPT_CONTRACT.compareAppPromptsFileName)
+    path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
   ].forEach((relativePath) => {
     writeFile(fullResourcesDir, relativePath);
   });
@@ -150,12 +132,9 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
   );
 });
 
-test('protected source prompt and skill assets remain present in workspace', () => {
-  const scraperRoot = path.resolve(__dirname, '..', '..', '2');
+test('scraper unified prompt asset remains present in workspace', () => {
+  const scraperRoot = path.resolve(__dirname, '..', 'scraper');
   const promptGuidePath = path.join(scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName);
-  const skillPath = path.join(scraperRoot, '.workbuddy', 'skills', PROMPT_CONTRACT.bundledSkillName, 'SKILL.md');
 
-  assert.equal(fs.existsSync(path.resolve(__dirname, '..', 'src', 'main', 'default-prompts.js')), true);
   assert.equal(fs.existsSync(promptGuidePath), true);
-  assert.equal(fs.existsSync(skillPath), true);
 });

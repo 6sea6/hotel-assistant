@@ -1,0 +1,15 @@
+{
+  "ctrip_url": "https://hotels.ctrip.com/hotels/85469013.html?checkIn=2026-05-05&checkOut=2026-05-08&fromfavorites=1",
+  "destination": "上海国家会展中心",
+  "check_in_date": "2026-07-09",
+  "check_out_date": "2026-07-12",
+  "room_type": "三人房",
+  "room_count": 3,
+  "template_name": "bw",
+  "notes": "示例：使用名为 bw 的现有模板，人数为 3，优先命中静雅三人房、家庭房、套房，并在同房型多价格时取最低价",
+  "edge_user_data_dir": "",
+  "edge_profile_directory": "Default",
+  "edge_debugger_url": "",
+  "edge_debugging_port": null,
+  "edge_headless": true
+}

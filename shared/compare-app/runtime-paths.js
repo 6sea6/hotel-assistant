@@ -11,8 +11,7 @@ const {
 } = require('./data-folder');
 const {
   BUNDLE_RESOURCE_MAP,
-  PROMPT_CONTRACT,
-  getBundledSkillTargetDir
+  PROMPT_CONTRACT
 } = require('./prompt-contract');
 
 function normalizeText(value) {
@@ -107,14 +106,12 @@ function resolveCompareAppDataFolder(options = {}) {
 function buildCompareAppDataPaths(options = {}) {
   const {
     dataFolder,
-    storeFileName,
-    promptsFileName = PROMPT_CONTRACT.compareAppPromptsFileName
+    storeFileName
   } = options;
 
   return {
     dataFolder,
-    storePath: path.join(dataFolder, storeFileName),
-    promptsPath: path.join(dataFolder, promptsFileName)
+    storePath: path.join(dataFolder, storeFileName)
   };
 }
 
@@ -126,27 +123,18 @@ function getBundledResourcePaths(options = {}) {
   const {
     resourcesPath = process.resourcesPath || '',
     appDataPath,
-    promptsFileName = PROMPT_CONTRACT.compareAppPromptsFileName,
     unifiedPromptFileName = PROMPT_CONTRACT.unifiedPromptFileName,
-    bundleResourceMap = BUNDLE_RESOURCE_MAP,
-    homeDir
+    bundleResourceMap = BUNDLE_RESOURCE_MAP
   } = options;
 
   const scraperPath = getBundledResourcePath(resourcesPath, bundleResourceMap.scraperDirName);
-  const skillSourcePath = getBundledResourcePath(resourcesPath, bundleResourceMap.skillDirName);
-  const compareAppResourcePath = getBundledResourcePath(resourcesPath, bundleResourceMap.compareAppDirName);
   const bundledWorkDir = path.join(appDataPath, bundleResourceMap.runtimeWorkDirName);
 
   return {
     scraperPath,
-    skillSourcePath,
-    compareAppResourcePath,
     bundledWorkDir,
-    promptSeedPath: path.join(compareAppResourcePath, promptsFileName),
-    promptTargetPath: path.join(appDataPath, promptsFileName),
     unifiedPromptSourcePath: path.join(scraperPath, unifiedPromptFileName),
-    unifiedPromptTargetPath: path.join(bundledWorkDir, unifiedPromptFileName),
-    bundledSkillTargetPath: homeDir ? getBundledSkillTargetDir(homeDir) : ''
+    unifiedPromptTargetPath: path.join(bundledWorkDir, unifiedPromptFileName)
   };
 }
 

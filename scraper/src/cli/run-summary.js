@@ -1,0 +1,104 @@
+const path = require('path');
+const { writeJsonFile } = require('../utils');
+
+const DEFAULT_LATEST_RUN_PATH = path.resolve('output', 'latest-run.json');
+
+function pickFirst(...values) {
+  for (const value of values) {
+    if (value !== null && value !== undefined && value !== '') {
+      return value;
+    }
+  }
+  return null;
+}
+
+function getFirstEligibleHotel(payload) {
+  return Array.isArray(payload.eligibleHotels) ? (payload.eligibleHotels[0] || {}) : {};
+}
+
+function getFirstEligibleRoom(payload) {
+  return Array.isArray(payload.eligibleRoomTypes) ? (payload.eligibleRoomTypes[0] || {}) : {};
+}
+
+function buildPageSnapshotSummary(pageSnapshot) {
+  if (!pageSnapshot || typeof pageSnapshot !== 'object') {
+    return null;
+  }
+
+  const summarizeSource = (source) => {
+    if (!source || typeof source !== 'object') {
+      return null;
+    }
+
+    return {
+      source: source.source || '',
+      room_candidates_count: source.room_candidates_count ?? 0,
+      room_price_visible: Boolean(source.room_price_visible),
+      locked_price_detected: Boolean(source.locked_price_detected),
+      tracked_url_count: Array.isArray(source.tracked_urls) ? source.tracked_urls.length : 0,
+      attempt_count: Array.isArray(source.attempts) ? source.attempts.length : 0,
+      spider_error_codes: Array.isArray(source.spider_error_codes) ? source.spider_error_codes : [],
+      error: source.error || ''
+    };
+  };
+
+  return {
+    source_url: pageSnapshot.source_url || '',
+    html_source: pageSnapshot.html_source || '',
+    room_candidates_count: pageSnapshot.room_candidates_count ?? 0,
+    room_price_visible: Boolean(pageSnapshot.room_price_visible),
+    selected_room_source: pageSnapshot.selected_room_source || '',
+    selected_room_price_locked: Boolean(pageSnapshot.selected_room_price_locked),
+    saved_html_file_count: Array.isArray(pageSnapshot.saved_html_files) ? pageSnapshot.saved_html_files.length : 0,
+    sources: Array.isArray(pageSnapshot.sources)
+      ? pageSnapshot.sources.map(summarizeSource).filter(Boolean)
+      : []
+  };
+}
+
+function buildRunSummary(payload) {
+  const firstHotel = getFirstEligibleHotel(payload);
+  const firstRoom = getFirstEligibleRoom(payload);
+
+  return {
+    success: payload.success,
+    startedAt: payload.startedAt,
+    finishedAt: payload.finishedAt,
+    outputPath: payload.outputPath || '',
+    compareAppStorePath: payload.compareAppStorePath || '',
+    templateName: payload.templateName || '',
+    templateId: payload.templateId || null,
+    templateSnapshot: payload.templateSnapshot ?? null,
+    requestedUrl: payload.requestedUrl || '',
+    resolvedUrl: payload.resolvedUrl || '',
+    hotelName: payload.hotelName || '',
+    eligibleCount: payload.eligibleCount || 0,
+    eligibleRoomTypes: payload.eligibleRoomTypes || [],
+    eligibleHotels: Array.isArray(payload.eligibleHotels) ? payload.eligibleHotels : [],
+    roomType: payload.roomType || '',
+    roomOccupancy: payload.roomOccupancy ?? null,
+    roomPrices: payload.roomPrices || [],
+    totalPrice: pickFirst(payload.totalPrice, firstRoom.totalPrice, firstRoom.total_price, firstHotel.total_price),
+    ctripScore: pickFirst(payload.ctripScore, firstHotel.ctrip_score),
+    distance: pickFirst(payload.distance, firstHotel.distance, ''),
+    subwayDistance: pickFirst(payload.subwayDistance, firstHotel.subway_distance, ''),
+    transportTime: pickFirst(payload.transportTime, firstHotel.transport_time, ''),
+    busRoute: pickFirst(payload.busRoute, firstHotel.bus_route, ''),
+    pageSnapshot: buildPageSnapshotSummary(payload.pageSnapshot),
+    writeResult: payload.writeResult ?? null,
+    cleanupResult: payload.cleanupResult ?? null,
+    error: payload.error || null,
+    stack: payload.stack || null
+  };
+}
+
+function writeLatestRunFile(latestRunPath, summary) {
+  writeJsonFile(latestRunPath, summary);
+}
+
+module.exports = {
+  DEFAULT_LATEST_RUN_PATH,
+  buildPageSnapshotSummary,
+  buildRunSummary,
+  writeLatestRunFile
+};

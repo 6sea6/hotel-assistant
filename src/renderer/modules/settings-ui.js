@@ -32,6 +32,22 @@ const SUPPORTED_THEMES = new Set([
 export async function openSettings() {
   setModalActive('settingsModal', true);
   await loadDataPath();
+  if (typeof window.loadAiConfig === 'function') {
+    await window.loadAiConfig();
+  }
+}
+
+export async function openAiInterfaceSettings() {
+  await openSettings();
+  const section = $('aiInterfaceSettings');
+  if (section) {
+    section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  const providerSelect = $('aiProviderSelect');
+  if (providerSelect) {
+    window.setTimeout(() => providerSelect.focus(), 180);
+  }
 }
 
 export function closeSettingsModal() {

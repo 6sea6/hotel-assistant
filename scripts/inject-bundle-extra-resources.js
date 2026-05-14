@@ -25,15 +25,5 @@ addEntry({
   filter: ['**/*', '!state/**', '!output/**'],
 });
 
-addEntry({
-  from: '_bundle/skill',
-  to: 'skill',
-});
-
-addEntry({
-  from: 'build/compare-app/ai-prompts.json',
-  to: 'compare-app/ai-prompts.json',
-});
-
 packageJson.build.extraResources = extraResources;
 fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);

@@ -1,0 +1,724 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const {
+  getAiProviderPresets,
+  normalizeAiProviderConfig,
+  redactAiProviderConfig
+} = require('../src/main/ai/provider-presets');
+const registerAiHandlers = require('../src/main/ipc-handlers/ai-handlers');
+const {
+  buildSystemPrompt,
+  createAiService
+} = require('../src/main/services/ai-service');
+const {
+  buildAnthropicMessagesUrl,
+  buildChatCompletionRequest,
+  buildChatCompletionsUrl,
+  buildProviderErrorMessage,
+  convertMessagesToAnthropic,
+  parseChatCompletionMessage
+} = require('../src/main/ai/provider-client');
+const { sanitizeSettings } = require('../src/main/ai/tools');
+const { getVisibleLoginRetryNeed, resolveScraperPath } = require('../src/main/ai/scraper-runner');
+
+test('AI provider presets include MiMo and normalize config', () => {
+  const presets = getAiProviderPresets();
+  const mimo = presets.find((preset) => preset.id === 'mimo');
+  const openai = presets.find((preset) => preset.id === 'openai');
+
+  assert.equal(mimo.name, 'MiMo TokenPlan');
+  assert.equal(mimo.baseUrl, 'https://token-plan-cn.xiaomimimo.com/anthropic');
+  assert.equal(mimo.model, 'mimo-v2.5-pro');
+  assert.ok(mimo.modelOptions.includes('mimo-v2.5'));
+  assert.ok(mimo.modelOptions.includes('mimo-v2.5-tts'));
+  assert.equal(openai.model, 'gpt-5.4');
+
+  const normalized = normalizeAiProviderConfig({
+    provider: 'mimo',
+    apiKey: ' key ',
+    temperature: 9
+  });
+
+  assert.equal(normalized.provider, 'mimo');
+  assert.equal(normalized.baseUrl, mimo.baseUrl);
+  assert.equal(normalized.model, 'mimo-v2.5-pro');
+  assert.equal(normalized.apiKey, 'key');
+  assert.equal(normalized.temperature, 0.2);
+
+  const mixedCaseModel = normalizeAiProviderConfig({
+    provider: 'mimo',
+    model: 'MiMo-V2.5'
+  });
+  assert.equal(mixedCaseModel.model, 'mimo-v2.5');
+});
+
+test('MiMo normalizer migrates old non-TokenPlan base URL to TokenPlan endpoint', () => {
+  const normalized = normalizeAiProviderConfig({
+    provider: 'mimo'
+  }, {
+    provider: 'mimo',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-pro'
+  });
+
+  assert.equal(normalized.baseUrl, 'https://token-plan-cn.xiaomimimo.com/anthropic');
+
+  const regional = normalizeAiProviderConfig({
+    provider: 'mimo'
+  }, {
+    provider: 'mimo',
+    baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-pro'
+  });
+
+  assert.equal(regional.baseUrl, 'https://token-plan-sgp.xiaomimimo.com/anthropic');
+});
+
+test('AI config redaction removes API key but keeps key presence', () => {
+  const redacted = redactAiProviderConfig({
+    provider: 'deepseek',
+    apiKey: 'secret'
+  });
+
+  assert.equal(redacted.apiKey, '');
+  assert.equal(redacted.hasApiKey, true);
+});
+
+test('Chat completion request uses OpenAI-compatible tools shape', () => {
+  assert.equal(
+    buildChatCompletionsUrl('https://api.deepseek.com/'),
+    'https://api.deepseek.com/chat/completions'
+  );
+
+  const request = buildChatCompletionRequest({
+    provider: 'deepseek',
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+    apiKey: 'secret',
+    temperature: 0.3
+  }, [
+    { role: 'user', content: 'hello' }
+  ], [
+    {
+      type: 'function',
+      function: {
+        name: 'list_templates',
+        parameters: { type: 'object', properties: {} }
+      }
+    }
+  ]);
+
+  assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
+  assert.equal(request.body.model, 'deepseek-chat');
+  assert.equal(request.body.tool_choice, 'auto');
+  assert.equal(request.init.headers.Authorization, 'Bearer secret');
+});
+
+test('MiMo requests use Anthropic-compatible TokenPlan shape', () => {
+  assert.equal(
+    buildAnthropicMessagesUrl('https://token-plan-cn.xiaomimimo.com/anthropic/'),
+    'https://token-plan-cn.xiaomimimo.com/anthropic/v1/messages'
+  );
+
+  const request = buildChatCompletionRequest({
+    provider: 'mimo',
+    baseUrl: 'https://token-plan-cn.xiaomimimo.com/anthropic',
+    model: 'mimo-v2.5',
+    apiKey: 'secret',
+    temperature: 0.2
+  }, [
+    { role: 'system', content: 'system prompt' },
+    { role: 'user', content: 'hello' }
+  ], [
+    {
+      type: 'function',
+      function: {
+        name: 'list_templates',
+        description: 'list',
+        parameters: { type: 'object', properties: {} }
+      }
+    }
+  ], {
+    maxTokens: 32
+  });
+
+  assert.equal(request.url, 'https://token-plan-cn.xiaomimimo.com/anthropic/v1/messages');
+  assert.equal(request.body.system, 'system prompt');
+  assert.equal(request.body.max_tokens, 32);
+  assert.equal(request.body.tools[0].input_schema.type, 'object');
+  assert.equal(request.init.headers['x-api-key'], 'secret');
+});
+
+test('Anthropic message conversion preserves tool result turns', () => {
+  const converted = convertMessagesToAnthropic([
+    {
+      role: 'assistant',
+      content: '',
+      tool_calls: [
+        {
+          id: 'tool_1',
+          function: {
+            name: 'list_templates',
+            arguments: '{}'
+          }
+        }
+      ]
+    },
+    {
+      role: 'tool',
+      tool_call_id: 'tool_1',
+      content: '{"templates":[]}'
+    }
+  ]);
+
+  assert.equal(converted.messages[0].content[0].type, 'tool_use');
+  assert.equal(converted.messages[1].content[0].type, 'tool_result');
+});
+
+test('Anthropic message conversion preserves provider thinking blocks verbatim', () => {
+  const rawContent = [
+    {
+      type: 'thinking',
+      thinking: 'need tool',
+      signature: ''
+    },
+    {
+      type: 'tool_use',
+      id: 'tool_1',
+      name: 'list_templates',
+      input: {}
+    }
+  ];
+  const converted = convertMessagesToAnthropic([
+    {
+      role: 'assistant',
+      content: '',
+      tool_calls: [
+        {
+          id: 'tool_1',
+          function: {
+            name: 'list_templates',
+            arguments: '{}'
+          }
+        }
+      ],
+      anthropic_content: rawContent
+    }
+  ]);
+
+  assert.deepEqual(converted.messages[0].content, rawContent);
+});
+
+test('Chat completion parser preserves tool calls', () => {
+  const message = parseChatCompletionMessage({
+    choices: [
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'list_templates',
+                arguments: '{}'
+              }
+            }
+          ]
+        }
+      }
+    ]
+  });
+
+  assert.equal(message.role, 'assistant');
+  assert.equal(message.tool_calls.length, 1);
+});
+
+test('Chat completion parser supports Anthropic tool_use content', () => {
+  const message = parseChatCompletionMessage({
+    content: [
+      {
+        type: 'text',
+        text: 'ok'
+      },
+      {
+        type: 'tool_use',
+        id: 'tool_1',
+        name: 'list_templates',
+        input: {}
+      }
+    ]
+  });
+
+  assert.equal(message.content, 'ok');
+  assert.equal(message.tool_calls[0].function.name, 'list_templates');
+  assert.equal(Array.isArray(message.anthropic_content), true);
+});
+
+test('MiMo error messages explain TokenPlan authentication and parameter failures', () => {
+  assert.match(
+    buildProviderErrorMessage(401, 'Invalid API Key', { provider: 'mimo' }),
+    /TokenPlan 鉴权失败/
+  );
+  assert.match(
+    buildProviderErrorMessage(400, 'Param Incorrect', { provider: 'mimo' }),
+    /\/anthropic/
+  );
+});
+
+test('AI settings sanitizer removes API key from settings-shaped objects', () => {
+  const sanitized = sanitizeSettings({
+    theme: 'totoro-blue',
+    ai_provider_config: {
+      provider: 'openai',
+      apiKey: 'secret'
+    }
+  });
+
+  assert.equal(sanitized.ai_provider_config.apiKey, '');
+  assert.equal(sanitized.ai_provider_config.hasApiKey, true);
+});
+
+test('AI fallback system prompt is compact and ignores legacy guide text', () => {
+  const prompt = buildSystemPrompt('legacy guide should be ignored');
+
+  assert.match(prompt, /内置 AI 兜底助手/);
+  assert.match(prompt, /collect_and_write_ctrip_hotel/);
+  assert.doesNotMatch(prompt, /legacy guide/);
+});
+
+test('AI IPC registers direct task start endpoint', () => {
+  const channels = [];
+  const ipcMain = {
+    handle(channel, handler) {
+      channels.push(channel);
+      assert.equal(typeof handler, 'function');
+    }
+  };
+
+  registerAiHandlers({
+    ipcMain,
+    services: {
+      aiService: {
+        getProviderConfig() {},
+        getProviderPresets() {},
+        saveProviderConfig() {},
+        testConnection() {},
+        sendChat() {},
+        startTask() {},
+        analyzeCollection() {},
+        applyCollectionReview() {},
+        cancelTask() {},
+        getTaskStatus() {}
+      }
+    }
+  });
+
+  assert.ok(channels.includes('ai:task:start'));
+  assert.ok(channels.includes('ai:collect:analyze'));
+  assert.ok(channels.includes('ai:collect:apply-review'));
+});
+
+test('scraper runner resolves the embedded scraper in the app repository', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'embedded-scraper-'));
+  const currentDir = path.join(tempRoot, 'project', 'src', 'main', 'ai');
+  const embeddedRunner = path.join(tempRoot, 'project', 'scraper', 'src', 'task-runner.js');
+
+  fs.mkdirSync(path.dirname(embeddedRunner), { recursive: true });
+  fs.writeFileSync(embeddedRunner, 'module.exports = {};', 'utf-8');
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  assert.equal(
+    resolveScraperPath({ currentDir, existsSync: fs.existsSync, isBundledWithScraper: () => false }),
+    path.join(tempRoot, 'project', 'scraper')
+  );
+});
+
+test('direct AI task start runs the hotel task runner without provider config', async () => {
+  const calls = [];
+  const events = [];
+  const service = createAiService({
+    dataService: {
+      getDataFolderPath() {
+        return 'E:/实验/1/宾馆比较助手';
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return {
+          isDestroyed: () => false,
+          webContents: {
+            send(channel, payload) {
+              events.push({ channel, payload });
+            }
+          }
+        };
+      }
+    },
+    hotelTaskRunner: async (input, context) => {
+      calls.push({ input, context });
+      context.onEvent({ type: 'scrape:start', message: '正在采集携程酒店页面' });
+      return {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 1,
+        eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
+        writeResult: { operation: 'inserted' }
+      };
+    }
+  });
+
+  const result = await service.startTask({
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+    templateId: '100',
+    templateName: '武汉'
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input.templateName, '武汉');
+  assert.equal(calls[0].context.dataFolderPath, 'E:/实验/1/宾馆比较助手');
+  assert.equal(result.collectResult.hotelName, '测试酒店');
+  assert.equal(result.collectResult.totalPrice, 300);
+  assert.equal(result.toolResults[0].name, 'collect_and_write_ctrip_hotel');
+  assert.ok(events.some((event) => event.channel === 'ai:task:event' && event.payload.type === 'task:done'));
+});
+
+test('AI collect analysis uses task review_input and disables apply on invalid evidence', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const capturedRequests = [];
+  globalThis.fetch = async (url, init) => {
+    capturedRequests.push({ url, body: JSON.parse(init.body) });
+    return {
+      ok: true,
+      async text() {
+        return JSON.stringify({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: JSON.stringify({
+                canApply: true,
+                summary: '建议改价',
+                issues: ['价格证据不足'],
+                revisedHotels: [{
+                  name: '测试酒店',
+                  website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+                  total_price: 999
+                }],
+                diffs: [{
+                  field: 'total_price',
+                  before: 300,
+                  after: 999,
+                  reason: '用户怀疑价格错误'
+                }],
+                evidence: [{
+                  source: 'rawRoomCandidates',
+                  id: 'missing-id',
+                  field: 'rawPriceText',
+                  value: '999',
+                  supports: '价格'
+                }],
+                missingEvidence: []
+              })
+            }
+          }]
+        });
+      }
+    };
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const service = createAiService({
+    dataService: {
+      getDataFolderPath() {
+        return 'E:/实验/1/宾馆比较助手';
+      },
+      getStore() {
+        return {
+          get(key) {
+            assert.equal(key, 'settings');
+            return {
+              ai_provider_config: {
+                enabled: true,
+                provider: 'deepseek',
+                baseUrl: 'https://api.deepseek.com',
+                model: 'deepseek-chat',
+                apiKey: 'secret-key',
+                temperature: 0.2
+              }
+            };
+          }
+        };
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return null;
+      }
+    },
+    hotelTaskRunner: async (input, context) => ({
+      success: true,
+      hotelName: '测试酒店',
+      eligibleCount: 1,
+      eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
+      writeResult: { operation: 'inserted' },
+      reviewInput: {
+        taskMeta: {
+          taskId: context.taskId,
+          url: input.url,
+          templateId: input.templateId,
+          templateName: input.templateName,
+          outputFingerprint: 'fingerprint'
+        },
+        finalHotels: [{
+          id: 'final-1',
+          name: '测试酒店',
+          website: input.url,
+          total_price: 300,
+          template_id: input.templateId,
+          distance: '2公里',
+          subway_station: '江汉路站',
+          subway_distance: '600米',
+          transport_time: '18分钟',
+          bus_route: '乘地铁2号线'
+        }],
+        eligibleRoomTypes: [{
+          id: 'room-candidate-001',
+          totalPrice: 300
+        }],
+        rejectedRoomTypes: [],
+        rawRoomCandidates: [{
+          id: 'room-candidate-001',
+          rawPriceText: '¥300'
+        }],
+        normalizeLogs: [],
+        selectionLogs: [],
+        finalHotelFieldLogs: [{
+          id: 'field-distance',
+          hotelId: 'final-1',
+          field: 'distance',
+          value: '2公里',
+          source: 'finalHotels'
+        }, {
+          id: 'field-area',
+          hotelId: 'final-1',
+          field: 'room_area',
+          value: '40平方米',
+          source: 'rawRoomCandidates'
+        }],
+        pageSnapshotSummary: {
+          hasPriceArea: true
+        },
+        userConcern: ''
+      }
+    })
+  });
+
+  const taskResult = await service.startTask({
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+    templateId: '100',
+    templateName: '武汉'
+  });
+  const analysis = await service.analyzeCollection({
+    taskId: taskResult.taskStatus.id,
+    userConcern: '价格不对'
+  });
+
+  assert.equal(analysis.canApply, false);
+  assert.match(analysis.missingEvidence.join('\n'), /不存在/);
+  await assert.rejects(
+    () => service.applyCollectionReview({ reviewId: analysis.reviewId }),
+    /未通过证据校验/
+  );
+  assert.equal(capturedRequests.length, 1);
+  assert.match(capturedRequests[0].body.messages[1].content, /review_input/);
+  assert.doesNotMatch(capturedRequests[0].body.messages[1].content, /secret-key/);
+  assert.doesNotMatch(
+    capturedRequests[0].body.messages.map((message) => message.content).join('\n'),
+    /江汉路站|乘地铁2号线|field-distance|subway_station|transport_time|bus_route/
+  );
+  assert.match(capturedRequests[0].body.messages[1].content, /room_area/);
+});
+
+test('AI collect analysis repairs invalid JSON response before validation', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const capturedRequests = [];
+  globalThis.fetch = async (url, init) => {
+    capturedRequests.push({ url, body: JSON.parse(init.body) });
+    const content = capturedRequests.length === 1
+      ? '{"canApply": true, "summary": "建议重填", "issues": ["价格可能漏选" "缺少逗号"], "revisedHotels": []}'
+      : JSON.stringify({
+          canApply: true,
+          summary: '建议重填',
+          issues: ['价格可能漏选'],
+          revisedHotels: [{
+            name: '测试酒店',
+            website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+            total_price: 300,
+            template_id: '100'
+          }],
+          diffs: [{
+            field: 'total_price',
+            before: '',
+            after: 300,
+            reason: 'rawRoomCandidates 中存在价格证据'
+          }],
+          evidence: [{
+            source: 'rawRoomCandidates',
+            id: 'room-candidate-001',
+            field: 'rawPriceText',
+            value: '¥300',
+            supports: 'total_price'
+          }],
+          missingEvidence: []
+        });
+    return {
+      ok: true,
+      async text() {
+        return JSON.stringify({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content
+            }
+          }]
+        });
+      }
+    };
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const service = createAiService({
+    dataService: {
+      getDataFolderPath() {
+        return 'E:/实验/1/宾馆比较助手';
+      },
+      getStore() {
+        return {
+          get() {
+            return {
+              ai_provider_config: {
+                enabled: true,
+                provider: 'deepseek',
+                baseUrl: 'https://api.deepseek.com',
+                model: 'deepseek-chat',
+                apiKey: 'secret-key',
+                temperature: 0.2
+              }
+            };
+          }
+        };
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return null;
+      }
+    },
+    hotelTaskRunner: async (input, context) => ({
+      success: true,
+      hotelName: '测试酒店',
+      eligibleCount: 1,
+      eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
+      writeResult: { operation: 'inserted' },
+      reviewInput: {
+        taskMeta: {
+          taskId: context.taskId,
+          url: input.url,
+          templateId: input.templateId,
+          templateName: input.templateName,
+          outputFingerprint: 'fingerprint'
+        },
+        finalHotels: [{
+          id: 'final-1',
+          name: '测试酒店',
+          website: input.url,
+          total_price: 300,
+          template_id: input.templateId
+        }],
+        eligibleRoomTypes: [],
+        rejectedRoomTypes: [],
+        rawRoomCandidates: [{
+          id: 'room-candidate-001',
+          rawPriceText: '¥300'
+        }],
+        normalizeLogs: [],
+        selectionLogs: [],
+        pageSnapshotSummary: {
+          hasPriceArea: true
+        },
+        userConcern: ''
+      }
+    })
+  });
+
+  const taskResult = await service.startTask({
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+    templateId: '100',
+    templateName: '武汉'
+  });
+  const analysis = await service.analyzeCollection({
+    taskId: taskResult.taskStatus.id,
+    userConcern: '价格不对'
+  });
+
+  assert.equal(capturedRequests.length, 2);
+  assert.match(capturedRequests[1].body.messages[1].content, /JSON 格式修复/);
+  assert.equal(analysis.canApply, true);
+  assert.equal(analysis.revisedHotels.length, 1);
+});
+
+test('AI scraper retry detector asks for visible login when Ctrip price is locked or missing', () => {
+  const locked = getVisibleLoginRetryNeed({
+    success: true,
+    totalPrice: null,
+    roomPrices: [],
+    pageSnapshot: {
+      room_candidates_count: 2,
+      room_price_visible: false,
+      selected_room_price_locked: true,
+      sources: []
+    }
+  });
+
+  assert.equal(locked.needed, true);
+  assert.match(locked.reason, /登录看低价/);
+
+  const missingPrice = getVisibleLoginRetryNeed({
+    success: true,
+    totalPrice: null,
+    roomPrices: [],
+    pageSnapshot: {
+      room_candidates_count: 3,
+      room_price_visible: false,
+      sources: []
+    }
+  });
+
+  assert.equal(missingPrice.needed, true);
+  assert.match(missingPrice.reason, /未采集到有效价格/);
+
+  const priced = getVisibleLoginRetryNeed({
+    success: true,
+    totalPrice: 885,
+    roomPrices: [885],
+    pageSnapshot: {
+      room_candidates_count: 2,
+      room_price_visible: true,
+      sources: []
+    }
+  });
+
+  assert.equal(priced.needed, false);
+});

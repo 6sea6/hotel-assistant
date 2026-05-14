@@ -47,7 +47,7 @@ import {
 } from './modules/template-ui.js';
 
 import {
-  openSettings, closeSettingsModal, openPersonalization, closePersonalizationModal, applySettings,
+  openSettings, openAiInterfaceSettings, closeSettingsModal, openPersonalization, closePersonalizationModal, applySettings,
   changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate,
   loadDataPath, showDataInFolder, changeDataPath,
   loadAppIconState, chooseAppIcon, resetAppIcon,
@@ -65,10 +65,16 @@ import {
 } from './modules/window-controls.js';
 
 import {
-  openAIPrompts, closeAIPrompts,
-  openPromptContent, closePromptContent,
-  togglePromptEdit, savePromptContent, copyPromptContent
-} from './modules/prompt-ui.js';
+  openAiAssistant, closeAiAssistant,
+  enqueueAiCollectTask, cancelAiTask, clearAiTaskRecords,
+  clearAiTaskQueue, selectAiQueueTask, removeAiQueueTask, retryAiQueueTask, rerunCurrentAiTask,
+  handleAiTaskInputKeydown,
+  showAiTaskDetails, focusAiTaskStartBar,
+  openAiReviewPanel, closeAiReviewPanel,
+  analyzeAiCollection, applyAiCollectionReview,
+  updateAiInputCount,
+  loadAiConfig, onAiProviderChange, saveAiConfig, testAiConnection
+} from './modules/ai-assistant.js';
 
 import { exportRankingImage } from './modules/ranking-image.js';
 
@@ -95,8 +101,11 @@ window.addEventListener('unhandledrejection', (event) => {
 window.openTemplateManager = openTemplateManager;
 window.openPersonalization = openPersonalization;
 window.openSettings = openSettings;
+window.openAiInterfaceSettings = openAiInterfaceSettings;
 window.openDataTransfer = openDataTransfer;
 window.openAbout = openAbout;
+window.openAiAssistant = openAiAssistant;
+window.closeAiAssistant = closeAiAssistant;
 window.clearFilters = clearFilters;
 window.openAddHotelModal = openAddHotelModal;
 window.exportRankingImage = exportRankingImage;
@@ -140,20 +149,33 @@ window.chooseAppIcon = chooseAppIcon;
 window.resetAppIcon = resetAppIcon;
 window.openCtripWebsite = openCtripWebsite;
 window.openFliggyWebsite = openFliggyWebsite;
-window.openAIPrompts = openAIPrompts;
 window.openManual = openManual;
 window.resetSettings = resetSettings;
 
 // 宾馆详情弹窗
 window.closeHotelDetails = closeHotelDetails;
 
-// AI提示词弹窗
-window.closeAIPrompts = closeAIPrompts;
-window.openPromptContent = openPromptContent;
-window.closePromptContent = closePromptContent;
-window.togglePromptEdit = togglePromptEdit;
-window.savePromptContent = savePromptContent;
-window.copyPromptContent = copyPromptContent;
+// 采集助手
+window.enqueueAiCollectTask = enqueueAiCollectTask;
+window.cancelAiTask = cancelAiTask;
+window.clearAiTaskRecords = clearAiTaskRecords;
+window.clearAiTaskQueue = clearAiTaskQueue;
+window.selectAiQueueTask = selectAiQueueTask;
+window.removeAiQueueTask = removeAiQueueTask;
+window.retryAiQueueTask = retryAiQueueTask;
+window.rerunCurrentAiTask = rerunCurrentAiTask;
+window.handleAiTaskInputKeydown = handleAiTaskInputKeydown;
+window.showAiTaskDetails = showAiTaskDetails;
+window.focusAiTaskStartBar = focusAiTaskStartBar;
+window.openAiReviewPanel = openAiReviewPanel;
+window.closeAiReviewPanel = closeAiReviewPanel;
+window.analyzeAiCollection = analyzeAiCollection;
+window.applyAiCollectionReview = applyAiCollectionReview;
+window.updateAiInputCount = updateAiInputCount;
+window.loadAiConfig = loadAiConfig;
+window.onAiProviderChange = onAiProviderChange;
+window.saveAiConfig = saveAiConfig;
+window.testAiConnection = testAiConnection;
 
 // 数据传输弹窗
 window.closeDataTransfer = closeDataTransfer;
@@ -199,8 +221,6 @@ function setupEventListeners() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const closers = [
-        ['promptContentModal', closePromptContent],
-        ['aiPromptsModal', closeAIPrompts],
         ['hotelDetailsModal', closeHotelDetails],
         ['ruleDeleteModal', closeRuleDeleteModal],
         ['hotelModal', closeHotelModal],

@@ -9,29 +9,17 @@ function getSetupArtifactName(mode, version) {
 
 function getBundleManifest(bundleRoot) {
   const scraperRoot = path.join(bundleRoot, BUNDLE_RESOURCE_MAP.scraperDirName);
-  const skillRoot = path.join(bundleRoot, BUNDLE_RESOURCE_MAP.skillDirName);
-  const compareAppRoot = path.join(bundleRoot, BUNDLE_RESOURCE_MAP.compareAppDirName);
 
   return {
     directories: {
       bundleRoot,
-      scraperRoot,
-      skillRoot,
-      compareAppRoot
+      scraperRoot
     },
     extraResources: [
       {
         from: scraperRoot,
         to: BUNDLE_RESOURCE_MAP.scraperDirName,
         filter: ['**/*', '!state/**', '!output/**']
-      },
-      {
-        from: skillRoot,
-        to: BUNDLE_RESOURCE_MAP.skillDirName
-      },
-      {
-        from: path.join(compareAppRoot, PROMPT_CONTRACT.compareAppPromptsFileName),
-        to: path.posix.join(BUNDLE_RESOURCE_MAP.compareAppDirName, PROMPT_CONTRACT.compareAppPromptsFileName)
       }
     ],
     expectations: {
@@ -42,14 +30,10 @@ function getBundleManifest(bundleRoot) {
       ],
       fullOnlyResources: [
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js'),
-        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, PROMPT_CONTRACT.unifiedPromptFileName),
-        path.join(BUNDLE_RESOURCE_MAP.skillDirName, PROMPT_CONTRACT.bundledSkillEntryFileName),
-        path.join(BUNDLE_RESOURCE_MAP.compareAppDirName, PROMPT_CONTRACT.compareAppPromptsFileName)
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, PROMPT_CONTRACT.unifiedPromptFileName)
       ],
       baseOnlyAbsentResources: [
-        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js'),
-        path.join(BUNDLE_RESOURCE_MAP.skillDirName, PROMPT_CONTRACT.bundledSkillEntryFileName),
-        path.join(BUNDLE_RESOURCE_MAP.compareAppDirName, PROMPT_CONTRACT.compareAppPromptsFileName)
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js')
       ]
     }
   };

@@ -1,0 +1,386 @@
+const fs = require('fs');
+const path = require('path');
+const { getScraperPath, isBundledWithScraper } = require('../bundled-setup');
+
+function resolveEmbeddedScraperPath(options = {}) {
+  return path.resolve(options.currentDir || __dirname, '..', '..', '..', 'scraper');
+}
+
+function resolveScraperPath(options = {}) {
+  const existsSync = options.existsSync || fs.existsSync;
+  let bundledAvailable = false;
+  try {
+    bundledAvailable = typeof options.isBundledWithScraper === 'function'
+      ? options.isBundledWithScraper()
+      : isBundledWithScraper();
+  } catch (error) {
+    bundledAvailable = false;
+  }
+  const bundledScraperPath = bundledAvailable
+    ? (typeof options.getScraperPath === 'function' ? options.getScraperPath() : getScraperPath())
+    : '';
+  const candidates = [
+    bundledAvailable ? bundledScraperPath : '',
+    resolveEmbeddedScraperPath(options),
+    process.resourcesPath ? path.join(process.resourcesPath, 'scraper') : ''
+  ].filter(Boolean);
+
+  const resolved = candidates.find((candidate) => existsSync(path.join(candidate, 'src', 'task-runner.js')));
+  if (!resolved) {
+    throw new Error('未找到内置采集器，请确认项目内 scraper 目录或完整版采集资源存在。');
+  }
+
+  return resolved;
+}
+
+function resolveSharedCompareAppDir() {
+  return path.resolve(__dirname, '..', '..', '..', 'shared', 'compare-app');
+}
+
+function resolveScraperWorkDir(dataFolderPath, scraperPath = resolveScraperPath()) {
+  if (isBundledWithScraper()) {
+    return path.join(dataFolderPath, 'scraper-data');
+  }
+
+  return scraperPath;
+}
+
+function ensureScraperRuntimeDirs(workDir) {
+  [
+    path.join(workDir, 'state', 'edge-profile'),
+    path.join(workDir, 'output'),
+    path.join(workDir, 'output', 'raw-pages')
+  ].forEach((dir) => fs.mkdirSync(dir, { recursive: true }));
+}
+
+async function withScraperEnvironment(dataFolderPath, task) {
+  const previousDataDir = process.env.HOTEL_COMPARE_APP_DATA_DIR;
+  const previousSharedDir = process.env.HOTEL_COMPARE_SHARED_DIR;
+
+  process.env.HOTEL_COMPARE_APP_DATA_DIR = dataFolderPath;
+  process.env.HOTEL_COMPARE_SHARED_DIR = resolveSharedCompareAppDir();
+
+  try {
+    return await task();
+  } finally {
+    if (previousDataDir === undefined) {
+      delete process.env.HOTEL_COMPARE_APP_DATA_DIR;
+    } else {
+      process.env.HOTEL_COMPARE_APP_DATA_DIR = previousDataDir;
+    }
+
+    if (previousSharedDir === undefined) {
+      delete process.env.HOTEL_COMPARE_SHARED_DIR;
+    } else {
+      process.env.HOTEL_COMPARE_SHARED_DIR = previousSharedDir;
+    }
+  }
+}
+
+function requireScraperModule(scraperPath, moduleFile) {
+  return require(path.join(scraperPath, 'src', moduleFile));
+}
+
+function isCtripHotelUrl(url) {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    const host = parsed.hostname.toLowerCase();
+    const href = parsed.href.toLowerCase();
+    return /(^|\.)ctrip\.com$/.test(host) && /hotel|hotels/.test(href);
+  } catch (error) {
+    return false;
+  }
+}
+
+function buildScraperArgs(input, workDir) {
+  const args = {
+    url: input.url,
+    'auto-edge': true,
+    'edge-user-data-dir': path.join(workDir, 'state', 'edge-profile'),
+    'edge-profile-directory': 'Default',
+    'edge-debugging-port': 9222,
+    latestRun: path.join(workDir, 'output', 'latest-run.json')
+  };
+
+  if (input.templateId !== null && input.templateId !== undefined && input.templateId !== '') {
+    args.templateId = input.templateId;
+  }
+  if (input.templateName) {
+    args.templateName = input.templateName;
+  }
+
+  return args;
+}
+
+function assertSafeWriteResult(result) {
+  if (!result || result.success !== true) {
+    return {
+      ok: false,
+      reason: result && result.error ? result.error : '采集失败，未写入。'
+    };
+  }
+
+  if (!Number.isFinite(Number(result.eligibleCount)) || Number(result.eligibleCount) <= 0) {
+    return {
+      ok: false,
+      reason: '没有符合模板人数、价格和房型规则的候选房型，未写入。'
+    };
+  }
+
+  if (result.totalPrice === null || result.totalPrice === undefined || result.totalPrice === '') {
+    return {
+      ok: false,
+      reason: '未采集到有效价格，未写入。'
+    };
+  }
+
+  return {
+    ok: true,
+    reason: ''
+  };
+}
+
+function getPageSnapshot(result = {}) {
+  return result.pageSnapshot || result.page_snapshot || null;
+}
+
+function hasLockedPriceSignal(result = {}) {
+  const pageSnapshot = getPageSnapshot(result);
+  if (!pageSnapshot || typeof pageSnapshot !== 'object') {
+    return false;
+  }
+
+  if (pageSnapshot.selected_room_price_locked) {
+    return true;
+  }
+
+  return (Array.isArray(pageSnapshot.sources) ? pageSnapshot.sources : [])
+    .some((source) => source && source.locked_price_detected);
+}
+
+function getVisibleLoginRetryNeed(result = {}) {
+  if (!result || result.success !== true) {
+    return {
+      needed: false,
+      reason: ''
+    };
+  }
+
+  const pageSnapshot = getPageSnapshot(result) || {};
+  const totalPriceMissing = result.totalPrice === null || result.totalPrice === undefined || result.totalPrice === '';
+  const roomPricesMissing = !Array.isArray(result.roomPrices) || result.roomPrices.length === 0;
+  const candidatesCount = Number(pageSnapshot.room_candidates_count || 0);
+  const visiblePriceMissing = candidatesCount > 0 && pageSnapshot.room_price_visible === false;
+  const lockedPrice = hasLockedPriceSignal(result);
+
+  if (lockedPrice && totalPriceMissing) {
+    return {
+      needed: true,
+      reason: '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
+    };
+  }
+
+  if (totalPriceMissing && (visiblePriceMissing || (roomPricesMissing && candidatesCount > 0))) {
+    return {
+      needed: true,
+      reason: '已找到房型信息，但未采集到有效价格，携程可能要求重新登录后才显示价格。'
+    };
+  }
+
+  return {
+    needed: false,
+    reason: ''
+  };
+}
+
+function emitScraperEvent(context = {}, type, message, details = {}) {
+  if (typeof context.onEvent !== 'function') {
+    return;
+  }
+
+  context.onEvent({
+    type,
+    message,
+    details,
+    at: new Date().toISOString()
+  });
+}
+
+function buildLoginRetrySummary(previousResult = {}, retryNeed = {}) {
+  return {
+    attempted: true,
+    reason: retryNeed.reason || '',
+    previousTotalPrice: previousResult.totalPrice ?? null,
+    previousEligibleCount: previousResult.eligibleCount ?? 0,
+    previousPageSnapshot: getPageSnapshot(previousResult)
+  };
+}
+
+async function runCollectTask(scraperPath, input, workDir, context) {
+  const { runHotelImportTask } = requireScraperModule(scraperPath, 'task-runner.js');
+  return runHotelImportTask(buildScraperArgs(input, workDir), {
+    workingDirectory: workDir,
+    taskId: context.taskId,
+    signal: context.signal,
+    onEvent: context.onEvent
+  });
+}
+
+async function runApplyTask(scraperPath, outputPath, workDir, context, options = {}) {
+  const { runHotelImportTask } = requireScraperModule(scraperPath, 'task-runner.js');
+  const args = {
+    'apply-output': outputPath,
+    latestRun: path.join(workDir, 'output', 'latest-run.json')
+  };
+  if (options.overwriteExistingGroup) {
+    args['overwrite-existing-group'] = true;
+  }
+
+  return runHotelImportTask(args, {
+    workingDirectory: workDir,
+    taskId: context.taskId,
+    signal: context.signal,
+    onEvent: context.onEvent
+  });
+}
+
+async function applyReviewedHotels(hotels, context = {}) {
+  const dataFolderPath = context.dataFolderPath;
+  if (!dataFolderPath) {
+    throw new Error('缺少比较助手数据目录，无法写入 AI 复核结果。');
+  }
+  if (!Array.isArray(hotels) || hotels.length === 0) {
+    throw new Error('AI 复核结果中没有可写入的酒店数据。');
+  }
+
+  const scraperPath = resolveScraperPath();
+  const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
+  ensureScraperRuntimeDirs(workDir);
+
+  return withScraperEnvironment(dataFolderPath, async () => {
+    const fileName = `ai-review-${String(context.taskId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}.json`;
+    const outputPath = path.join(workDir, 'output', fileName);
+    fs.writeFileSync(outputPath, JSON.stringify({
+      hotels,
+      hotel: hotels[0] || null,
+      review: {
+        taskId: context.taskId || '',
+        outputFingerprint: context.outputFingerprint || '',
+        createdAt: new Date().toISOString()
+      }
+    }, null, 2), 'utf8');
+
+    return runApplyTask(scraperPath, outputPath, workDir, context, {
+      overwriteExistingGroup: true
+    });
+  });
+}
+
+async function collectAndWriteCtripHotel(input, context = {}) {
+  const dataFolderPath = context.dataFolderPath;
+  if (!dataFolderPath) {
+    throw new Error('缺少比较助手数据目录，无法写入。');
+  }
+  if (!isCtripHotelUrl(input.url)) {
+    throw new Error('只支持携程酒店详情链接。');
+  }
+  if (!input.templateId && !input.templateName) {
+    throw new Error('请提供模板 ID 或模板名称。');
+  }
+
+  const scraperPath = resolveScraperPath();
+  const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
+  ensureScraperRuntimeDirs(workDir);
+
+  return withScraperEnvironment(dataFolderPath, async () => {
+    let collectResult = await runCollectTask(scraperPath, input, workDir, context);
+    const retryNeed = getVisibleLoginRetryNeed(collectResult);
+
+    if (retryNeed.needed && !(collectResult.loginRetry && collectResult.loginRetry.attempted)) {
+      emitScraperEvent(context, 'edge:login-required', '需要重新登录携程后继续采集', {
+        reason: retryNeed.reason,
+        instruction: '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
+      });
+      emitScraperEvent(context, 'edge:login-window', '已打开 Edge 登录窗口，等待你完成登录', {
+        instruction: '登录完成后请关闭 Edge 窗口；关闭后程序会继续采集，不需要重新发送链接。'
+      });
+
+      const { runInteractiveEdgeLoginPrep } = requireScraperModule(scraperPath, 'cli/auto-edge.js');
+      await runInteractiveEdgeLoginPrep({
+        userDataDir: path.join(workDir, 'state', 'edge-profile'),
+        profileDirectory: 'Default',
+        port: 9222,
+        url: input.url || 'https://hotels.ctrip.com/'
+      });
+
+      emitScraperEvent(context, 'edge:login-done', '携程登录窗口已关闭，正在重新采集价格', {
+        reason: retryNeed.reason
+      });
+      emitScraperEvent(context, 'scrape:retry', '正在使用新的携程登录态重新采集酒店页面');
+
+      const previousCollectResult = collectResult;
+      collectResult = await runCollectTask(scraperPath, input, workDir, context);
+      collectResult.loginRetry = buildLoginRetrySummary(previousCollectResult, retryNeed);
+    }
+
+    const writeSafety = assertSafeWriteResult(collectResult);
+    if (!writeSafety.ok) {
+      const retriedButStillMissingPrice = collectResult.loginRetry
+        && collectResult.loginRetry.attempted
+        && writeSafety.reason.includes('未采集到有效价格');
+      return {
+        ...collectResult,
+        writeSkipped: true,
+        writeSkipReason: retriedButStillMissingPrice
+          ? `${writeSafety.reason} 已自动打开 Edge 让你重新登录携程并重试一次；如果页面仍看不到价格，请在 Edge 中确认账号已登录且目标酒店页显示具体房价后再重新采集。`
+          : writeSafety.reason,
+        writeResult: null
+      };
+    }
+
+    const applyResult = await runApplyTask(scraperPath, collectResult.outputPath, workDir, context);
+
+    return {
+      ...collectResult,
+      writeResult: applyResult.writeResult || null,
+      latestApplyResult: applyResult
+    };
+  });
+}
+
+async function openVisibleEdgeLogin(input, context = {}) {
+  if (!isCtripHotelUrl(input.url || 'https://hotels.ctrip.com/')) {
+    throw new Error('只支持携程酒店链接。');
+  }
+
+  const dataFolderPath = context.dataFolderPath;
+  const scraperPath = resolveScraperPath();
+  const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
+  ensureScraperRuntimeDirs(workDir);
+
+  return withScraperEnvironment(dataFolderPath, async () => {
+    const { runInteractiveEdgeLoginPrep } = requireScraperModule(scraperPath, 'cli/auto-edge.js');
+    await runInteractiveEdgeLoginPrep({
+      userDataDir: path.join(workDir, 'state', 'edge-profile'),
+      profileDirectory: 'Default',
+      port: 9222,
+      url: input.url || 'https://hotels.ctrip.com/'
+    });
+
+    return {
+      success: true,
+      message: 'Edge 登录态准备完成。'
+    };
+  });
+}
+
+module.exports = {
+  applyReviewedHotels,
+  assertSafeWriteResult,
+  collectAndWriteCtripHotel,
+  getVisibleLoginRetryNeed,
+  isCtripHotelUrl,
+  openVisibleEdgeLogin,
+  resolveScraperPath,
+  resolveScraperWorkDir
+};

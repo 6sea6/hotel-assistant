@@ -84,11 +84,21 @@ function ensureNodeModules(projectRoot) {
   });
 }
 
+function ensureScraperNodeModules(scraperDir) {
+  if (fs.existsSync(path.join(scraperDir, 'node_modules'))) {
+    return;
+  }
+
+  runCommand(resolveWindowsCommand('npm'), ['ci', '--omit=dev', '--prefer-offline', '--no-audit', '--progress=false', '--fund=false', '--loglevel=error'], {
+    cwd: scraperDir
+  });
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const mode = getArgValue(argv, '--mode', '-m') || argv[0] || '1';
   const projectRoot = path.resolve(__dirname, '..', '..');
-  const scraperDir = path.resolve(projectRoot, '..', '2');
+  const scraperDir = path.resolve(projectRoot, 'scraper');
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   const version = packageJson.version;
   const tempBuildDir = path.join(projectRoot, `dist-verify-build-${process.pid}-${Date.now()}`);
@@ -101,6 +111,7 @@ function main() {
     runPowerShellScript(path.join(projectRoot, 'scripts', 'sync-build-assets.ps1'), projectRoot);
 
     if (mode === '2') {
+      ensureScraperNodeModules(scraperDir);
       preparedBundle = prepareFullBundle({
         projectRoot,
         scraperDir

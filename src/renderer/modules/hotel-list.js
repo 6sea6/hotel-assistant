@@ -7,12 +7,31 @@ import { $, getValue, escapeHtml, escapeHtmlWithLineBreaks, idsEqual, getSelecti
 import { showNotification } from './notification.js';
 import { perfStart, perfEnd } from './perf.js';
 import { isHotelInputPriorityActive, clearPendingHotelRenderTimers, queueHotelRenderResume, scheduleHotelRenderTask } from './render-scheduler.js';
-import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation, resetBatchDeleteConfirmation, startBatchDeleteConfirmation, syncBatchDeleteButton } from './ui-utils.js';
+import {
+  setModalActive,
+  resetDeleteConfirmation,
+  startDeleteConfirmation,
+  resetActionButtonConfirmation,
+  startActionButtonConfirmation,
+  resetBatchDeleteConfirmation,
+  startBatchDeleteConfirmation,
+  syncBatchDeleteButton
+} from './ui-utils.js';
 import { applyFiltersToHotels, rankHotels, getVisibleHotelSummary, formatSubwayInfo, formatDistanceValue, formatTransportValue, extractDistanceNumber, extractTimeNumber } from './hotel-filters.js';
 import { actions } from './actions.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
+
+function resetRuleDeleteConfirmation() {
+  const confirmBtn = $('ruleDeleteConfirmBtn');
+  if (!confirmBtn) return;
+  if (!confirmBtn.dataset.originalHtml) {
+    confirmBtn.dataset.originalHtml = '<span>🗑️</span> 删除命中项';
+  }
+  confirmBtn.dataset.variantClass = 'btn-danger';
+  resetActionButtonConfirmation(confirmBtn);
+}
 
 /* ---- 宾馆名称筛选选项同步 ---- */
 
@@ -778,6 +797,9 @@ export function updateRuleDeletePreview() {
   if (!summaryText || !confirmBtn) {
     return;
   }
+  if (!ruleDeleteInProgress) {
+    resetRuleDeleteConfirmation();
+  }
 
   const visibleHotels = getCurrentCardHotels();
   const thresholdsResult = getRuleDeleteThresholds();
@@ -805,6 +827,7 @@ export function openRuleDeleteModal() {
   if (priceInput) priceInput.value = '';
   if (subwayInput) subwayInput.value = '';
   if (transportInput) transportInput.value = '';
+  resetRuleDeleteConfirmation();
 
   setModalActive(RULE_DELETE_MODAL_ID, true);
   updateRuleDeletePreview();
@@ -816,6 +839,7 @@ export function closeRuleDeleteModal(force = false) {
   }
 
   setModalActive(RULE_DELETE_MODAL_ID, false);
+  resetRuleDeleteConfirmation();
 }
 
 export async function confirmRuleDelete() {
@@ -840,6 +864,15 @@ export async function confirmRuleDelete() {
   }
 
   const confirmBtn = $('ruleDeleteConfirmBtn');
+  if (confirmBtn && confirmBtn.dataset.confirming !== 'true') {
+    startActionButtonConfirmation(confirmBtn, {
+      variantClass: 'btn-danger',
+      confirmHtml: `<span>⚠️</span> 确认删除 (${candidates.length})`,
+      timeout: 2600
+    });
+    return;
+  }
+
   const originalHtml = confirmBtn ? confirmBtn.innerHTML : '';
   let previousHotels = null;
 
@@ -877,6 +910,7 @@ export async function confirmRuleDelete() {
     if (confirmBtn) {
       confirmBtn.disabled = false;
       confirmBtn.innerHTML = originalHtml || '<span>🗑️</span> 删除命中项';
+      resetRuleDeleteConfirmation();
     }
     updateRuleDeletePreview();
   }

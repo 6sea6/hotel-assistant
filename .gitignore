@@ -1,21 +1,47 @@
-node_modules/
-.playwright-cli/
-dist/
-dist-verify*/
-_bundle/
-package.json.bak
+# Dependencies
+/node_modules/
+/scraper/node_modules/
+
+# Build and packaging outputs
+/dist/
+/dist-verify*/
+/_bundle/
+*.blockmap
+*.nsis.7z
+
+# Local application data
+/宾馆比较助手/
+**/hotel-data.json
+
+# Scraper/runtime outputs
+/output/
+/state/
+/scraper-data/
+/scraper/output/
+/scraper/state/
+/scraper/scraper-data/
+**/edge-profile/
+**/raw-pages/
+
+# Logs, temp files, and local verification caches
 *.log
 *.tmp
+*.bak
+/.playwright-cli/
+/_first_launch_verify/
+/coverage/
+/.nyc_output/
+/.cache/
 
-# Runtime data generated locally
-output/
-state/
-scraper-data/output/
-scraper-data/state/
+# Local secrets and machine-specific config
+.env
+.env.*
+!.env.example
+*.local.json
 
-# Local tooling/cache
-.workbuddy/
-_first_launch_verify/
+# OS/editor noise
+.DS_Store
+Thumbs.db
 
-# Local app data
-**/hotel-data.json
+# Legacy/local assistant cache
+/.workbuddy/
