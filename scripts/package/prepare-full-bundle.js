@@ -73,7 +73,7 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
   const scraperPackageJson = readPackageJson(scraperDir);
   copyProductionDependencyTree({
     sourceNodeModules: path.join(projectRoot, 'node_modules'),
-    targetNodeModules: path.join(manifest.directories.scraperRoot, 'node_modules'),
+    targetNodeModules: path.join(manifest.directories.scraperRoot, 'vendor'),
     dependencyNames: getProductionDependencyNames(scraperPackageJson)
   });
 

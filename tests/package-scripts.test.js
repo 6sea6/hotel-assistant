@@ -35,9 +35,9 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
     manifest.expectations.fullOnlyResources,
     [
       path.join('scraper', 'src', 'cli.js'),
-      path.join('scraper', 'node_modules', 'axios', 'package.json'),
-      path.join('scraper', 'node_modules', 'cheerio', 'package.json'),
-      path.join('scraper', 'node_modules', 'ws', 'package.json'),
+      path.join('scraper', 'vendor', 'axios', 'package.json'),
+      path.join('scraper', 'vendor', 'cheerio', 'package.json'),
+      path.join('scraper', 'vendor', 'ws', 'package.json'),
       path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
     ]
   );
@@ -133,10 +133,10 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
 
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'src', 'cli.js')), true);
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName)), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'node_modules', 'axios', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'node_modules', 'cheerio', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'node_modules', 'ws', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'node_modules', 'follow-redirects', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'axios', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'cheerio', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'ws', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'follow-redirects', 'package.json')), true);
 });
 
 test('verifyPackageLayout distinguishes base and full resource layouts', (t) => {

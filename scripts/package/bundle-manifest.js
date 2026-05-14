@@ -30,9 +30,9 @@ function getBundleManifest(bundleRoot) {
       ],
       fullOnlyResources: [
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js'),
-        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'node_modules', 'axios', 'package.json'),
-        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'node_modules', 'cheerio', 'package.json'),
-        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'node_modules', 'ws', 'package.json'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'axios', 'package.json'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'cheerio', 'package.json'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'ws', 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, PROMPT_CONTRACT.unifiedPromptFileName)
       ],
       baseOnlyAbsentResources: [

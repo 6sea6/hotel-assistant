@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const Module = require('module');
 const {
   ensureBundledBootstrapResources,
   getScraperPath,
@@ -64,9 +65,33 @@ function ensureScraperRuntimeDirs(workDir) {
   ].forEach((dir) => fs.mkdirSync(dir, { recursive: true }));
 }
 
-async function withScraperEnvironment(dataFolderPath, task) {
+function applyScraperVendorPath(scraperPath) {
+  const vendorPath = path.join(scraperPath, 'vendor');
+  if (!fs.existsSync(vendorPath)) {
+    return () => {};
+  }
+
+  const previousNodePath = process.env.NODE_PATH;
+  const currentPaths = previousNodePath ? previousNodePath.split(path.delimiter).filter(Boolean) : [];
+  if (!currentPaths.includes(vendorPath)) {
+    process.env.NODE_PATH = [vendorPath, ...currentPaths].join(path.delimiter);
+    Module._initPaths();
+  }
+
+  return () => {
+    if (previousNodePath === undefined) {
+      delete process.env.NODE_PATH;
+    } else {
+      process.env.NODE_PATH = previousNodePath;
+    }
+    Module._initPaths();
+  };
+}
+
+async function withScraperEnvironment(dataFolderPath, scraperPath, task) {
   const previousDataDir = process.env.HOTEL_COMPARE_APP_DATA_DIR;
   const previousSharedDir = process.env.HOTEL_COMPARE_SHARED_DIR;
+  const restoreVendorPath = applyScraperVendorPath(scraperPath);
 
   process.env.HOTEL_COMPARE_APP_DATA_DIR = dataFolderPath;
   process.env.HOTEL_COMPARE_SHARED_DIR = resolveSharedCompareAppDir();
@@ -85,6 +110,7 @@ async function withScraperEnvironment(dataFolderPath, task) {
     } else {
       process.env.HOTEL_COMPARE_SHARED_DIR = previousSharedDir;
     }
+    restoreVendorPath();
   }
 }
 
@@ -280,7 +306,7 @@ async function applyReviewedHotels(hotels, context = {}) {
   const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
   ensureScraperRuntimeDirs(workDir);
 
-  return withScraperEnvironment(dataFolderPath, async () => {
+  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
     const fileName = `ai-review-${String(context.taskId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}.json`;
     const outputPath = path.join(workDir, 'output', fileName);
     fs.writeFileSync(outputPath, JSON.stringify({
@@ -315,7 +341,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
   const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
   ensureScraperRuntimeDirs(workDir);
 
-  return withScraperEnvironment(dataFolderPath, async () => {
+  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
     let collectResult = await runCollectTask(scraperPath, input, workDir, context);
     const retryNeed = getVisibleLoginRetryNeed(collectResult);
 
@@ -381,7 +407,7 @@ async function openVisibleEdgeLogin(input, context = {}) {
   const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
   ensureScraperRuntimeDirs(workDir);
 
-  return withScraperEnvironment(dataFolderPath, async () => {
+  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
     const { runInteractiveEdgeLoginPrep } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
     await runInteractiveEdgeLoginPrep({
       userDataDir: path.join(workDir, 'state', 'edge-profile'),
