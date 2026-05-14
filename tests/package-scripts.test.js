@@ -29,8 +29,8 @@ function writePackageFixture(nodeModulesDir, packageName, packageJson = {}) {
 test('package manifest keeps base and full bundle resource contracts stable', () => {
   const manifest = getBundleManifest('E:/temp/bundle-root');
 
-  assert.equal(getSetupArtifactName('1', '6.6.0'), '宾馆比较终极版-基础版-6.6.0.exe');
-  assert.equal(getSetupArtifactName('2', '6.6.0'), '宾馆比较终极版-完整版-6.6.0.exe');
+  assert.equal(getSetupArtifactName('1', '7.8.0'), '宾馆比较终极版-基础版-7.8.0.exe');
+  assert.equal(getSetupArtifactName('2', '7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
   assert.deepEqual(
     manifest.expectations.fullOnlyResources,
     [

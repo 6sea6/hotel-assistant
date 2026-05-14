@@ -6,7 +6,7 @@ const {
   redactAiProviderConfig
 } = require('../ai/provider-presets');
 const { requestChatCompletion } = require('../ai/provider-client');
-const { applyReviewedHotels, collectAndWriteCtripHotel } = require('../ai/scraper-runner');
+const { loadScraperRunner } = require('../ai/scraper-lazy-loader');
 const { AI_TOOL_DEFINITIONS, executeAiTool } = require('../ai/tools');
 
 const AI_CONFIG_SETTING_KEY = 'ai_provider_config';
@@ -438,7 +438,7 @@ function lockReviewedHotelFields(revisedHotels = [], reviewInput = {}) {
   });
 }
 
-function createAiService({ dataService, windowService, hotelTaskRunner = collectAndWriteCtripHotel }) {
+function createAiService({ dataService, windowService, hotelTaskRunner = null }) {
   const state = {
     currentTask: null,
     lastTask: null,
@@ -458,6 +458,19 @@ function createAiService({ dataService, windowService, hotelTaskRunner = collect
   function getProviderConfig(options = {}) {
     const config = normalizeAiProviderConfig(getRawConfig());
     return options.includeSecret ? config : redactAiProviderConfig(config);
+  }
+
+  async function getHotelTaskRunner() {
+    if (hotelTaskRunner) {
+      return hotelTaskRunner;
+    }
+    const scraperRunner = await loadScraperRunner();
+    return scraperRunner.collectAndWriteCtripHotel;
+  }
+
+  async function applyReviewedHotelsLazy(hotels, context) {
+    const scraperRunner = await loadScraperRunner();
+    return scraperRunner.applyReviewedHotels(hotels, context);
   }
 
   function saveProviderConfig(nextConfig = {}) {
@@ -583,16 +596,19 @@ function createAiService({ dataService, windowService, hotelTaskRunner = collect
   }
 
   async function startTask(payload = {}) {
-    const result = await runTask(({ taskId, signal, onTaskEvent }) => hotelTaskRunner({
-      url: payload.url,
-      templateId: payload.templateId,
-      templateName: payload.templateName
-    }, {
-      taskId,
-      dataFolderPath: dataService.getDataFolderPath(),
-      signal,
-      onEvent: onTaskEvent
-    }));
+    const result = await runTask(async ({ taskId, signal, onTaskEvent }) => {
+      const runner = await getHotelTaskRunner();
+      return runner({
+        url: payload.url,
+        templateId: payload.templateId,
+        templateName: payload.templateName
+      }, {
+        taskId,
+        dataFolderPath: dataService.getDataFolderPath(),
+        signal,
+        onEvent: onTaskEvent
+      });
+    });
     const compactResult = compactTaskResult(result);
 
     return {
@@ -719,7 +735,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = collect
     }
 
     const reviewedHotels = lockReviewedHotelFields(review.analysis.revisedHotels, review.reviewInput);
-    const applyResult = await applyReviewedHotels(reviewedHotels, {
+    const applyResult = await applyReviewedHotelsLazy(reviewedHotels, {
       taskId: review.taskId,
       outputFingerprint: review.outputFingerprint,
       dataFolderPath: dataService.getDataFolderPath()

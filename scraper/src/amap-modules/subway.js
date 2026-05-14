@@ -1,7 +1,10 @@
-const axios = require('axios');
 const { DEFAULT_AMAP_KEY } = require('../constants');
+const { get } = require('../http-client');
 const { normalizeText, toNumber } = require('../utils');
 const { fetchWalkingRoute } = require('./client');
+
+const AMAP_TIMEOUT_MS = 20000;
+const AMAP_RETRIES = 1;
 
 function normalizeSubwayStationName(name) {
   return normalizeText(name)
@@ -121,7 +124,7 @@ async function searchNearestSubwayDistanceKm(location, key = DEFAULT_AMAP_KEY) {
   }
 
   try {
-    const response = await axios.get('https://restapi.amap.com/v3/place/around', {
+    const response = await get('https://restapi.amap.com/v3/place/around', {
       params: {
         key,
         location,
@@ -132,7 +135,13 @@ async function searchNearestSubwayDistanceKm(location, key = DEFAULT_AMAP_KEY) {
         page: 1,
         extensions: 'base'
       },
-      timeout: 20000
+      timeoutMs: AMAP_TIMEOUT_MS,
+      retries: AMAP_RETRIES,
+      retryDelayMs: 300,
+      responseType: 'json',
+      headers: {
+        accept: 'application/json'
+      }
     });
 
     const pois = response.data && response.data.pois;

@@ -1,7 +1,4 @@
-const {
-  collectAndWriteCtripHotel,
-  openVisibleEdgeLogin
-} = require('./scraper-runner');
+const { loadScraperRunner } = require('./scraper-lazy-loader');
 const { redactAiProviderConfig } = require('./provider-presets');
 
 const AI_TOOL_DEFINITIONS = Object.freeze([
@@ -129,17 +126,20 @@ async function executeAiTool(name, rawArguments, context) {
         settings: sanitizeSettings(store.get('settings') || {})
       };
     case 'collect_and_write_ctrip_hotel':
-      return runTask(({ signal, onTaskEvent }) => collectAndWriteCtripHotel(args, {
-        dataFolderPath: dataService.getDataFolderPath(),
-        signal,
-        onEvent: onTaskEvent
-      }));
+      return runTask(async ({ signal, onTaskEvent }) => {
+        const { collectAndWriteCtripHotel } = await loadScraperRunner();
+        return collectAndWriteCtripHotel(args, {
+          dataFolderPath: dataService.getDataFolderPath(),
+          signal,
+          onEvent: onTaskEvent
+        });
+      });
     case 'get_task_status':
       return getTaskStatus();
     case 'open_visible_edge_login':
-      return openVisibleEdgeLogin(args, {
+      return loadScraperRunner().then(({ openVisibleEdgeLogin }) => openVisibleEdgeLogin(args, {
         dataFolderPath: dataService.getDataFolderPath()
-      });
+      }));
     default:
       throw new Error(`未知 AI 工具：${name}`);
   }

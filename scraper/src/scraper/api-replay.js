@@ -1,4 +1,4 @@
-const axios = require('axios');
+const { post } = require('../http-client');
 const { normalizeText, pickFirst, toNumber } = require('../utils');
 const { buildMobileUrl, buildUrlOverridesFromTemplate } = require('../ctrip-url');
 const { mergeRoomCandidates, selectBestRoom } = require('./room-logic');
@@ -223,7 +223,7 @@ async function captureRoomCandidatesDirect(url, template, parsedSources) {
     }
 
     try {
-      const response = await axios.post(variant.endpoint, variant.body, {
+      const response = await post(variant.endpoint, variant.body, {
         headers: {
           ...MOBILE_HEADERS,
           accept: 'application/json, text/plain, */*',
@@ -232,7 +232,7 @@ async function captureRoomCandidatesDirect(url, template, parsedSources) {
           referer,
           ...(context.cookieHeader ? { cookie: context.cookieHeader } : {})
         },
-        timeout: 30000
+        timeoutMs: 30000
       });
 
       const spiderErrorCode = extractSpiderErrorCode(response.data);

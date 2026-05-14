@@ -1,6 +1,6 @@
 {
   "name": "hotel-comparison-app",
-  "version": "6.6.0",
+  "version": "7.8.0",
   "description": "宾馆比较终极版应用程序",
   "main": "src/main/main.js",
   "workspaces": [
@@ -16,7 +16,7 @@
     "lint": "node scripts/lint.js",
     "test": "npm run test:app && npm run test:scraper",
     "test:app": "node --test tests/hotel-storage.test.js tests/ipc-handler-registry.test.js tests/shared-compare-app.test.js tests/runtime-paths.test.js tests/service-container.test.js tests/package-scripts.test.js tests/bundled-setup.test.js tests/ai-provider.test.js tests/security-hardening.test.js tests/normalization-writeback.test.js",
-    "test:scraper": "node --test scraper/tests/compare-app-bridge.test.js scraper/tests/cli-modules.test.js scraper/tests/room-logic.test.js scraper/tests/room-type-rules.test.js scraper/tests/amap-geo.test.js scraper/tests/hotel-record.test.js scraper/tests/html-parser.test.js scraper/tests/structured-extractor.test.js scraper/tests/template-loader.test.js scraper/tests/facade-exports.test.js",
+    "test:scraper": "node --test scraper/tests/compare-app-bridge.test.js scraper/tests/cli-modules.test.js scraper/tests/http-client.test.js scraper/tests/room-logic.test.js scraper/tests/room-type-rules.test.js scraper/tests/amap-geo.test.js scraper/tests/hotel-record.test.js scraper/tests/html-parser.test.js scraper/tests/structured-extractor.test.js scraper/tests/template-loader.test.js scraper/tests/facade-exports.test.js",
     "coverage": "c8 npm test"
   },
   "keywords": [
@@ -28,13 +28,16 @@
   "license": "MIT",
   "devDependencies": {
     "c8": "^11.0.0",
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5"
   },
   "dependencies": {
     "electron-store": "^8.1.0"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2"
   },
   "build": {
     "appId": "com.hotel.comparison.desktop",
@@ -115,7 +118,7 @@
       "createStartMenuShortcut": true
     },
     "electronDist": null,
-    "electronVersion": "28.0.0",
+    "electronVersion": "42.0.1",
     "compression": "maximum",
     "removePackageScripts": true,
     "removePackageKeywords": true,

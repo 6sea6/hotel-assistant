@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 
 const { createServiceContainer } = require('../src/main/services');
 
@@ -61,4 +62,45 @@ test('service container lazily creates AI and bundle services', () => {
   assert.equal(services.hasBundleService(), true);
   assert.equal(services.bundleService, bundleService);
   assert.equal(bundleCreateCount, 1);
+});
+
+test('AI service non-collection APIs do not load the scraper runner', () => {
+  const aiServicePath = path.join(__dirname, '..', 'src', 'main', 'services', 'ai-service.js');
+  const toolsPath = path.join(__dirname, '..', 'src', 'main', 'ai', 'tools.js');
+  const lazyLoaderPath = path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-lazy-loader.js');
+  const scraperRunnerPath = path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js');
+
+  [aiServicePath, toolsPath, lazyLoaderPath, scraperRunnerPath].forEach((filePath) => {
+    delete require.cache[require.resolve(filePath)];
+  });
+
+  const { createAiService } = require(aiServicePath);
+  assert.equal(require.cache[require.resolve(scraperRunnerPath)], undefined);
+
+  const service = createAiService({
+    dataService: {
+      getStore() {
+        return {
+          get(key) {
+            return key === 'settings' ? {} : null;
+          },
+          set() {}
+        };
+      },
+      getDataFolderPath() {
+        return 'E:/tmp/hotel-data';
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return null;
+      }
+    }
+  });
+
+  service.getProviderConfig();
+  service.getProviderPresets();
+  service.getTaskStatus();
+
+  assert.equal(require.cache[require.resolve(scraperRunnerPath)], undefined);
 });

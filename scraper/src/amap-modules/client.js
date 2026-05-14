@@ -1,8 +1,24 @@
-const axios = require('axios');
 const { DEFAULT_AMAP_KEY } = require('../constants');
+const { get } = require('../http-client');
 const { normalizePlaceName, toNumber } = require('../utils');
 
 const DEFAULT_TRANSIT_TIME = '08:00';
+const AMAP_TIMEOUT_MS = 20000;
+const AMAP_RETRIES = 1;
+
+async function fetchAmapJson(url, params) {
+  const response = await get(url, {
+    params,
+    timeoutMs: AMAP_TIMEOUT_MS,
+    retries: AMAP_RETRIES,
+    retryDelayMs: 300,
+    responseType: 'json',
+    headers: {
+      accept: 'application/json'
+    }
+  });
+  return response.data;
+}
 
 function getDefaultTransitDate() {
   const now = new Date();
@@ -19,21 +35,18 @@ async function searchPlace(keyword, options = {}) {
   }
 
   const key = options.key || DEFAULT_AMAP_KEY;
-  const response = await axios.get('https://restapi.amap.com/v3/place/text', {
-    params: {
-      key,
-      keywords: normalized,
-      city: options.city || undefined,
-      citylimit: options.city ? true : undefined,
-      children: 0,
-      offset: 10,
-      page: 1,
-      extensions: 'base'
-    },
-    timeout: 20000
+  const data = await fetchAmapJson('https://restapi.amap.com/v3/place/text', {
+    key,
+    keywords: normalized,
+    city: options.city || undefined,
+    citylimit: options.city ? true : undefined,
+    children: 0,
+    offset: 10,
+    page: 1,
+    extensions: 'base'
   });
 
-  const pois = response.data && response.data.pois;
+  const pois = data && data.pois;
   if (!Array.isArray(pois)) {
     return [];
   }
@@ -60,17 +73,14 @@ async function geocodeAddress(address, options = {}) {
   }
 
   const key = options.key || DEFAULT_AMAP_KEY;
-  const response = await axios.get('https://restapi.amap.com/v3/geocode/geo', {
-    params: {
-      key,
-      address: normalized,
-      city: options.city || undefined,
-      output: 'json'
-    },
-    timeout: 20000
+  const data = await fetchAmapJson('https://restapi.amap.com/v3/geocode/geo', {
+    key,
+    address: normalized,
+    city: options.city || undefined,
+    output: 'json'
   });
 
-  const geocodes = response.data && response.data.geocodes;
+  const geocodes = data && data.geocodes;
   if (!Array.isArray(geocodes) || geocodes.length === 0) {
     return null;
   }
@@ -85,23 +95,20 @@ async function geocodeAddress(address, options = {}) {
 }
 
 async function fetchTransitRoute(originLocation, destinationLocation, city, cityd, key = DEFAULT_AMAP_KEY, options = {}) {
-  const response = await axios.get('https://restapi.amap.com/v3/direction/transit/integrated', {
-    params: {
-      key,
-      origin: originLocation,
-      destination: destinationLocation,
-      city,
-      cityd,
-      strategy: 0,
-      nightflag: 0,
-      date: options.date || getDefaultTransitDate(),
-      time: options.time || DEFAULT_TRANSIT_TIME,
-      output: 'json'
-    },
-    timeout: 20000
+  const data = await fetchAmapJson('https://restapi.amap.com/v3/direction/transit/integrated', {
+    key,
+    origin: originLocation,
+    destination: destinationLocation,
+    city,
+    cityd,
+    strategy: 0,
+    nightflag: 0,
+    date: options.date || getDefaultTransitDate(),
+    time: options.time || DEFAULT_TRANSIT_TIME,
+    output: 'json'
   });
 
-  const transits = response.data && response.data.route && response.data.route.transits;
+  const transits = data && data.route && data.route.transits;
   if (!Array.isArray(transits) || transits.length === 0) {
     return null;
   }
@@ -110,17 +117,14 @@ async function fetchTransitRoute(originLocation, destinationLocation, city, city
 }
 
 async function fetchWalkingRoute(originLocation, destinationLocation, key = DEFAULT_AMAP_KEY) {
-  const response = await axios.get('https://restapi.amap.com/v3/direction/walking', {
-    params: {
-      key,
-      origin: originLocation,
-      destination: destinationLocation,
-      output: 'json'
-    },
-    timeout: 20000
+  const data = await fetchAmapJson('https://restapi.amap.com/v3/direction/walking', {
+    key,
+    origin: originLocation,
+    destination: destinationLocation,
+    output: 'json'
   });
 
-  const paths = response.data && response.data.route && response.data.route.paths;
+  const paths = data && data.route && data.route.paths;
   if (!Array.isArray(paths) || paths.length === 0) {
     return null;
   }

@@ -4,8 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 // renderer-facing app metadata here and expose all privileged work via IPC.
 const APP_INFO = Object.freeze({
   name: '宾馆比较助手',
-  version: '6.6',
-  releaseDate: '2026-04-16',
+  version: '7.8',
+  releaseDate: '2026-05-14',
   author: 'Sea'
 });
 

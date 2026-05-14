@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+const { request } = require('../../http-client');
 const { ensureDir } = require('../../utils');
 
 const DESKTOP_HEADERS = {
@@ -27,9 +27,12 @@ async function fetchHtml(url, headers) {
     };
   }
 
-  const response = await axios.get(url, {
+  const response = await request({
+    method: 'GET',
+    url,
     headers,
-    timeout: 30000
+    timeoutMs: 30000,
+    responseType: 'text'
   });
   const setCookieHeaders = Array.isArray(response.headers && response.headers['set-cookie'])
     ? response.headers['set-cookie']

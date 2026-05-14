@@ -1,6 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { getScraperPath, isBundledWithScraper } = require('../bundled-setup');
+const { pathToFileURL } = require('url');
+const {
+  ensureBundledBootstrapResources,
+  getScraperPath,
+  isBundledWithScraper
+} = require('../bundled-setup');
+
+const scraperModuleCache = new Map();
 
 function resolveEmbeddedScraperPath(options = {}) {
   return path.resolve(options.currentDir || __dirname, '..', '..', '..', 'scraper');
@@ -46,6 +53,10 @@ function resolveScraperWorkDir(dataFolderPath, scraperPath = resolveScraperPath(
 }
 
 function ensureScraperRuntimeDirs(workDir) {
+  if (isBundledWithScraper()) {
+    ensureBundledBootstrapResources();
+  }
+
   [
     path.join(workDir, 'state', 'edge-profile'),
     path.join(workDir, 'output'),
@@ -77,8 +88,20 @@ async function withScraperEnvironment(dataFolderPath, task) {
   }
 }
 
-function requireScraperModule(scraperPath, moduleFile) {
-  return require(path.join(scraperPath, 'src', moduleFile));
+async function loadScraperModule(scraperPath, moduleFile) {
+  const modulePath = path.join(scraperPath, 'src', moduleFile);
+  const cacheKey = path.resolve(modulePath);
+  if (!scraperModuleCache.has(cacheKey)) {
+    scraperModuleCache.set(cacheKey, import(pathToFileURL(modulePath).href)
+      .then((module) => module.default || module)
+      .catch((error) => {
+        scraperModuleCache.delete(cacheKey);
+        const message = error && error.message ? error.message : String(error || '未知错误');
+        throw new Error(`采集模块加载失败（${moduleFile}）：${message}`);
+      }));
+  }
+
+  return scraperModuleCache.get(cacheKey);
 }
 
 function isCtripHotelUrl(url) {
@@ -217,7 +240,7 @@ function buildLoginRetrySummary(previousResult = {}, retryNeed = {}) {
 }
 
 async function runCollectTask(scraperPath, input, workDir, context) {
-  const { runHotelImportTask } = requireScraperModule(scraperPath, 'task-runner.js');
+  const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
   return runHotelImportTask(buildScraperArgs(input, workDir), {
     workingDirectory: workDir,
     taskId: context.taskId,
@@ -227,7 +250,7 @@ async function runCollectTask(scraperPath, input, workDir, context) {
 }
 
 async function runApplyTask(scraperPath, outputPath, workDir, context, options = {}) {
-  const { runHotelImportTask } = requireScraperModule(scraperPath, 'task-runner.js');
+  const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
   const args = {
     'apply-output': outputPath,
     latestRun: path.join(workDir, 'output', 'latest-run.json')
@@ -305,7 +328,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         instruction: '登录完成后请关闭 Edge 窗口；关闭后程序会继续采集，不需要重新发送链接。'
       });
 
-      const { runInteractiveEdgeLoginPrep } = requireScraperModule(scraperPath, 'cli/auto-edge.js');
+      const { runInteractiveEdgeLoginPrep } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
       await runInteractiveEdgeLoginPrep({
         userDataDir: path.join(workDir, 'state', 'edge-profile'),
         profileDirectory: 'Default',
@@ -359,7 +382,7 @@ async function openVisibleEdgeLogin(input, context = {}) {
   ensureScraperRuntimeDirs(workDir);
 
   return withScraperEnvironment(dataFolderPath, async () => {
-    const { runInteractiveEdgeLoginPrep } = requireScraperModule(scraperPath, 'cli/auto-edge.js');
+    const { runInteractiveEdgeLoginPrep } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
     await runInteractiveEdgeLoginPrep({
       userDataDir: path.join(workDir, 'state', 'edge-profile'),
       profileDirectory: 'Default',
@@ -380,6 +403,7 @@ module.exports = {
   collectAndWriteCtripHotel,
   getVisibleLoginRetryNeed,
   isCtripHotelUrl,
+  loadScraperModule,
   openVisibleEdgeLogin,
   resolveScraperPath,
   resolveScraperWorkDir

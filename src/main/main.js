@@ -46,26 +46,10 @@ if (!gotSingleInstanceLock) {
     const services = ipcHandlerManager.getServices();
     const { windowService } = services;
 
-    if (services.hasBundledScraperResources()) {
-      services.getBundleService().ensureBootstrapResources();
-    }
-
     const mainWindow = windowService.createWindow();
 
     const menuManager = new MenuManager(windowService);
     setImmediate(() => menuManager.createMenu());
-
-    const schedulePostStartupTasks = () => {
-      if (services.hasBundledScraperResources()) {
-        services.getBundleService().scheduleSetup(120);
-      }
-    };
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.once('ready-to-show', schedulePostStartupTasks);
-    } else {
-      setImmediate(schedulePostStartupTasks);
-    }
 
     app.on('activate', () => {
       windowService.handleActivate();
