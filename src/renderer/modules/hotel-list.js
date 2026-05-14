@@ -169,11 +169,12 @@ export function renderHotelList(options = {}) {
     if (sortedHotels.length === 0) {
       const hasActiveFilters = Object.values(state.currentFilters).some(value => value !== undefined && value !== null && value !== '');
       const isFilterEmptyState = state.hotels.length > 0 && hasActiveFilters;
+      const emptyAction = isFilterEmptyState ? 'clear-filters' : 'open-add-hotel';
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🏨</div>
           <div class="empty-state-text">${isFilterEmptyState ? '当前筛选条件下没有匹配结果' : '暂无宾馆数据'}</div>
-          <button class="btn ${isFilterEmptyState ? 'btn-secondary' : 'btn-primary'}" onclick="${isFilterEmptyState ? 'clearFilters()' : 'openAddHotelModal()'}">${isFilterEmptyState ? '清除筛选' : '添加第一个宾馆'}</button>
+          <button class="btn ${isFilterEmptyState ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="${emptyAction}">${isFilterEmptyState ? '清除筛选' : '添加第一个宾馆'}</button>
         </div>
       `;
       perfEnd(perfLabel);

@@ -1,26 +1,56 @@
-const { shell, BrowserWindow } = require('electron');
 const { APP_CONFIG } = require('../config');
 
+const ALLOWED_EXTERNAL_HOSTS = new Set([
+  'ctrip.com',
+  'www.ctrip.com',
+  'hotels.ctrip.com',
+  'm.ctrip.com',
+  'fliggy.com',
+  'www.fliggy.com'
+]);
+
+function parseAllowedExternalUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || '').trim());
+  } catch (_error) {
+    return null;
+  }
+
+  if (parsed.protocol !== 'https:') return null;
+  if (!ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase())) return null;
+  return parsed;
+}
+
+function isAllowedExternalUrl(rawUrl) {
+  return Boolean(parseAllowedExternalUrl(rawUrl));
+}
+
+async function openAllowedExternalUrl(shell, rawUrl) {
+  const parsed = parseAllowedExternalUrl(rawUrl);
+  if (!parsed) {
+    return {
+      success: false,
+      error: '不允许打开该外部链接'
+    };
+  }
+
+  await shell.openExternal(parsed.href);
+  return { success: true };
+}
+
 function registerOtherHandlers({ ipcMain }) {
+  const { shell, BrowserWindow } = require('electron');
   const getSenderWindow = (event) => BrowserWindow.fromWebContents(event.sender);
 
   // 打开携程
-  ipcMain.handle('open:ctrip', () => {
-    shell.openExternal(APP_CONFIG.EXTERNAL_LINKS.CTRIP);
-    return { success: true };
-  });
+  ipcMain.handle('open:ctrip', () => openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.CTRIP));
 
   // 打开飞猪
-  ipcMain.handle('open:fliggy', () => {
-    shell.openExternal(APP_CONFIG.EXTERNAL_LINKS.FLIGGY);
-    return { success: true };
-  });
+  ipcMain.handle('open:fliggy', () => openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.FLIGGY));
 
   // 打开外部链接
-  ipcMain.handle('open:external', (event, url) => {
-    shell.openExternal(url);
-    return { success: true };
-  });
+  ipcMain.handle('open:external', (_event, url) => openAllowedExternalUrl(shell, url));
 
   ipcMain.handle('window:minimize', (event) => {
     const currentWindow = getSenderWindow(event);
@@ -66,3 +96,5 @@ function registerOtherHandlers({ ipcMain }) {
 }
 
 module.exports = registerOtherHandlers;
+module.exports.isAllowedExternalUrl = isAllowedExternalUrl;
+module.exports.openAllowedExternalUrl = openAllowedExternalUrl;

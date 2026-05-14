@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:;">
   <title>宾馆比较助手</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,33 +14,33 @@
         <h1 class="app-title">🏨 宾馆比较助手</h1>
       </div>
       <div class="header-right">
-        <button class="btn btn-secondary" onclick="openAiAssistant()">
+        <button class="btn btn-secondary" data-action="open-ai-assistant">
           <span>🤖</span> 采集助手
         </button>
-        <button class="btn btn-secondary" onclick="openTemplateManager()">
+        <button class="btn btn-secondary" data-action="open-template-manager">
           <span>📋</span> 模板管理
         </button>
-        <button class="btn btn-secondary" onclick="openDataTransfer()">
+        <button class="btn btn-secondary" data-action="open-data-transfer">
           <span>💾</span> 数据管理
         </button>
-        <button class="btn btn-secondary" onclick="openPersonalization()">
+        <button class="btn btn-secondary" data-action="open-personalization">
           <span>🎨</span> 个性化
         </button>
-        <button class="btn btn-secondary" onclick="openSettings()">
+        <button class="btn btn-secondary" data-action="open-settings">
           <span>⚙️</span> 设置
         </button>
-        <button class="btn btn-secondary" onclick="openAbout()">
+        <button class="btn btn-secondary" data-action="open-about">
           <span>ℹ️</span> 关于
         </button>
       </div>
       <div id="windowControls" class="window-controls" aria-label="窗口控制">
-        <button id="windowMinimizeBtn" class="window-control-btn" type="button" aria-label="最小化" onclick="minimizeWindow()">
+        <button id="windowMinimizeBtn" class="window-control-btn" type="button" aria-label="最小化" data-action="window-minimize">
           <span class="window-control-icon minimize-icon" aria-hidden="true"></span>
         </button>
-        <button id="windowMaximizeBtn" class="window-control-btn" type="button" aria-label="最大化" onclick="toggleMaximizeWindow()">
+        <button id="windowMaximizeBtn" class="window-control-btn" type="button" aria-label="最大化" data-action="window-toggle-maximize">
           <span class="window-control-icon maximize-icon" aria-hidden="true"></span>
         </button>
-        <button id="windowCloseBtn" class="window-control-btn window-control-close" type="button" aria-label="关闭" onclick="closeWindow()">
+        <button id="windowCloseBtn" class="window-control-btn window-control-close" type="button" aria-label="关闭" data-action="window-close">
           <span class="window-control-icon close-icon" aria-hidden="true"></span>
         </button>
       </div>
@@ -111,7 +111,7 @@
             </div>
           </div>
           <div class="filter-spacer"></div>
-          <button class="btn btn-secondary btn-full" onclick="clearFilters()">
+          <button class="btn btn-secondary btn-full" data-action="clear-filters">
             清除筛选
           </button>
         </div>
@@ -120,11 +120,11 @@
           <h2 class="section-title">排名设置</h2>
           <div class="ranking-mode">
             <label>
-              <input type="radio" name="rankingMode" value="auto" checked onchange="changeRankingMode('auto')">
+              <input type="radio" name="rankingMode" value="auto" checked data-ranking-mode="auto">
               自动排名
             </label>
             <label>
-              <input type="radio" name="rankingMode" value="manual" onchange="changeRankingMode('manual')">
+              <input type="radio" name="rankingMode" value="manual" data-ranking-mode="manual">
               自定义权重
             </label>
           </div>
@@ -132,31 +132,31 @@
             <div class="weight-item">
               <label>价格权重: <span id="priceWeightValue">0.25</span></label>
               <input type="range" id="weightPrice" min="0" max="1" step="0.05" value="0.25" 
-                     oninput="updateWeight('price', this.value)">
+                     data-weight-key="price">
             </div>
             <div class="weight-item">
               <label>评分权重: <span id="scoreWeightValue">0.35</span></label>
               <input type="range" id="weightScore" min="0" max="1" step="0.05" value="0.35" 
-                     oninput="updateWeight('score', this.value)">
+                     data-weight-key="score">
             </div>
             <div class="weight-item">
               <label>距离权重: <span id="distanceWeightValue">0.2</span></label>
               <input type="range" id="weightDistance" min="0" max="1" step="0.05" value="0.2" 
-                     oninput="updateWeight('distance', this.value)">
+                     data-weight-key="distance">
             </div>
             <div class="weight-item">
               <label>交通权重: <span id="transportWeightValue">0.2</span></label>
               <input type="range" id="weightTransport" min="0" max="1" step="0.05" value="0.2" 
-                     oninput="updateWeight('transport', this.value)">
+                     data-weight-key="transport">
             </div>
           </div>
         </div>
 
         <div class="panel-section">
-          <button class="btn btn-primary btn-full" onclick="openAddHotelModal()">
+          <button class="btn btn-primary btn-full" data-action="open-add-hotel">
             <span>➕</span> 添加宾馆
           </button>
-          <button class="btn btn-accent btn-full" onclick="exportRankingImage()">
+          <button class="btn btn-accent btn-full" data-action="export-ranking-image">
             <span>📷</span> 导出排名图片
           </button>
         </div>
@@ -167,16 +167,16 @@
           <h2 class="content-title">宾馆列表</h2>
           <span class="hotel-count">共 <strong id="hotelCount">0</strong> 家宾馆，<strong id="roomTypeCount">0</strong> 种房型</span>
           <div class="view-controls">
-            <button id="viewToggle" class="btn btn-secondary btn-sm" onclick="toggleViewMode()">
+            <button id="viewToggle" class="btn btn-secondary btn-sm" data-action="toggle-view-mode">
               <span id="viewIcon">🛏️</span> <span id="viewText">卡片</span>
             </button>
-            <button id="refreshPageBtn" class="btn btn-secondary btn-sm btn-icon" onclick="refreshCurrentPage()" title="刷新当前页面" aria-label="刷新当前页面">
+            <button id="refreshPageBtn" class="btn btn-secondary btn-sm btn-icon" data-action="refresh-current-page" title="刷新当前页面" aria-label="刷新当前页面">
               <span id="refreshPageIcon">↻</span>
             </button>
-            <button id="ruleDeleteBtn" class="btn btn-danger btn-sm" onclick="openRuleDeleteModal()">
+            <button id="ruleDeleteBtn" class="btn btn-danger btn-sm" data-action="open-rule-delete">
               <span>🗑️</span> 规则删除
             </button>
-            <button id="batchDeleteBtn" class="btn btn-danger btn-sm" style="display: none;" onclick="confirmBatchDelete()">
+            <button id="batchDeleteBtn" class="btn btn-danger btn-sm" style="display: none;" data-action="confirm-batch-delete">
               <span>🗑️</span> 删除选中
             </button>
           </div>
@@ -198,11 +198,11 @@
           </div>
         </div>
         <div class="ai-header-actions">
-          <button class="ai-ghost-button" type="button" onclick="clearAiTaskRecords()">
+          <button class="ai-ghost-button" type="button" data-action="clear-ai-task-records">
             <span aria-hidden="true">⌫</span>
             清空记录
           </button>
-          <button class="ai-ghost-button" type="button" onclick="closeAiAssistant()">
+          <button class="ai-ghost-button" type="button" data-action="close-ai-assistant">
             <span aria-hidden="true">↩</span>
             返回列表
           </button>
@@ -217,7 +217,7 @@
                 <span class="task-card-eyebrow">CURRENT TASK</span>
                 <h2>当前任务</h2>
               </div>
-              <button class="task-clear-button" type="button" onclick="clearAiTaskRecords()">清空记录</button>
+              <button class="task-clear-button" type="button" data-action="clear-ai-task-records">清空记录</button>
             </div>
             <div id="aiCurrentTaskPanel" class="current-task-content"></div>
           </section>
@@ -244,12 +244,12 @@
               <span>链接</span>
               <div class="task-url-input-wrap">
                 <span class="task-url-icon" aria-hidden="true">↗</span>
-                <input id="aiHotelUrlInput" class="input task-url-input" type="url" maxlength="2000" placeholder="粘贴携程酒店详情页链接" oninput="updateAiInputCount()" onkeydown="handleAiTaskInputKeydown(event)">
+                <input id="aiHotelUrlInput" class="input task-url-input" type="url" maxlength="2000" placeholder="粘贴携程酒店详情页链接">
                 <span id="aiInputCount" class="task-input-count">0 / 2000</span>
               </div>
             </label>
             <div class="task-start-action">
-              <button id="aiStartTaskBtn" class="task-start-button" type="button" onclick="enqueueAiCollectTask()">加入队列</button>
+              <button id="aiStartTaskBtn" class="task-start-button" type="button" data-action="enqueue-ai-collect-task">加入队列</button>
             </div>
           </div>
         </section>
@@ -260,7 +260,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h2 id="modalTitle">添加宾馆</h2>
-          <button class="modal-close" onclick="closeHotelModal()">&times;</button>
+          <button class="modal-close" data-action="close-hotel-modal">&times;</button>
         </div>
         <div class="modal-body">
           <form id="hotelForm">
@@ -268,7 +268,7 @@
 
             <div class="form-group">
               <label>选择模板（可选）</label>
-              <select id="hotelTemplateSelect" class="input" onchange="applyTemplateToForm()">
+              <select id="hotelTemplateSelect" class="input">
                 <option value="">不使用模板</option>
               </select>
             </div>
@@ -292,30 +292,30 @@
             <div class="form-row form-row-compact">
               <div class="form-group">
                 <label for="totalPrice">总价格 (元)</label>
-                <input type="number" id="totalPrice" step="0.01" min="0" class="input" placeholder="总价格" oninput="calculateDailyPrice()">
+                <input type="number" id="totalPrice" step="0.01" min="0" class="input" placeholder="总价格">
               </div>
               <div class="form-group">
                 <label for="dailyPrice">日均价格 (元)</label>
-                <input type="number" id="dailyPrice" step="0.01" min="0" class="input" placeholder="日均价格" oninput="calculateTotalPrice()">
+                <input type="number" id="dailyPrice" step="0.01" min="0" class="input" placeholder="日均价格">
               </div>
             </div>
 
             <div class="form-row form-row-dates">
               <div class="form-group">
                 <label for="checkInDate">入住日期</label>
-                <input type="date" id="checkInDate" class="input" onchange="onCheckInChange()">
+                <input type="date" id="checkInDate" class="input">
               </div>
               <div class="form-group">
                 <label for="checkOutDate">离店日期</label>
-                <input type="date" id="checkOutDate" class="input" onchange="onCheckOutChange()">
+                <input type="date" id="checkOutDate" class="input">
               </div>
               <div class="form-group">
                 <label for="days">住宿天数</label>
-                <input type="number" id="days" min="1" class="input" placeholder="天数" oninput="onDaysChange()">
+                <input type="number" id="days" min="1" class="input" placeholder="天数">
               </div>
               <div class="form-group">
                 <label for="ctripScore">携程评分 (0-5分)</label>
-                <input type="number" id="ctripScore" step="0.1" min="0" max="5" class="input" placeholder="如: 4.5" oninput="validateScore(this)" onblur="formatScoreOnBlur(this)">
+                <input type="number" id="ctripScore" step="0.1" min="0" max="5" class="input" placeholder="如: 4.5">
               </div>
             </div>
 
@@ -395,8 +395,8 @@
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closeHotelModal()">取消</button>
-          <button type="button" class="btn btn-primary" onclick="saveHotel()">保存</button>
+          <button type="button" class="btn btn-secondary" data-action="close-hotel-modal">取消</button>
+          <button type="button" class="btn btn-primary" data-action="save-hotel">保存</button>
         </div>
       </div>
     </div>
@@ -405,21 +405,21 @@
       <div class="modal-content modal-small">
         <div class="modal-header">
           <h2>规则删除</h2>
-          <button class="modal-close" onclick="closeRuleDeleteModal()">&times;</button>
+          <button class="modal-close" data-action="close-rule-delete">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-row">
             <div class="form-group">
               <label for="ruleDeletePrice">总价格高于（元）</label>
-              <input type="number" id="ruleDeletePrice" class="input" min="0" step="0.01" placeholder="留空表示不限制" oninput="updateRuleDeletePreview()">
+              <input type="number" id="ruleDeletePrice" class="input" min="0" step="0.01" placeholder="留空表示不限制">
             </div>
             <div class="form-group">
               <label for="ruleDeleteSubwayDistance">最近地铁站距离高于（公里）</label>
-              <input type="number" id="ruleDeleteSubwayDistance" class="input" min="0" step="0.1" placeholder="留空表示不限制" oninput="updateRuleDeletePreview()">
+              <input type="number" id="ruleDeleteSubwayDistance" class="input" min="0" step="0.1" placeholder="留空表示不限制">
             </div>
             <div class="form-group">
               <label for="ruleDeleteTransportTime">公共交通时间高于（分钟）</label>
-              <input type="number" id="ruleDeleteTransportTime" class="input" min="0" step="1" placeholder="留空表示不限制" oninput="updateRuleDeletePreview()">
+              <input type="number" id="ruleDeleteTransportTime" class="input" min="0" step="1" placeholder="留空表示不限制">
             </div>
           </div>
           <div class="rule-delete-summary">
@@ -428,8 +428,8 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closeRuleDeleteModal()">取消</button>
-          <button type="button" id="ruleDeleteConfirmBtn" class="btn btn-danger" onclick="confirmRuleDelete()">删除命中项</button>
+          <button type="button" class="btn btn-secondary" data-action="close-rule-delete">取消</button>
+          <button type="button" id="ruleDeleteConfirmBtn" class="btn btn-danger" data-action="confirm-rule-delete">删除命中项</button>
         </div>
       </div>
     </div>
@@ -438,11 +438,11 @@
       <div class="modal-content modal-large">
         <div class="modal-header">
           <h2>模板管理</h2>
-          <button class="modal-close" onclick="closeTemplateModal()">&times;</button>
+          <button class="modal-close" data-action="close-template-modal">&times;</button>
         </div>
         <div class="modal-body">
           <div class="template-actions">
-            <button class="btn btn-primary" onclick="openAddTemplateForm()">
+            <button class="btn btn-primary" data-action="open-add-template-form">
               <span>➕</span> 新建模板
             </button>
           </div>
@@ -482,8 +482,8 @@
               </div>
             </div>
             <div class="form-actions">
-              <button type="button" class="btn btn-secondary" onclick="cancelTemplateForm()">取消</button>
-              <button type="button" class="btn btn-primary" onclick="saveTemplate()">保存模板</button>
+              <button type="button" class="btn btn-secondary" data-action="cancel-template-form">取消</button>
+              <button type="button" class="btn btn-primary" data-action="save-template">保存模板</button>
             </div>
           </div>
         </div>
@@ -494,14 +494,14 @@
       <div class="modal-content">
         <div class="modal-header">
           <h2>设置</h2>
-          <button class="modal-close" onclick="closeSettingsModal()">&times;</button>
+          <button class="modal-close" data-action="close-settings">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
             <label>采集偏好</label>
             <div class="setting-switch-container">
               <label class="switch-label">
-                <input type="checkbox" id="includeFourPersonRoomsForThreePersonTemplate" onchange="toggleIncludeFourPersonRoomsForThreePersonTemplate()">
+                <input type="checkbox" id="includeFourPersonRoomsForThreePersonTemplate">
                 <span class="switch-slider"></span>
               </label>
               <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText">关闭</span>
@@ -513,10 +513,10 @@
             <div class="data-path-container">
               <input type="text" id="dataPathInput" class="input" readonly placeholder="加载中...">
               <div class="data-path-actions">
-                <button class="btn btn-secondary btn-sm" onclick="showDataInFolder()">
+                <button class="btn btn-secondary btn-sm" data-action="show-data-folder">
                   <span>📁</span> 查看位置
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="changeDataPath(event)">
+                <button class="btn btn-secondary btn-sm" data-action="change-data-path">
                   <span>📂</span> 更改位置
                 </button>
               </div>
@@ -525,10 +525,10 @@
           </div>
           <div class="form-group">
             <label>快捷链接</label>
-            <button class="btn btn-primary btn-full" onclick="openCtripWebsite()">
+            <button class="btn btn-primary btn-full" data-action="open-ctrip">
               <span>🌐</span> 访问携程官网
             </button>
-            <button class="btn btn-primary btn-full" onclick="openFliggyWebsite()" style="margin-top: 8px;">
+            <button class="btn btn-primary btn-full" data-action="open-fliggy" style="margin-top: 8px;">
               <span>🌐</span> 访问飞猪官网
             </button>
           </div>
@@ -542,7 +542,7 @@
                   <span class="switch-slider"></span>
                 </label>
               </label>
-              <select id="aiProviderSelect" class="input" onchange="onAiProviderChange()"></select>
+              <select id="aiProviderSelect" class="input"></select>
               <input type="text" id="aiBaseUrlInput" class="input" placeholder="Base URL">
               <input type="text" id="aiModelInput" class="input" list="aiModelOptions" placeholder="模型名称">
               <datalist id="aiModelOptions"></datalist>
@@ -550,19 +550,19 @@
             </div>
             <small class="help-text" id="aiApiKeyHint">尚未加载 AI 接口设置</small>
             <div class="data-path-actions">
-              <button class="btn btn-secondary btn-sm" onclick="saveAiConfig()">保存接口</button>
-              <button id="aiTestBtn" class="btn btn-secondary btn-sm" onclick="testAiConnection()">测试连接</button>
+              <button class="btn btn-secondary btn-sm" data-action="save-ai-config">保存接口</button>
+              <button id="aiTestBtn" class="btn btn-secondary btn-sm" data-action="test-ai-connection">测试连接</button>
             </div>
           </div>
           <div class="form-group">
             <label>应用说明书</label>
-            <button class="btn btn-primary btn-full" onclick="openManual()">
+            <button class="btn btn-primary btn-full" data-action="open-manual">
               <span>📖</span> 查看完整功能说明
             </button>
             <small class="help-text">了解应用的所有功能和使用方法</small>
           </div>
           <div class="form-group">
-            <button class="btn btn-secondary btn-full" onclick="resetSettings(event)">
+            <button class="btn btn-secondary btn-full" data-action="reset-settings">
               恢复默认设置
             </button>
           </div>
@@ -574,60 +574,60 @@
       <div class="modal-content modal-medium">
         <div class="modal-header">
           <h2>个性化</h2>
-          <button class="modal-close" onclick="closePersonalizationModal()">&times;</button>
+          <button class="modal-close" data-action="close-personalization">&times;</button>
         </div>
         <div class="modal-body">
           <div class="personalization-section">
             <div class="theme-picker-inline" role="radiogroup" aria-label="界面主题">
               <span class="theme-picker-label">主题</span>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="totoro-blue" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="totoro-blue">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">龙猫蓝</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="sweet-lime" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="sweet-lime">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">甜柠青</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="grass-green" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="grass-green">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">小草绿</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="pineapple-yellow" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="pineapple-yellow">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">菠萝黄</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="oak-brown" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="oak-brown">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">橡木棕</span>
               </label>
               <span class="theme-picker-spacer" aria-hidden="true"></span>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="cloud-white" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="cloud-white">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">云朵白</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="autumn-gold" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="autumn-gold">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">秋仪金</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="diehard-pink" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="diehard-pink">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">铁杆粉</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="grape-purple" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="grape-purple">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">葡萄紫</span>
               </label>
               <label class="theme-option">
-                <input type="radio" name="themeOption" value="colorful-mode" onchange="changeTheme(this.value)">
+                <input type="radio" name="themeOption" value="colorful-mode">
                 <span class="theme-option-indicator"></span>
                 <span class="theme-option-text">彩色</span>
               </label>
@@ -640,10 +640,10 @@
             <div class="data-path-container">
               <input type="text" id="appIconPathInput" class="input" readonly placeholder="当前使用默认图标">
               <div class="data-path-actions">
-                <button class="btn btn-secondary btn-sm" onclick="chooseAppIcon()">
+                <button class="btn btn-secondary btn-sm" data-action="choose-app-icon">
                   <span>🖼️</span> 更换图标
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="resetAppIcon()">
+                <button class="btn btn-secondary btn-sm" data-action="reset-app-icon">
                   <span>↺</span> 恢复默认
                 </button>
               </div>
@@ -660,13 +660,13 @@
       <div class="modal-content">
         <div class="modal-header">
           <h2>宾馆详情</h2>
-          <button class="modal-close" onclick="closeHotelDetails()">&times;</button>
+          <button class="modal-close" data-action="close-hotel-details">&times;</button>
         </div>
         <div class="modal-body">
           <div id="hotelDetailsContent"></div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closeHotelDetails()">关闭</button>
+          <button type="button" class="btn btn-secondary" data-action="close-hotel-details">关闭</button>
         </div>
       </div>
     </div>
@@ -675,11 +675,11 @@
       <div class="modal-content modal-small">
         <div class="modal-header">
           <h2>数据管理</h2>
-          <button class="modal-close" onclick="closeDataTransfer()">&times;</button>
+          <button class="modal-close" data-action="close-data-transfer">&times;</button>
         </div>
         <div class="modal-body">
           <div class="data-transfer-options">
-            <div class="transfer-option" onclick="handleExportData()">
+            <div class="transfer-option" data-action="export-data">
               <div class="transfer-icon">📤</div>
               <div class="transfer-info">
                 <h3>导出数据</h3>
@@ -692,8 +692,8 @@
                 <h3>导入数据</h3>
                 <p>从 JSON 文件导入数据。直接在这里选择覆盖导入或追加导入，不再弹出导入方式选择框。</p>
                 <div class="transfer-option-actions">
-                  <button class="btn btn-primary" onclick="handleImportData('replace')">覆盖导入</button>
-                  <button class="btn btn-primary" onclick="handleImportData('append')">追加导入</button>
+                  <button class="btn btn-primary" data-action="import-data" data-import-mode="replace">覆盖导入</button>
+                  <button class="btn btn-primary" data-action="import-data" data-import-mode="append">追加导入</button>
                 </div>
                 <div class="transfer-option-note">覆盖会替换当前数据；追加会保留当前设置和图标，并自动跳过重复宾馆与模板。</div>
               </div>
@@ -707,7 +707,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h2>关于</h2>
-          <button class="modal-close" onclick="closeAbout()">&times;</button>
+          <button class="modal-close" data-action="close-about">&times;</button>
         </div>
         <div class="modal-body">
           <div class="author-info-modal">
@@ -777,7 +777,7 @@
       <div class="modal-content modal-large">
         <div class="modal-header">
           <h2>📖 应用说明书</h2>
-          <button class="modal-close" onclick="closeManual()">&times;</button>
+          <button class="modal-close" data-action="close-manual">&times;</button>
         </div>
         <div class="modal-body">
           <div class="manual-content">

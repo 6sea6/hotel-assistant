@@ -75,7 +75,8 @@ npm run build
 - 默认输出目录: dist
 - 默认打包图标源文件: `assets/app-icon.png`（或同名 jpg/jpeg/bmp/webp），构建时会统一生成 `build/icon.ico`、`build/uninstallerIcon.ico` 和安装页侧栏图
 - 基础版安装包只包含比较助手本体，不额外携带采集器资源
-- 完整版安装包除了比较助手本体，还会打入项目内置 `scraper` 目录中的采集器源码、README 和采集规则说明文件 `00-后续AI统一提示词.md`
+- 依赖管理采用 npm workspace：根包只声明主程序依赖，`scraper/package.json` 是采集器 `axios`、`cheerio`、`ws` 的唯一声明来源
+- 完整版安装包除了比较助手本体，还会打入项目内置 `scraper` 目录中的采集器源码、README、采集规则说明文件 `00-后续AI统一提示词.md` 和采集器运行所需的最小生产依赖
 - 完整版首次启动会把采集规则说明文件部署到当前数据目录下的 `scraper-data`
 - 调试验证产物建议在验证后删除，避免工作区和磁盘体积继续增长
 

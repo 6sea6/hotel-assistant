@@ -75,22 +75,25 @@ function copyFinalInstaller({ projectRoot, tempBuildDir, version, mode }) {
 }
 
 function ensureNodeModules(projectRoot) {
-  if (fs.existsSync(path.join(projectRoot, 'node_modules'))) {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+  const scraperPackageJsonPath = path.join(projectRoot, 'scraper', 'package.json');
+  const scraperPackageJson = fs.existsSync(scraperPackageJsonPath)
+    ? JSON.parse(fs.readFileSync(scraperPackageJsonPath, 'utf-8'))
+    : {};
+  const requiredPackages = [
+    ...Object.keys(packageJson.dependencies || {}),
+    ...Object.keys(scraperPackageJson.dependencies || {})
+  ];
+  const hasAllPackages = requiredPackages.every((packageName) => (
+    fs.existsSync(path.join(projectRoot, 'node_modules', ...packageName.split('/'), 'package.json'))
+  ));
+
+  if (fs.existsSync(path.join(projectRoot, 'node_modules')) && hasAllPackages) {
     return;
   }
 
   runCommand(resolveWindowsCommand('npm'), ['ci', '--prefer-offline', '--no-audit', '--progress=false', '--fund=false', '--loglevel=error'], {
     cwd: projectRoot
-  });
-}
-
-function ensureScraperNodeModules(scraperDir) {
-  if (fs.existsSync(path.join(scraperDir, 'node_modules'))) {
-    return;
-  }
-
-  runCommand(resolveWindowsCommand('npm'), ['ci', '--omit=dev', '--prefer-offline', '--no-audit', '--progress=false', '--fund=false', '--loglevel=error'], {
-    cwd: scraperDir
   });
 }
 
@@ -111,7 +114,6 @@ function main() {
     runPowerShellScript(path.join(projectRoot, 'scripts', 'sync-build-assets.ps1'), projectRoot);
 
     if (mode === '2') {
-      ensureScraperNodeModules(scraperDir);
       preparedBundle = prepareFullBundle({
         projectRoot,
         scraperDir

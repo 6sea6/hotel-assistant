@@ -3,7 +3,7 @@
  *
  * 职责：
  *  1. 导入所有功能模块
- *  2. 将 HTML 内联事件处理器（onclick / onchange / oninput）暴露到 window
+ *  2. 统一绑定 DOM 事件和页面动作
  *  3. 绑定 DOM 事件和装载全局错误捕获
  *  4. 在 DOMContentLoaded 时执行 initializeApp
  *
@@ -95,104 +95,152 @@ window.addEventListener('unhandledrejection', (event) => {
   event.preventDefault();
 });
 
-/* ============ 暴露到 window（供 HTML 内联处理器调用） ============ */
+/* ============ 统一页面动作绑定 ============ */
 
-// 侧栏 & 工具栏
-window.openTemplateManager = openTemplateManager;
-window.openPersonalization = openPersonalization;
-window.openSettings = openSettings;
-window.openAiInterfaceSettings = openAiInterfaceSettings;
-window.openDataTransfer = openDataTransfer;
-window.openAbout = openAbout;
-window.openAiAssistant = openAiAssistant;
-window.closeAiAssistant = closeAiAssistant;
-window.clearFilters = clearFilters;
-window.openAddHotelModal = openAddHotelModal;
-window.exportRankingImage = exportRankingImage;
-window.toggleViewMode = toggleViewMode;
-window.openRuleDeleteModal = openRuleDeleteModal;
-window.closeRuleDeleteModal = closeRuleDeleteModal;
-window.updateRuleDeletePreview = updateRuleDeletePreview;
-window.confirmRuleDelete = confirmRuleDelete;
-window.refreshCurrentPage = refreshCurrentPage;
-window.confirmBatchDelete = confirmBatchDelete;
-window.minimizeWindow = minimizeWindow;
-window.toggleMaximizeWindow = toggleMaximizeWindow;
-window.closeWindow = closeWindow;
+const ACTION_HANDLERS = {
+  'open-ai-assistant': () => openAiAssistant(),
+  'open-template-manager': () => openTemplateManager(),
+  'open-data-transfer': () => openDataTransfer(),
+  'open-personalization': () => openPersonalization(),
+  'open-settings': () => openSettings(),
+  'open-about': () => openAbout(),
+  'window-minimize': () => minimizeWindow(),
+  'window-toggle-maximize': () => toggleMaximizeWindow(),
+  'window-close': () => closeWindow(),
+  'clear-filters': () => clearFilters(),
+  'open-add-hotel': () => openAddHotelModal(),
+  'export-ranking-image': () => exportRankingImage(),
+  'toggle-view-mode': () => toggleViewMode(),
+  'refresh-current-page': () => refreshCurrentPage(),
+  'open-rule-delete': () => openRuleDeleteModal(),
+  'confirm-batch-delete': () => confirmBatchDelete(),
+  'close-hotel-modal': () => closeHotelModal(),
+  'save-hotel': () => saveHotel(),
+  'close-rule-delete': () => closeRuleDeleteModal(),
+  'confirm-rule-delete': () => confirmRuleDelete(),
+  'close-template-modal': () => closeTemplateModal(),
+  'open-add-template-form': () => openAddTemplateForm(),
+  'cancel-template-form': () => cancelTemplateForm(),
+  'save-template': () => saveTemplate(),
+  'close-settings': () => closeSettingsModal(),
+  'show-data-folder': () => showDataInFolder(),
+  'change-data-path': (event) => changeDataPath(event),
+  'open-ctrip': () => openCtripWebsite(),
+  'open-fliggy': () => openFliggyWebsite(),
+  'save-ai-config': () => saveAiConfig(),
+  'test-ai-connection': () => testAiConnection(),
+  'open-manual': () => openManual(),
+  'reset-settings': (event) => resetSettings(event),
+  'close-personalization': () => closePersonalizationModal(),
+  'choose-app-icon': () => chooseAppIcon(),
+  'reset-app-icon': () => resetAppIcon(),
+  'close-hotel-details': () => closeHotelDetails(),
+  'close-data-transfer': () => closeDataTransfer(),
+  'export-data': () => handleExportData(),
+  'import-data': (_event, element) => handleImportData(element.dataset.importMode),
+  'close-about': () => closeAbout(),
+  'close-manual': () => closeManual(),
+  'clear-ai-task-records': () => clearAiTaskRecords(),
+  'clear-ai-task-queue': () => clearAiTaskQueue(),
+  'close-ai-assistant': () => closeAiAssistant(),
+  'enqueue-ai-collect-task': () => enqueueAiCollectTask(),
+  'cancel-ai-task': () => cancelAiTask(),
+  'select-ai-queue-task': (_event, element) => selectAiQueueTask(element.dataset.taskId),
+  'retry-ai-queue-task': (_event, element) => retryAiQueueTask(element.dataset.taskId),
+  'remove-ai-queue-task': (_event, element) => removeAiQueueTask(element.dataset.taskId),
+  'rerun-current-ai-task': () => rerunCurrentAiTask(),
+  'show-ai-task-details': () => showAiTaskDetails(),
+  'focus-ai-task-start-bar': () => focusAiTaskStartBar(),
+  'open-ai-review': () => openAiReviewPanel(),
+  'close-ai-review': () => closeAiReviewPanel(),
+  'analyze-ai-collection': () => analyzeAiCollection(),
+  'apply-ai-collection-review': () => applyAiCollectionReview()
+};
 
-// 宾馆编辑弹窗
-window.closeHotelModal = closeHotelModal;
-window.saveHotel = saveHotel;
-window.applyTemplateToForm = applyTemplateToForm;
-window.calculateDailyPrice = calculateDailyPrice;
-window.calculateTotalPrice = calculateTotalPrice;
-window.onCheckInChange = onCheckInChange;
-window.onCheckOutChange = onCheckOutChange;
-window.onDaysChange = onDaysChange;
-window.validateScore = validateScore;
-window.formatScoreOnBlur = formatScoreOnBlur;
+function handleActionClick(event) {
+  const actionElement = event.target && event.target.closest
+    ? event.target.closest('[data-action]')
+    : null;
+  if (!actionElement) return;
 
-// 模板弹窗
-window.closeTemplateModal = closeTemplateModal;
-window.openAddTemplateForm = openAddTemplateForm;
-window.cancelTemplateForm = cancelTemplateForm;
-window.saveTemplate = saveTemplate;
+  const handler = ACTION_HANDLERS[actionElement.dataset.action];
+  if (!handler) return;
 
-// 设置弹窗
-window.closePersonalizationModal = closePersonalizationModal;
-window.closeSettingsModal = closeSettingsModal;
-window.changeTheme = changeTheme;
-window.toggleIncludeFourPersonRoomsForThreePersonTemplate = toggleIncludeFourPersonRoomsForThreePersonTemplate;
-window.showDataInFolder = showDataInFolder;
-window.changeDataPath = changeDataPath;
-window.chooseAppIcon = chooseAppIcon;
-window.resetAppIcon = resetAppIcon;
-window.openCtripWebsite = openCtripWebsite;
-window.openFliggyWebsite = openFliggyWebsite;
-window.openManual = openManual;
-window.resetSettings = resetSettings;
-
-// 宾馆详情弹窗
-window.closeHotelDetails = closeHotelDetails;
-
-// 采集助手
-window.enqueueAiCollectTask = enqueueAiCollectTask;
-window.cancelAiTask = cancelAiTask;
-window.clearAiTaskRecords = clearAiTaskRecords;
-window.clearAiTaskQueue = clearAiTaskQueue;
-window.selectAiQueueTask = selectAiQueueTask;
-window.removeAiQueueTask = removeAiQueueTask;
-window.retryAiQueueTask = retryAiQueueTask;
-window.rerunCurrentAiTask = rerunCurrentAiTask;
-window.handleAiTaskInputKeydown = handleAiTaskInputKeydown;
-window.showAiTaskDetails = showAiTaskDetails;
-window.focusAiTaskStartBar = focusAiTaskStartBar;
-window.openAiReviewPanel = openAiReviewPanel;
-window.closeAiReviewPanel = closeAiReviewPanel;
-window.analyzeAiCollection = analyzeAiCollection;
-window.applyAiCollectionReview = applyAiCollectionReview;
-window.updateAiInputCount = updateAiInputCount;
-window.loadAiConfig = loadAiConfig;
-window.onAiProviderChange = onAiProviderChange;
-window.saveAiConfig = saveAiConfig;
-window.testAiConnection = testAiConnection;
-
-// 数据传输弹窗
-window.closeDataTransfer = closeDataTransfer;
-window.handleExportData = handleExportData;
-window.handleImportData = handleImportData;
-
-// 关于 & 说明书
-window.closeAbout = closeAbout;
-window.closeManual = closeManual;
-
-// 排名权重
-window.changeRankingMode = changeRankingMode;
-window.updateWeight = updateWeight;
+  event.preventDefault();
+  handler(event, actionElement);
+}
 
 /* ============ DOM 事件绑定 ============ */
 
+function handleGlobalKeydown(e) {
+  if (e.key !== 'Escape') return;
+
+  const closers = [
+    ['hotelDetailsModal', closeHotelDetails],
+    ['ruleDeleteModal', closeRuleDeleteModal],
+    ['hotelModal', closeHotelModal],
+    ['templateModal', closeTemplateModal],
+    ['dataTransferModal', closeDataTransfer],
+    ['manualModal', closeManual],
+    ['personalizationModal', closePersonalizationModal],
+    ['settingsModal', closeSettingsModal],
+    ['aboutModal', closeAbout]
+  ];
+
+  for (const [id, closeFn] of closers) {
+    const el = $(id);
+    if (el && el.classList.contains('active')) {
+      closeFn();
+      break;
+    }
+  }
+}
+
+function setupStaticFormListeners() {
+  if (state.staticFormEventsBound) return;
+
+  document.querySelectorAll('input[name="rankingMode"]').forEach((input) => {
+    input.addEventListener('change', () => changeRankingMode(input.dataset.rankingMode || input.value));
+  });
+
+  document.querySelectorAll('[data-weight-key]').forEach((input) => {
+    input.addEventListener('input', () => updateWeight(input.dataset.weightKey, input.value));
+  });
+
+  document.querySelectorAll('input[name="themeOption"]').forEach((input) => {
+    input.addEventListener('change', () => changeTheme(input.value));
+  });
+
+  addEvent('aiHotelUrlInput', 'input', updateAiInputCount);
+  addEvent('aiHotelUrlInput', 'keydown', handleAiTaskInputKeydown);
+  addEvent('hotelTemplateSelect', 'change', applyTemplateToForm);
+  addEvent('totalPrice', 'input', calculateDailyPrice);
+  addEvent('dailyPrice', 'input', calculateTotalPrice);
+  addEvent('checkInDate', 'change', onCheckInChange);
+  addEvent('checkOutDate', 'change', onCheckOutChange);
+  addEvent('days', 'input', onDaysChange);
+  addEvent('ctripScore', 'input', (event) => validateScore(event.target));
+  addEvent('ctripScore', 'blur', (event) => formatScoreOnBlur(event.target));
+  addEvent('ruleDeletePrice', 'input', updateRuleDeletePreview);
+  addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
+  addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
+  addEvent('includeFourPersonRoomsForThreePersonTemplate', 'change', toggleIncludeFourPersonRoomsForThreePersonTemplate);
+  addEvent('aiProviderSelect', 'change', onAiProviderChange);
+
+  state.staticFormEventsBound = true;
+}
+
 function setupEventListeners() {
+  if (!state.globalActionEventsBound) {
+    document.addEventListener('click', handleActionClick);
+    state.globalActionEventsBound = true;
+  }
+
+  if (!state.globalKeyEventsBound) {
+    document.addEventListener('keydown', handleGlobalKeydown);
+    state.globalKeyEventsBound = true;
+  }
+
   if (!state.hotelListEventsBound) {
     const hotelList = $('hotelList');
     if (hotelList) {
@@ -218,29 +266,6 @@ function setupEventListeners() {
     }
   }
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      const closers = [
-        ['hotelDetailsModal', closeHotelDetails],
-        ['ruleDeleteModal', closeRuleDeleteModal],
-        ['hotelModal', closeHotelModal],
-        ['templateModal', closeTemplateModal],
-        ['dataTransferModal', closeDataTransfer],
-        ['manualModal', closeManual],
-        ['personalizationModal', closePersonalizationModal],
-        ['settingsModal', closeSettingsModal],
-        ['aboutModal', closeAbout]
-      ];
-      for (const [id, closeFn] of closers) {
-        const el = $(id);
-        if (el && el.classList.contains('active')) {
-          closeFn();
-          break;
-        }
-      }
-    }
-  });
-
   addEvent('filterName', 'change', applyFilters);
   addEvent('priceSort', 'change', applyFilters);
   addEvent('filterScore', 'change', applyFilters);
@@ -248,6 +273,7 @@ function setupEventListeners() {
   addEvent('filterTemplate', 'change', applyFilters);
   addEvent('filterTransportTime', 'change', applyFilters);
   addEvent('filterSubwayDistance', 'change', applyFilters);
+  setupStaticFormListeners();
 }
 
 /* ============ 初始化 ============ */

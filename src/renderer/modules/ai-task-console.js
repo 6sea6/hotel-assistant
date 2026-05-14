@@ -460,7 +460,7 @@ function renderQueueTaskItem(task = {}, fallbackIndex = 0) {
   const canShowMenu = task.status !== 'running';
   return `
     <div class="task-queue-item${isSelected ? ' is-selected' : ''} ${statusClass}">
-      <button class="task-queue-main" type="button" onclick="selectAiQueueTask('${escapeHtml(task.id || '')}')">
+      <button class="task-queue-main" type="button" data-action="select-ai-queue-task" data-task-id="${escapeHtml(task.id || '')}">
         <span class="task-queue-index">${escapeHtml(displayIndex)}</span>
         <span class="task-queue-title">${escapeHtml(getQueueTaskTitle(task))}</span>
         <span class="task-queue-badge">${escapeHtml(statusLabel)}</span>
@@ -469,8 +469,8 @@ function renderQueueTaskItem(task = {}, fallbackIndex = 0) {
         <details class="task-queue-menu">
           <summary title="更多操作">⋯</summary>
           <div class="task-queue-menu-popover">
-            <button type="button" onclick="retryAiQueueTask('${escapeHtml(task.id || '')}')">重新加入队列</button>
-            <button type="button" class="is-danger" onclick="removeAiQueueTask('${escapeHtml(task.id || '')}')">删除记录</button>
+            <button type="button" data-action="retry-ai-queue-task" data-task-id="${escapeHtml(task.id || '')}">重新加入队列</button>
+            <button type="button" class="is-danger" data-action="remove-ai-queue-task" data-task-id="${escapeHtml(task.id || '')}">删除记录</button>
           </div>
         </details>
       ` : ''}
@@ -508,7 +508,7 @@ function renderTaskQueue(queue = [], options = {}) {
           <h2>任务队列</h2>
         </div>
         <div class="task-queue-header-actions">
-          <button class="task-secondary-button task-queue-clear" type="button" onclick="clearAiTaskQueue()">清空队列</button>
+          <button class="task-secondary-button task-queue-clear" type="button" data-action="clear-ai-task-queue">清空队列</button>
         </div>
       </div>
       <div class="task-queue-body">
@@ -678,7 +678,7 @@ function renderReviewReplaceView(taskState) {
           <span class="task-card-eyebrow">AI REVIEW</span>
           <h3>AI分析重填</h3>
         </div>
-        <button class="task-secondary-button" type="button" onclick="closeAiReviewPanel()">返回结果</button>
+        <button class="task-secondary-button" type="button" data-action="close-ai-review">返回结果</button>
       </div>
       <div class="task-review-context">
         <span>模板：${escapeHtml(taskState.taskInfo.templateName || '暂无')}</span>
@@ -693,10 +693,10 @@ function renderReviewReplaceView(taskState) {
           <textarea id="aiReviewConcernInput" class="input" rows="2" placeholder="例如：脚本选错房型、漏掉三人房、价格不对、过滤原因不合理">${escapeHtml(review.userConcern || '')}</textarea>
         </label>
         <div class="task-review-actions">
-          <button id="aiReviewAnalyzeBtn" class="task-primary-inline-button review-analyze-button${review.inProgress ? ' is-loading' : ''}" type="button" onclick="analyzeAiCollection()" ${review.inProgress ? 'disabled' : ''}>
+          <button id="aiReviewAnalyzeBtn" class="task-primary-inline-button review-analyze-button${review.inProgress ? ' is-loading' : ''}" type="button" data-action="analyze-ai-collection" ${review.inProgress ? 'disabled' : ''}>
             ${review.inProgress ? '<span class="task-button-spinner" aria-hidden="true"></span>正在分析' : '开始分析'}
           </button>
-          <button id="aiReviewApplyBtn" class="task-secondary-button review-apply-button${!applyDisabled ? ' is-review-ready' : ''}" type="button" onclick="applyAiCollectionReview()" ${applyDisabled ? 'disabled' : ''}>
+          <button id="aiReviewApplyBtn" class="task-secondary-button review-apply-button${!applyDisabled ? ' is-review-ready' : ''}" type="button" data-action="apply-ai-collection-review" ${applyDisabled ? 'disabled' : ''}>
             ${review.applyInProgress ? '正在覆盖写入...' : '确认覆盖写入'}
           </button>
         </div>
@@ -740,7 +740,7 @@ function renderRunningView(taskState) {
         ${renderTaskTimeline(taskState.steps)}
       </section>
       <div class="task-panel-actions">
-        <button class="task-secondary-button" type="button" onclick="cancelAiTask()">取消当前任务</button>
+        <button class="task-secondary-button" type="button" data-action="cancel-ai-task">取消当前任务</button>
       </div>
     </div>
   `;
@@ -811,8 +811,8 @@ function renderSuccessView(taskState) {
       </div>
       ${renderSummaryCards(taskState, 'success')}
       <div class="task-panel-actions">
-        ${taskState.canReview ? '<button class="task-secondary-button" type="button" onclick="openAiReviewPanel()">AI分析重填</button>' : ''}
-        <button class="task-primary-inline-button" type="button" onclick="rerunCurrentAiTask()">重新采集</button>
+        ${taskState.canReview ? '<button class="task-secondary-button" type="button" data-action="open-ai-review">AI分析重填</button>' : ''}
+        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新采集</button>
       </div>
     </div>
   `;
@@ -830,9 +830,9 @@ function renderErrorView(taskState) {
       </div>
       ${renderSummaryCards(taskState, 'error')}
       <div class="task-panel-actions">
-        ${taskState.canReview ? '<button class="task-secondary-button" type="button" onclick="openAiReviewPanel()">AI分析重填</button>' : ''}
-        <button class="task-primary-inline-button" type="button" onclick="rerunCurrentAiTask()">重新尝试</button>
-        <button class="task-secondary-button" type="button" onclick="focusAiTaskStartBar()">返回编辑</button>
+        ${taskState.canReview ? '<button class="task-secondary-button" type="button" data-action="open-ai-review">AI分析重填</button>' : ''}
+        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新尝试</button>
+        <button class="task-secondary-button" type="button" data-action="focus-ai-task-start-bar">返回编辑</button>
       </div>
     </div>
   `;
