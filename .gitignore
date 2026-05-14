@@ -4,8 +4,10 @@
 
 # Build and packaging outputs
 /dist/
+/dist-smoke/
 /dist-verify*/
 /_bundle/
+/build/_tmp-package-config/
 *.blockmap
 *.nsis.7z
 

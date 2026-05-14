@@ -47,3 +47,30 @@ test('external links are restricted to explicit HTTPS business domains', () => {
   assert.equal(isAllowedExternalUrl('https://ctrip.com.evil.example/'), false);
   assert.equal(isAllowedExternalUrl('https://example.com/'), false);
 });
+
+test('BrowserWindow uses sandboxed isolated renderer preferences', () => {
+  const windowManager = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'window-manager.js'), 'utf8');
+  assert.match(windowManager, /nodeIntegration:\s*false/);
+  assert.match(windowManager, /contextIsolation:\s*true/);
+  assert.match(windowManager, /sandbox:\s*true/);
+  assert.match(windowManager, /webSecurity:\s*true/);
+});
+
+test('preload stays compatible with sandbox by avoiding local module require', () => {
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'preload.js'), 'utf8');
+  assert.doesNotMatch(preload, /require\(['"]\.\/config['"]\)/);
+  assert.match(preload, /contextBridge\.exposeInMainWorld\('electronAPI'/);
+});
+
+test('in-app manual content is extracted into a separate renderer resource', () => {
+  const indexHtml = fs.readFileSync(path.join(rendererDir, 'index.html'), 'utf8');
+  const manualHtml = fs.readFileSync(path.join(rendererDir, 'manual.html'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'preload.js'), 'utf8');
+  const otherHandlers = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'ipc-handlers', 'other-handlers.js'), 'utf8');
+
+  assert.match(indexHtml, /id="manualContent"/);
+  assert.doesNotMatch(indexHtml, /<h3>🏨 宾馆管理<\/h3>/);
+  assert.match(manualHtml, /<h3>🏨 宾馆管理<\/h3>/);
+  assert.match(preload, /getManualContent:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('manual:getContent'\)/);
+  assert.match(otherHandlers, /ipcMain\.handle\('manual:getContent'/);
+});

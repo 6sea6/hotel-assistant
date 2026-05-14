@@ -3,6 +3,7 @@ const { dialog } = require('electron');
 const { APP_CONFIG } = require('../config');
 const appIconManager = require('../app-icon-manager');
 const { normalizeAiProviderConfig } = require('../ai/provider-presets');
+const { hasNormalizedValueChanged } = require('../normalization-utils');
 
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
@@ -63,7 +64,7 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     const rawSettings = store.get('settings') || {};
     const settings = normalizeSettings(rawSettings);
 
-    if (JSON.stringify(settings) !== JSON.stringify(rawSettings)) {
+    if (hasNormalizedValueChanged(rawSettings, settings)) {
       store.set('settings', settings);
     }
 

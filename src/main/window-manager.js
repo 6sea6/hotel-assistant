@@ -349,8 +349,9 @@ class WindowManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: true,
+        // preload 只使用 Electron 暴露的 contextBridge/ipcRenderer，并通过 IPC 访问主进程能力。
         preload: paths.PRELOAD_SCRIPT,
-        sandbox: false,
         webSecurity: true,
         spellcheck: false
       },

@@ -112,6 +112,7 @@ const getPaths = () => {
     // 应用内部路径
     PRELOAD_SCRIPT: require('path').join(__dirname, 'preload.js'),
     RENDERER_HTML: require('path').join(__dirname, '../renderer/index.html'),
+    RENDERER_MANUAL: require('path').join(__dirname, '../renderer/manual.html'),
     DEFAULT_APP_ICON: require('path').join(__dirname, '../../build/icon.ico'),
     FALLBACK_APP_ICON: require('path').join(__dirname, '../../build/uninstallerIcon.ico'),
     PACKAGED_DEFAULT_ICON_NAME: 'icon.ico',

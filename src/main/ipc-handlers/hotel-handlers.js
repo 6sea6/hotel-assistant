@@ -1,5 +1,6 @@
 const hotelStorage = require('../hotel-storage');
 const { HOTEL_EDITABLE_FIELDS, HOTEL_SYSTEM_FIELDS } = require('../config');
+const { hasNormalizedValueChanged } = require('../normalization-utils');
 
 const HOTEL_ALLOWED_FIELD_KEYS = new Set([
   ...HOTEL_EDITABLE_FIELDS.map((field) => field.key),
@@ -127,14 +128,18 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     const hotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
-    let hasIdRepair = false;
+    let shouldWriteBack = false;
     const normalizedHotels = hotels.map(hotel => {
       const normalizedHotel = normalizeHotelPayload(hotel);
+      if (hasNormalizedValueChanged(hotel, normalizedHotel)) {
+        shouldWriteBack = true;
+      }
+
       const normalizedIdKey = getIdKey(normalizedHotel.id);
 
       if (!normalizedIdKey || usedIds.has(normalizedIdKey)) {
         normalizedHotel.id = allocateUniqueId(normalizedHotel.id, usedIds, nextIdState);
-        hasIdRepair = true;
+        shouldWriteBack = true;
       } else {
         usedIds.add(normalizedIdKey);
       }
@@ -142,7 +147,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
       return normalizedHotel;
     });
 
-    if (hasIdRepair || JSON.stringify(normalizedHotels) !== JSON.stringify(hotels)) {
+    if (shouldWriteBack) {
       hotelStorage.setExpandedHotelsToStore(store, normalizedHotels, normalizeHotelPayload);
     }
 

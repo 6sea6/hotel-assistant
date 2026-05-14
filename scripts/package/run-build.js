@@ -26,16 +26,6 @@ function getArgValue(argv, ...keys) {
   return '';
 }
 
-function runPowerShellScript(scriptPath, cwd) {
-  runCommand('powershell', [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    scriptPath
-  ], { cwd });
-}
-
 function runElectronBuilder({ projectRoot, configPath }) {
   const electronBuilderBin = path.join(projectRoot, 'node_modules', '.bin', resolveWindowsCommand('electron-builder'));
   runCommand(electronBuilderBin, ['--win', 'nsis', '--x64', '--publish', 'never', '--config', configPath], {
@@ -97,6 +87,12 @@ function ensureNodeModules(projectRoot) {
   });
 }
 
+function syncBuildAssets(projectRoot) {
+  runCommand(process.execPath, [path.join(projectRoot, 'scripts', 'sync-build-assets.js')], {
+    cwd: projectRoot
+  });
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const mode = getArgValue(argv, '--mode', '-m') || argv[0] || '1';
@@ -111,7 +107,7 @@ function main() {
 
   try {
     ensureNodeModules(projectRoot);
-    runPowerShellScript(path.join(projectRoot, 'scripts', 'sync-build-assets.ps1'), projectRoot);
+    syncBuildAssets(projectRoot);
 
     if (mode === '2') {
       preparedBundle = prepareFullBundle({

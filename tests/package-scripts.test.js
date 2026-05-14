@@ -183,3 +183,38 @@ test('scraper unified prompt asset remains present in workspace', () => {
 
   assert.equal(fs.existsSync(promptGuidePath), true);
 });
+
+test('CI workflow and package scripts cover lint, tests, coverage and packaging smoke', () => {
+  const projectRoot = path.resolve(__dirname, '..');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+  const workflowPath = path.join(projectRoot, '.github', 'workflows', 'ci.yml');
+  const workflow = fs.readFileSync(workflowPath, 'utf-8');
+
+  assert.equal(typeof packageJson.scripts.lint, 'string');
+  assert.equal(typeof packageJson.scripts.coverage, 'string');
+  assert.equal(typeof packageJson.scripts['package:smoke'], 'string');
+  assert.match(workflow, /on:\s*\n\s+push:/);
+  assert.match(workflow, /pull_request:/);
+  assert.match(workflow, /npm install/);
+  assert.match(workflow, /npm run lint/);
+  assert.match(workflow, /npm test/);
+  assert.match(workflow, /npm run coverage/);
+  assert.match(workflow, /npm run package:smoke/);
+});
+
+test('build asset sync is implemented by the Node script without Python or Pillow', () => {
+  const projectRoot = path.resolve(__dirname, '..');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+  const syncScript = fs.readFileSync(path.join(projectRoot, 'scripts', 'sync-build-assets.js'), 'utf-8');
+  const psWrapper = fs.readFileSync(path.join(projectRoot, 'scripts', 'sync-build-assets.ps1'), 'utf-8');
+  const runBuildScript = fs.readFileSync(path.join(projectRoot, 'scripts', 'package', 'run-build.js'), 'utf-8');
+  const smokeBuildScript = fs.readFileSync(path.join(projectRoot, 'scripts', 'package', 'smoke-build.js'), 'utf-8');
+
+  assert.equal(packageJson.scripts['sync-build-assets'], 'node scripts/sync-build-assets.js');
+  assert.match(syncScript, /require\('sharp'\)/);
+  assert.match(syncScript, /require\('png-to-ico'\)/);
+  assert.doesNotMatch(syncScript, /python|pillow|PIL/i);
+  assert.doesNotMatch(psWrapper, /python|pillow|PIL/i);
+  assert.match(runBuildScript, /sync-build-assets\.js/);
+  assert.match(smokeBuildScript, /sync-build-assets\.js/);
+});

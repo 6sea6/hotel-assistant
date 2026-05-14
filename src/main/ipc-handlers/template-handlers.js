@@ -1,5 +1,6 @@
 const hotelHandlers = require('./hotel-handlers');
 const hotelStorage = require('../hotel-storage');
+const { hasNormalizedValueChanged } = require('../normalization-utils');
 
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 
@@ -90,14 +91,18 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
     const templates = store.get('templates') || [];
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
-    let hasIdRepair = false;
+    let shouldWriteBack = false;
     const normalizedTemplates = templates.map(template => {
       const normalizedTemplate = normalizeTemplatePayload(template);
+      if (hasNormalizedValueChanged(template, normalizedTemplate)) {
+        shouldWriteBack = true;
+      }
+
       const normalizedIdKey = getIdKey(normalizedTemplate.id);
 
       if (!normalizedIdKey || usedIds.has(normalizedIdKey)) {
         normalizedTemplate.id = allocateUniqueId(normalizedTemplate.id, usedIds, nextIdState);
-        hasIdRepair = true;
+        shouldWriteBack = true;
       } else {
         usedIds.add(normalizedIdKey);
       }
@@ -105,7 +110,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       return normalizedTemplate;
     });
 
-    if (hasIdRepair || JSON.stringify(normalizedTemplates) !== JSON.stringify(templates)) {
+    if (shouldWriteBack) {
       store.set('templates', normalizedTemplates);
     }
 

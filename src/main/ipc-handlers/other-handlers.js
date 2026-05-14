@@ -1,4 +1,5 @@
-const { APP_CONFIG } = require('../config');
+const fs = require('fs');
+const { APP_CONFIG, getPaths } = require('../config');
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'ctrip.com',
@@ -42,6 +43,8 @@ async function openAllowedExternalUrl(shell, rawUrl) {
 function registerOtherHandlers({ ipcMain }) {
   const { shell, BrowserWindow } = require('electron');
   const getSenderWindow = (event) => BrowserWindow.fromWebContents(event.sender);
+
+  ipcMain.handle('manual:getContent', () => fs.readFileSync(getPaths().RENDERER_MANUAL, 'utf8'));
 
   // 打开携程
   ipcMain.handle('open:ctrip', () => openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.CTRIP));

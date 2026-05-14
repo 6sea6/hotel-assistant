@@ -3,13 +3,14 @@ const {
   compactHotels,
   expandStoredHotels
 } = requireSharedCompareAppModule('hotel-groups.js');
+const { hasNormalizedValueChanged } = require('./normalization-utils');
 
 function getExpandedHotelsFromStore(store, normalizeHotelPayload) {
   const rawHotels = store.get('hotels') || [];
   const expandedHotels = expandStoredHotels(rawHotels, normalizeHotelPayload);
   const compactedHotels = compactHotels(expandedHotels, normalizeHotelPayload);
 
-  if (JSON.stringify(rawHotels) !== JSON.stringify(compactedHotels)) {
+  if (hasNormalizedValueChanged(rawHotels, compactedHotels)) {
     store.set('hotels', compactedHotels);
   }
 

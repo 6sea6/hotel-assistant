@@ -1,5 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { APP_CONFIG } = require('./config');
+
+// Sandboxed preload cannot load arbitrary local Node modules. Keep the small
+// renderer-facing app metadata here and expose all privileged work via IPC.
+const APP_INFO = Object.freeze({
+  name: '宾馆比较助手',
+  version: '6.6',
+  releaseDate: '2026-04-16',
+  author: 'Sea'
+});
 
 const invokeCache = new Map();
 const CACHE_TTL = 2000;
@@ -88,10 +96,10 @@ const batchOperations = {
 
 contextBridge.exposeInMainWorld('electronAPI', {
   appInfo: {
-    name: APP_CONFIG.NAME,
-    version: APP_CONFIG.VERSION,
-    releaseDate: APP_CONFIG.RELEASE_DATE,
-    author: APP_CONFIG.AUTHOR,
+    name: APP_INFO.name,
+    version: APP_INFO.version,
+    releaseDate: APP_INFO.releaseDate,
+    author: APP_INFO.author,
     platform: process.platform
   },
 
@@ -171,6 +179,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openCtrip: () => ipcRenderer.invoke('open:ctrip'),
   openFliggy: () => ipcRenderer.invoke('open:fliggy'),
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
+  getManualContent: () => ipcRenderer.invoke('manual:getContent'),
 
   getDataPath: () => ipcRenderer.invoke('data:getPath'),
   showDataInFolder: () => ipcRenderer.invoke('data:showInFolder'),

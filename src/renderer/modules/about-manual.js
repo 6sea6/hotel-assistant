@@ -5,6 +5,15 @@
 import { $, setText, setStyle } from './dom-helpers.js';
 import { setModalActive } from './ui-utils.js';
 
+let manualContentLoaded = false;
+
+const MANUAL_FALLBACK_HTML = `
+  <div class="manual-load-error">
+    <h3>说明书加载失败</h3>
+    <p>未能读取本地说明书资源，请关闭弹窗后重试，或检查应用文件是否完整。</p>
+  </div>
+`;
+
 export function applyAppMetadata() {
   const appInfo = window.electronAPI?.appInfo;
   if (!appInfo) return;
@@ -27,6 +36,26 @@ export function closeAbout() {
   setModalActive('aboutModal', false);
 }
 
+async function loadManualContent() {
+  const container = $('manualContent');
+  if (!container || manualContentLoaded) return;
+
+  container.innerHTML = '<div class="manual-loading">正在加载说明书...</div>';
+
+  try {
+    const content = await window.electronAPI.getManualContent();
+    if (!content || !content.trim()) {
+      throw new Error('说明书内容为空');
+    }
+    container.innerHTML = content;
+    manualContentLoaded = true;
+    applyAppMetadata();
+  } catch (error) {
+    console.error('加载说明书失败:', error);
+    container.innerHTML = MANUAL_FALLBACK_HTML;
+  }
+}
+
 export async function checkAndShowManual() {
   try {
     const showManual = await window.electronAPI.getSetting('showManualOnStartup');
@@ -42,8 +71,9 @@ export async function checkAndShowManual() {
   }
 }
 
-export function openManual() {
+export async function openManual() {
   setModalActive('manualModal', true);
+  await loadManualContent();
 }
 
 export async function closeManual() {

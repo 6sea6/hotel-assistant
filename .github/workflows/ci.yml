@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-package:
+    name: Lint, test, coverage, and Windows package smoke
+    runs-on: windows-latest
+    timeout-minutes: 35
+
+    env:
+      CI: true
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      npm_config_fund: false
+      npm_config_audit: false
+      npm_config_progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Coverage
+        run: npm run coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Windows packaging smoke
+        run: npm run package:smoke
