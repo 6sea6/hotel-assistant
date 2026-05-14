@@ -77,10 +77,6 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
     dependencyNames: getProductionDependencyNames(scraperPackageJson)
   });
 
-  if (fs.existsSync(path.join(scraperDir, 'examples'))) {
-    copyDirSync(path.join(scraperDir, 'examples'), path.join(manifest.directories.scraperRoot, 'examples'));
-  }
-
   return {
     bundleRoot,
     manifest

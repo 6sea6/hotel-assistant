@@ -1,4 +1,5 @@
 const path = require('path');
+const { DEFAULT_COMPARE_APP_FILES } = require('../../shared/compare-app/constants');
 const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT } = require('../../shared/compare-app/prompt-contract');
 
 function getSetupArtifactName(mode, version) {
@@ -19,7 +20,18 @@ function getBundleManifest(bundleRoot) {
       {
         from: scraperRoot,
         to: BUNDLE_RESOURCE_MAP.scraperDirName,
-        filter: ['**/*', '!state/**', '!output/**']
+        filter: [
+          '**/*',
+          '!examples/**',
+          '!state/**',
+          '!output/**',
+          '!scraper-data/**',
+          '!**/edge-profile/**',
+          '!**/raw-pages/**',
+          '!**/hotel-data.json',
+          '!**/*api*key*',
+          '!**/*token*'
+        ]
       }
     ],
     expectations: {
@@ -37,6 +49,16 @@ function getBundleManifest(bundleRoot) {
       ],
       baseOnlyAbsentResources: [
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js')
+      ],
+      neverResources: [
+        path.join(DEFAULT_COMPARE_APP_FILES.appFolderName, DEFAULT_COMPARE_APP_FILES.storeFileName),
+        path.join(BUNDLE_RESOURCE_MAP.runtimeWorkDirName, 'state', 'edge-profile'),
+        path.join('state', 'edge-profile'),
+        path.join('output', 'latest-run.json'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'examples'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'state'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'output'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'scraper-data')
       ]
     }
   };

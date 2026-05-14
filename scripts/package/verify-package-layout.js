@@ -24,6 +24,7 @@ function verifyPackageLayout({ tempBuildDir, mode }) {
 
   const manifest = getBundleManifest(path.join(tempBuildDir, '_unused-manifest-root'));
   manifest.expectations.sharedResources.forEach((relativePath) => assertExists(resourcesDir, relativePath));
+  (manifest.expectations.neverResources || []).forEach((relativePath) => assertMissing(resourcesDir, relativePath));
 
   if (mode === '2') {
     manifest.expectations.fullOnlyResources.forEach((relativePath) => assertExists(resourcesDir, relativePath));

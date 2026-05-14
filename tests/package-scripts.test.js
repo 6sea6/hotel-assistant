@@ -137,6 +137,7 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'cheerio', 'package.json')), true);
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'ws', 'package.json')), true);
   assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'follow-redirects', 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'examples')), false);
 });
 
 test('verifyPackageLayout distinguishes base and full resource layouts', (t) => {
@@ -173,6 +174,34 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
   writeFile(baseResourcesDir, path.join('scraper', 'src', 'cli.js'));
   assert.throws(
     () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'base'), mode: '1' }),
+    /不应存在的打包资源/
+  );
+});
+
+test('package layout rejects local data and login state resources', (t) => {
+  const tempRoot = makeTempRoot();
+  const resourcesDir = path.join(tempRoot, 'full', 'win-unpacked', 'resources');
+
+  const writeFile = (relativePath) => {
+    const targetPath = path.join(resourcesDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, 'fixture', 'utf-8');
+  };
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  [
+    path.join('shared', 'compare-app', 'constants.js'),
+    path.join('shared', 'compare-app', 'data-folder.js'),
+    path.join('shared', 'compare-app', 'hotel-groups.js')
+  ].forEach(writeFile);
+  getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeFile);
+  writeFile(path.join('宾馆比较助手', 'hotel-data.json'));
+
+  assert.throws(
+    () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full'), mode: '2' }),
     /不应存在的打包资源/
   );
 });
