@@ -293,16 +293,56 @@ test('AI fallback system prompt is compact and ignores legacy guide text', () =>
 });
 
 test('AI IPC registers direct task start endpoint', () => {
-  const channels = [];
+  const handlers = new Map();
+  let aiServiceAccessCount = 0;
   const ipcMain = {
     handle(channel, handler) {
-      channels.push(channel);
+      handlers.set(channel, handler);
       assert.equal(typeof handler, 'function');
     }
   };
 
   registerAiHandlers({
     ipcMain,
+    services: {
+      getAiService() {
+        aiServiceAccessCount += 1;
+        return {
+          getProviderConfig() {},
+          getProviderPresets() {
+            return [];
+          },
+          saveProviderConfig() {},
+          testConnection() {},
+          sendChat() {},
+          startTask() {},
+          analyzeCollection() {},
+          applyCollectionReview() {},
+          cancelTask() {},
+          getTaskStatus() {}
+        };
+      }
+    }
+  });
+
+  assert.ok(handlers.has('ai:task:start'));
+  assert.ok(handlers.has('ai:collect:analyze'));
+  assert.ok(handlers.has('ai:collect:apply-review'));
+  assert.equal(aiServiceAccessCount, 0);
+
+  handlers.get('ai:config:presets')();
+  assert.equal(aiServiceAccessCount, 1);
+});
+
+test('AI IPC keeps compatibility with direct aiService object', () => {
+  const channels = [];
+  registerAiHandlers({
+    ipcMain: {
+      handle(channel, handler) {
+        channels.push(channel);
+        assert.equal(typeof handler, 'function');
+      }
+    },
     services: {
       aiService: {
         getProviderConfig() {},

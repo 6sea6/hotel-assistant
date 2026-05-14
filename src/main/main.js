@@ -44,9 +44,11 @@ if (!gotSingleInstanceLock) {
     const ipcHandlerManager = require('./ipc-handler-manager');
     ipcHandlerManager.registerAllHandlers();
     const services = ipcHandlerManager.getServices();
-    const { bundleService, windowService } = services;
+    const { windowService } = services;
 
-    bundleService.ensureBootstrapResources();
+    if (services.hasBundledScraperResources()) {
+      services.getBundleService().ensureBootstrapResources();
+    }
 
     const mainWindow = windowService.createWindow();
 
@@ -54,7 +56,9 @@ if (!gotSingleInstanceLock) {
     setImmediate(() => menuManager.createMenu());
 
     const schedulePostStartupTasks = () => {
-      bundleService.scheduleSetup(120);
+      if (services.hasBundledScraperResources()) {
+        services.getBundleService().scheduleSetup(120);
+      }
     };
 
     if (mainWindow && !mainWindow.isDestroyed()) {
