@@ -51,6 +51,8 @@ export const state = {
   aiTaskQueue: [],
   aiTaskQueueCounter: 0,
   aiSelectedQueueTaskId: '',
+  aiQueueSelectionPinned: false,
+  aiReviewInputSyncBound: false,
   aiReview: {
     isOpen: false,
     inProgress: false,
@@ -58,7 +60,9 @@ export const state = {
     result: null,
     reviewId: '',
     userConcern: '',
-    error: ''
+    error: '',
+    startedAt: '',
+    endedAt: ''
   }
 };
 

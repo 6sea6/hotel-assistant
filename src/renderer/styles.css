@@ -2333,7 +2333,9 @@ body.modal-open .modal.active {
   flex: 0 0 auto;
   min-height: 0;
   padding: 0;
-  overflow: hidden;
+  position: relative;
+  z-index: 12;
+  overflow: visible;
 }
 
 .task-start-hint {
@@ -2361,11 +2363,100 @@ body.modal-open .modal.active {
   font-size: 13px;
 }
 
-.ai-template-select,
 .task-url-input {
   min-height: 40px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
+}
+
+.ai-template-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.ai-template-select {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ai-template-picker-button {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 999px;
+  padding: 8px 14px 8px 18px;
+  background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ai-template-picker-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-template-picker-caret {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  transition: transform var(--transition-fast);
+}
+
+.ai-template-picker.is-open .ai-template-picker-caret {
+  transform: rotate(180deg);
+}
+
+.ai-template-picker-menu {
+  position: fixed;
+  z-index: 2000;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 26%, var(--border-color));
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-secondary) 4%);
+  box-shadow: 0 18px 42px rgba(28, 54, 84, 0.18);
+}
+
+.ai-template-picker-menu[hidden] {
+  display: none;
+}
+
+.ai-template-picker-option {
+  width: 100%;
+  min-height: 36px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.ai-template-picker-option:hover {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+
+.ai-template-picker-option.is-selected {
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary-color), color-mix(in srgb, var(--primary-color) 76%, #0E4CD9));
+}
+
+.ai-template-picker-option:active {
+  transform: scale(0.99);
 }
 
 .task-url-input-wrap {
@@ -2464,7 +2555,7 @@ body.modal-open .modal.active {
 .task-review-replace-view {
   height: 100%;
   min-height: 100%;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   padding: 16px;
 }
 
@@ -2479,26 +2570,6 @@ body.modal-open .modal.active {
   margin: 0;
   font-size: 16px;
   color: var(--text-primary);
-}
-
-.task-review-context {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.task-review-context span {
-  min-width: 0;
-  max-width: 100%;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-primary) 84%, var(--bg-tertiary) 16%);
-  border: 1px solid var(--border-light);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .task-review-input-area {
@@ -2550,9 +2621,7 @@ body.modal-open .modal.active {
 .analyzing-card {
   overflow: hidden;
   border-color: color-mix(in srgb, var(--primary-color) 26%, var(--border-color));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--primary-color) 5%, transparent), transparent 48%),
-    color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
+  background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-tertiary) 4%);
 }
 
 .analyzing-card::before {
@@ -2585,19 +2654,56 @@ body.modal-open .modal.active {
 
 .review-loading-main {
   display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--primary-color) 16%, var(--border-color));
-  background: color-mix(in srgb, var(--primary-color) 7%, var(--bg-primary));
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px 22px;
+  align-items: center;
+  padding: 24px 28px 26px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 22%, var(--border-color));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--primary-color) 7%, var(--bg-primary)) 0%, var(--bg-primary) 60%, color-mix(in srgb, var(--primary-color) 9%, var(--bg-primary)) 100%);
+  box-shadow: 0 8px 24px rgba(55, 100, 160, 0.08);
 }
 
-.review-loading-main strong {
+.review-loading-content {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.review-loading-content strong {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.review-runtime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+  padding: 9px 16px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 22%, var(--border-color));
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  box-shadow: 0 8px 20px rgba(55, 100, 160, 0.08);
+  white-space: nowrap;
+}
+
+.review-runtime-icon {
+  color: var(--primary-color);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.review-runtime-pill strong {
+  color: var(--primary-color);
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .thinking-dots {
@@ -3288,6 +3394,15 @@ body.modal-open .modal.active {
 
   .task-review-actions button {
     flex: 1 1 0;
+  }
+
+  .review-loading-main {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 20px;
+  }
+
+  .review-runtime-pill {
+    justify-self: start;
   }
 
   .task-result-card:nth-child(3) {

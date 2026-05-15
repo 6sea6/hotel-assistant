@@ -234,12 +234,19 @@
             <span class="task-start-hint">按 Enter 键加入队列</span>
           </div>
           <div class="task-start-grid">
-            <label class="task-field task-field-template" for="aiTemplateSelect">
+            <div class="task-field task-field-template">
               <span>模板</span>
-              <select id="aiTemplateSelect" class="input ai-template-select">
-                <option value="">请选择模板</option>
-              </select>
-            </label>
+              <div id="aiTemplatePicker" class="ai-template-picker">
+                <select id="aiTemplateSelect" class="input ai-template-select" aria-hidden="true" tabindex="-1">
+                  <option value="">请选择模板</option>
+                </select>
+                <button id="aiTemplatePickerButton" class="input ai-template-picker-button" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="aiTemplatePickerText" class="ai-template-picker-text">请选择模板</span>
+                  <span class="ai-template-picker-caret" aria-hidden="true">⌄</span>
+                </button>
+                <div id="aiTemplatePickerMenu" class="ai-template-picker-menu" role="listbox" hidden></div>
+              </div>
+            </div>
             <label class="task-field task-field-url" for="aiHotelUrlInput">
               <span>链接</span>
               <div class="task-url-input-wrap">

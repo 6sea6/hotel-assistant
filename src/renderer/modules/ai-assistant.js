@@ -41,6 +41,16 @@ function renderTaskConsole() {
   updateTaskInputCount();
 }
 
+function syncReviewConcernFromInput() {
+  const input = $('aiReviewConcernInput');
+  if (!input || !state.aiReview || !state.aiReview.isOpen) return;
+  state.aiReview = {
+    ...state.aiReview,
+    userConcern: input.value
+  };
+  syncCurrentReviewToSelectedTask();
+}
+
 function renderProviderOptions() {
   const select = $('aiProviderSelect');
   if (!select || !state.aiProviderPresets.length) return;
@@ -64,6 +74,151 @@ function renderAiTemplateOptions() {
   if (currentValue && Array.from(select.options).some((option) => option.value === currentValue)) {
     select.value = currentValue;
   }
+  renderAiTemplatePicker();
+}
+
+function closeAiTemplatePicker() {
+  const picker = $('aiTemplatePicker');
+  const button = $('aiTemplatePickerButton');
+  const menu = $('aiTemplatePickerMenu');
+  if (!picker || !button || !menu) return;
+
+  picker.classList.remove('is-open');
+  button.setAttribute('aria-expanded', 'false');
+  menu.hidden = true;
+}
+
+function renderAiTemplatePicker() {
+  const select = $('aiTemplateSelect');
+  const button = $('aiTemplatePickerButton');
+  const text = $('aiTemplatePickerText');
+  const menu = $('aiTemplatePickerMenu');
+  if (!select || !button || !text || !menu) return;
+
+  const options = Array.from(select.options);
+  const selectedOption = select.selectedOptions[0] || options[0] || null;
+  text.textContent = selectedOption ? selectedOption.textContent : '请选择模板';
+  button.disabled = select.disabled;
+
+  menu.innerHTML = options.map((option) => {
+    const value = option.value || '';
+    const isSelected = String(value) === String(select.value || '');
+    return `
+      <button class="ai-template-picker-option${isSelected ? ' is-selected' : ''}" type="button" role="option" aria-selected="${isSelected ? 'true' : 'false'}" data-template-value="${escapeHtml(value)}">
+        ${escapeHtml(option.textContent || '')}
+      </button>
+    `;
+  }).join('');
+
+  positionAiTemplatePickerMenu();
+}
+
+function positionAiTemplatePickerMenu() {
+  const picker = $('aiTemplatePicker');
+  const button = $('aiTemplatePickerButton');
+  const menu = $('aiTemplatePickerMenu');
+  if (!picker || !button || !menu || menu.hidden || !picker.classList.contains('is-open')) return;
+
+  const viewportPadding = 12;
+  const rect = button.getBoundingClientRect();
+  const belowSpace = window.innerHeight - rect.bottom - viewportPadding;
+  const aboveSpace = rect.top - viewportPadding;
+  const menuLimit = Math.max(128, Math.min(240, Math.max(belowSpace, aboveSpace)));
+  const preferredHeight = Math.min(menu.scrollHeight || menuLimit, menuLimit);
+  const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - rect.width - viewportPadding));
+  const shouldOpenBelow = belowSpace >= preferredHeight || belowSpace >= aboveSpace;
+  const top = shouldOpenBelow
+    ? rect.bottom + 8
+    : Math.max(viewportPadding, rect.top - preferredHeight - 8);
+
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.style.width = `${rect.width}px`;
+  menu.style.maxHeight = `${menuLimit}px`;
+  menu.classList.toggle('is-above', !shouldOpenBelow);
+}
+
+function toggleAiTemplatePicker() {
+  const picker = $('aiTemplatePicker');
+  const button = $('aiTemplatePickerButton');
+  const menu = $('aiTemplatePickerMenu');
+  if (!picker || !button || !menu || button.disabled) return;
+
+  const shouldOpen = !picker.classList.contains('is-open');
+  picker.classList.toggle('is-open', shouldOpen);
+  button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  menu.hidden = !shouldOpen;
+  if (shouldOpen) {
+    renderAiTemplatePicker();
+    positionAiTemplatePickerMenu();
+  }
+}
+
+function chooseAiTemplateOption(value) {
+  const select = $('aiTemplateSelect');
+  if (!select) return;
+  select.value = value;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  renderAiTemplatePicker();
+  closeAiTemplatePicker();
+}
+
+function setupAiTemplatePicker() {
+  if (state.aiTemplatePickerBound) return;
+
+  const picker = $('aiTemplatePicker');
+  const button = $('aiTemplatePickerButton');
+  const menu = $('aiTemplatePickerMenu');
+  const select = $('aiTemplateSelect');
+  if (!picker || !button || !menu || !select) return;
+
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    toggleAiTemplatePicker();
+  });
+
+  menu.addEventListener('click', (event) => {
+    const option = event.target && event.target.closest
+      ? event.target.closest('[data-template-value]')
+      : null;
+    if (!option) return;
+    event.preventDefault();
+    chooseAiTemplateOption(option.dataset.templateValue || '');
+  });
+
+  select.addEventListener('change', renderAiTemplatePicker);
+
+  document.addEventListener('click', (event) => {
+    if (!picker.contains(event.target)) {
+      closeAiTemplatePicker();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeAiTemplatePicker();
+    }
+  });
+
+  window.addEventListener('resize', positionAiTemplatePickerMenu);
+  window.addEventListener('scroll', positionAiTemplatePickerMenu, true);
+
+  state.aiTemplatePickerBound = true;
+}
+
+function setupAiReviewInputSync() {
+  if (state.aiReviewInputSyncBound) return;
+
+  document.addEventListener('input', (event) => {
+    if (!event.target || event.target.id !== 'aiReviewConcernInput') return;
+    state.aiReview = {
+      ...state.aiReview,
+      userConcern: event.target.value
+    };
+    syncCurrentReviewToSelectedTask();
+  });
+
+  state.aiReviewInputSyncBound = true;
 }
 
 function findSelectedAiTemplate() {
@@ -115,16 +270,67 @@ function getSubmittedUrl() {
   return extractCtripUrl(getValue('aiHotelUrlInput'));
 }
 
-function resetAiReviewState() {
-  state.aiReview = {
+function createEmptyReviewState(overrides = {}) {
+  return {
     isOpen: false,
     inProgress: false,
     applyInProgress: false,
     result: null,
     reviewId: '',
     userConcern: '',
-    error: ''
+    error: '',
+    startedAt: '',
+    endedAt: '',
+    ...overrides
   };
+}
+
+function normalizeReviewState(review = {}) {
+  return createEmptyReviewState({
+    isOpen: Boolean(review.isOpen),
+    inProgress: Boolean(review.inProgress),
+    applyInProgress: Boolean(review.applyInProgress),
+    result: review.result || null,
+    reviewId: review.reviewId || '',
+    userConcern: review.userConcern || '',
+    error: review.error || '',
+    startedAt: review.startedAt || '',
+    endedAt: review.endedAt || ''
+  });
+}
+
+function getSelectedTaskReviewState() {
+  const task = getSelectedQueueTask();
+  return task ? normalizeReviewState(task.review) : createEmptyReviewState();
+}
+
+function syncCurrentReviewToSelectedTask() {
+  const task = getSelectedQueueTask();
+  if (task) {
+    task.review = normalizeReviewState(state.aiReview);
+  }
+}
+
+function setReviewStateForTask(task, review) {
+  const nextReview = normalizeReviewState(review);
+  if (task) {
+    task.review = nextReview;
+  }
+  if (!task || String(state.aiSelectedQueueTaskId) === String(task.id)) {
+    state.aiReview = normalizeReviewState(nextReview);
+  }
+  return nextReview;
+}
+
+function restoreReviewForTask(task) {
+  state.aiReview = task ? normalizeReviewState(task.review) : createEmptyReviewState();
+}
+
+function resetAiReviewState(options = {}) {
+  state.aiReview = createEmptyReviewState();
+  if (options.syncTask !== false) {
+    syncCurrentReviewToSelectedTask();
+  }
 }
 
 function getRunningQueueTask() {
@@ -164,7 +370,8 @@ function createQueueTask(template, url) {
     errorMessage: '',
     resultSummary: '',
     events: [],
-    console: createEmptyTaskConsole()
+    console: createEmptyTaskConsole(),
+    review: createEmptyReviewState()
   };
 }
 
@@ -173,6 +380,14 @@ function syncDisplayedTask(task) {
   state.aiSelectedQueueTaskId = task.id;
   state.aiTaskConsole = task.console || createEmptyTaskConsole();
   state.aiTaskEvents = task.events || [];
+  restoreReviewForTask(task);
+}
+
+function shouldAutoDisplayStartedTask(task) {
+  const selectedTask = getSelectedQueueTask();
+  return !state.aiQueueSelectionPinned
+    || !selectedTask
+    || String(state.aiSelectedQueueTaskId) === String(task.id);
 }
 
 function startTaskConsole(template, url, queueTask = null) {
@@ -194,12 +409,16 @@ function startTaskConsole(template, url, queueTask = null) {
     queueTask.resultSummary = '';
     queueTask.events = events;
     queueTask.console = consoleState;
-    syncDisplayedTask(queueTask);
+    queueTask.review = createEmptyReviewState();
+    if (shouldAutoDisplayStartedTask(queueTask)) {
+      state.aiQueueSelectionPinned = false;
+      syncDisplayedTask(queueTask);
+    }
   } else {
     state.aiTaskEvents = events;
     state.aiTaskConsole = consoleState;
+    resetAiReviewState({ syncTask: false });
   }
-  resetAiReviewState();
   renderTaskConsole();
 }
 
@@ -276,7 +495,11 @@ function addQueueTask(template, url) {
   }
   const task = createQueueTask(template, url);
   state.aiTaskQueue.push(task);
-  state.aiSelectedQueueTaskId = state.aiSelectedQueueTaskId || task.id;
+  if (!state.aiSelectedQueueTaskId) {
+    state.aiSelectedQueueTaskId = task.id;
+    state.aiQueueSelectionPinned = false;
+    restoreReviewForTask(task);
+  }
   renderTaskConsole();
   return task;
 }
@@ -385,6 +608,7 @@ export async function testAiConnection() {
 export async function openAiAssistant() {
   setPageVisible('hotelMain', false);
   setPageVisible('aiAssistantPage', true);
+  setupAiTemplatePicker();
   await initializeAiAssistant();
 }
 
@@ -396,6 +620,7 @@ export function closeAiAssistant() {
 async function initializeAiAssistant() {
   if (!state.aiAssistantInitialized) {
     state.aiTaskConsole = state.aiTaskConsole || createEmptyTaskConsole();
+    setupAiReviewInputSync();
     window.electronAPI.ai.onTaskEvent((event) => {
       const task = findQueueTaskByBackendTaskId(event.taskId) || getRunningQueueTask();
       if (task) {
@@ -477,15 +702,17 @@ export function clearAiTaskRecords() {
   const runningTask = getRunningQueueTask();
   if (runningTask) {
     state.aiTaskQueue = [runningTask];
+    state.aiQueueSelectionPinned = false;
     syncDisplayedTask(runningTask);
     showNotification('当前任务仍在运行，已清空其余队列记录', 'warning');
   } else {
     state.aiTaskQueue = [];
     state.aiSelectedQueueTaskId = '';
+    state.aiQueueSelectionPinned = false;
     state.aiTaskEvents = [];
     state.aiTaskConsole = createEmptyTaskConsole();
+    resetAiReviewState({ syncTask: false });
   }
-  resetAiReviewState();
   setValue('aiHotelUrlInput', '');
   renderTaskConsole();
 }
@@ -494,21 +721,24 @@ export function clearAiTaskQueue() {
   const runningTask = getRunningQueueTask();
   state.aiTaskQueue = runningTask ? [runningTask] : [];
   if (runningTask) {
+    state.aiQueueSelectionPinned = false;
     syncDisplayedTask(runningTask);
   } else {
     state.aiSelectedQueueTaskId = '';
+    state.aiQueueSelectionPinned = false;
     state.aiTaskEvents = [];
     state.aiTaskConsole = createEmptyTaskConsole();
+    resetAiReviewState({ syncTask: false });
   }
-  resetAiReviewState();
   renderTaskConsole();
 }
 
 export function selectAiQueueTask(taskId) {
   const task = (state.aiTaskQueue || []).find((item) => String(item.id) === String(taskId));
   if (!task) return;
+  syncReviewConcernFromInput();
+  state.aiQueueSelectionPinned = true;
   syncDisplayedTask(task);
-  resetAiReviewState();
   renderTaskConsole();
 }
 
@@ -520,14 +750,16 @@ export function removeAiQueueTask(taskId) {
     const runningTask = getRunningQueueTask();
     const fallback = runningTask || state.aiTaskQueue[0] || null;
     if (fallback) {
+      state.aiQueueSelectionPinned = false;
       syncDisplayedTask(fallback);
     } else {
       state.aiSelectedQueueTaskId = '';
+      state.aiQueueSelectionPinned = false;
       state.aiTaskConsole = createEmptyTaskConsole();
       state.aiTaskEvents = [];
+      resetAiReviewState({ syncTask: false });
     }
   }
-  resetAiReviewState();
   renderTaskConsole();
 }
 
@@ -539,7 +771,9 @@ export function retryAiQueueTask(taskId) {
     state.aiTaskQueue = state.aiTaskQueue.filter((item) => String(item.id) !== String(taskId));
     state.aiTaskQueue.push(sourceTask);
     state.aiSelectedQueueTaskId = sourceTask.id;
-    resetAiReviewState();
+    state.aiQueueSelectionPinned = false;
+    sourceTask.review = createEmptyReviewState();
+    restoreReviewForTask(sourceTask);
     renderTaskConsole();
     showNotification('已移到队列末尾', 'success');
     runNextQueueTask();
@@ -548,7 +782,8 @@ export function retryAiQueueTask(taskId) {
   const task = createQueueTask(sourceTask.template, sourceTask.url);
   state.aiTaskQueue.push(task);
   state.aiSelectedQueueTaskId = task.id;
-  resetAiReviewState();
+  state.aiQueueSelectionPinned = false;
+  restoreReviewForTask(task);
   renderTaskConsole();
   showNotification('已重新加入队列', 'success');
   runNextQueueTask();
@@ -572,21 +807,24 @@ function renderAiReviewResult() {
 }
 
 export function openAiReviewPanel() {
+  const reviewTask = getSelectedQueueTask();
   const collectResult = state.aiTaskConsole && state.aiTaskConsole.collectResult;
   if (!getCurrentReviewTaskId() || !collectResult || !collectResult.reviewInputAvailable) {
     showNotification('当前任务没有生成可复核的数据包。', 'warning');
     return;
   }
 
-  state.aiReview = {
+  setReviewStateForTask(reviewTask, {
     isOpen: true,
     inProgress: false,
     applyInProgress: false,
     result: null,
     reviewId: '',
     userConcern: '',
-    error: ''
-  };
+    error: '',
+    startedAt: '',
+    endedAt: ''
+  });
   renderAiReviewResult();
   setTimeout(() => {
     const input = $('aiReviewConcernInput');
@@ -595,15 +833,18 @@ export function openAiReviewPanel() {
 }
 
 export function closeAiReviewPanel() {
-  state.aiReview = {
-    ...state.aiReview,
+  syncReviewConcernFromInput();
+  const reviewTask = getSelectedQueueTask();
+  setReviewStateForTask(reviewTask, {
+    ...getSelectedTaskReviewState(),
     isOpen: false
-  };
+  });
   renderTaskConsole();
 }
 
 export async function analyzeAiCollection() {
   if (state.aiReview.inProgress) return;
+  const reviewTask = getSelectedQueueTask();
   const taskId = getCurrentReviewTaskId();
   const userConcern = getValue('aiReviewConcernInput');
   if (!taskId) {
@@ -615,11 +856,18 @@ export async function analyzeAiCollection() {
     return;
   }
 
-  state.aiReview.inProgress = true;
-  state.aiReview.result = null;
-  state.aiReview.reviewId = '';
-  state.aiReview.userConcern = userConcern;
-  state.aiReview.error = '';
+  const startedAt = new Date().toISOString();
+  setReviewStateForTask(reviewTask, {
+    ...getSelectedTaskReviewState(),
+    inProgress: true,
+    applyInProgress: false,
+    result: null,
+    reviewId: '',
+    userConcern,
+    error: '',
+    startedAt,
+    endedAt: ''
+  });
   renderAiReviewResult();
 
   try {
@@ -627,41 +875,62 @@ export async function analyzeAiCollection() {
       taskId,
       userConcern
     });
-    state.aiReview.result = result;
-    state.aiReview.reviewId = result.reviewId || '';
-    state.aiReview.userConcern = userConcern;
-    state.aiReview.error = '';
+    setReviewStateForTask(reviewTask, {
+      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
+      result,
+      reviewId: result.reviewId || '',
+      userConcern,
+      error: ''
+    });
     showNotification(result.canApply ? '已生成重填预览，请确认后写入' : '分析完成，但证据不足，不能覆盖写入', result.canApply ? 'success' : 'warning');
   } catch (error) {
     console.error('AI 分析重填失败:', error);
-    state.aiReview.error = error.message || '分析失败，请稍后重试。';
-    showNotification(state.aiReview.error, 'error');
+    const errorMessage = error.message || '分析失败，请稍后重试。';
+    setReviewStateForTask(reviewTask, {
+      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
+      error: errorMessage
+    });
+    showNotification(errorMessage, 'error');
   } finally {
-    state.aiReview.inProgress = false;
+    setReviewStateForTask(reviewTask, {
+      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
+      inProgress: false,
+      endedAt: new Date().toISOString()
+    });
     renderAiReviewResult();
   }
 }
 
 export async function applyAiCollectionReview() {
   if (state.aiReview.applyInProgress || !state.aiReview.reviewId) return;
-  state.aiReview.applyInProgress = true;
-  state.aiReview.userConcern = getValue('aiReviewConcernInput', state.aiReview.userConcern || '');
+  const reviewTask = getSelectedQueueTask();
+  setReviewStateForTask(reviewTask, {
+    ...getSelectedTaskReviewState(),
+    applyInProgress: true,
+    userConcern: getValue('aiReviewConcernInput', state.aiReview.userConcern || '')
+  });
   renderAiReviewResult();
 
   try {
     await window.electronAPI.ai.applyCollectionReview({
-      reviewId: state.aiReview.reviewId
+      reviewId: (reviewTask && reviewTask.review && reviewTask.review.reviewId) || state.aiReview.reviewId
     });
     await actions.reloadAllData({ includeSettings: true, invalidateCache: true, verbose: false });
     actions.updateTemplateFilter({ interactionFirst: true });
     actions.renderHotelList({ interactionFirst: true });
     showNotification('AI 复核结果已覆盖写入，宾馆列表已刷新', 'success');
-    closeAiReviewPanel();
+    setReviewStateForTask(reviewTask, {
+      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
+      isOpen: false
+    });
   } catch (error) {
     console.error('AI 覆盖写入失败:', error);
     showNotification(error.message || 'AI 覆盖写入失败', 'error');
   } finally {
-    state.aiReview.applyInProgress = false;
+    setReviewStateForTask(reviewTask, {
+      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
+      applyInProgress: false
+    });
     renderAiReviewResult();
   }
 }

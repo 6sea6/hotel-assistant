@@ -98,6 +98,7 @@ const REVIEW_FIELD_LABELS = {
 };
 
 let elapsedTimer = null;
+let reviewElapsedTimer = null;
 
 export function formatAiTime(value) {
   const date = value ? new Date(value) : new Date();
@@ -308,6 +309,14 @@ function formatDuration(ms) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
+function formatReviewDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
 function getElapsedText(taskInfo = {}, status = 'idle', now = Date.now()) {
   const start = getTimeValue(taskInfo.startTime);
   if (!start) return '00:00:00';
@@ -335,6 +344,37 @@ function syncElapsedTimer(status) {
   if (elapsedTimer) {
     globalThis.clearInterval(elapsedTimer);
     elapsedTimer = null;
+  }
+}
+
+function getReviewElapsedText(review = {}, now = Date.now()) {
+  const start = getTimeValue(review.startedAt);
+  if (!start) return '00:00';
+  const end = review.inProgress ? now : (getTimeValue(review.endedAt) || now);
+  return formatReviewDuration(end - start);
+}
+
+function updateReviewElapsedTimerText() {
+  const timer = $('aiReviewElapsedTime');
+  if (!timer) return;
+
+  timer.textContent = getReviewElapsedText({
+    startedAt: timer.dataset.startTime,
+    endedAt: timer.dataset.endTime,
+    inProgress: timer.dataset.status === 'running'
+  });
+}
+
+function syncReviewElapsedTimer(review = {}) {
+  updateReviewElapsedTimerText();
+  if (review.inProgress) {
+    if (!reviewElapsedTimer) reviewElapsedTimer = globalThis.setInterval(updateReviewElapsedTimerText, 1000);
+    return;
+  }
+
+  if (reviewElapsedTimer) {
+    globalThis.clearInterval(reviewElapsedTimer);
+    reviewElapsedTimer = null;
   }
 }
 
@@ -590,16 +630,23 @@ function renderReviewDiffs(diffs = []) {
   `;
 }
 
-function renderReviewLoading() {
+function renderReviewLoading(review = {}) {
+  const elapsedText = getReviewElapsedText(review);
   return `
     <div class="ai-review-loading">
       <div class="review-loading-main">
-        <strong>
-          正在复核本次采集证据
-          <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-        </strong>
-        <div class="review-stage-rotator" aria-live="polite">
-          ${REVIEW_PHASES.map((phase, index) => `<span class="review-stage-${index + 1}">${escapeHtml(phase)}</span>`).join('')}
+        <div class="review-loading-content">
+          <strong>
+            正在复核本次采集证据
+            <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          </strong>
+          <div class="review-stage-rotator" aria-live="polite">
+            ${REVIEW_PHASES.map((phase, index) => `<span class="review-stage-${index + 1}">${escapeHtml(phase)}</span>`).join('')}
+          </div>
+        </div>
+        <div class="review-runtime-pill" aria-label="复核已运行时间">
+          <span class="review-runtime-icon" aria-hidden="true">⏱</span>
+          <span>已运行 <strong id="aiReviewElapsedTime" data-start-time="${escapeHtml(review.startedAt || '')}" data-end-time="${escapeHtml(review.endedAt || '')}" data-status="${review.inProgress ? 'running' : 'done'}">${escapeHtml(elapsedText)}</strong></span>
         </div>
       </div>
     </div>
@@ -622,7 +669,7 @@ function renderReviewFailed(errorMessage) {
 
 function renderReviewOutput(review = {}) {
   if (review.inProgress) {
-    return renderReviewLoading();
+    return renderReviewLoading(review);
   }
 
   if (review.error) {
@@ -679,10 +726,6 @@ function renderReviewReplaceView(taskState) {
           <h3>AI分析重填</h3>
         </div>
         <button class="task-secondary-button" type="button" data-action="close-ai-review">返回结果</button>
-      </div>
-      <div class="task-review-context">
-        <span>模板：${escapeHtml(taskState.taskInfo.templateName || '暂无')}</span>
-        <span>状态：${escapeHtml(taskState.status === 'error' ? '任务失败后复核' : '采集完成后复核')}</span>
       </div>
       <div id="aiReviewResult" class="ai-review-result${resultClass}">
         ${renderReviewOutput(review)}
@@ -855,12 +898,17 @@ function updateStartBar(taskState) {
 export function renderAiTaskConsole(state) {
   const panel = $('aiCurrentTaskPanel');
   if (!panel) return null;
+  const selectedQueueTask = (state.aiTaskQueue || [])
+    .find((task) => String(task.id || '') === String(state.aiSelectedQueueTaskId || ''));
+  const selectedTaskInProgress = selectedQueueTask
+    ? selectedQueueTask.status === 'running'
+    : Boolean(state.aiTaskInProgress);
 
   const taskState = normalizeTaskState({
     task: state.aiTaskConsole || {},
     events: state.aiTaskEvents || [],
-    inProgress: state.aiTaskInProgress,
-    review: state.aiReview || {}
+    inProgress: selectedTaskInProgress,
+    review: selectedQueueTask && selectedQueueTask.review ? selectedQueueTask.review : (state.aiReview || {})
   });
 
   const shouldShowReview = taskState.canReview && taskState.review && taskState.review.isOpen;
@@ -882,6 +930,7 @@ export function renderAiTaskConsole(state) {
   }
   updateStartBar(taskState);
   syncElapsedTimer(taskState.status);
+  syncReviewElapsedTimer(taskState.review || {});
   return taskState;
 }
 
