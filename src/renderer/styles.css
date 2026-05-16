@@ -2059,6 +2059,83 @@ body.modal-open .modal.active {
   background: color-mix(in srgb, var(--primary-color) 12%, var(--bg-primary));
 }
 
+.task-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+
+.task-progress-stat-card {
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 24%, var(--border-color));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-tertiary) 8%);
+  color: var(--text-secondary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 68%, transparent);
+}
+
+.task-progress-stat-card span {
+  color: var(--text-secondary);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.task-progress-stat-card strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-progress-stat-icon {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: block;
+  color: var(--primary-color);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.task-progress-stat-icon-hotel {
+  color: var(--primary-color);
+}
+
+.task-progress-stat-icon-done {
+  color: #22C55E;
+  fill: #22C55E;
+}
+
+.task-progress-stat-icon-done path {
+  stroke: #fff;
+  stroke-width: 2.6;
+}
+
+.task-progress-stat-icon-running {
+  color: #2F80ED;
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+  transform-origin: center;
+}
+
+.task-progress-stat-icon-pending {
+  color: #7B8794;
+}
+
 .task-timeline {
   display: grid;
   gap: 0;
@@ -2364,7 +2441,9 @@ body.modal-open .modal.active {
 }
 
 .task-url-input {
+  height: 40px;
   min-height: 40px;
+  max-height: 40px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
 }
@@ -2462,6 +2541,7 @@ body.modal-open .modal.active {
 .task-url-input-wrap {
   position: relative;
   min-width: 0;
+  height: 40px;
 }
 
 .task-url-icon {
@@ -2474,11 +2554,13 @@ body.modal-open .modal.active {
 }
 
 .task-url-input {
+  display: block;
   padding-left: 38px;
   padding-right: 86px;
+  line-height: 1.45;
+  resize: none;
+  white-space: pre-wrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .task-input-count {
@@ -2527,6 +2609,24 @@ body.modal-open .modal.active {
   border-color: rgba(255, 255, 255, 0.35);
   border-top-color: #fff;
   display: inline-flex;
+}
+
+.settings-subsection {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-subsection-title {
+  margin-bottom: 10px;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.settings-prefilter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .ai-config-grid {
@@ -3379,6 +3479,7 @@ body.modal-open .modal.active {
   }
 
   .task-start-grid,
+  .settings-prefilter-grid,
   .task-workspace-grid,
   .task-result-grid {
     grid-template-columns: minmax(0, 1fr);

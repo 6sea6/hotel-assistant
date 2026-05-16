@@ -251,8 +251,8 @@
               <span>链接</span>
               <div class="task-url-input-wrap">
                 <span class="task-url-icon" aria-hidden="true">↗</span>
-                <input id="aiHotelUrlInput" class="input task-url-input" type="url" maxlength="2000" placeholder="粘贴携程酒店详情页链接">
-                <span id="aiInputCount" class="task-input-count">0 / 2000</span>
+                <textarea id="aiHotelUrlInput" class="input task-url-input" maxlength="4000" rows="1" placeholder="粘贴携程酒店详情页或列表页链接"></textarea>
+                <span id="aiInputCount" class="task-input-count">0 / 4000</span>
               </div>
             </label>
             <div class="task-start-action">
@@ -514,6 +514,32 @@
               <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText">关闭</span>
             </div>
             <small class="help-text">开启后，当模板入住人数为 3 人时，采集器仍会额外保留携程页面上明确显示可住 4 人的房型；查询参数仍按 3 人发起。</small>
+            <div class="settings-subsection">
+              <div class="settings-subsection-title">列表页前筛</div>
+              <div class="settings-prefilter-grid">
+                <div class="form-group">
+                  <label for="aiListDesiredHotelCount">目标宾馆数</label>
+                  <input id="aiListDesiredHotelCount" class="input" type="number" min="1" max="50" step="1" data-setting-key="aiListDesiredHotelCount" placeholder="默认 10">
+                </div>
+                <div class="form-group">
+                  <label for="aiListMinScore">最低评分</label>
+                  <input id="aiListMinScore" class="input" type="number" min="0" max="5" step="0.1" data-setting-key="aiListMinScore" placeholder="如 4.5">
+                </div>
+                <div class="form-group">
+                  <label for="aiListExcludeKeywords">排除关键词</label>
+                  <input id="aiListExcludeKeywords" class="input" type="text" maxlength="200" data-setting-key="aiListExcludeKeywords" placeholder="名称关键词，逗号分隔">
+                </div>
+                <div class="form-group">
+                  <label for="aiListExcludeHotelTypes">排除住宿类型</label>
+                  <input id="aiListExcludeHotelTypes" class="input" type="text" maxlength="200" data-setting-key="aiListExcludeHotelTypes" placeholder="民宿、客栈、青年旅舍、公寓">
+                </div>
+                <div class="form-group">
+                  <label for="aiListMaxPages">最多扫描页数</label>
+                  <input id="aiListMaxPages" class="input" type="number" min="1" max="10" step="1" data-setting-key="aiListMaxPages" placeholder="默认 1">
+                </div>
+              </div>
+              <small class="help-text">这些设置只影响携程列表页输入；最多扫描页数表示从当前列表页开始最多读取几页候选酒店，默认 1 代表只扫当前页。</small>
+            </div>
           </div>
           <div class="form-group">
             <label>数据存储位置</label>

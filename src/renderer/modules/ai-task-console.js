@@ -45,6 +45,9 @@ const REVIEW_SOURCE_LABELS = {
   pageSnapshotSummary: '页面摘要'
 };
 
+const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
+const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
+
 const REVIEW_FIELD_LABELS = {
   room_area: '房型面积',
   roomArea: '房型面积',
@@ -124,8 +127,37 @@ export function formatAiTemplateLabel(template = {}) {
 }
 
 export function extractCtripUrl(text) {
-  const match = String(text || '').match(/https?:\/\/[^\s"'<>]+/i);
-  return match ? match[0].trim() : '';
+  return extractCtripUrls(text)[0] || '';
+}
+
+export function extractCtripUrls(text) {
+  const seen = new Set();
+  const matches = String(text || '').match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  return matches
+    .map((match) => {
+      let cleaned = match.replace(/&amp;/g, '&').trim();
+      const inlineTextIndex = cleaned.search(INLINE_URL_TEXT_SEPARATOR);
+      if (inlineTextIndex > 0) {
+        cleaned = cleaned.slice(0, inlineTextIndex);
+      }
+      while (TRAILING_URL_PUNCTUATION.test(cleaned)) {
+        cleaned = cleaned.replace(TRAILING_URL_PUNCTUATION, '');
+      }
+      return cleaned;
+    })
+    .filter((url) => {
+      if (!url || seen.has(url)) return false;
+      try {
+        const parsed = new URL(url);
+        const hostAllowed = /(^|\.)ctrip\.com$/i.test(parsed.hostname);
+        const hotelPage = /hotel|hotels/i.test(parsed.href);
+        if (!hostAllowed || !hotelPage) return false;
+        seen.add(url);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    });
 }
 
 export function getCollectToolResult(result = {}) {
@@ -135,7 +167,18 @@ export function getCollectToolResult(result = {}) {
 
 export function hasWriteResult(writeResult) {
   if (Array.isArray(writeResult)) {
-    return writeResult.some((item) => item && item.operation !== 'skipped');
+    return writeResult.some((item) => {
+      if (!item) return false;
+      if (item.operation) return item.operation !== 'skipped';
+      return hasWriteResult(item.result || item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult));
+    });
+  }
+  if (writeResult && writeResult.batchMode) {
+    if (Number(writeResult.appliedCount || 0) > 0) {
+      return true;
+    }
+    return (Array.isArray(writeResult.items) ? writeResult.items : [])
+      .some((item) => item && hasWriteResult(item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)));
   }
   return Boolean(writeResult && writeResult.operation !== 'skipped');
 }
@@ -185,6 +228,7 @@ function getEventStepKey(event = {}) {
   if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
   if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return 'received';
   if (type === 'scrape:retry') return 'scrape';
+  if (type.startsWith('batch:') || type.startsWith('list:')) return 'scrape';
   if (toolName === 'collect_and_write_ctrip_hotel' || type.startsWith('scrape:')) return 'scrape';
   if (type.startsWith('template:')) return 'template';
   if (type.startsWith('transit:')) return 'transit';
@@ -205,6 +249,7 @@ function getReadableEventTitle(event = {}) {
   if (type === 'edge:login-window') return event.message || '已打开 Edge 登录窗口，等待你完成登录';
   if (type === 'edge:login-done') return event.message || '携程登录窗口已关闭，继续采集';
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
+  if (type.startsWith('batch:') || type.startsWith('list:')) return event.message || '正在处理批量采集任务';
   if (toolName) {
     const label = getReadableToolLabel(toolName);
     if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return '已接收采集任务';
@@ -243,6 +288,76 @@ function getLastTaskError(events = [], task = {}) {
 
 function findStepEvent(normalizedEvents, key) {
   return normalizedEvents.slice().reverse().find((event) => event.key === key) || null;
+}
+
+function parseBatchProgressEvent(event = {}) {
+  const type = String(event.type || '');
+  const detail = event.details && typeof event.details === 'object' ? event.details : {};
+  const message = String(event.message || '');
+  const summary = String(detail.summary || '');
+  const parsed = {
+    type,
+    index: Number(detail.index || detail.itemIndex || detail.currentIndex || 0),
+    total: Number(detail.total || detail.totalCount || detail.itemCount || detail.hotelCount || 0)
+  };
+
+  const startMatch = message.match(/第\s*(\d+)\s*\/\s*(\d+)/);
+  if (startMatch) {
+    parsed.index = Number(startMatch[1]);
+    parsed.total = Number(startMatch[2]);
+  }
+
+  const doneMatch = message.match(/第\s*(\d+)\s*家酒店采集(?:完成|失败)/);
+  if (!parsed.index && doneMatch) {
+    parsed.index = Number(doneMatch[1]);
+  }
+
+  if (!parsed.total) {
+    const summaryMatch = summary.match(/展开酒店\s*=\s*(\d+)/);
+    if (summaryMatch) {
+      parsed.total = Number(summaryMatch[1]);
+    }
+  }
+
+  return parsed;
+}
+
+function buildProgressStats(events = []) {
+  const itemStatus = new Map();
+  let total = 0;
+
+  for (const event of events || []) {
+    const parsed = parseBatchProgressEvent(event);
+    if (!parsed.type.startsWith('batch:')) {
+      continue;
+    }
+    if (Number.isFinite(parsed.total) && parsed.total > total) {
+      total = parsed.total;
+    }
+    if (!Number.isFinite(parsed.index) || parsed.index <= 0) {
+      continue;
+    }
+    if (parsed.type === 'batch:item-start') {
+      itemStatus.set(parsed.index, 'running');
+    } else if (parsed.type === 'batch:item-done' || parsed.type === 'batch:item-error') {
+      itemStatus.set(parsed.index, 'completed');
+    }
+  }
+
+  if (total <= 0) {
+    return null;
+  }
+
+  const completed = [...itemStatus.values()].filter((status) => status === 'completed').length;
+  const running = [...itemStatus.values()].filter((status) => status === 'running').length;
+  const pending = Math.max(0, total - completed - running);
+
+  return {
+    total,
+    completed,
+    running,
+    pending
+  };
 }
 
 function getStepDefinitions(normalizedEvents = []) {
@@ -378,8 +493,15 @@ function syncReviewElapsedTimer(review = {}) {
   }
 }
 
+function getTaskCollectResult(task = {}) {
+  return task.collectResult
+    || (task.result && task.result.collectResult)
+    || (getCollectToolResult(task.result || {}) || {}).result
+    || {};
+}
+
 function buildTaskResult(task = {}) {
-  const collectResult = task.collectResult || (getCollectToolResult(task.result || {}) || {}).result || {};
+  const collectResult = getTaskCollectResult(task);
   const eligibleCount = Number(collectResult.eligibleCount || 0);
   const matchedRooms = Array.isArray(collectResult.eligibleRoomTypes) ? collectResult.eligibleRoomTypes : [];
   const eligibleHotels = Array.isArray(collectResult.eligibleHotels) ? collectResult.eligibleHotels : [];
@@ -392,6 +514,21 @@ function buildTaskResult(task = {}) {
     collectResult.error
   ].filter(Boolean);
   const wroteResult = hasWriteResult(collectResult.writeResult);
+  const batchSummary = collectResult.batchStats || collectResult.batchSummary || null;
+  const batchCount = Number(
+    batchSummary && batchSummary.expandedHotelCount
+      ? batchSummary.expandedHotelCount
+      : Array.isArray(collectResult.items)
+        ? collectResult.items.length
+        : 0
+  );
+  const isBatchResult = Boolean(collectResult.batchMode);
+  const batchResultText = batchCount > 0 ? `批量 ${batchCount} 家` : '批量采集完成';
+  const singleResultText = `${collectResult.hotelName || '暂无'}，可用房型 ${Number.isFinite(eligibleCount) ? eligibleCount : 0} 个，价格 ${
+    [formatCurrency(dailyPrice) ? `${formatCurrency(dailyPrice)} / 晚` : '', formatCurrency(totalPrice) ? `${formatCurrency(totalPrice)} 总价` : '']
+      .filter(Boolean)
+      .join('，') || '暂无'
+  }`;
 
   if (reasons.length === 0 && eligibleCount <= 0) {
     reasons.push('暂无详细原因，请查看采集详情。');
@@ -399,7 +536,9 @@ function buildTaskResult(task = {}) {
 
   return {
     hasMatchedRoom: eligibleCount > 0 && !collectResult.writeSkipped,
-    hotelName: collectResult.hotelName || '暂无',
+    hotelName: isBatchResult ? batchResultText : (collectResult.hotelName || '暂无'),
+    actualResultText: isBatchResult ? batchResultText : singleResultText,
+    isBatchResult,
     eligibleCount: Number.isFinite(eligibleCount) ? eligibleCount : 0,
     priceText: [formatCurrency(dailyPrice) ? `${formatCurrency(dailyPrice)} / 晚` : '', formatCurrency(totalPrice) ? `${formatCurrency(totalPrice)} 总价` : '']
       .filter(Boolean)
@@ -417,7 +556,9 @@ function buildTaskResult(task = {}) {
     writeBackStatus: wroteResult ? '已写入数据' : '未写入数据',
     summary: collectResult.writeSkipped
       ? '采集完成，但未写入宾馆数据。'
-      : '采集完成，结果已汇总。',
+      : isBatchResult
+        ? '批量采集完成，结果已汇总。'
+        : '采集完成，结果已汇总。',
     raw: collectResult
   };
 }
@@ -428,7 +569,7 @@ function buildTaskError(task = {}, events = []) {
     message,
     reason: message,
     suggestions: [
-      '检查链接是否为携程酒店详情页。',
+      '检查链接是否为携程酒店详情页或列表页。',
       '确认携程登录态可用，必要时重新登录。',
       '稍后重新执行任务。'
     ]
@@ -450,6 +591,12 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false,
   }
 
   const steps = buildTaskSteps(task, events, status);
+  const collectResult = getTaskCollectResult(task);
+  const taskStatus = task.result && task.result.taskStatus ? task.result.taskStatus : {};
+  const reviewInputAvailable = Boolean(
+    collectResult.reviewInputAvailable
+    || taskStatus.reviewInputAvailable
+  );
   const taskInfo = {
     taskId: task.taskId || (task.result && task.result.taskStatus && task.result.taskStatus.id) || '',
     templateName: task.templateLabel || formatAiTemplateLabel(task.template || {}) || '暂无',
@@ -462,15 +609,14 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false,
     status,
     taskInfo,
     steps,
+    progressStats: buildProgressStats(events),
     result: buildTaskResult(task),
     error: buildTaskError(task, events),
     review,
     canReview: Boolean(
       taskInfo.taskId
-      && (
-        task.collectResult && task.collectResult.reviewInputAvailable
-        || task.result && task.result.taskStatus && task.result.taskStatus.reviewInputAvailable
-      )
+      && reviewInputAvailable
+      && !collectResult.batchMode
     )
   };
 }
@@ -484,7 +630,7 @@ function getQueueStatusLabel(task = {}) {
   if (task.status === 'waiting') return '等待中';
   if (task.status === 'completed') return '已完成';
   if (task.status === 'cancelled') return '已取消';
-  if (task.status === 'failed') return task.errorMessage ? '解析错误' : '失败';
+  if (task.status === 'failed') return '失败';
   return '等待中';
 }
 
@@ -594,6 +740,68 @@ function renderTaskTimeline(steps, options = {}) {
             <strong>${escapeHtml(step.title)}</strong>
             ${step.detail ? `<span>${escapeHtml(step.detail)}</span>` : ''}
           </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderProgressIcon(type) {
+  const icons = {
+    hotel: `
+      <svg class="task-progress-stat-icon task-progress-stat-icon-hotel" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 21h16"></path>
+        <path d="M6 21V5.8c0-.9.6-1.6 1.5-1.8l6-1.2c1.3-.3 2.5.7 2.5 2V21"></path>
+        <path d="M16 8h2.5c.8 0 1.5.7 1.5 1.5V21"></path>
+        <path d="M9 8h.01"></path>
+        <path d="M12 8h.01"></path>
+        <path d="M9 12h.01"></path>
+        <path d="M12 12h.01"></path>
+        <path d="M9 16h.01"></path>
+        <path d="M12 16h.01"></path>
+      </svg>
+    `,
+    done: `
+      <svg class="task-progress-stat-icon task-progress-stat-icon-done" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="m7.8 12.4 2.8 2.8 5.8-6.3"></path>
+      </svg>
+    `,
+    running: `
+      <svg class="task-progress-stat-icon task-progress-stat-icon-running loading-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M21 12a9 9 0 1 1-6.2-8.6"></path>
+      </svg>
+    `,
+    pending: `
+      <svg class="task-progress-stat-icon task-progress-stat-icon-pending" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M12 7v5l3.2 2"></path>
+      </svg>
+    `
+  };
+
+  return icons[type] || '';
+}
+
+function renderProgressStats(stats) {
+  if (!stats || !Number.isFinite(Number(stats.total)) || Number(stats.total) <= 0) {
+    return '';
+  }
+
+  const cards = [
+    { type: 'hotel', label: '酒店总数', value: stats.total },
+    { type: 'done', label: '已完成', value: stats.completed },
+    { type: 'running', label: '进行中', value: stats.running },
+    { type: 'pending', label: '待处理', value: stats.pending }
+  ];
+
+  return `
+    <div class="task-progress-stats" aria-label="批量采集进度统计">
+      ${cards.map((card) => `
+        <div class="task-progress-stat-card">
+          ${renderProgressIcon(card.type)}
+          <span>${escapeHtml(card.label)}</span>
+          <strong>${escapeHtml(String(card.value))}</strong>
         </div>
       `).join('')}
     </div>
@@ -753,9 +961,9 @@ function renderIdleView() {
     <div class="task-empty-state">
       <div class="task-empty-icon" aria-hidden="true">⌁</div>
       <h3>等待开始任务</h3>
-      <p>请选择模板，并粘贴携程酒店链接，系统将自动采集酒店房型、价格、交通和比较信息。</p>
+      <p>请选择模板，并粘贴携程酒店详情页或列表页链接，系统将自动采集酒店房型、价格、交通和比较信息。</p>
       <div class="task-empty-tips">
-        <span>支持携程酒店详情页链接</span>
+        <span>支持详情页和列表页</span>
         <span>自动采集房型、价格、交通等信息</span>
         <span>结果可导出，便于对比与分析</span>
       </div>
@@ -780,6 +988,7 @@ function renderRunningView(taskState) {
           <h3>执行进度</h3>
           ${renderStatusBadge('running', '执行中')}
         </div>
+        ${renderProgressStats(taskState.progressStats)}
         ${renderTaskTimeline(taskState.steps)}
       </section>
       <div class="task-panel-actions">
@@ -828,7 +1037,7 @@ function renderSummaryCards(taskState, variant) {
         ` : `
           <dl>
             <div><dt>模板规则</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
-            <div><dt>实际采集结果</dt><dd>${escapeHtml(result.hotelName)}，可用房型 ${escapeHtml(String(result.eligibleCount))} 个，价格 ${escapeHtml(result.priceText)}</dd></div>
+            <div><dt>实际采集结果</dt><dd>${escapeHtml(result.actualResultText || result.hotelName)}</dd></div>
             <div><dt>写入状态</dt><dd>${escapeHtml(result.writeBackStatus)}</dd></div>
           </dl>
         `}
@@ -937,5 +1146,6 @@ export function renderAiTaskConsole(state) {
 export function updateAiInputCount() {
   const input = $('aiHotelUrlInput');
   const count = input ? input.value.length : 0;
-  setText('aiInputCount', `${count} / 2000`);
+  const maxLength = input && Number(input.maxLength) > 0 ? Number(input.maxLength) : 4000;
+  setText('aiInputCount', `${count} / ${maxLength}`);
 }

@@ -30,14 +30,24 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
     type: 'function',
     function: {
       name: 'collect_and_write_ctrip_hotel',
-      description: '采集携程酒店链接，按指定模板筛选房型并在安全门通过后自动写入宾馆比较数据。',
+      description: '采集携程酒店详情页或酒店列表页链接，支持多个 URL 和混合粘贴文本；列表页先前筛，再逐个进入详情页并在安全门通过后自动写入宾馆比较数据。',
       parameters: {
         type: 'object',
-        required: ['url'],
         properties: {
           url: {
             type: 'string',
-            description: '完整携程酒店详情页链接。'
+            description: '完整携程酒店详情页或列表页链接；也可以放包含多个携程 URL 的粘贴文本。'
+          },
+          urls: {
+            type: 'array',
+            items: {
+              type: 'string'
+            },
+            description: '可选，多个携程酒店详情页或列表页 URL。'
+          },
+          text: {
+            type: 'string',
+            description: '可选，混合粘贴文本；工具会提取其中的携程酒店 URL。'
           },
           templateId: {
             type: 'string',
@@ -46,6 +56,79 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           templateName: {
             type: 'string',
             description: '比较助手模板名称。templateId 和 templateName 至少提供一个。'
+          },
+          listFilters: {
+            type: 'object',
+            description: '列表页前筛条件。详情页输入会忽略这些条件。',
+            properties: {
+              minScore: {
+                type: 'number',
+                description: '最低携程评分，例如 4.5。'
+              },
+              minRating: {
+                type: 'number',
+                description: '最低携程评分，minScore 的别名。'
+              },
+              excludeAccommodationKeywords: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '排除住宿类型关键词，例如 民宿、公寓、青旅。'
+              },
+              excludeHotelTypes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '排除住宿类型关键词，excludeAccommodationKeywords 的别名。默认前筛会排除民宿、客栈、青年旅舍、公寓。'
+              },
+              excludeNameKeywords: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '排除酒店名称关键词。'
+              },
+              excludeKeywords: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '排除酒店名称关键词，excludeNameKeywords 的别名。'
+              },
+              targetCount: {
+                type: 'integer',
+                description: '目标采集酒店数量。'
+              },
+              desiredHotelCount: {
+                type: 'integer',
+                description: '目标采集酒店数量，targetCount 的别名。'
+              },
+              maxPages: {
+                type: 'integer',
+                description: '列表页最多扫描页数，从当前列表页开始最多读取几页候选酒店。'
+              },
+              maxCandidatesPerPage: {
+                type: 'integer',
+                description: '每个列表页最多解析候选数，用于限制前筛成本。'
+              }
+            },
+            additionalProperties: false
+          },
+          desiredHotelCount: {
+            type: 'integer',
+            description: '可选，列表页目标采集酒店数量；详情页输入会忽略。'
+          },
+          minScore: {
+            type: 'number',
+            description: '可选，列表页最低携程评分；详情页输入会忽略。'
+          },
+          excludeKeywords: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '可选，列表页排除酒店名称关键词；详情页输入会忽略。'
+          },
+          excludeHotelTypes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '可选，列表页排除住宿类型关键词；详情页输入会忽略。'
+          },
+          maxPages: {
+            type: 'integer',
+            description: '可选，列表页最多扫描页数；详情页输入会忽略。'
           }
         },
         additionalProperties: false

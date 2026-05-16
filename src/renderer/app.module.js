@@ -48,7 +48,7 @@ import {
 
 import {
   openSettings, openAiInterfaceSettings, closeSettingsModal, openPersonalization, closePersonalizationModal, applySettings,
-  changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate,
+  changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate, saveAiListPrefilterSetting,
   loadDataPath, showDataInFolder, changeDataPath,
   loadAppIconState, chooseAppIcon, resetAppIcon,
   resetSettings,
@@ -225,6 +225,13 @@ function setupStaticFormListeners() {
   addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
   addEvent('includeFourPersonRoomsForThreePersonTemplate', 'change', toggleIncludeFourPersonRoomsForThreePersonTemplate);
+  [
+    'aiListDesiredHotelCount',
+    'aiListMinScore',
+    'aiListExcludeKeywords',
+    'aiListExcludeHotelTypes',
+    'aiListMaxPages'
+  ].forEach((id) => addEvent(id, 'change', saveAiListPrefilterSetting));
   addEvent('aiProviderSelect', 'change', onAiProviderChange);
 
   state.staticFormEventsBound = true;

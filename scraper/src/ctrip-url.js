@@ -1,5 +1,8 @@
 const { normalizeText, toNumber } = require('./utils');
 
+const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
+const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
+
 function hasValue(value) {
   return value !== null && value !== undefined && normalizeText(value) !== '';
 }
@@ -53,6 +56,141 @@ function parseHotelIdFromUrl(url) {
   }
 
   return '';
+}
+
+function cleanExtractedUrl(value) {
+  let cleaned = normalizeText(value)
+    .replace(/&amp;/g, '&')
+    .replace(/^["'(<\[]+/, '');
+  const inlineTextIndex = cleaned.search(INLINE_URL_TEXT_SEPARATOR);
+  if (inlineTextIndex > 0) {
+    cleaned = cleaned.slice(0, inlineTextIndex);
+  }
+
+  while (TRAILING_URL_PUNCTUATION.test(cleaned)) {
+    cleaned = cleaned.replace(TRAILING_URL_PUNCTUATION, '');
+  }
+
+  return cleaned;
+}
+
+function extractUrlsFromText(value) {
+  const values = Array.isArray(value) ? value : [value];
+  const urls = [];
+  const seen = new Set();
+
+  for (const item of values) {
+    const text = String(item || '');
+    const matches = text.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    for (const match of matches) {
+      const cleaned = cleanExtractedUrl(match);
+      if (!cleaned || seen.has(cleaned)) {
+        continue;
+      }
+      seen.add(cleaned);
+      urls.push(cleaned);
+    }
+  }
+
+  return urls;
+}
+
+function isCtripHost(hostname) {
+  return /(^|\.)ctrip\.com$/i.test(String(hostname || ''));
+}
+
+function isCtripHotelUrl(url) {
+  try {
+    const parsed = new URL(cleanExtractedUrl(url));
+    return isCtripHost(parsed.hostname) && /hotel|hotels/i.test(parsed.href);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isCtripHotelDetailUrl(url) {
+  if (!isCtripHotelUrl(url)) {
+    return false;
+  }
+  return Boolean(parseHotelIdFromUrl(url));
+}
+
+function isCtripHotelListUrl(url) {
+  if (!isCtripHotelUrl(url) || isCtripHotelDetailUrl(url)) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(cleanExtractedUrl(url));
+    const href = parsed.href.toLowerCase();
+    return /list|hotelsearch|search|query|keyword|city|location|zone/.test(href)
+      || /\/hotels\/?$/.test(parsed.pathname.toLowerCase())
+      || /\/hotel\/?$/.test(parsed.pathname.toLowerCase());
+  } catch (_error) {
+    return false;
+  }
+}
+
+function classifyCtripHotelUrl(url) {
+  const normalizedUrl = cleanExtractedUrl(url);
+  if (!isCtripHotelUrl(normalizedUrl)) {
+    return {
+      type: 'unsupported',
+      url: normalizedUrl,
+      hotelId: ''
+    };
+  }
+
+  const hotelId = parseHotelIdFromUrl(normalizedUrl);
+  if (hotelId) {
+    return {
+      type: 'detail',
+      url: normalizedUrl,
+      hotelId
+    };
+  }
+
+  return {
+    type: 'list',
+    url: normalizedUrl,
+    hotelId: ''
+  };
+}
+
+function extractCtripUrlsFromInput(input = {}) {
+  const rawValues = [];
+
+  if (typeof input === 'string' || Array.isArray(input)) {
+    rawValues.push(input);
+  } else if (input && typeof input === 'object') {
+    rawValues.push(
+      input.url,
+      input.urls,
+      input.ctripUrl,
+      input.ctrip_url,
+      input['ctrip-url'],
+      input.listUrl,
+      input.listUrls,
+      input.list_url,
+      input['list-url'],
+      input.text,
+      input.inputText,
+      input.input_text
+    );
+  }
+
+  const flattened = rawValues.flatMap((value) => {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (value && typeof value === 'object') {
+      return Object.values(value);
+    }
+    return [value];
+  });
+
+  const urls = extractUrlsFromText(flattened);
+  return urls.filter(isCtripHotelUrl);
 }
 
 function extractStayDates(url) {
@@ -152,6 +290,24 @@ function buildDesktopUrl(rawUrl, overrides = {}) {
   }
 }
 
+function buildListPageUrl(rawUrl, pageNumber) {
+  const normalizedUrl = cleanExtractedUrl(rawUrl);
+  const page = Math.max(1, Math.trunc(Number(pageNumber) || 1));
+  if (!normalizedUrl || page <= 1) {
+    return normalizedUrl;
+  }
+
+  try {
+    const parsed = new URL(normalizedUrl);
+    const pageKeys = ['pageIndex', 'pageNo', 'pageNum', 'page', 'pageno', 'currentPage'];
+    const existingKey = pageKeys.find((key) => parsed.searchParams.has(key));
+    parsed.searchParams.set(existingKey || 'pageIndex', String(page));
+    return parsed.toString();
+  } catch (_error) {
+    return normalizedUrl;
+  }
+}
+
 function buildMobileUrl(rawUrl, overrides = {}) {
   const normalizedUrl = normalizeText(rawUrl);
   if (!normalizedUrl) {
@@ -189,8 +345,16 @@ function buildUrlOverridesFromTemplate(template = {}) {
 
 module.exports = {
   buildDesktopUrl,
+  buildListPageUrl,
   buildMobileUrl,
   buildUrlOverridesFromTemplate,
+  classifyCtripHotelUrl,
+  cleanExtractedUrl,
+  extractCtripUrlsFromInput,
+  extractUrlsFromText,
   extractStayDates,
+  isCtripHotelDetailUrl,
+  isCtripHotelListUrl,
+  isCtripHotelUrl,
   parseHotelIdFromUrl
 };

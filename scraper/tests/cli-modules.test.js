@@ -85,6 +85,24 @@ test('buildRunSummary preserves runtime result fields and nests page summary', (
       }
     },
     hotelName: '测试酒店',
+    inputMode: 'list',
+    batchMode: true,
+    requestedUrls: ['https://hotels.ctrip.com/hotels/list?city=1'],
+    resolvedUrls: ['https://hotels.ctrip.com/hotels/detail/?hotelId=1'],
+    items: [{
+      index: 1,
+      success: true,
+      hotelName: '测试酒店',
+      outputPath: 'output/batch-items/item.json',
+      eligibleCount: 2
+    }],
+    batchStats: {
+      expandedHotelCount: 1,
+      succeededCount: 1
+    },
+    batchSummary: {
+      expandedHotelCount: 1
+    },
     eligibleCount: 2,
     eligibleHotels: [{ name: '测试酒店', total_price: 880, ctrip_score: 4.8 }],
     pageSnapshot: {
@@ -96,6 +114,13 @@ test('buildRunSummary preserves runtime result fields and nests page summary', (
 
   assert.equal(summary.success, true);
   assert.equal(summary.hotelName, '测试酒店');
+  assert.equal(summary.inputMode, 'list');
+  assert.equal(summary.batchMode, true);
+  assert.equal(summary.requestedUrls.length, 1);
+  assert.equal(summary.resolvedUrls.length, 1);
+  assert.equal(summary.items.length, 1);
+  assert.equal(summary.batchStats.succeededCount, 1);
+  assert.equal(summary.batchSummary.expandedHotelCount, 1);
   assert.equal(summary.eligibleCount, 2);
   assert.equal(summary.eligibleHotels.length, 1);
   assert.equal(summary.totalPrice, 880);
@@ -103,6 +128,27 @@ test('buildRunSummary preserves runtime result fields and nests page summary', (
   assert.equal(summary.templateSnapshot.matchedTemplate.name, '实验');
   assert.equal(summary.templateSnapshot.effectiveTemplate.room_count, 3);
   assert.equal(summary.pageSnapshot.source_url, 'https://example.com/hotel');
+});
+
+test('buildRunSummary keeps single detail result shape batch-compatible', () => {
+  const summary = buildRunSummary({
+    success: true,
+    hotelName: '单酒店',
+    eligibleCount: 1,
+    eligibleRoomTypes: [{ roomType: '家庭房', totalPrice: 900 }],
+    eligibleHotels: [{ name: '单酒店', total_price: 900 }],
+    totalPrice: 900
+  });
+
+  assert.equal(summary.success, true);
+  assert.equal(summary.batchMode, false);
+  assert.deepEqual(summary.items, []);
+  assert.equal(summary.batchStats, null);
+  assert.equal(summary.hotelName, '单酒店');
+  assert.equal(summary.eligibleCount, 1);
+  assert.equal(summary.eligibleRoomTypes.length, 1);
+  assert.equal(summary.eligibleHotels.length, 1);
+  assert.equal(summary.totalPrice, 900);
 });
 
 test('sanitizeSensitiveData redacts API keys and token-shaped fields recursively', () => {

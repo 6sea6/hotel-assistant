@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { buildDesktopUrl } = require('./ctrip-url');
+const { buildDesktopUrl, extractCtripUrlsFromInput } = require('./ctrip-url');
 const { differenceInDays, normalizeText, readJsonFile, toNumber } = require('./utils');
 
 function normalizeTemplateRoomCount(value) {
@@ -56,8 +56,9 @@ function loadTemplate(templatePath) {
 }
 
 function normalizeTemplate(raw = {}) {
+  const inputUrls = extractCtripUrlsFromInput(raw);
   const normalized = {
-    ctrip_url: normalizeText(raw.ctrip_url || raw.url || ''),
+    ctrip_url: normalizeText(raw.ctrip_url || raw.url || inputUrls[0] || ''),
     destination: normalizeText(raw.destination || ''),
     check_in_date: normalizeText(raw.check_in_date || raw.checkIn || ''),
     check_out_date: normalizeText(raw.check_out_date || raw.checkOut || ''),
@@ -78,9 +79,10 @@ function normalizeTemplate(raw = {}) {
 }
 
 function mergeTemplateWithArgs(template, args) {
+  const inputUrls = extractCtripUrlsFromInput(args);
   return normalizeTemplate({
     ...template,
-    ctrip_url: args.url || args.ctripUrl || args.ctrip_url || args['ctrip-url'] || template.ctrip_url,
+    ctrip_url: args.url || args.ctripUrl || args.ctrip_url || args['ctrip-url'] || inputUrls[0] || template.ctrip_url,
     destination: args.destination || template.destination,
     check_in_date: args.checkIn || args.check_in_date || template.check_in_date,
     check_out_date: args.checkOut || args.check_out_date || template.check_out_date,

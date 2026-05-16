@@ -22,8 +22,14 @@ const {
   convertMessagesToAnthropic,
   parseChatCompletionMessage
 } = require('../src/main/ai/provider-client');
-const { sanitizeSettings } = require('../src/main/ai/tools');
-const { getVisibleLoginRetryNeed, resolveScraperPath } = require('../src/main/ai/scraper-runner');
+const { AI_TOOL_DEFINITIONS, sanitizeSettings } = require('../src/main/ai/tools');
+const {
+  createWriteRollbackSnapshot,
+  getVisibleLoginRetryNeed,
+  isTaskCancelled,
+  resolveScraperPath,
+  restoreWriteRollbackSnapshot
+} = require('../src/main/ai/scraper-runner');
 
 test('AI provider presets include MiMo and normalize config', () => {
   const presets = getAiProviderPresets();
@@ -288,8 +294,26 @@ test('AI fallback system prompt is compact and ignores legacy guide text', () =>
   const prompt = buildSystemPrompt('legacy guide should be ignored');
 
   assert.match(prompt, /内置 AI 兜底助手/);
+  assert.match(prompt, /详情页链接和酒店列表页链接/);
+  assert.match(prompt, /列表页会先按最低评分/);
   assert.match(prompt, /collect_and_write_ctrip_hotel/);
   assert.doesNotMatch(prompt, /legacy guide/);
+});
+
+test('AI collect tool schema documents list and detail URL inputs', () => {
+  const collectTool = AI_TOOL_DEFINITIONS.find((tool) => tool.function.name === 'collect_and_write_ctrip_hotel');
+  const properties = collectTool.function.parameters.properties;
+
+  assert.match(collectTool.function.description, /详情页/);
+  assert.match(collectTool.function.description, /列表页/);
+  assert.ok(properties.url);
+  assert.ok(properties.urls);
+  assert.ok(properties.listFilters);
+  assert.ok(properties.desiredHotelCount);
+  assert.ok(properties.minScore);
+  assert.ok(properties.excludeKeywords);
+  assert.ok(properties.excludeHotelTypes);
+  assert.ok(properties.maxPages);
 });
 
 test('AI IPC registers direct task start endpoint', () => {
@@ -382,6 +406,103 @@ test('scraper runner resolves the embedded scraper in the app repository', (t) =
   );
 });
 
+test('AI scraper write rollback restores compare-app store snapshot', async (t) => {
+  const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-write-rollback-'));
+  const previousDataDir = process.env.HOTEL_COMPARE_APP_DATA_DIR;
+  const previousSharedDir = process.env.HOTEL_COMPARE_SHARED_DIR;
+  const storePath = path.join(tempDataDir, 'hotel-data.json');
+  const originalStore = {
+    hotels: [{ id: 'existing-hotel', name: '原有酒店' }],
+    templates: [{ id: 'tpl-1', name: '武汉模板' }],
+    settings: { theme: 'totoro-blue' }
+  };
+  const events = [];
+
+  process.env.HOTEL_COMPARE_APP_DATA_DIR = tempDataDir;
+  process.env.HOTEL_COMPARE_SHARED_DIR = path.resolve(__dirname, '..', 'shared', 'compare-app');
+  fs.writeFileSync(storePath, JSON.stringify(originalStore, null, 2), 'utf8');
+
+  t.after(() => {
+    if (previousDataDir === undefined) {
+      delete process.env.HOTEL_COMPARE_APP_DATA_DIR;
+    } else {
+      process.env.HOTEL_COMPARE_APP_DATA_DIR = previousDataDir;
+    }
+    if (previousSharedDir === undefined) {
+      delete process.env.HOTEL_COMPARE_SHARED_DIR;
+    } else {
+      process.env.HOTEL_COMPARE_SHARED_DIR = previousSharedDir;
+    }
+    fs.rmSync(tempDataDir, { recursive: true, force: true });
+  });
+
+  const rollbackState = {};
+  await createWriteRollbackSnapshot(resolveScraperPath(), rollbackState);
+  fs.writeFileSync(storePath, JSON.stringify({
+    hotels: [
+      ...originalStore.hotels,
+      { id: 'cancelled-task-hotel', name: '本次任务写入酒店' }
+    ],
+    templates: [],
+    settings: {}
+  }, null, 2), 'utf8');
+
+  const result = restoreWriteRollbackSnapshot(rollbackState, {
+    onEvent(event) {
+      events.push(event);
+    }
+  });
+
+  assert.equal(result.restored, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(storePath, 'utf8')), originalStore);
+  assert.ok(events.some((event) => event.type === 'write:rollback-start'));
+  assert.ok(events.some((event) => event.type === 'write:rollback-done'));
+});
+
+test('AI scraper write rollback removes a store file created after the snapshot', async (t) => {
+  const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-write-rollback-missing-'));
+  const previousDataDir = process.env.HOTEL_COMPARE_APP_DATA_DIR;
+  const previousSharedDir = process.env.HOTEL_COMPARE_SHARED_DIR;
+  const storePath = path.join(tempDataDir, 'hotel-data.json');
+
+  process.env.HOTEL_COMPARE_APP_DATA_DIR = tempDataDir;
+  process.env.HOTEL_COMPARE_SHARED_DIR = path.resolve(__dirname, '..', 'shared', 'compare-app');
+
+  t.after(() => {
+    if (previousDataDir === undefined) {
+      delete process.env.HOTEL_COMPARE_APP_DATA_DIR;
+    } else {
+      process.env.HOTEL_COMPARE_APP_DATA_DIR = previousDataDir;
+    }
+    if (previousSharedDir === undefined) {
+      delete process.env.HOTEL_COMPARE_SHARED_DIR;
+    } else {
+      process.env.HOTEL_COMPARE_SHARED_DIR = previousSharedDir;
+    }
+    fs.rmSync(tempDataDir, { recursive: true, force: true });
+  });
+
+  const rollbackState = {};
+  await createWriteRollbackSnapshot(resolveScraperPath(), rollbackState);
+  fs.writeFileSync(storePath, JSON.stringify({ hotels: [{ id: 'new' }] }, null, 2), 'utf8');
+
+  const result = restoreWriteRollbackSnapshot(rollbackState);
+
+  assert.equal(result.restored, true);
+  assert.equal(fs.existsSync(storePath), false);
+});
+
+test('AI scraper cancellation detector accepts abort signals and cancellation errors', () => {
+  const controller = new AbortController();
+  assert.equal(isTaskCancelled(new Error('普通失败'), controller.signal), false);
+  assert.equal(isTaskCancelled(new Error('connection aborted unexpectedly'), null), false);
+
+  controller.abort();
+  assert.equal(isTaskCancelled(new Error('普通失败'), controller.signal), true);
+  assert.equal(isTaskCancelled(new Error('任务已取消'), null), true);
+  assert.equal(isTaskCancelled(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }), null), true);
+});
+
 test('direct AI task start runs the hotel task runner without provider config', async () => {
   const calls = [];
   const events = [];
@@ -419,11 +540,21 @@ test('direct AI task start runs the hotel task runner without provider config', 
   const result = await service.startTask({
     url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
     templateId: '100',
-    templateName: '武汉'
+    templateName: '武汉',
+    desiredHotelCount: 5,
+    minScore: 4.6,
+    excludeKeywords: ['电竞'],
+    excludeHotelTypes: ['民宿'],
+    maxPages: 2
   });
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].input.templateName, '武汉');
+  assert.equal(calls[0].input.desiredHotelCount, 5);
+  assert.equal(calls[0].input.minScore, 4.6);
+  assert.deepEqual(calls[0].input.excludeKeywords, ['电竞']);
+  assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
+  assert.equal(calls[0].input.maxPages, 2);
   assert.equal(calls[0].context.dataFolderPath, 'E:/实验/1/宾馆比较助手');
   assert.equal(result.collectResult.hotelName, '测试酒店');
   assert.equal(result.collectResult.totalPrice, 300);

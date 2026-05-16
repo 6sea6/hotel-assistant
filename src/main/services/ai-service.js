@@ -37,6 +37,13 @@ function compactTaskResult(result = {}) {
     eligibleCount: result.eligibleCount ?? 0,
     totalPrice,
     outputPath: result.outputPath || '',
+    inputMode: result.inputMode || '',
+    batchMode: Boolean(result.batchMode),
+    items: Array.isArray(result.items) ? result.items.slice(0, 20) : [],
+    batchStats: result.batchStats || null,
+    batchSummary: result.batchSummary || null,
+    requestedUrls: Array.isArray(result.requestedUrls) ? result.requestedUrls.slice(0, 20) : [],
+    resolvedUrls: Array.isArray(result.resolvedUrls) ? result.resolvedUrls.slice(0, 20) : [],
     writeSkipped: Boolean(result.writeSkipped),
     writeSkipReason: result.writeSkipReason || '',
     writeResult: result.writeResult || null,
@@ -73,7 +80,7 @@ function buildSystemPrompt() {
   return `你是宾馆比较助手内置 AI 兜底助手。你的任务不是让用户复制命令，也不是直接改 hotel-data.json，而是在应用提供的受限工具内完成携程酒店采集、解释结果和诊断失败原因。
 
 固定规则：
-1. 只处理携程酒店详情页链接。
+1. 支持处理携程酒店详情页链接和酒店列表页链接；如果用户粘贴混合文本，要从中提取携程 URL。
 2. 必须使用用户当前选择的模板 ID 或模板名，不要根据日期、人数、目的地猜模板。
 3. 不要伪造价格、评分、交通、房型、系统字段。
 4. 不要手工写入 hotel-data.json，不要创建临时数据文件。
@@ -82,11 +89,12 @@ function buildSystemPrompt() {
 7. 如果检测到登录看低价、解锁优惠、无有效价格，应提示程序打开可见 Edge 登录窗口；用户登录携程并关闭窗口后，采集会自动重试。
 8. 成功写入时说明：酒店名、可用房型数、价格摘要、写入状态。
 9. 成功但未写入时说明：这是采集完成但安全门阻止写入，不等于程序崩溃。
-10. 永远不要输出或复述 API Key、token、本地敏感配置。
+10. 列表页会先按最低评分、排除住宿类型关键词、排除名称关键词、目标数量、最多扫描页数做前筛，再逐个进入详情页复用原采集链路。
+11. 永远不要输出或复述 API Key、token、本地敏感配置。
 
 工具使用：
 - list_templates：模板信息不明确时使用。
-- collect_and_write_ctrip_hotel：已有模板和携程链接时使用。
+- collect_and_write_ctrip_hotel：已有模板和携程详情页/列表页链接时使用，支持多个 URL 或混合粘贴文本。
 - get_task_status：查询当前任务进度时使用。
 - open_visible_edge_login：需要用户重新登录携程时使用。
 
@@ -600,8 +608,21 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       const runner = await getHotelTaskRunner();
       return runner({
         url: payload.url,
+        urls: payload.urls,
+        text: payload.text || payload.inputText || '',
         templateId: payload.templateId,
-        templateName: payload.templateName
+        templateName: payload.templateName,
+        listFilters: payload.listFilters,
+        minScore: payload.minScore,
+        minRating: payload.minRating,
+        excludeAccommodationKeywords: payload.excludeAccommodationKeywords,
+        excludeHotelTypes: payload.excludeHotelTypes,
+        excludeNameKeywords: payload.excludeNameKeywords,
+        excludeKeywords: payload.excludeKeywords,
+        targetCount: payload.targetCount,
+        desiredHotelCount: payload.desiredHotelCount,
+        maxPages: payload.maxPages,
+        maxCandidatesPerPage: payload.maxCandidatesPerPage
       }, {
         taskId,
         dataFolderPath: dataService.getDataFolderPath(),

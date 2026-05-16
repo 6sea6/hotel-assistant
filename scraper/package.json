@@ -9,7 +9,7 @@
     "scrape": "node src/cli.js",
     "edge-session": "node src/edge-session.js",
     "lint": "node ../scripts/lint.js",
-    "test": "node --test tests/compare-app-bridge.test.js tests/cli-modules.test.js tests/http-client.test.js tests/room-logic.test.js tests/room-type-rules.test.js tests/amap-geo.test.js tests/hotel-record.test.js tests/html-parser.test.js tests/structured-extractor.test.js tests/template-loader.test.js tests/facade-exports.test.js"
+    "test": "node --test tests/compare-app-bridge.test.js tests/cli-modules.test.js tests/ctrip-list.test.js tests/http-client.test.js tests/room-logic.test.js tests/room-type-rules.test.js tests/amap-geo.test.js tests/hotel-record.test.js tests/html-parser.test.js tests/structured-extractor.test.js tests/template-loader.test.js tests/facade-exports.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -3,7 +3,7 @@ import { $, escapeHtml, getChecked, getValue, setChecked, setText, setValue } fr
 import { showNotification } from './notification.js';
 import { actions } from './actions.js';
 import {
-  extractCtripUrl,
+  extractCtripUrls,
   formatAiTemplateLabel,
   getCollectToolResult,
   hasWriteResult,
@@ -266,8 +266,71 @@ function readAiConfigForm() {
   };
 }
 
+function getSubmittedUrls() {
+  return extractCtripUrls(getValue('aiHotelUrlInput'));
+}
+
 function getSubmittedUrl() {
-  return extractCtripUrl(getValue('aiHotelUrlInput'));
+  return getSubmittedUrls()[0] || '';
+}
+
+function parseOptionalNumber(value, options = {}) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const number = Number(text);
+  if (!Number.isFinite(number)) return null;
+  if (options.integer) {
+    return Math.max(options.min || 1, Math.trunc(number));
+  }
+  return number;
+}
+
+function parseKeywordInput(value) {
+  return String(value || '')
+    .split(/[,，;；\n\r|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readListFilterForm() {
+  const settings = state.settings || {};
+  const desiredHotelCount = parseOptionalNumber(settings.aiListDesiredHotelCount, {
+    integer: true,
+    min: 1
+  });
+  const minScore = parseOptionalNumber(settings.aiListMinScore);
+  const maxPages = parseOptionalNumber(settings.aiListMaxPages, {
+    integer: true,
+    min: 1
+  });
+  const excludeKeywords = parseKeywordInput(settings.aiListExcludeKeywords);
+  const excludeHotelTypes = parseKeywordInput(settings.aiListExcludeHotelTypes);
+  const listFilters = {};
+
+  if (desiredHotelCount !== null) listFilters.desiredHotelCount = desiredHotelCount;
+  if (minScore !== null) listFilters.minScore = minScore;
+  if (excludeKeywords.length) listFilters.excludeKeywords = excludeKeywords;
+  if (excludeHotelTypes.length) listFilters.excludeHotelTypes = excludeHotelTypes;
+  if (maxPages !== null) listFilters.maxPages = maxPages;
+
+  return listFilters;
+}
+
+function buildTaskPayload(task) {
+  const listFilters = task.listFilters && typeof task.listFilters === 'object'
+    ? task.listFilters
+    : {};
+  return {
+    templateId: task.templateId,
+    templateName: task.templateName || '',
+    url: task.url,
+    listFilters,
+    desiredHotelCount: listFilters.desiredHotelCount,
+    minScore: listFilters.minScore,
+    excludeKeywords: listFilters.excludeKeywords,
+    excludeHotelTypes: listFilters.excludeHotelTypes,
+    maxPages: listFilters.maxPages
+  };
 }
 
 function createEmptyReviewState(overrides = {}) {
@@ -348,7 +411,7 @@ function findQueueTaskByBackendTaskId(taskId) {
   return (state.aiTaskQueue || []).find((task) => String(task.backendTaskId || '') === id) || null;
 }
 
-function createQueueTask(template, url) {
+function createQueueTask(template, url, listFilters = {}) {
   state.aiTaskQueueCounter = Number(state.aiTaskQueueCounter || 0) + 1;
   const displayIndex = String(state.aiTaskQueueCounter).padStart(2, '0');
   const title = formatAiTemplateLabel(template);
@@ -361,6 +424,7 @@ function createQueueTask(template, url) {
     templateLabel: title,
     title,
     template,
+    listFilters,
     status: 'waiting',
     currentStep: '',
     createdAt: new Date().toISOString(),
@@ -488,12 +552,12 @@ function isDuplicateActiveUrl(url) {
   ));
 }
 
-function addQueueTask(template, url) {
+function addQueueTask(template, url, listFilters = {}) {
   if (isDuplicateActiveUrl(url)) {
     showNotification('该链接已在任务队列中', 'warning');
     return null;
   }
-  const task = createQueueTask(template, url);
+  const task = createQueueTask(template, url, listFilters);
   state.aiTaskQueue.push(task);
   if (!state.aiSelectedQueueTaskId) {
     state.aiSelectedQueueTaskId = task.id;
@@ -509,11 +573,7 @@ async function executeCollectTask(task) {
   startTaskConsole(task.template, task.url, task);
 
   try {
-    const result = await window.electronAPI.ai.startTask({
-      templateId: task.templateId,
-      templateName: task.templateName || '',
-      url: task.url
-    });
+    const result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
     const reply = result.message || '任务已处理。';
     finishTaskConsole(result, reply, task);
 
@@ -666,15 +726,21 @@ export async function enqueueAiCollectTask() {
   }
   const url = getSubmittedUrl();
   if (!url) {
-    showNotification('请粘贴完整携程酒店链接', 'warning');
+    showNotification('请粘贴携程酒店详情页或列表页链接', 'warning');
     return;
   }
 
-  const task = addQueueTask(template, url);
+  const listFilters = readListFilterForm();
+  const task = addQueueTask(template, url, listFilters);
   if (!task) return;
   setValue('aiHotelUrlInput', '');
   updateAiInputCount();
-  showNotification(state.aiTaskInProgress ? '已加入等待队列' : '已加入队列，准备开始采集', 'success');
+  showNotification(
+    state.aiTaskInProgress
+      ? '已加入等待任务'
+      : '已加入任务，准备开始采集',
+    'success'
+  );
   runNextQueueTask();
 }
 
@@ -779,7 +845,7 @@ export function retryAiQueueTask(taskId) {
     runNextQueueTask();
     return;
   }
-  const task = createQueueTask(sourceTask.template, sourceTask.url);
+  const task = createQueueTask(sourceTask.template, sourceTask.url, sourceTask.listFilters || {});
   state.aiTaskQueue.push(task);
   state.aiSelectedQueueTaskId = task.id;
   state.aiQueueSelectionPinned = false;
@@ -811,6 +877,10 @@ export function openAiReviewPanel() {
   const collectResult = state.aiTaskConsole && state.aiTaskConsole.collectResult;
   if (!getCurrentReviewTaskId() || !collectResult || !collectResult.reviewInputAvailable) {
     showNotification('当前任务没有生成可复核的数据包。', 'warning');
+    return;
+  }
+  if (collectResult.batchMode) {
+    showNotification('批量采集结果暂不支持 AI 分析重填，请采集单家酒店后使用。', 'warning');
     return;
   }
 

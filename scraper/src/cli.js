@@ -11,13 +11,20 @@ function printHelp() {
 用法:
   node src/cli.js --template ./examples/template.sample.json
   node src/cli.js --url <携程链接> --templateName <模板名>
+  node src/cli.js --urls "<多个携程链接或混合文本>" --templateName <模板名>
   node src/cli.js --url <携程链接> --checkIn <YYYY-MM-DD> --checkOut <YYYY-MM-DD> --roomCount <人数> [--destination <目的地>]
   node src/cli.js --apply-output output/<酒店名>.json
 
 可选参数:
-  --url <携程链接>          推荐写法，直接传入携程酒店链接
+  --url <携程链接>          推荐写法，直接传入携程酒店详情页或列表页链接
+  --urls <文本/链接列表>    从多 URL 或混合粘贴文本中提取多个携程酒店链接
   --ctrip_url <携程链接>   兼容旧调用写法，等价于 --url
   --ctrip-url <携程链接>   兼容 kebab-case 写法，等价于 --url
+  --minScore <分数>        列表页前筛最低评分，例如 4.5
+  --exclude-accommodation-keywords <关键词>  列表页前筛排除住宿类型关键词，逗号分隔
+  --exclude-name-keywords <关键词>           列表页前筛排除酒店名称关键词，逗号分隔
+  --targetCount <数量>     列表页目标采集酒店数量，默认 10
+  --maxPages <页数>        列表页最多扫描页数，默认 1，表示从当前列表页开始最多读取几页候选酒店
   --out <路径>              指定输出 JSON 文件路径
   --latestRun <路径>        指定最终运行凭证 JSON 路径，默认 output/latest-run.json
   --html <路径>             使用本地保存的携程 HTML 文件而不是直接联网抓取

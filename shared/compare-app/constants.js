@@ -5,7 +5,12 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   weight_transport: 0.2,
   theme: 'totoro-blue',
   language: 'zh-CN',
-  includeFourPersonRoomsForThreePersonTemplate: false
+  includeFourPersonRoomsForThreePersonTemplate: false,
+  aiListDesiredHotelCount: 10,
+  aiListMinScore: '',
+  aiListExcludeKeywords: '',
+  aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
+  aiListMaxPages: 1
 });
 
 const DEFAULT_COMPARE_APP_FILES = Object.freeze({

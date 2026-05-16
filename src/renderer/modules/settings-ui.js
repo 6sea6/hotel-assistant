@@ -31,6 +31,7 @@ const SUPPORTED_THEMES = new Set([
 
 export async function openSettings() {
   setModalActive('settingsModal', true);
+  applySettings();
   await loadDataPath();
   if (typeof window.loadAiConfig === 'function') {
     await window.loadAiConfig();
@@ -75,6 +76,7 @@ export function applySettings() {
     'includeFourPersonRoomsForThreePersonTemplate',
     'includeFourPersonRoomsForThreePersonTemplateText'
   );
+  applyListPrefilterSettings();
 
   const weightMappings = [
     { key: 'weight_price', id: 'weightPrice', valueId: 'priceWeightValue' },
@@ -157,6 +159,36 @@ export async function changeTheme(theme) {
 
 /* ---- 采集偏好 ---- */
 
+const LIST_PREFILTER_SETTING_KEYS = new Set([
+  'aiListDesiredHotelCount',
+  'aiListMinScore',
+  'aiListExcludeKeywords',
+  'aiListExcludeHotelTypes',
+  'aiListMaxPages'
+]);
+
+function normalizeListPrefilterSettingValue(key, value) {
+  if (key === 'aiListDesiredHotelCount' || key === 'aiListMaxPages') {
+    const number = Number(String(value || '').trim());
+    return Number.isFinite(number) && number > 0 ? Math.trunc(number) : '';
+  }
+
+  if (key === 'aiListMinScore') {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const number = Number(text);
+    return Number.isFinite(number) ? number : '';
+  }
+
+  return String(value || '').trim();
+}
+
+function applyListPrefilterSettings() {
+  LIST_PREFILTER_SETTING_KEYS.forEach((key) => {
+    setValue(key, state.settings[key] ?? '');
+  });
+}
+
 export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
   const checkbox = document.getElementById('includeFourPersonRoomsForThreePersonTemplate');
   const textEl = document.getElementById('includeFourPersonRoomsForThreePersonTemplateText');
@@ -176,6 +208,27 @@ export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
     if (textEl) {
       textEl.textContent = !isEnabled ? '开启' : '关闭';
     }
+  }
+}
+
+export async function saveAiListPrefilterSetting(event) {
+  const input = event && event.target ? event.target : null;
+  const key = input && input.dataset ? input.dataset.settingKey : '';
+  if (!LIST_PREFILTER_SETTING_KEYS.has(key)) {
+    return;
+  }
+
+  const previousValue = state.settings[key] ?? '';
+  const nextValue = normalizeListPrefilterSettingValue(key, input.value);
+
+  try {
+    await window.electronAPI.setSetting(key, nextValue);
+    state.settings[key] = nextValue;
+    input.value = nextValue;
+  } catch (error) {
+    console.error('保存列表页前筛设置失败:', error);
+    input.value = previousValue;
+    showNotification('保存列表页前筛设置失败，请重试', 'error');
   }
 }
 
