@@ -195,6 +195,7 @@ function buildScraperArgs(input, workDir) {
     urls: Array.isArray(input.urls) ? input.urls.join('\n') : input.urls,
     text: input.text || input.inputText || '',
     listFilters: input.listFilters && typeof input.listFilters === 'object' ? input.listFilters : undefined,
+    listUrlFilters: input.listUrlFilters && typeof input.listUrlFilters === 'object' ? input.listUrlFilters : undefined,
     'auto-edge': true,
     'edge-user-data-dir': path.join(workDir, 'state', 'edge-profile'),
     'edge-profile-directory': 'Default',
@@ -209,12 +210,6 @@ function buildScraperArgs(input, workDir) {
     args.templateName = input.templateName;
   }
 
-  if (input.minScore !== null && input.minScore !== undefined && input.minScore !== '') {
-    args.minScore = input.minScore;
-  }
-  if (input.minRating !== null && input.minRating !== undefined && input.minRating !== '') {
-    args.minRating = input.minRating;
-  }
   if (input.targetCount !== null && input.targetCount !== undefined && input.targetCount !== '') {
     args.targetCount = input.targetCount;
   }
@@ -230,15 +225,22 @@ function buildScraperArgs(input, workDir) {
   if (input.excludeHotelTypes) {
     args.excludeHotelTypes = input.excludeHotelTypes;
   }
-  if (input.excludeKeywords) {
-    args.excludeKeywords = input.excludeKeywords;
-  }
   if (input.excludeAccommodationKeywords) {
     args.excludeAccommodationKeywords = input.excludeAccommodationKeywords;
   }
-  if (input.excludeNameKeywords) {
-    args.excludeNameKeywords = input.excludeNameKeywords;
-  }
+  [
+    'priceMin',
+    'priceMax',
+    'starLevels',
+    'sortMode',
+    'freeCancel',
+    'reviewCountMin',
+    'ctripScoreMin'
+  ].forEach((key) => {
+    if (input[key] !== undefined) {
+      args[key] = input[key];
+    }
+  });
 
   return args;
 }

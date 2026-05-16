@@ -217,7 +217,15 @@
                 <span class="task-card-eyebrow">CURRENT TASK</span>
                 <h2>当前任务</h2>
               </div>
-              <button class="task-clear-button" type="button" data-action="clear-ai-task-records">清空记录</button>
+              <div class="task-card-header-actions">
+                <button class="task-prefilter-button" type="button" data-action="open-list-prefilter-settings">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 5h16l-6.4 7.3v4.8l-3.2 1.8v-6.6L4 5Z"></path>
+                  </svg>
+                  前筛设置
+                </button>
+                <button class="task-clear-button" type="button" data-action="clear-ai-task-records">清空记录</button>
+              </div>
             </div>
             <div id="aiCurrentTaskPanel" class="current-task-content"></div>
           </section>
@@ -497,6 +505,146 @@
       </div>
     </div>
 
+    <div id="listPrefilterModal" class="modal">
+      <div class="modal-content list-prefilter-modal-content">
+        <div class="list-prefilter-shell">
+          <header class="list-prefilter-header">
+            <div class="list-prefilter-title">
+              <span class="list-prefilter-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5h16l-6.4 7.2v4.6l-3.2 1.9v-6.5L4 5Z"></path>
+                </svg>
+              </span>
+              <div>
+                <h2>列表页前筛</h2>
+                <p>配置携程列表页采集的前置过滤条件，减少无效数据，提升采集效率</p>
+              </div>
+            </div>
+            <div class="list-prefilter-actions">
+              <button class="list-prefilter-secondary-button" type="button" data-action="reset-list-prefilter-settings">重置</button>
+              <button class="list-prefilter-primary-button" type="button" data-action="save-list-prefilter-settings">保存设置</button>
+              <button class="modal-close list-prefilter-close" type="button" data-action="close-list-prefilter-settings" aria-label="关闭">&times;</button>
+            </div>
+          </header>
+
+          <div class="list-prefilter-body">
+            <section class="list-prefilter-card">
+              <div class="list-prefilter-section-header">
+                <span class="list-prefilter-section-index">1</span>
+                <div>
+                  <h3>携程前筛</h3>
+                  <p>设置在携程列表页生效的筛选条件</p>
+                </div>
+              </div>
+
+              <div class="list-prefilter-grid list-prefilter-grid-three">
+                <div class="prefilter-field">
+                  <label for="aiCtripPriceMin">携程价格下限</label>
+                  <div class="prefilter-input-with-unit">
+                    <input id="aiCtripPriceMin" class="input prefilter-input" type="number" min="0" step="1" data-setting-key="aiCtripPriceMin" placeholder="0">
+                    <span>元</span>
+                  </div>
+                </div>
+                <div class="prefilter-field">
+                  <label for="aiCtripPriceMax">携程价格上限</label>
+                  <div class="prefilter-input-with-unit">
+                    <input id="aiCtripPriceMax" class="input prefilter-input" type="text" maxlength="12" data-setting-key="aiCtripPriceMax" placeholder="如 200 或 max">
+                    <span>元</span>
+                  </div>
+                </div>
+                <div class="prefilter-field">
+                  <span class="prefilter-label">携程星级</span>
+                  <div id="aiCtripStarLevelPills" class="prefilter-star-pills" role="group" aria-label="携程星级多选">
+                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="2" aria-pressed="false">
+                      <span>两星及以下</span>
+                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
+                    </button>
+                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="3" aria-pressed="false">
+                      <span>三星</span>
+                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
+                    </button>
+                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="4" aria-pressed="false">
+                      <span>四星</span>
+                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
+                    </button>
+                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="5" aria-pressed="false">
+                      <span>五星</span>
+                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="list-prefilter-grid list-prefilter-grid-four">
+                <div class="prefilter-field">
+                  <label for="aiCtripSortMode">携程排序</label>
+                  <select id="aiCtripSortMode" class="input prefilter-input" data-setting-key="aiCtripSortMode">
+                    <option value="">不指定排序</option>
+                    <option value="popularity">欢迎度排序</option>
+                    <option value="price_low">低价优先</option>
+                    <option value="review_high">好评优先</option>
+                  </select>
+                </div>
+                <div class="prefilter-field">
+                  <label for="aiCtripReviewCountMin">携程点评数</label>
+                  <select id="aiCtripReviewCountMin" class="input prefilter-input" data-setting-key="aiCtripReviewCountMin">
+                    <option value="">不限</option>
+                    <option value="100">100 条以上</option>
+                    <option value="200">200 条以上</option>
+                    <option value="500">500 条以上</option>
+                  </select>
+                </div>
+                <div class="prefilter-field">
+                  <label for="aiCtripScoreMin">携程评分档位</label>
+                  <select id="aiCtripScoreMin" class="input prefilter-input" data-setting-key="aiCtripScoreMin">
+                    <option value="">不限</option>
+                    <option value="4">4.0 以上</option>
+                    <option value="4.5">4.5 以上</option>
+                    <option value="4.7">4.7 以上</option>
+                  </select>
+                </div>
+                <div class="prefilter-field">
+                  <span class="prefilter-label">携程免费取消</span>
+                  <label class="prefilter-toggle-row">
+                    <span>仅显示可免费取消的酒店</span>
+                    <span class="switch-label">
+                      <input id="aiCtripFreeCancel" type="checkbox" data-setting-key="aiCtripFreeCancel">
+                      <span class="switch-slider"></span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="list-prefilter-card">
+              <div class="list-prefilter-section-header">
+                <span class="list-prefilter-section-index">2</span>
+                <div>
+                  <h3>本地过滤</h3>
+                  <p>设置在本地生效的过滤条件，进一步提升数据质量</p>
+                </div>
+              </div>
+
+              <div class="list-prefilter-grid list-prefilter-grid-three">
+                <div class="prefilter-field">
+                  <label for="aiListDesiredHotelCount">本地目标宾馆数</label>
+                  <input id="aiListDesiredHotelCount" class="input prefilter-input" type="number" min="1" max="50" step="1" data-setting-key="aiListDesiredHotelCount" placeholder="10">
+                </div>
+                <div class="prefilter-field">
+                  <label for="aiListExcludeHotelTypes">本地排除住宿类型</label>
+                  <input id="aiListExcludeHotelTypes" class="input prefilter-input" type="text" maxlength="200" data-setting-key="aiListExcludeHotelTypes" placeholder="如：民宿, 客栈, 青年旅舍, 公寓">
+                </div>
+                <div class="prefilter-field">
+                  <label for="aiListMaxPages">本地最多扫描页数</label>
+                  <input id="aiListMaxPages" class="input prefilter-input" type="number" min="1" max="10" step="1" data-setting-key="aiListMaxPages" placeholder="3">
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="settingsModal" class="modal">
       <div class="modal-content">
         <div class="modal-header">
@@ -514,32 +662,6 @@
               <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText">关闭</span>
             </div>
             <small class="help-text">开启后，当模板入住人数为 3 人时，采集器仍会额外保留携程页面上明确显示可住 4 人的房型；查询参数仍按 3 人发起。</small>
-            <div class="settings-subsection">
-              <div class="settings-subsection-title">列表页前筛</div>
-              <div class="settings-prefilter-grid">
-                <div class="form-group">
-                  <label for="aiListDesiredHotelCount">目标宾馆数</label>
-                  <input id="aiListDesiredHotelCount" class="input" type="number" min="1" max="50" step="1" data-setting-key="aiListDesiredHotelCount" placeholder="默认 10">
-                </div>
-                <div class="form-group">
-                  <label for="aiListMinScore">最低评分</label>
-                  <input id="aiListMinScore" class="input" type="number" min="0" max="5" step="0.1" data-setting-key="aiListMinScore" placeholder="如 4.5">
-                </div>
-                <div class="form-group">
-                  <label for="aiListExcludeKeywords">排除关键词</label>
-                  <input id="aiListExcludeKeywords" class="input" type="text" maxlength="200" data-setting-key="aiListExcludeKeywords" placeholder="名称关键词，逗号分隔">
-                </div>
-                <div class="form-group">
-                  <label for="aiListExcludeHotelTypes">排除住宿类型</label>
-                  <input id="aiListExcludeHotelTypes" class="input" type="text" maxlength="200" data-setting-key="aiListExcludeHotelTypes" placeholder="民宿、客栈、青年旅舍、公寓">
-                </div>
-                <div class="form-group">
-                  <label for="aiListMaxPages">最多扫描页数</label>
-                  <input id="aiListMaxPages" class="input" type="number" min="1" max="10" step="1" data-setting-key="aiListMaxPages" placeholder="默认 1">
-                </div>
-              </div>
-              <small class="help-text">这些设置只影响携程列表页输入；最多扫描页数表示从当前列表页开始最多读取几页候选酒店，默认 1 代表只扫当前页。</small>
-            </div>
           </div>
           <div class="form-group">
             <label>数据存储位置</label>

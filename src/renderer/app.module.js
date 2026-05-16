@@ -49,6 +49,8 @@ import {
 import {
   openSettings, openAiInterfaceSettings, closeSettingsModal, openPersonalization, closePersonalizationModal, applySettings,
   changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate, saveAiListPrefilterSetting,
+  openListPrefilterSettings, closeListPrefilterSettings, saveAiListPrefilterSettings,
+  resetAiListPrefilterSettings, toggleAiCtripStarLevel,
   loadDataPath, showDataInFolder, changeDataPath,
   loadAppIconState, chooseAppIcon, resetAppIcon,
   resetSettings,
@@ -72,7 +74,7 @@ import {
   showAiTaskDetails, focusAiTaskStartBar,
   openAiReviewPanel, closeAiReviewPanel,
   analyzeAiCollection, applyAiCollectionReview,
-  updateAiInputCount,
+  handleAiTaskInputChange, syncAiCtripListUrlFromSettings,
   loadAiConfig, onAiProviderChange, saveAiConfig, testAiConnection
 } from './modules/ai-assistant.js';
 
@@ -103,6 +105,7 @@ const ACTION_HANDLERS = {
   'open-data-transfer': () => openDataTransfer(),
   'open-personalization': () => openPersonalization(),
   'open-settings': () => openSettings(),
+  'open-list-prefilter-settings': () => openListPrefilterSettings(),
   'open-about': () => openAbout(),
   'window-minimize': () => minimizeWindow(),
   'window-toggle-maximize': () => toggleMaximizeWindow(),
@@ -123,6 +126,7 @@ const ACTION_HANDLERS = {
   'cancel-template-form': () => cancelTemplateForm(),
   'save-template': () => saveTemplate(),
   'close-settings': () => closeSettingsModal(),
+  'close-list-prefilter-settings': () => closeListPrefilterSettings(),
   'show-data-folder': () => showDataInFolder(),
   'change-data-path': (event) => changeDataPath(event),
   'open-ctrip': () => openCtripWebsite(),
@@ -131,6 +135,24 @@ const ACTION_HANDLERS = {
   'test-ai-connection': () => testAiConnection(),
   'open-manual': () => openManual(),
   'reset-settings': (event) => resetSettings(event),
+  'save-list-prefilter-settings': async () => {
+    const saved = await saveAiListPrefilterSettings();
+    if (saved) {
+      await syncAiCtripListUrlFromSettings();
+    }
+  },
+  'reset-list-prefilter-settings': async () => {
+    const saved = await resetAiListPrefilterSettings();
+    if (saved) {
+      await syncAiCtripListUrlFromSettings();
+    }
+  },
+  'toggle-ai-ctrip-star': async (_event, element) => {
+    const saved = await toggleAiCtripStarLevel(element.dataset.starLevel);
+    if (saved) {
+      await syncAiCtripListUrlFromSettings();
+    }
+  },
   'close-personalization': () => closePersonalizationModal(),
   'choose-app-icon': () => chooseAppIcon(),
   'reset-app-icon': () => resetAppIcon(),
@@ -183,6 +205,7 @@ function handleGlobalKeydown(e) {
     ['dataTransferModal', closeDataTransfer],
     ['manualModal', closeManual],
     ['personalizationModal', closePersonalizationModal],
+    ['listPrefilterModal', closeListPrefilterSettings],
     ['settingsModal', closeSettingsModal],
     ['aboutModal', closeAbout]
   ];
@@ -211,7 +234,7 @@ function setupStaticFormListeners() {
     input.addEventListener('change', () => changeTheme(input.value));
   });
 
-  addEvent('aiHotelUrlInput', 'input', updateAiInputCount);
+  addEvent('aiHotelUrlInput', 'input', handleAiTaskInputChange);
   addEvent('aiHotelUrlInput', 'keydown', handleAiTaskInputKeydown);
   addEvent('hotelTemplateSelect', 'change', applyTemplateToForm);
   addEvent('totalPrice', 'input', calculateDailyPrice);
@@ -226,12 +249,21 @@ function setupStaticFormListeners() {
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
   addEvent('includeFourPersonRoomsForThreePersonTemplate', 'change', toggleIncludeFourPersonRoomsForThreePersonTemplate);
   [
+    'aiCtripPriceMin',
+    'aiCtripPriceMax',
+    'aiCtripSortMode',
+    'aiCtripFreeCancel',
+    'aiCtripReviewCountMin',
+    'aiCtripScoreMin',
     'aiListDesiredHotelCount',
-    'aiListMinScore',
-    'aiListExcludeKeywords',
     'aiListExcludeHotelTypes',
     'aiListMaxPages'
-  ].forEach((id) => addEvent(id, 'change', saveAiListPrefilterSetting));
+  ].forEach((id) => addEvent(id, 'change', async (event) => {
+    await saveAiListPrefilterSetting(event);
+    if (id.startsWith('aiCtrip')) {
+      await syncAiCtripListUrlFromSettings();
+    }
+  }));
   addEvent('aiProviderSelect', 'change', onAiProviderChange);
 
   state.staticFormEventsBound = true;

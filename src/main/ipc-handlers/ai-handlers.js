@@ -1,9 +1,12 @@
+const { requireSharedCompareAppModule } = require('../shared-compare-app');
+
 function registerAiHandlers({ ipcMain, services }) {
   const getAiService = () => (
     typeof services.getAiService === 'function'
       ? services.getAiService()
       : services.aiService
   );
+  const getCtripUrlFilters = () => requireSharedCompareAppModule('ctrip-url-filters.js');
 
   ipcMain.handle('ai:config:get', () => getAiService().getProviderConfig());
   ipcMain.handle('ai:config:presets', () => getAiService().getProviderPresets());
@@ -15,6 +18,12 @@ function registerAiHandlers({ ipcMain, services }) {
   ipcMain.handle('ai:collect:apply-review', async (event, payload) => getAiService().applyCollectionReview(payload));
   ipcMain.handle('ai:task:cancel', () => getAiService().cancelTask());
   ipcMain.handle('ai:task:status', () => getAiService().getTaskStatus());
+  ipcMain.handle('ai:ctrip-list-url:parse', (event, url) => getCtripUrlFilters().parseCtripListUrl(url));
+  ipcMain.handle('ai:ctrip-list-url:build', (event, payload = {}) => {
+    const baseUrl = typeof payload === 'string' ? payload : payload.baseUrl || payload.url || '';
+    const settings = payload && typeof payload === 'object' ? payload.settings || {} : {};
+    return getCtripUrlFilters().buildCtripListUrl(baseUrl, settings);
+  });
 }
 
 module.exports = registerAiHandlers;

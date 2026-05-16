@@ -7,6 +7,11 @@ const {
   parseHotelIdFromUrl
 } = require('./ctrip-url');
 const {
+  buildCtripListUrl,
+  hasCtripUrlFilterSettings,
+  normalizeCtripUrlFilterSettings
+} = require('./ctrip-url-filters');
+const {
   DESKTOP_HEADERS,
   fetchHtml
 } = require('./scraper/html-parser');
@@ -243,6 +248,36 @@ function buildDetailInput(url, template = {}, source = 'detail-input', listCandi
   };
 }
 
+function pickCtripUrlFilterSettings(rawInput = {}) {
+  const nested = rawInput.listUrlFilters
+    || rawInput.ctripUrlFilters
+    || rawInput.ctripListFilters
+    || rawInput.urlFilters
+    || null;
+  if (nested && typeof nested === 'object' && hasCtripUrlFilterSettings(nested)) {
+    return normalizeCtripUrlFilterSettings(nested);
+  }
+
+  const topLevel = {};
+  [
+    'priceMin',
+    'priceMax',
+    'starLevels',
+    'sortMode',
+    'freeCancel',
+    'reviewCountMin',
+    'ctripScoreMin'
+  ].forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(rawInput, key)) {
+      topLevel[key] = rawInput[key];
+    }
+  });
+
+  return hasCtripUrlFilterSettings(topLevel)
+    ? normalizeCtripUrlFilterSettings(topLevel)
+    : null;
+}
+
 async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters = {}, options = {}) {
   const inputUrls = extractCtripUrlsFromInput({
     ...rawInput,
@@ -254,6 +289,7 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
   const skipped = [];
   const seenDetailUrls = new Set();
   const filters = normalizeListPageFilterOptions(rawFilters);
+  const ctripUrlFilterSettings = pickCtripUrlFilterSettings(rawInput);
   let selectedFromLists = 0;
 
   const addDetail = (detail) => {
@@ -279,8 +315,11 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
       continue;
     }
 
+    const effectiveListUrl = ctripUrlFilterSettings
+      ? buildCtripListUrl(url, ctripUrlFilterSettings)
+      : url;
     const remainingTarget = Math.max(1, filters.desiredHotelCount - selectedFromLists);
-    const listResult = await collectHotelListCandidates(url, template, {
+    const listResult = await collectHotelListCandidates(effectiveListUrl, template, {
       ...filters,
       desiredHotelCount: remainingTarget,
       targetCount: remainingTarget
@@ -328,7 +367,6 @@ function normalizeListFiltersFromArgs(args = {}) {
   const listFilters = args.listFilters && typeof args.listFilters === 'object' ? args.listFilters : {};
   return normalizeListPageFilterOptions({
     ...listFilters,
-    minScore: args.minScore ?? args.minRating ?? args['min-score'] ?? args['min-rating'] ?? listFilters.minScore,
     excludeHotelTypes: args.excludeHotelTypes
       ?? args.excludeAccommodationKeywords
       ?? args.excludeAccommodationTypes
@@ -338,14 +376,6 @@ function normalizeListFiltersFromArgs(args = {}) {
       ?? args['exclude-type-keywords']
       ?? listFilters.excludeHotelTypes
       ?? listFilters.excludeAccommodationKeywords,
-    excludeKeywords: args.excludeKeywords
-      ?? args.excludeNameKeywords
-      ?? args.excludeHotelNameKeywords
-      ?? args['exclude-keywords']
-      ?? args['exclude-name-keywords']
-      ?? args['exclude-hotel-name-keywords']
-      ?? listFilters.excludeKeywords
-      ?? listFilters.excludeNameKeywords,
     desiredHotelCount: args.desiredHotelCount
       ?? args.targetCount
       ?? args['desired-hotel-count']

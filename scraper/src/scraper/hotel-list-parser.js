@@ -18,7 +18,7 @@ const {
 } = require('./html-parser-modules/embedded-json');
 
 const DEFAULT_LIST_TARGET_COUNT = 10;
-const DEFAULT_LIST_MAX_PAGES = 1;
+const DEFAULT_LIST_MAX_PAGES = 3;
 const MAX_JSON_WALK_NODES = 12000;
 
 const HOTEL_NAME_PATTERN = /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假|Hotel|Inn|Hostel|Apartment)/i;
@@ -38,13 +38,6 @@ function normalizeKeywordList(value) {
 }
 
 function normalizeListFilterOptions(options = {}) {
-  const minScore = toNumber(
-    options.minScore
-      ?? options.minRating
-      ?? options.minimumScore
-      ?? options['min-score']
-      ?? options['min-rating']
-  );
   const targetCount = toNumber(
     options.targetCount
       ?? options.limit
@@ -60,19 +53,12 @@ function normalizeListFilterOptions(options = {}) {
   );
 
   return {
-    minScore,
     excludeAccommodationKeywords: normalizeKeywordList(
       options.excludeAccommodationKeywords
         ?? options.excludeAccommodationTypes
         ?? options.excludeTypeKeywords
         ?? options['exclude-accommodation-keywords']
         ?? options['exclude-type-keywords']
-    ),
-    excludeNameKeywords: normalizeKeywordList(
-      options.excludeNameKeywords
-        ?? options.excludeHotelNameKeywords
-        ?? options['exclude-name-keywords']
-        ?? options['exclude-hotel-name-keywords']
     ),
     targetCount: targetCount && targetCount > 0
       ? Math.max(1, Math.trunc(targetCount))
@@ -622,18 +608,11 @@ function applyListPrefilter(candidates = [], rawFilters = {}) {
 
   for (const candidate of mergedCandidates) {
     const score = normalizeScore(candidate.score);
-    const nameKeyword = containsAnyKeyword(candidate.name, filters.excludeNameKeywords);
     const typeKeyword = containsAnyKeyword(candidate.accommodationType, filters.excludeAccommodationKeywords);
     let rejectReason = '';
 
-    if (filters.minScore !== null && score === null) {
-      rejectReason = 'score_missing';
-    } else if (filters.minScore !== null && score < filters.minScore) {
-      rejectReason = 'score_below_minimum';
-    } else if (typeKeyword) {
+    if (typeKeyword) {
       rejectReason = `accommodation_keyword:${typeKeyword}`;
-    } else if (nameKeyword) {
-      rejectReason = `name_keyword:${nameKeyword}`;
     }
 
     const normalizedCandidate = {

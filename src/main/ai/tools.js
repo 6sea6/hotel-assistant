@@ -59,16 +59,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           },
           listFilters: {
             type: 'object',
-            description: '列表页前筛条件。详情页输入会忽略这些条件。',
+            description: '本地列表页前筛条件。详情页输入会忽略这些条件；这些条件不会写入携程 listFilters。',
             properties: {
-              minScore: {
-                type: 'number',
-                description: '最低携程评分，例如 4.5。'
-              },
-              minRating: {
-                type: 'number',
-                description: '最低携程评分，minScore 的别名。'
-              },
               excludeAccommodationKeywords: {
                 type: 'array',
                 items: { type: 'string' },
@@ -78,16 +70,6 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
                 type: 'array',
                 items: { type: 'string' },
                 description: '排除住宿类型关键词，excludeAccommodationKeywords 的别名。默认前筛会排除民宿、客栈、青年旅舍、公寓。'
-              },
-              excludeNameKeywords: {
-                type: 'array',
-                items: { type: 'string' },
-                description: '排除酒店名称关键词。'
-              },
-              excludeKeywords: {
-                type: 'array',
-                items: { type: 'string' },
-                description: '排除酒店名称关键词，excludeNameKeywords 的别名。'
               },
               targetCount: {
                 type: 'integer',
@@ -108,18 +90,51 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
             },
             additionalProperties: false
           },
+          listUrlFilters: {
+            type: 'object',
+            description: '携程列表页 URL 原生前筛条件，会合并进 listFilters 并保留未知片段。详情页输入会忽略。',
+            properties: {
+              priceMin: {
+                type: ['number', 'null'],
+                description: '携程 URL 价格下限，例如 50；为空表示不限。'
+              },
+              priceMax: {
+                type: ['number', 'string', 'null'],
+                description: '携程 URL 价格上限，例如 200，或字符串 max 表示以上。'
+              },
+              starLevels: {
+                type: 'array',
+                items: {
+                  type: 'integer',
+                  enum: [2, 3, 4, 5]
+                },
+                description: '携程 URL 星级多选，2=两星及以下，3=三星，4=四星，5=五星。'
+              },
+              sortMode: {
+                type: ['string', 'null'],
+                enum: ['popularity', 'price_low', 'review_high', null],
+                description: '携程 URL 排序：popularity 默认/欢迎度，price_low 低价优先，review_high 好评优先。'
+              },
+              freeCancel: {
+                type: 'boolean',
+                description: '携程 URL 免费取消筛选。'
+              },
+              reviewCountMin: {
+                type: ['integer', 'null'],
+                enum: [100, 200, 500, null],
+                description: '携程 URL 点评/点赞数量下限档位。'
+              },
+              ctripScoreMin: {
+                type: ['number', 'null'],
+                enum: [4.0, 4.5, 4.7, null],
+                description: '携程 URL 评分筛选档位。'
+              }
+            },
+            additionalProperties: false
+          },
           desiredHotelCount: {
             type: 'integer',
             description: '可选，列表页目标采集酒店数量；详情页输入会忽略。'
-          },
-          minScore: {
-            type: 'number',
-            description: '可选，列表页最低携程评分；详情页输入会忽略。'
-          },
-          excludeKeywords: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '可选，列表页排除酒店名称关键词；详情页输入会忽略。'
           },
           excludeHotelTypes: {
             type: 'array',

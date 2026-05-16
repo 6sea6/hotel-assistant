@@ -3,7 +3,7 @@
  */
 
 import { state, rankingCache } from './state.js';
-import { $, setValue } from './dom-helpers.js';
+import { $, setChecked, setValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { setModalActive, getEventButton, resetActionButtonConfirmation, startActionButtonConfirmation } from './ui-utils.js';
 import { actions } from './actions.js';
@@ -63,6 +63,15 @@ export async function openPersonalization() {
 
 export function closePersonalizationModal() {
   setModalActive('personalizationModal', false);
+}
+
+export function openListPrefilterSettings() {
+  setModalActive('listPrefilterModal', true);
+  applyListPrefilterSettings();
+}
+
+export function closeListPrefilterSettings() {
+  setModalActive('listPrefilterModal', false);
 }
 
 /* ---- 应用设置到 UI ---- */
@@ -160,33 +169,148 @@ export async function changeTheme(theme) {
 /* ---- 采集偏好 ---- */
 
 const LIST_PREFILTER_SETTING_KEYS = new Set([
+  'aiCtripPriceMin',
+  'aiCtripPriceMax',
+  'aiCtripStarLevels',
+  'aiCtripSortMode',
+  'aiCtripFreeCancel',
+  'aiCtripReviewCountMin',
+  'aiCtripScoreMin',
   'aiListDesiredHotelCount',
-  'aiListMinScore',
-  'aiListExcludeKeywords',
   'aiListExcludeHotelTypes',
   'aiListMaxPages'
 ]);
 
+const LIST_PREFILTER_DEFAULT_SETTINGS = Object.freeze({
+  aiCtripPriceMin: '',
+  aiCtripPriceMax: '',
+  aiCtripStarLevels: [],
+  aiCtripSortMode: '',
+  aiCtripFreeCancel: false,
+  aiCtripReviewCountMin: '',
+  aiCtripScoreMin: '',
+  aiListDesiredHotelCount: 10,
+  aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
+  aiListMaxPages: 3
+});
+
 function normalizeListPrefilterSettingValue(key, value) {
+  if (key === 'aiCtripFreeCancel') {
+    return Boolean(value);
+  }
+
+  if (key === 'aiCtripStarLevels') {
+    const values = Array.isArray(value) ? value : String(value || '').split(/[,，;；\s|]+/);
+    const seen = new Set();
+    return values
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item >= 2 && item <= 5 && !seen.has(item) && seen.add(item))
+      .sort((left, right) => left - right);
+  }
+
+  if (key === 'aiCtripPriceMin') {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const number = Number(text);
+    return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : '';
+  }
+
+  if (key === 'aiCtripPriceMax') {
+    const text = String(value || '').trim().toLowerCase();
+    if (!text) return '';
+    if (text === 'max') return 'max';
+    const number = Number(text);
+    return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : '';
+  }
+
+  if (key === 'aiCtripSortMode') {
+    return ['popularity', 'price_low', 'review_high'].includes(String(value || '').trim())
+      ? String(value || '').trim()
+      : '';
+  }
+
+  if (key === 'aiCtripReviewCountMin') {
+    const number = Number(String(value || '').trim());
+    return [100, 200, 500].includes(number) ? number : '';
+  }
+
+  if (key === 'aiCtripScoreMin') {
+    const number = Number(String(value || '').trim());
+    return [4, 4.5, 4.7].includes(number) ? number : '';
+  }
+
   if (key === 'aiListDesiredHotelCount' || key === 'aiListMaxPages') {
     const number = Number(String(value || '').trim());
     return Number.isFinite(number) && number > 0 ? Math.trunc(number) : '';
   }
 
-  if (key === 'aiListMinScore') {
-    const text = String(value || '').trim();
-    if (!text) return '';
-    const number = Number(text);
-    return Number.isFinite(number) ? number : '';
-  }
-
   return String(value || '').trim();
+}
+
+function applyCtripStarLevelPills() {
+  const selected = new Set((Array.isArray(state.settings.aiCtripStarLevels) ? state.settings.aiCtripStarLevels : [])
+    .map((item) => String(item)));
+  document.querySelectorAll('[data-star-level]').forEach((button) => {
+    const isSelected = selected.has(String(button.dataset.starLevel));
+    button.classList.toggle('is-selected', isSelected);
+    button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+  });
 }
 
 function applyListPrefilterSettings() {
   LIST_PREFILTER_SETTING_KEYS.forEach((key) => {
+    if (key === 'aiCtripFreeCancel') {
+      setChecked(key, Boolean(state.settings[key]));
+      return;
+    }
+    if (key === 'aiCtripStarLevels') {
+      applyCtripStarLevelPills();
+      return;
+    }
     setValue(key, state.settings[key] ?? '');
   });
+}
+
+function readListPrefilterFormValues() {
+  const selectedStars = Array.from(document.querySelectorAll('[data-star-level].is-selected'))
+    .map((button) => button.dataset.starLevel);
+  return {
+    aiCtripPriceMin: normalizeListPrefilterSettingValue('aiCtripPriceMin', $('aiCtripPriceMin')?.value),
+    aiCtripPriceMax: normalizeListPrefilterSettingValue('aiCtripPriceMax', $('aiCtripPriceMax')?.value),
+    aiCtripStarLevels: normalizeListPrefilterSettingValue('aiCtripStarLevels', selectedStars),
+    aiCtripSortMode: normalizeListPrefilterSettingValue('aiCtripSortMode', $('aiCtripSortMode')?.value),
+    aiCtripFreeCancel: normalizeListPrefilterSettingValue('aiCtripFreeCancel', Boolean($('aiCtripFreeCancel')?.checked)),
+    aiCtripReviewCountMin: normalizeListPrefilterSettingValue('aiCtripReviewCountMin', $('aiCtripReviewCountMin')?.value),
+    aiCtripScoreMin: normalizeListPrefilterSettingValue('aiCtripScoreMin', $('aiCtripScoreMin')?.value),
+    aiListDesiredHotelCount: normalizeListPrefilterSettingValue('aiListDesiredHotelCount', $('aiListDesiredHotelCount')?.value),
+    aiListExcludeHotelTypes: normalizeListPrefilterSettingValue('aiListExcludeHotelTypes', $('aiListExcludeHotelTypes')?.value),
+    aiListMaxPages: normalizeListPrefilterSettingValue('aiListMaxPages', $('aiListMaxPages')?.value)
+  };
+}
+
+async function persistListPrefilterSettings(nextSettings) {
+  const entries = Object.entries(nextSettings).filter(([key]) => LIST_PREFILTER_SETTING_KEYS.has(key));
+  const previousSettings = {};
+  entries.forEach(([key]) => {
+    previousSettings[key] = state.settings[key];
+  });
+
+  try {
+    await Promise.all(entries.map(([key, value]) => window.electronAPI.setSetting(key, value)));
+    entries.forEach(([key, value]) => {
+      state.settings[key] = value;
+    });
+    applyListPrefilterSettings();
+    return true;
+  } catch (error) {
+    console.error('保存列表页前筛设置失败:', error);
+    entries.forEach(([key]) => {
+      state.settings[key] = previousSettings[key];
+    });
+    applyListPrefilterSettings();
+    showNotification('保存列表页前筛设置失败，请重试', 'error');
+    return false;
+  }
 }
 
 export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
@@ -219,17 +343,59 @@ export async function saveAiListPrefilterSetting(event) {
   }
 
   const previousValue = state.settings[key] ?? '';
-  const nextValue = normalizeListPrefilterSettingValue(key, input.value);
+  const rawValue = key === 'aiCtripFreeCancel'
+    ? input.checked
+    : key === 'aiCtripStarLevels'
+      ? Array.from(input.selectedOptions || []).map((option) => option.value)
+      : input.value;
+  const nextValue = normalizeListPrefilterSettingValue(key, rawValue);
 
   try {
     await window.electronAPI.setSetting(key, nextValue);
     state.settings[key] = nextValue;
-    input.value = nextValue;
+    applyListPrefilterSettings();
   } catch (error) {
     console.error('保存列表页前筛设置失败:', error);
-    input.value = previousValue;
+    state.settings[key] = previousValue;
+    applyListPrefilterSettings();
     showNotification('保存列表页前筛设置失败，请重试', 'error');
   }
+}
+
+export async function saveAiListPrefilterSettings() {
+  const ok = await persistListPrefilterSettings(readListPrefilterFormValues());
+  if (ok) {
+    showNotification('列表页前筛设置已保存', 'success');
+  }
+  return ok;
+}
+
+export async function resetAiListPrefilterSettings() {
+  const ok = await persistListPrefilterSettings({
+    ...LIST_PREFILTER_DEFAULT_SETTINGS
+  });
+  if (ok) {
+    showNotification('列表页前筛已重置', 'success');
+  }
+  return ok;
+}
+
+export async function toggleAiCtripStarLevel(starLevel) {
+  const star = Number(starLevel);
+  if (![2, 3, 4, 5].includes(star)) {
+    return false;
+  }
+
+  const current = Array.isArray(state.settings.aiCtripStarLevels)
+    ? state.settings.aiCtripStarLevels.map((item) => Number(item)).filter((item) => [2, 3, 4, 5].includes(item))
+    : [];
+  const next = current.includes(star)
+    ? current.filter((item) => item !== star)
+    : [...current, star].sort((left, right) => left - right);
+  const ok = await persistListPrefilterSettings({
+    aiCtripStarLevels: next
+  });
+  return ok;
 }
 
 /* ---- 数据路径 ---- */

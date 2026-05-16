@@ -89,7 +89,7 @@ function buildSystemPrompt() {
 7. 如果检测到登录看低价、解锁优惠、无有效价格，应提示程序打开可见 Edge 登录窗口；用户登录携程并关闭窗口后，采集会自动重试。
 8. 成功写入时说明：酒店名、可用房型数、价格摘要、写入状态。
 9. 成功但未写入时说明：这是采集完成但安全门阻止写入，不等于程序崩溃。
-10. 列表页会先按最低评分、排除住宿类型关键词、排除名称关键词、目标数量、最多扫描页数做前筛，再逐个进入详情页复用原采集链路。
+10. 列表页会先合并携程 URL 前筛，并按本地排除住宿类型、目标数量、最多扫描页数做候选筛选，再逐个进入详情页复用原采集链路。
 11. 永远不要输出或复述 API Key、token、本地敏感配置。
 
 工具使用：
@@ -613,16 +613,20 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         templateId: payload.templateId,
         templateName: payload.templateName,
         listFilters: payload.listFilters,
-        minScore: payload.minScore,
-        minRating: payload.minRating,
         excludeAccommodationKeywords: payload.excludeAccommodationKeywords,
         excludeHotelTypes: payload.excludeHotelTypes,
-        excludeNameKeywords: payload.excludeNameKeywords,
-        excludeKeywords: payload.excludeKeywords,
         targetCount: payload.targetCount,
         desiredHotelCount: payload.desiredHotelCount,
         maxPages: payload.maxPages,
-        maxCandidatesPerPage: payload.maxCandidatesPerPage
+        maxCandidatesPerPage: payload.maxCandidatesPerPage,
+        listUrlFilters: payload.listUrlFilters,
+        priceMin: payload.priceMin,
+        priceMax: payload.priceMax,
+        starLevels: payload.starLevels,
+        sortMode: payload.sortMode,
+        freeCancel: payload.freeCancel,
+        reviewCountMin: payload.reviewCountMin,
+        ctripScoreMin: payload.ctripScoreMin
       }, {
         taskId,
         dataFolderPath: dataService.getDataFolderPath(),

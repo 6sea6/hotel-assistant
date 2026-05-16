@@ -295,7 +295,8 @@ test('AI fallback system prompt is compact and ignores legacy guide text', () =>
 
   assert.match(prompt, /内置 AI 兜底助手/);
   assert.match(prompt, /详情页链接和酒店列表页链接/);
-  assert.match(prompt, /列表页会先按最低评分/);
+  assert.match(prompt, /列表页会先合并携程 URL 前筛/);
+  assert.doesNotMatch(prompt, /排除名称关键词/);
   assert.match(prompt, /collect_and_write_ctrip_hotel/);
   assert.doesNotMatch(prompt, /legacy guide/);
 });
@@ -309,9 +310,10 @@ test('AI collect tool schema documents list and detail URL inputs', () => {
   assert.ok(properties.url);
   assert.ok(properties.urls);
   assert.ok(properties.listFilters);
+  assert.ok(properties.listUrlFilters);
   assert.ok(properties.desiredHotelCount);
-  assert.ok(properties.minScore);
-  assert.ok(properties.excludeKeywords);
+  assert.equal(properties.minScore, undefined);
+  assert.equal(properties.excludeKeywords, undefined);
   assert.ok(properties.excludeHotelTypes);
   assert.ok(properties.maxPages);
 });
@@ -352,6 +354,8 @@ test('AI IPC registers direct task start endpoint', () => {
   assert.ok(handlers.has('ai:task:start'));
   assert.ok(handlers.has('ai:collect:analyze'));
   assert.ok(handlers.has('ai:collect:apply-review'));
+  assert.ok(handlers.has('ai:ctrip-list-url:parse'));
+  assert.ok(handlers.has('ai:ctrip-list-url:build'));
   assert.equal(aiServiceAccessCount, 0);
 
   handlers.get('ai:config:presets')();
@@ -386,6 +390,8 @@ test('AI IPC keeps compatibility with direct aiService object', () => {
   assert.ok(channels.includes('ai:task:start'));
   assert.ok(channels.includes('ai:collect:analyze'));
   assert.ok(channels.includes('ai:collect:apply-review'));
+  assert.ok(channels.includes('ai:ctrip-list-url:parse'));
+  assert.ok(channels.includes('ai:ctrip-list-url:build'));
 });
 
 test('scraper runner resolves the embedded scraper in the app repository', (t) => {
@@ -542,19 +548,33 @@ test('direct AI task start runs the hotel task runner without provider config', 
     templateId: '100',
     templateName: '武汉',
     desiredHotelCount: 5,
-    minScore: 4.6,
-    excludeKeywords: ['电竞'],
     excludeHotelTypes: ['民宿'],
-    maxPages: 2
+    maxPages: 2,
+    listUrlFilters: {
+      priceMin: 50,
+      priceMax: 200,
+      starLevels: [3, 4],
+      sortMode: 'review_high',
+      freeCancel: true,
+      reviewCountMin: 500,
+      ctripScoreMin: 4.5
+    }
   });
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].input.templateName, '武汉');
   assert.equal(calls[0].input.desiredHotelCount, 5);
-  assert.equal(calls[0].input.minScore, 4.6);
-  assert.deepEqual(calls[0].input.excludeKeywords, ['电竞']);
   assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
   assert.equal(calls[0].input.maxPages, 2);
+  assert.deepEqual(calls[0].input.listUrlFilters, {
+    priceMin: 50,
+    priceMax: 200,
+    starLevels: [3, 4],
+    sortMode: 'review_high',
+    freeCancel: true,
+    reviewCountMin: 500,
+    ctripScoreMin: 4.5
+  });
   assert.equal(calls[0].context.dataFolderPath, 'E:/实验/1/宾馆比较助手');
   assert.equal(result.collectResult.hotelName, '测试酒店');
   assert.equal(result.collectResult.totalPrice, 300);

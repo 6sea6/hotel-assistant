@@ -238,7 +238,6 @@ function buildBatchOutputPayload({
         results: expandedInputs.listResults
       },
       source_args: {
-        minScore: args.minScore ?? args.minRating ?? args['min-score'] ?? args['min-rating'] ?? null,
         targetCount: args.targetCount ?? args['target-count'] ?? null,
         maxPages: args.maxPages ?? args['max-pages'] ?? null
       }

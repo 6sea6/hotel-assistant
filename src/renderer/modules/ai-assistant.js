@@ -274,6 +274,19 @@ function getSubmittedUrl() {
   return getSubmittedUrls()[0] || '';
 }
 
+function isCtripListUrl(url) {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    return /(^|\.)ctrip\.com$/i.test(parsed.hostname)
+      && /hotel|hotels/i.test(parsed.href)
+      && /list|hotelsearch|search|query|keyword|city|location|zone/i.test(parsed.href)
+      && !/[?&]hotel[Ii]d=\d+/.test(parsed.search)
+      && !/\/hotels\/\d+\.html/i.test(parsed.pathname);
+  } catch (_error) {
+    return false;
+  }
+}
+
 function parseOptionalNumber(value, options = {}) {
   const text = String(value || '').trim();
   if (!text) return null;
@@ -292,24 +305,195 @@ function parseKeywordInput(value) {
     .filter(Boolean);
 }
 
+function parseIntegerSetting(value, options = {}) {
+  const number = parseOptionalNumber(value, {
+    integer: true,
+    min: options.min ?? 0
+  });
+  if (number === null) return null;
+  if (options.allowed && !options.allowed.includes(number)) return null;
+  return number;
+}
+
+function parseScoreSetting(value) {
+  const number = parseOptionalNumber(value);
+  return [4, 4.5, 4.7].includes(number) ? number : null;
+}
+
+function parsePriceMaxSetting(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return null;
+  if (text === 'max') return 'max';
+  return parseIntegerSetting(text, { min: 0 });
+}
+
+function compactActiveCtripUrlFilters(filters = {}) {
+  const active = {};
+  const hasPriceMin = filters.priceMin !== null && filters.priceMin !== undefined;
+  const hasPriceMax = filters.priceMax !== null && filters.priceMax !== undefined;
+
+  if (hasPriceMin) active.priceMin = filters.priceMin;
+  if (hasPriceMax) active.priceMax = filters.priceMax;
+  if (Array.isArray(filters.starLevels) && filters.starLevels.length) active.starLevels = filters.starLevels;
+  if (filters.sortMode) active.sortMode = filters.sortMode;
+  if (filters.freeCancel === true) active.freeCancel = true;
+  if (filters.reviewCountMin !== null && filters.reviewCountMin !== undefined) active.reviewCountMin = filters.reviewCountMin;
+  if (filters.ctripScoreMin !== null && filters.ctripScoreMin !== undefined) active.ctripScoreMin = filters.ctripScoreMin;
+
+  return active;
+}
+
+export function readCtripUrlFilterSettings(options = {}) {
+  const settings = state.settings || {};
+  const starLevels = Array.isArray(settings.aiCtripStarLevels)
+    ? settings.aiCtripStarLevels
+    : parseKeywordInput(settings.aiCtripStarLevels);
+
+  const filters = {
+    priceMin: parseIntegerSetting(settings.aiCtripPriceMin, { min: 0 }),
+    priceMax: parsePriceMaxSetting(settings.aiCtripPriceMax),
+    starLevels: starLevels
+      .map((item) => Number(item))
+      .filter((item) => [2, 3, 4, 5].includes(item)),
+    sortMode: ['popularity', 'price_low', 'review_high'].includes(settings.aiCtripSortMode)
+      ? settings.aiCtripSortMode
+      : null,
+    freeCancel: Boolean(settings.aiCtripFreeCancel),
+    reviewCountMin: parseIntegerSetting(settings.aiCtripReviewCountMin, {
+      allowed: [100, 200, 500]
+    }),
+    ctripScoreMin: parseScoreSetting(settings.aiCtripScoreMin)
+  };
+
+  return options.activeOnly ? compactActiveCtripUrlFilters(filters) : filters;
+}
+
+function applyCtripUrlFilterSettingsToDom() {
+  const settings = state.settings || {};
+  setValue('aiCtripPriceMin', settings.aiCtripPriceMin ?? '');
+  setValue('aiCtripPriceMax', settings.aiCtripPriceMax ?? '');
+  setValue('aiCtripSortMode', settings.aiCtripSortMode || '');
+  setValue('aiCtripReviewCountMin', settings.aiCtripReviewCountMin ?? '');
+  setValue('aiCtripScoreMin', settings.aiCtripScoreMin ?? '');
+  setChecked('aiCtripFreeCancel', Boolean(settings.aiCtripFreeCancel));
+
+  const selected = new Set((Array.isArray(settings.aiCtripStarLevels) ? settings.aiCtripStarLevels : [])
+    .map((item) => String(item)));
+  document.querySelectorAll('[data-star-level]').forEach((button) => {
+    const isSelected = selected.has(String(button.dataset.starLevel));
+    button.classList.toggle('is-selected', isSelected);
+    button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+  });
+}
+
+async function persistCtripUrlFilterSettingsFromParsed(parsed) {
+  const known = parsed && parsed.knownSettings ? parsed.knownSettings : {};
+  const detected = new Set(Array.isArray(parsed && parsed.detectedKnownFilterKeys)
+    ? parsed.detectedKnownFilterKeys
+    : []);
+  if (!detected.size) {
+    applyCtripUrlFilterSettingsToDom();
+    return;
+  }
+
+  const updates = {};
+  if (detected.has('priceMin')) updates.aiCtripPriceMin = known.priceMin ?? '';
+  if (detected.has('priceMax')) updates.aiCtripPriceMax = known.priceMax ?? '';
+  if (detected.has('starLevels')) updates.aiCtripStarLevels = Array.isArray(known.starLevels) ? known.starLevels : [];
+  if (detected.has('sortMode')) updates.aiCtripSortMode = known.sortMode || '';
+  if (detected.has('freeCancel')) updates.aiCtripFreeCancel = Boolean(known.freeCancel);
+  if (detected.has('reviewCountMin')) updates.aiCtripReviewCountMin = known.reviewCountMin ?? '';
+  if (detected.has('ctripScoreMin')) updates.aiCtripScoreMin = known.ctripScoreMin ?? '';
+
+  const entries = Object.entries(updates);
+  const changed = entries.filter(([key, value]) => JSON.stringify(state.settings[key] ?? '') !== JSON.stringify(value));
+  if (!changed.length) {
+    applyCtripUrlFilterSettingsToDom();
+    return;
+  }
+
+  await Promise.all(changed.map(([key, value]) => window.electronAPI.setSetting(key, value)));
+  entries.forEach(([key, value]) => {
+    state.settings[key] = value;
+  });
+  applyCtripUrlFilterSettingsToDom();
+}
+
+export async function syncCtripListUrlSettingsFromInput() {
+  const url = getSubmittedUrl();
+  if (!url || !isCtripListUrl(url) || !window.electronAPI?.ai?.parseCtripListUrl) {
+    return null;
+  }
+  try {
+    const parsedUrl = new URL(url);
+    if (!parsedUrl.searchParams.has('listFilters')) {
+      return null;
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  try {
+    const parsed = await window.electronAPI.ai.parseCtripListUrl(url);
+    await persistCtripUrlFilterSettingsFromParsed(parsed);
+    return parsed;
+  } catch (error) {
+    console.warn('解析携程列表页 URL 前筛失败:', error);
+    return null;
+  }
+}
+
+export async function syncAiCtripListUrlFromSettings(options = {}) {
+  const url = getSubmittedUrl();
+  const inputText = getValue('aiHotelUrlInput');
+  if (!url || !isCtripListUrl(url) || !window.electronAPI?.ai?.buildCtripListUrl) {
+    return url;
+  }
+
+  try {
+    const nextUrl = await window.electronAPI.ai.buildCtripListUrl({
+      baseUrl: url,
+      settings: readCtripUrlFilterSettings({
+        activeOnly: options.activeOnly || options.mode === 'activeOnly'
+      })
+    });
+    if (nextUrl && nextUrl !== url) {
+      setValue('aiHotelUrlInput', inputText.includes(url) ? inputText.replace(url, nextUrl) : nextUrl);
+      updateTaskInputCount();
+    }
+    return nextUrl || url;
+  } catch (error) {
+    console.warn('生成携程列表页 URL 前筛失败:', error);
+    return url;
+  }
+}
+
+let ctripListUrlSyncTimer = null;
+
+export function handleAiTaskInputChange() {
+  updateTaskInputCount();
+  if (ctripListUrlSyncTimer) {
+    clearTimeout(ctripListUrlSyncTimer);
+  }
+  ctripListUrlSyncTimer = setTimeout(() => {
+    void syncCtripListUrlSettingsFromInput();
+  }, 350);
+}
+
 function readListFilterForm() {
   const settings = state.settings || {};
   const desiredHotelCount = parseOptionalNumber(settings.aiListDesiredHotelCount, {
     integer: true,
     min: 1
   });
-  const minScore = parseOptionalNumber(settings.aiListMinScore);
   const maxPages = parseOptionalNumber(settings.aiListMaxPages, {
     integer: true,
     min: 1
   });
-  const excludeKeywords = parseKeywordInput(settings.aiListExcludeKeywords);
   const excludeHotelTypes = parseKeywordInput(settings.aiListExcludeHotelTypes);
   const listFilters = {};
 
   if (desiredHotelCount !== null) listFilters.desiredHotelCount = desiredHotelCount;
-  if (minScore !== null) listFilters.minScore = minScore;
-  if (excludeKeywords.length) listFilters.excludeKeywords = excludeKeywords;
   if (excludeHotelTypes.length) listFilters.excludeHotelTypes = excludeHotelTypes;
   if (maxPages !== null) listFilters.maxPages = maxPages;
 
@@ -325,11 +509,17 @@ function buildTaskPayload(task) {
     templateName: task.templateName || '',
     url: task.url,
     listFilters,
+    listUrlFilters: task.listUrlFilters || readCtripUrlFilterSettings({ activeOnly: true }),
     desiredHotelCount: listFilters.desiredHotelCount,
-    minScore: listFilters.minScore,
-    excludeKeywords: listFilters.excludeKeywords,
     excludeHotelTypes: listFilters.excludeHotelTypes,
-    maxPages: listFilters.maxPages
+    maxPages: listFilters.maxPages,
+    priceMin: task.listUrlFilters ? task.listUrlFilters.priceMin : undefined,
+    priceMax: task.listUrlFilters ? task.listUrlFilters.priceMax : undefined,
+    starLevels: task.listUrlFilters ? task.listUrlFilters.starLevels : undefined,
+    sortMode: task.listUrlFilters ? task.listUrlFilters.sortMode : undefined,
+    freeCancel: task.listUrlFilters ? task.listUrlFilters.freeCancel : undefined,
+    reviewCountMin: task.listUrlFilters ? task.listUrlFilters.reviewCountMin : undefined,
+    ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined
   };
 }
 
@@ -411,7 +601,7 @@ function findQueueTaskByBackendTaskId(taskId) {
   return (state.aiTaskQueue || []).find((task) => String(task.backendTaskId || '') === id) || null;
 }
 
-function createQueueTask(template, url, listFilters = {}) {
+function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
   state.aiTaskQueueCounter = Number(state.aiTaskQueueCounter || 0) + 1;
   const displayIndex = String(state.aiTaskQueueCounter).padStart(2, '0');
   const title = formatAiTemplateLabel(template);
@@ -425,6 +615,7 @@ function createQueueTask(template, url, listFilters = {}) {
     title,
     template,
     listFilters,
+    listUrlFilters,
     status: 'waiting',
     currentStep: '',
     createdAt: new Date().toISOString(),
@@ -552,12 +743,12 @@ function isDuplicateActiveUrl(url) {
   ));
 }
 
-function addQueueTask(template, url, listFilters = {}) {
+function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
   if (isDuplicateActiveUrl(url)) {
     showNotification('该链接已在任务队列中', 'warning');
     return null;
   }
-  const task = createQueueTask(template, url, listFilters);
+  const task = createQueueTask(template, url, listFilters, listUrlFilters);
   state.aiTaskQueue.push(task);
   if (!state.aiSelectedQueueTaskId) {
     state.aiSelectedQueueTaskId = task.id;
@@ -724,6 +915,8 @@ export async function enqueueAiCollectTask() {
     showNotification('请先选择模板', 'warning');
     return;
   }
+  await syncCtripListUrlSettingsFromInput();
+  await syncAiCtripListUrlFromSettings({ activeOnly: true });
   const url = getSubmittedUrl();
   if (!url) {
     showNotification('请粘贴携程酒店详情页或列表页链接', 'warning');
@@ -731,7 +924,8 @@ export async function enqueueAiCollectTask() {
   }
 
   const listFilters = readListFilterForm();
-  const task = addQueueTask(template, url, listFilters);
+  const listUrlFilters = readCtripUrlFilterSettings({ activeOnly: true });
+  const task = addQueueTask(template, url, listFilters, listUrlFilters);
   if (!task) return;
   setValue('aiHotelUrlInput', '');
   updateAiInputCount();
@@ -845,7 +1039,7 @@ export function retryAiQueueTask(taskId) {
     runNextQueueTask();
     return;
   }
-  const task = createQueueTask(sourceTask.template, sourceTask.url, sourceTask.listFilters || {});
+  const task = createQueueTask(sourceTask.template, sourceTask.url, sourceTask.listFilters || {}, sourceTask.listUrlFilters || {});
   state.aiTaskQueue.push(task);
   state.aiSelectedQueueTaskId = task.id;
   state.aiQueueSelectionPinned = false;

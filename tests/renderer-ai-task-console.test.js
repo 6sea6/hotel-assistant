@@ -4,8 +4,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const {
+  buildCtripListUrl,
+  parseCtripListUrl
+} = require('../shared/compare-app/ctrip-url-filters');
 
 let taskConsoleModuleUrl = '';
+let aiAssistantModuleUrl = '';
+let aiAssistantStateModuleUrl = '';
 
 async function loadTaskConsoleModule() {
   if (!taskConsoleModuleUrl) {
@@ -21,6 +27,118 @@ async function loadTaskConsoleModule() {
   }
 
   return import(taskConsoleModuleUrl);
+}
+
+async function loadAiAssistantModules() {
+  if (!aiAssistantModuleUrl) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-ai-assistant-'));
+    const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
+    fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
+    [
+      'actions.js',
+      'ai-assistant.js',
+      'ai-task-console.js',
+      'dom-helpers.js',
+      'notification.js',
+      'state.js'
+    ].forEach((fileName) => {
+      fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+    });
+    aiAssistantModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-assistant.js')).href;
+    aiAssistantStateModuleUrl = pathToFileURL(path.join(tempRoot, 'state.js')).href;
+    process.on('exit', () => {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    });
+  }
+
+  const [module, stateModule] = await Promise.all([
+    import(aiAssistantModuleUrl),
+    import(aiAssistantStateModuleUrl)
+  ]);
+  return {
+    module,
+    state: stateModule.state
+  };
+}
+
+function createFakeElement(value = '') {
+  return {
+    value,
+    checked: false,
+    maxLength: 4000,
+    innerHTML: '',
+    textContent: '',
+    dataset: {},
+    options: [],
+    selectedOptions: [],
+    classList: {
+      add() {},
+      remove() {},
+      toggle() {}
+    },
+    setAttribute() {},
+    appendChild() {},
+    remove() {}
+  };
+}
+
+function installAiAssistantDom(inputUrl = '') {
+  const elements = new Map();
+  [
+    'aiHotelUrlInput',
+    'aiInputCount',
+    'aiCtripPriceMin',
+    'aiCtripPriceMax',
+    'aiCtripSortMode',
+    'aiCtripReviewCountMin',
+    'aiCtripScoreMin',
+    'aiCtripFreeCancel'
+  ].forEach((id) => {
+    elements.set(id, createFakeElement(id === 'aiHotelUrlInput' ? inputUrl : ''));
+  });
+
+  const starButtons = [2, 3, 4, 5].map((level) => ({
+    dataset: { starLevel: String(level) },
+    classList: {
+      toggle() {}
+    },
+    setAttribute() {}
+  }));
+  const setCalls = [];
+
+  global.document = {
+    getElementById(id) {
+      return elements.get(id) || null;
+    },
+    querySelectorAll(selector) {
+      return selector === '[data-star-level]' ? starButtons : [];
+    },
+    createElement() {
+      return createFakeElement();
+    },
+    body: {
+      appendChild() {}
+    }
+  };
+  global.window = {
+    setTimeout,
+    clearTimeout,
+    electronAPI: {
+      setSetting: async (key, value) => {
+        setCalls.push([key, value]);
+        return { success: true };
+      },
+      ai: {
+        parseCtripListUrl: async (url) => parseCtripListUrl(url),
+        buildCtripListUrl: async ({ baseUrl, settings }) => buildCtripListUrl(baseUrl, settings)
+      }
+    }
+  };
+
+  return {
+    elements,
+    setCalls
+  };
 }
 
 test('extractCtripUrls reads multiple detail and list URLs from pasted text', async () => {
@@ -235,21 +353,130 @@ test('batch progress stat icons use svg and animate the running icon', () => {
   assert.match(css, /\.task-progress-stat-icon\s*\{[\s\S]*width:\s*22px;[\s\S]*height:\s*22px;/);
 });
 
-test('list prefilter controls live in settings instead of the task start bar', () => {
+test('Ctrip list URL reverse sync does not clear saved filters for unknown native listFilters', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
+  const { elements, setCalls } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMin: 50,
+    aiCtripPriceMax: 200,
+    aiCtripStarLevels: [4],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 10,
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
+    aiListMaxPages: 3
+  };
+
+  await module.syncCtripListUrlSettingsFromInput();
+
+  assert.equal(state.settings.aiCtripPriceMin, 50);
+  assert.equal(state.settings.aiCtripPriceMax, 200);
+  assert.deepEqual(state.settings.aiCtripStarLevels, [4]);
+  assert.deepEqual(setCalls, []);
+  assert.equal(elements.get('aiCtripPriceMin').value, 50);
+});
+
+test('active Ctrip URL filters are merged into list URL without dropping unknown filters', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMin: 50,
+    aiCtripPriceMax: 200,
+    aiCtripStarLevels: [4],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 10,
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
+    aiListMaxPages: 3
+  };
+
+  const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true });
+  await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
+  const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
+
+  assert.deepEqual(activeFilters, {
+    priceMin: 50,
+    priceMax: 200,
+    starLevels: [4]
+  });
+  assert.ok(parsed.listFilterParts.includes('29~1*29*1~3*2'));
+  assert.ok(parsed.listFilterParts.includes('15~Range*15*50~200'));
+  assert.ok(parsed.listFilterParts.includes('16~4*16*4'));
+});
+
+test('active-only Ctrip URL sync preserves pasted known filters when app settings are empty', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,17~6*17*6&locale=zh-CN';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMin: '',
+    aiCtripPriceMax: '',
+    aiCtripStarLevels: [],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 10,
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
+    aiListMaxPages: 3
+  };
+
+  await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
+  const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
+
+  assert.deepEqual(module.readCtripUrlFilterSettings({ activeOnly: true }), {});
+  assert.ok(parsed.listFilterParts.includes('29~1*29*1~3*2'));
+  assert.ok(parsed.listFilterParts.includes('17~6*17*6'));
+});
+
+test('list prefilter controls live in a dedicated assistant modal', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const startBarMatch = html.match(/<section class="task-start-card"[\s\S]*?<\/section>/);
   const settingsMatch = html.match(/<div id="settingsModal"[\s\S]*?<div id="personalizationModal"/);
+  const prefilterMatch = html.match(/<div id="listPrefilterModal"[\s\S]*?<div id="settingsModal"/);
+  const currentTaskHeaderMatch = html.match(/<section class="current-task-card"[\s\S]*?<div id="aiCurrentTaskPanel"/);
   const startBarHtml = startBarMatch ? startBarMatch[0] : '';
   const settingsHtml = settingsMatch ? settingsMatch[0] : '';
+  const prefilterHtml = prefilterMatch ? prefilterMatch[0] : '';
+  const currentTaskHeaderHtml = currentTaskHeaderMatch ? currentTaskHeaderMatch[0] : '';
 
   assert.doesNotMatch(startBarHtml, /列表页前筛/);
   assert.doesNotMatch(startBarHtml, /aiListDesiredHotelCount/);
-  assert.match(settingsHtml, /列表页前筛/);
-  assert.match(settingsHtml, /aiListDesiredHotelCount/);
-  assert.match(settingsHtml, /aiListMinScore/);
-  assert.match(settingsHtml, /aiListExcludeKeywords/);
-  assert.match(settingsHtml, /aiListExcludeHotelTypes/);
-  assert.match(settingsHtml, /aiListMaxPages/);
-  assert.match(settingsHtml, /最多扫描页数/);
+  assert.doesNotMatch(settingsHtml, /列表页前筛/);
+  assert.doesNotMatch(settingsHtml, /aiCtripPriceMin/);
+  assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
+  assert.match(currentTaskHeaderHtml, /前筛设置/);
+  assert.match(prefilterHtml, /列表页前筛/);
+  assert.match(prefilterHtml, /携程前筛/);
+  assert.match(prefilterHtml, /本地过滤/);
+  assert.match(prefilterHtml, /aiCtripPriceMin/);
+  assert.match(prefilterHtml, /aiCtripPriceMax/);
+  assert.doesNotMatch(prefilterHtml, /<select id="aiCtripStarLevels"/);
+  assert.match(prefilterHtml, /aiCtripStarLevelPills/);
+  assert.match(prefilterHtml, /data-star-level="2"/);
+  assert.match(prefilterHtml, /两星及以下/);
+  assert.match(prefilterHtml, /三星/);
+  assert.match(prefilterHtml, /四星/);
+  assert.match(prefilterHtml, /五星/);
+  assert.match(prefilterHtml, /aiCtripSortMode/);
+  assert.match(prefilterHtml, /欢迎度排序/);
+  assert.match(prefilterHtml, /aiCtripFreeCancel/);
+  assert.match(prefilterHtml, /aiCtripReviewCountMin/);
+  assert.match(prefilterHtml, /aiCtripScoreMin/);
+  assert.match(prefilterHtml, /aiListDesiredHotelCount/);
+  assert.doesNotMatch(prefilterHtml, /aiListMinScore/);
+  assert.doesNotMatch(prefilterHtml, /aiListExcludeKeywords/);
+  assert.doesNotMatch(prefilterHtml, /本地最低评分/);
+  assert.doesNotMatch(prefilterHtml, /本地排除关键词/);
+  assert.match(prefilterHtml, /aiListExcludeHotelTypes/);
+  assert.match(prefilterHtml, /aiListMaxPages/);
+  assert.doesNotMatch(prefilterHtml, /URL 预览/);
+  assert.doesNotMatch(prefilterHtml, /复制 URL/);
   assert.doesNotMatch(startBarHtml, /可一次粘贴多个/);
 });

@@ -11,7 +11,7 @@
 ## 能力范围
 
 - 读取携程酒店详情页链接、酒店列表页链接，或混合粘贴文本中的多个携程 URL
-- 列表页先做前筛，再逐个进入详情页复用原采集链路；前筛支持最低评分、排除住宿类型关键词、排除名称关键词、目标采集数量、最多扫描页数
+- 列表页先做前筛，再逐个进入详情页复用原采集链路；携程 URL 前筛支持价格、星级、排序、免费取消、点评数、评分档位；本地前筛支持排除住宿类型关键词、目标采集数量、最多扫描页数
 - 自动提取酒店名、地址、携程评分、候选房型
 - 输出**所有**符合条件的房型（有价格、人数达标），而非仅最优
 - 调用高德开放平台计算酒店到目的地的公共交通距离、时间、最近地铁站距离和推荐换乘路线；若模板中的 destination 为空，则只查询酒店附近地铁站，不计算到目的地的距离与路线
@@ -61,10 +61,10 @@ node src/cli.js --url "携程链接" --templateName 模板名 --auto-edge --edge
 node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateName 模板名 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
-列表页前筛参数：
+列表页本地前筛参数：
 
 ```bash
-node src/cli.js --url "携程列表页链接" --templateName 模板名 --minScore 4.5 --exclude-accommodation-keywords "民宿,公寓,青旅" --exclude-name-keywords "钟点,电竞" --targetCount 5 --maxPages 2 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
+node src/cli.js --url "携程列表页链接" --templateName 模板名 --exclude-accommodation-keywords "民宿,公寓,青旅" --targetCount 5 --maxPages 2 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
 `--auto-edge` 会自动在后台隐藏启动 Edge、等待调试端口就绪、执行采集、采集完成后关闭 Edge，不再把网页弹到前台影响当前电脑使用。首次使用如果还没有可复用的 Edge profile，会先自动打开一次可见 Edge 窗口让你登录携程；登录完成后关闭窗口，当前任务再继续后台采集。默认优先用 hidden/headless 会话；只有排障或主动重登时，才需要单独运行可见的 `edge-session.js --login`。如果某家酒店疑似必须在登录态的可见窗口里手动打开后，目标房型价格才会真正显示出来，不要只在后台盲重试；改为先用可见窗口重试一次并确认目标房型价格已在页面上显示，再继续采集。
@@ -142,9 +142,7 @@ node src/cli.js --url "携程链接" --templateName bw \
   --edge-profile-directory Default \
   --edge-debugging-port 9222 \
   --auto-edge               # 可选：后台隐藏启动 Edge，采集完成后自动关闭
-  --minScore 4.5             # 列表页可选：最低评分
   --exclude-accommodation-keywords "民宿,公寓"  # 列表页可选：排除住宿类型关键词
-  --exclude-name-keywords "青年,电竞"          # 列表页可选：排除名称关键词
   --targetCount 5            # 列表页可选：目标采集数量
   --maxPages 2               # 列表页可选：最多扫描页数，从当前列表页开始最多读取几页候选酒店
   --write-app-data           # 危险：跳过最终人工复核，直接写入比较助手

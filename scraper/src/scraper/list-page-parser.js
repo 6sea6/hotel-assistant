@@ -10,7 +10,7 @@ const { parseHotelIdFromUrl } = require('../ctrip-url');
 
 const DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS = Object.freeze(['民宿', '客栈', '青年旅舍', '公寓']);
 const DEFAULT_DESIRED_HOTEL_COUNT = 10;
-const DEFAULT_MAX_PAGES = 1;
+const DEFAULT_MAX_PAGES = 3;
 const DEFAULT_MAX_CANDIDATES_PER_PAGE = 80;
 
 function normalizeKeywordList(value) {
@@ -60,13 +60,6 @@ function normalizeScore(value) {
 }
 
 function normalizeListPageFilterOptions(options = {}) {
-  const minScore = toNumber(
-    options.minScore
-      ?? options.minRating
-      ?? options.minimumScore
-      ?? options['min-score']
-      ?? options['min-rating']
-  );
   const desiredHotelCount = normalizePositiveInteger(
     options.desiredHotelCount
       ?? options.targetCount
@@ -111,25 +104,13 @@ function normalizeListPageFilterOptions(options = {}) {
         ?? options['exclude-type-keywords']
     )
     : [...DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS].map((item) => item.toLowerCase());
-  const excludeKeywords = normalizeKeywordList(
-    options.excludeKeywords
-      ?? options.excludeNameKeywords
-      ?? options.excludeHotelNameKeywords
-      ?? options.exclude_name_keywords
-      ?? options['exclude-keywords']
-      ?? options['exclude-name-keywords']
-      ?? options['exclude-hotel-name-keywords']
-  );
 
   return {
-    minScore,
-    excludeKeywords,
     excludeHotelTypes,
     desiredHotelCount,
     targetCount: desiredHotelCount,
     maxPages,
     maxCandidatesPerPage,
-    excludeNameKeywords: excludeKeywords,
     excludeAccommodationKeywords: excludeHotelTypes
   };
 }
@@ -221,20 +202,12 @@ function filterListPageCandidates(candidates = [], rawFilters = {}) {
   const rejected = [];
 
   for (const candidate of mergedCandidates) {
-    const nameText = [candidate.hotelName, ...candidate.visibleTags].join(' ');
     const typeText = [candidate.hotelType, ...candidate.badges, ...candidate.visibleTags].join(' ');
-    const nameKeyword = containsAnyKeyword(nameText, filters.excludeKeywords);
     const typeKeyword = containsAnyKeyword(typeText, filters.excludeHotelTypes);
     let rejectReason = '';
 
-    if (filters.minScore !== null && candidate.ctripScore === null) {
-      rejectReason = 'score_missing';
-    } else if (filters.minScore !== null && candidate.ctripScore < filters.minScore) {
-      rejectReason = 'score_below_minimum';
-    } else if (typeKeyword) {
+    if (typeKeyword) {
       rejectReason = `hotel_type_keyword:${typeKeyword}`;
-    } else if (nameKeyword) {
-      rejectReason = `name_keyword:${nameKeyword}`;
     }
 
     if (rejectReason) {

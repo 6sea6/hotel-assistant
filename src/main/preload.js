@@ -220,6 +220,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     applyCollectionReview: (payload) => ipcRenderer.invoke('ai:collect:apply-review', payload),
     cancelTask: () => ipcRenderer.invoke('ai:task:cancel'),
     getTaskStatus: () => ipcRenderer.invoke('ai:task:status'),
+    parseCtripListUrl: (url) => ipcRenderer.invoke('ai:ctrip-list-url:parse', url),
+    buildCtripListUrl: (payload) => ipcRenderer.invoke('ai:ctrip-list-url:build', payload),
     onTaskEvent: (callback) => {
       ipcRenderer.on('ai:task:event', (event, data) => callback(data));
     }

@@ -156,17 +156,17 @@ test('parseListPageCandidatesFromHtml reads embedded JSON and emits normalized c
   assert.equal(candidates.find((candidate) => candidate.hotelId === '1001').sourceOrder, 1);
 
   const prefilter = filterListPageCandidates(candidates, {
-    minScore: 4.5,
     excludeHotelTypes: ['青年旅舍'],
-    excludeKeywords: ['备用'],
-    desiredHotelCount: 1
+    desiredHotelCount: 2
   });
 
-  assert.equal(prefilter.selected.length, 1);
+  assert.equal(prefilter.selected.length, 2);
   assert.equal(prefilter.selected[0].hotelId, '1001');
-  assert.ok(prefilter.rejected.some((candidate) => candidate.rejectReason === 'score_below_minimum'));
+  assert.equal(prefilter.selected[1].hotelId, '1003');
+  assert.ok(!prefilter.rejected.some((candidate) => candidate.rejectReason === 'score_below_minimum'));
+  assert.ok(!prefilter.rejected.some((candidate) => String(candidate.rejectReason).startsWith('name_keyword:')));
   assert.ok(prefilter.rejected.some((candidate) => candidate.rejectReason === 'hotel_type_keyword:青年旅舍'));
-  assert.deepEqual(prefilter.detailUrls, [prefilter.selected[0].detailUrl]);
+  assert.deepEqual(prefilter.detailUrls, prefilter.selected.map((candidate) => candidate.detailUrl));
 });
 
 test('list page filters support defaults, desired count and max candidates per page', () => {
@@ -177,7 +177,7 @@ test('list page filters support defaults, desired count and max candidates per p
     maxCandidatesPerPage: '5'
   });
 
-  assert.equal(filters.minScore, 4.6);
+  assert.equal(filters.minScore, undefined);
   assert.equal(filters.desiredHotelCount, 2);
   assert.equal(filters.targetCount, 2);
   assert.equal(filters.maxPages, 3);
@@ -190,16 +190,14 @@ test('list page filters support defaults, desired count and max candidates per p
 
 test('normalizeListFiltersFromArgs supports CLI aliases', () => {
   const filters = normalizeListFiltersFromArgs({
-    'min-rating': '4.6',
     'exclude-accommodation-keywords': '民宿,公寓',
-    'exclude-name-keywords': '青年',
     'target-count': '3',
     'max-pages': '2'
   });
 
-  assert.equal(filters.minScore, 4.6);
+  assert.equal(filters.minScore, undefined);
   assert.deepEqual(filters.excludeAccommodationKeywords, ['民宿', '公寓']);
-  assert.deepEqual(filters.excludeNameKeywords, ['青年']);
+  assert.equal(filters.excludeNameKeywords, undefined);
   assert.equal(filters.desiredHotelCount, 3);
   assert.equal(filters.targetCount, 3);
   assert.equal(filters.maxPages, 2);
@@ -266,4 +264,58 @@ test('expandCtripHotelInputs expands list URLs to ordered detail URLs', async ()
   assert.deepEqual(expanded.hotelInputs.map((item) => item.source), ['list-prefilter', 'list-prefilter']);
   assert.ok(expanded.hotelInputs[0].url.includes('checkIn=2026-06-01'));
   assert.equal(expanded.summary.expandedHotelCount, 2);
+});
+
+test('expandCtripHotelInputs merges Ctrip URL filters before collecting list pages', async () => {
+  const calls = [];
+  await expandCtripHotelInputs({
+    url: 'https://hotels.ctrip.com/hotels/list?city=2&listFilters=29~1*29*1~3*2,17~3*17*3',
+    listUrlFilters: {
+      priceMin: 50,
+      priceMax: 200,
+      sortMode: 'review_high',
+      freeCancel: true
+    }
+  }, {
+    check_in_date: '2026-06-01',
+    check_out_date: '2026-06-02',
+    room_count: 2
+  }, {
+    desiredHotelCount: 1,
+    maxPages: 1
+  }, {
+    collectListPageCandidates: async (url, template, filters) => {
+      calls.push({ url, template, filters });
+      return {
+        inputUrl: url,
+        pageUrls: [url],
+        pages: [],
+        filters,
+        totalCandidates: 1,
+        candidates: [],
+        rejected: [],
+        detailUrls: ['https://hotels.ctrip.com/hotels/detail/?hotelId=2001'],
+        selected: [{
+          hotelId: '2001',
+          hotelName: '第一家酒店',
+          ctripScore: 4.8,
+          detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
+          badges: [],
+          hotelType: '酒店',
+          visibleTags: [],
+          sourceOrder: 1
+        }],
+        errors: [],
+        edgeFallbackUsed: false
+      };
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  const decodedUrl = decodeURIComponent(calls[0].url);
+  assert.match(decodedUrl, /29~1\*29\*1~3\*2/);
+  assert.match(decodedUrl, /15~Range\*15\*50~200/);
+  assert.doesNotMatch(decodedUrl, /17~3\*17\*3/);
+  assert.match(decodedUrl, /17~6\*17\*6/);
+  assert.match(decodedUrl, /23~10\*23\*10/);
 });
