@@ -23,7 +23,9 @@ function waitForDebuggerEndpoint(port, timeoutMs = 15000) {
       }
       const req = http.get(`http://127.0.0.1:${port}/json/version`, (res) => {
         let data = '';
-        res.on('data', (chunk) => { data += chunk; });
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
         res.on('end', () => {
           try {
             const info = JSON.parse(data);
@@ -73,7 +75,13 @@ async function launchAndWaitForEdge(options) {
   if (headless) {
     launchArgs.splice(3, 0, '--disable-gpu', '--headless=new');
   } else {
-    launchArgs.splice(3, 0, '--window-position=-32000,-32000', '--window-size=1280,900', '--start-minimized');
+    launchArgs.splice(
+      3,
+      0,
+      '--window-position=-32000,-32000',
+      '--window-size=1280,900',
+      '--start-minimized'
+    );
   }
 
   const child = spawn(edgeExecutable, launchArgs, {
@@ -85,7 +93,9 @@ async function launchAndWaitForEdge(options) {
   scheduleProcessWindowHide(child.pid);
 
   const wsUrl = await waitForDebuggerEndpoint(port);
-  console.error(`[auto-edge] 后台 Edge 已启动 (PID: ${child.pid}, 端口: ${port}, headless: ${headless})`);
+  console.error(
+    `[auto-edge] 后台 Edge 已启动 (PID: ${child.pid}, 端口: ${port}, headless: ${headless})`
+  );
   return { pid: child.pid, port, wsUrl, headless };
 }
 
@@ -111,22 +121,28 @@ async function runInteractiveEdgeLoginPrep(options = {}) {
 
   fs.mkdirSync(userDataDir, { recursive: true });
 
-  console.error('[auto-edge] 未检测到可复用的 Edge 登录资料，已打开一次可见 Edge 窗口。请先登录携程，完成后关闭该窗口，当前任务会继续。');
+  console.error(
+    '[auto-edge] 未检测到可复用的 Edge 登录资料，已打开一次可见 Edge 窗口。请先登录携程，完成后关闭该窗口，当前任务会继续。'
+  );
 
   await new Promise((resolve, reject) => {
-    const child = spawn(edgeExecutable, [
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--new-window',
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${userDataDir}`,
-      `--profile-directory=${profileDirectory}`,
-      url
-    ], {
-      stdio: 'ignore',
-      detached: false,
-      windowsHide: false
-    });
+    const child = spawn(
+      edgeExecutable,
+      [
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--new-window',
+        `--remote-debugging-port=${port}`,
+        `--user-data-dir=${userDataDir}`,
+        `--profile-directory=${profileDirectory}`,
+        url
+      ],
+      {
+        stdio: 'ignore',
+        detached: false,
+        windowsHide: false
+      }
+    );
 
     child.on('error', reject);
     child.on('exit', () => resolve());
@@ -135,7 +151,9 @@ async function runInteractiveEdgeLoginPrep(options = {}) {
   if (hasReusableEdgeProfile(userDataDir, profileDirectory)) {
     console.error('[auto-edge] 首次登录准备已完成，继续后台采集。');
   } else {
-    console.error('[auto-edge] 可见 Edge 窗口已关闭，但尚未检测到明确的可复用资料；若后续仍提示登录，请重新完成一次登录。');
+    console.error(
+      '[auto-edge] 可见 Edge 窗口已关闭，但尚未检测到明确的可复用资料；若后续仍提示登录，请重新完成一次登录。'
+    );
   }
 }
 

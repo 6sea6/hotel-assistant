@@ -4,7 +4,12 @@ const os = require('os');
 const net = require('net');
 const { spawn } = require('child_process');
 const { normalizeText, toNumber, ensureDir } = require('../utils');
-const { delay, scheduleProcessWindowHide, killProcessTree, findEdgeExecutable } = require('./process-utils');
+const {
+  delay,
+  scheduleProcessWindowHide,
+  killProcessTree,
+  findEdgeExecutable
+} = require('./process-utils');
 
 function findAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -46,7 +51,10 @@ function cloneEdgeUserDataDir(sourceDir) {
     return '';
   }
 
-  const clonedDir = path.join(os.tmpdir(), `ctrip-edge-profile-clone-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const clonedDir = path.join(
+    os.tmpdir(),
+    `ctrip-edge-profile-clone-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
   fs.cpSync(normalizedSourceDir, clonedDir, {
     recursive: true,
     force: true,
@@ -79,7 +87,11 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
     if (sessionOptions.headless) {
       launchArgs.push('--headless=new');
     } else {
-      launchArgs.push('--window-position=-32000,-32000', '--window-size=1280,900', '--start-minimized');
+      launchArgs.push(
+        '--window-position=-32000,-32000',
+        '--window-size=1280,900',
+        '--start-minimized'
+      );
     }
     launchArgs.push('about:blank');
 
@@ -112,8 +124,13 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
     }
   };
 
-  const primaryPort = requestedPort || await findAvailablePort();
-  const primaryUserDataDir = sessionOptions.userDataDir || path.join(os.tmpdir(), `ctrip-edge-capture-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  const primaryPort = requestedPort || (await findAvailablePort());
+  const primaryUserDataDir =
+    sessionOptions.userDataDir ||
+    path.join(
+      os.tmpdir(),
+      `ctrip-edge-capture-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    );
   const primaryShouldCleanup = !sessionOptions.userDataDir;
 
   try {
@@ -142,14 +159,22 @@ async function connectToDebugger(debuggerUrl, EdgeWebSocket) {
   const socket = new EdgeWebSocket(debuggerUrl);
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Timed out connecting to CDP')), 10000);
-    socket.addEventListener('open', () => {
-      clearTimeout(timeout);
-      resolve();
-    }, { once: true });
-    socket.addEventListener('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    }, { once: true });
+    socket.addEventListener(
+      'open',
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      { once: true }
+    );
+    socket.addEventListener(
+      'error',
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+      { once: true }
+    );
   });
   return createCdpConnection(socket);
 }
@@ -244,15 +269,25 @@ function createCdpConnection(socket) {
 }
 
 async function evaluateInSession(connection, sessionId, expression) {
-  const result = await connection.send('Runtime.evaluate', {
-    expression,
-    returnByValue: true,
-    awaitPromise: true
-  }, sessionId);
+  const result = await connection.send(
+    'Runtime.evaluate',
+    {
+      expression,
+      returnByValue: true,
+      awaitPromise: true
+    },
+    sessionId
+  );
   return result && result.result ? result.result.value : undefined;
 }
 
-async function waitForSessionCondition(connection, sessionId, expression, timeoutMs = 4000, intervalMs = 200) {
+async function waitForSessionCondition(
+  connection,
+  sessionId,
+  expression,
+  timeoutMs = 4000,
+  intervalMs = 200
+) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {

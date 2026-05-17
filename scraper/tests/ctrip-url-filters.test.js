@@ -8,7 +8,9 @@ const {
 } = require('../src/ctrip-url-filters');
 
 function parseFromFilters(listFilters) {
-  return parseCtripListUrl(`https://hotels.ctrip.com/hotels/list?cityId=2&listFilters=${encodeURIComponent(listFilters)}`);
+  return parseCtripListUrl(
+    `https://hotels.ctrip.com/hotels/list?cityId=2&listFilters=${encodeURIComponent(listFilters)}`
+  );
 }
 
 test('parseCtripListUrl parses price range and preserves unknown filters', () => {
@@ -75,7 +77,8 @@ test('parseCtripListUrl parses Ctrip score filter', () => {
 });
 
 test('buildCtripListUrl generates combined known filters and keeps query params', () => {
-  const originalUrl = 'https://hotels.ctrip.com/hotels/list?flexType=1&fixedDate=0&cityId=2&provinceId=0&districtId=0&countryId=1&destName=%E4%B8%8A%E6%B5%B7&searchType=CT&optionId=2&checkin=2026-06-01&checkout=2026-06-02&crn=1&listFilters=29~1*29*1~3*2&curr=CNY&locale=zh-CN&old=1&v2_mod=79&v2_version=E';
+  const originalUrl =
+    'https://hotels.ctrip.com/hotels/list?flexType=1&fixedDate=0&cityId=2&provinceId=0&districtId=0&countryId=1&destName=%E4%B8%8A%E6%B5%B7&searchType=CT&optionId=2&checkin=2026-06-01&checkout=2026-06-02&crn=1&listFilters=29~1*29*1~3*2&curr=CNY&locale=zh-CN&old=1&v2_mod=79&v2_version=E';
   const generated = buildCtripListUrl(originalUrl, {
     priceMin: 50,
     priceMax: 200,
@@ -135,11 +138,7 @@ test('buildCtripListUrl clears price range when price is unlimited', () => {
 });
 
 test('mergeCtripFilters preserves unknown filters when changing price', () => {
-  const merged = mergeCtripFilters([
-    '29~1*29*1~3*2',
-    '80~2*80*2',
-    '999~abc*999*xyz'
-  ], {
+  const merged = mergeCtripFilters(['29~1*29*1~3*2', '80~2*80*2', '999~abc*999*xyz'], {
     priceMin: 100,
     priceMax: 300
   });

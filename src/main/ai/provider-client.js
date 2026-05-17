@@ -1,7 +1,9 @@
 const { normalizeAiProviderConfig } = require('./provider-presets');
 
 function buildChatCompletionsUrl(baseUrl) {
-  const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const normalizedBaseUrl = String(baseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
   if (!normalizedBaseUrl) {
     throw new Error('AI 接口地址不能为空');
   }
@@ -10,7 +12,9 @@ function buildChatCompletionsUrl(baseUrl) {
 }
 
 function buildAnthropicMessagesUrl(baseUrl) {
-  const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const normalizedBaseUrl = String(baseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
   if (!normalizedBaseUrl) {
     throw new Error('AI 接口地址不能为空');
   }
@@ -19,12 +23,15 @@ function buildAnthropicMessagesUrl(baseUrl) {
 }
 
 function isAnthropicProtocol(config) {
-  return config.protocol === 'anthropic' || /\/anthropic$/i.test(String(config.baseUrl || '').replace(/\/+$/, ''));
+  return (
+    config.protocol === 'anthropic' ||
+    /\/anthropic$/i.test(String(config.baseUrl || '').replace(/\/+$/, ''))
+  );
 }
 
 function convertToolsToAnthropic(tools = []) {
   return tools
-    .map((tool) => tool && tool.function ? tool.function : null)
+    .map((tool) => (tool && tool.function ? tool.function : null))
     .filter(Boolean)
     .map((tool) => ({
       name: tool.name,
@@ -74,7 +81,11 @@ function convertMessagesToAnthropic(messages = []) {
       continue;
     }
 
-    if (message.role === 'assistant' && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+    if (
+      message.role === 'assistant' &&
+      Array.isArray(message.tool_calls) &&
+      message.tool_calls.length > 0
+    ) {
       const content = [];
       if (message.content) {
         content.push({
@@ -85,9 +96,10 @@ function convertMessagesToAnthropic(messages = []) {
       for (const toolCall of message.tool_calls) {
         let input = {};
         try {
-          input = toolCall.function && toolCall.function.arguments
-            ? JSON.parse(toolCall.function.arguments)
-            : {};
+          input =
+            toolCall.function && toolCall.function.arguments
+              ? JSON.parse(toolCall.function.arguments)
+              : {};
         } catch (error) {
           input = {};
         }
@@ -262,10 +274,13 @@ async function requestChatCompletion(config, messages, tools = [], options = {})
   }
 
   if (!response.ok) {
-    const message = payload && payload.error && payload.error.message
-      ? payload.error.message
-      : responseText.slice(0, 300);
-    throw new Error(`AI 接口请求失败 (${response.status}): ${buildProviderErrorMessage(response.status, message, normalizedConfig)}`);
+    const message =
+      payload && payload.error && payload.error.message
+        ? payload.error.message
+        : responseText.slice(0, 300);
+    throw new Error(
+      `AI 接口请求失败 (${response.status}): ${buildProviderErrorMessage(response.status, message, normalizedConfig)}`
+    );
   }
 
   return parseChatCompletionMessage(payload);

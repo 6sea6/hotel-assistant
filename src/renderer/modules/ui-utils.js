@@ -101,7 +101,10 @@ export function startActionButtonConfirmation(button, options = {}) {
   button.classList.remove(button.dataset.variantClass);
   button.classList.add('btn-confirm');
 
-  const timerId = window.setTimeout(() => resetActionButtonConfirmation(button), options.timeout || 2200);
+  const timerId = window.setTimeout(
+    () => resetActionButtonConfirmation(button),
+    options.timeout || 2200
+  );
   button.dataset.confirmTimer = String(timerId);
 }
 
@@ -124,9 +127,8 @@ export function syncBatchDeleteButton(options = {}) {
     return;
   }
 
-  batchDeleteBtn.innerHTML = count > 0
-    ? `<span>🗑️</span> 删除选中 (${count})`
-    : '<span>🗑️</span> 删除选中';
+  batchDeleteBtn.innerHTML =
+    count > 0 ? `<span>🗑️</span> 删除选中 (${count})` : '<span>🗑️</span> 删除选中';
 }
 
 export function resetBatchDeleteConfirmation(options = {}) {
@@ -169,7 +171,7 @@ export function ensureHotelModalFocusable() {
   if (!hotelModal || !hotelForm || !nameInput) return;
 
   hotelModal.style.zIndex = '3001';
-  hotelForm.querySelectorAll('input, textarea, select').forEach(input => {
+  hotelForm.querySelectorAll('input, textarea, select').forEach((input) => {
     input.disabled = false;
     input.readOnly = false;
     input.style.pointerEvents = 'auto';
@@ -190,7 +192,7 @@ export function ensureHotelModalFocusable() {
 export function scheduleHotelModalFocus() {
   ensureHotelModalFocusable();
   requestAnimationFrame(() => ensureHotelModalFocusable());
-  [80, 180, 320, 600].forEach(delay => {
+  [80, 180, 320, 600].forEach((delay) => {
     setTimeout(() => ensureHotelModalFocusable(), delay);
   });
 }

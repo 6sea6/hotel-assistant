@@ -68,7 +68,9 @@ function normalizeTemplate(raw = {}) {
     template_name: normalizeText(raw.template_name || raw.templateName || ''),
     notes: normalizeText(raw.notes || ''),
     edge_user_data_dir: normalizeText(raw.edge_user_data_dir || raw.edgeUserDataDir || ''),
-    edge_profile_directory: normalizeText(raw.edge_profile_directory || raw.edgeProfileDirectory || raw.edgeProfile || ''),
+    edge_profile_directory: normalizeText(
+      raw.edge_profile_directory || raw.edgeProfileDirectory || raw.edgeProfile || ''
+    ),
     edge_debugger_url: normalizeText(raw.edge_debugger_url || raw.edgeDebuggerUrl || ''),
     edge_debugging_port: toNumber(raw.edge_debugging_port || raw.edgeDebuggingPort),
     edge_headless: toBoolean(raw.edge_headless ?? raw.edgeHeadless, true)
@@ -82,7 +84,13 @@ function mergeTemplateWithArgs(template, args) {
   const inputUrls = extractCtripUrlsFromInput(args);
   return normalizeTemplate({
     ...template,
-    ctrip_url: args.url || args.ctripUrl || args.ctrip_url || args['ctrip-url'] || inputUrls[0] || template.ctrip_url,
+    ctrip_url:
+      args.url ||
+      args.ctripUrl ||
+      args.ctrip_url ||
+      args['ctrip-url'] ||
+      inputUrls[0] ||
+      template.ctrip_url,
     destination: args.destination || template.destination,
     check_in_date: args.checkIn || args.check_in_date || template.check_in_date,
     check_out_date: args.checkOut || args.check_out_date || template.check_out_date,
@@ -91,18 +99,37 @@ function mergeTemplateWithArgs(template, args) {
     template_id: args.templateId || args.template_id || template.template_id,
     template_name: args.templateName || args.template_name || template.template_name,
     notes: args.notes || template.notes,
-    edge_user_data_dir: args.edgeUserDataDir || args['edge-user-data-dir'] || args.edge_user_data_dir || template.edge_user_data_dir,
-    edge_profile_directory: args.edgeProfileDirectory || args['edge-profile-directory'] || args.edge_profile_directory || template.edge_profile_directory,
-    edge_debugger_url: args.edgeDebuggerUrl || args['edge-debugger-url'] || args.edge_debugger_url || template.edge_debugger_url,
-    edge_debugging_port: args.edgeDebuggingPort || args['edge-debugging-port'] || args.edge_debugging_port || template.edge_debugging_port,
-    edge_headless: args.edgeHeadless ?? args['edge-headless'] ?? args.edge_headless ?? template.edge_headless
+    edge_user_data_dir:
+      args.edgeUserDataDir ||
+      args['edge-user-data-dir'] ||
+      args.edge_user_data_dir ||
+      template.edge_user_data_dir,
+    edge_profile_directory:
+      args.edgeProfileDirectory ||
+      args['edge-profile-directory'] ||
+      args.edge_profile_directory ||
+      template.edge_profile_directory,
+    edge_debugger_url:
+      args.edgeDebuggerUrl ||
+      args['edge-debugger-url'] ||
+      args.edge_debugger_url ||
+      template.edge_debugger_url,
+    edge_debugging_port:
+      args.edgeDebuggingPort ||
+      args['edge-debugging-port'] ||
+      args.edge_debugging_port ||
+      template.edge_debugging_port,
+    edge_headless:
+      args.edgeHeadless ?? args['edge-headless'] ?? args.edge_headless ?? template.edge_headless
   });
 }
 
 function applyMatchedTemplate(template, matchedTemplate) {
   const normalized = normalizeTemplate({
     ...template,
-    template_name: matchedTemplate ? normalizeText(matchedTemplate.name || template.template_name) : template.template_name,
+    template_name: matchedTemplate
+      ? normalizeText(matchedTemplate.name || template.template_name)
+      : template.template_name,
     destination: matchedTemplate ? matchedTemplate.destination : template.destination,
     check_in_date: matchedTemplate ? matchedTemplate.check_in_date : template.check_in_date,
     check_out_date: matchedTemplate ? matchedTemplate.check_out_date : template.check_out_date,
@@ -132,7 +159,9 @@ function validateTemplate(template) {
   }
 
   if (template.room_count > 3) {
-    throw new Error('当前采集仅支持 1-3 人模板；如需保留 4 人房，请使用 3 人模板并开启“3人模板时额外保留4人房”。');
+    throw new Error(
+      '当前采集仅支持 1-3 人模板；如需保留 4 人房，请使用 3 人模板并开启“3人模板时额外保留4人房”。'
+    );
   }
 }
 

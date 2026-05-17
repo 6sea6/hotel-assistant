@@ -1,6 +1,12 @@
 const hotelStorage = require('../hotel-storage');
 const { HOTEL_EDITABLE_FIELDS, HOTEL_SYSTEM_FIELDS } = require('../config');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
+const {
+  allocateUniqueId,
+  getIdKey,
+  idsEqual,
+  normalizeIntegerLikeValue
+} = require('../../shared/id-utils');
 
 const HOTEL_ALLOWED_FIELD_KEYS = new Set([
   ...HOTEL_EDITABLE_FIELDS.map((field) => field.key),
@@ -18,47 +24,6 @@ function normalizeNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function normalizeIntegerLikeValue(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number' && Number.isInteger(value)) return value;
-
-  const normalizedText = String(value).trim();
-  if (normalizedText === '') return null;
-
-  return /^-?\d+$/.test(normalizedText) ? Number(normalizedText) : normalizedText;
-}
-
-function getIdKey(value) {
-  if (value === null || value === undefined || value === '') return null;
-  return String(value);
-}
-
-function allocateUniqueId(preferredId, usedIds, nextIdState) {
-  const preferredIdKey = getIdKey(preferredId);
-
-  if (preferredIdKey && !usedIds.has(preferredIdKey)) {
-    usedIds.add(preferredIdKey);
-    return preferredId;
-  }
-
-  if (!Number.isInteger(nextIdState.value)) {
-    nextIdState.value = Date.now();
-  }
-
-  while (usedIds.has(String(nextIdState.value))) {
-    nextIdState.value += 1;
-  }
-
-  const allocatedId = nextIdState.value;
-  usedIds.add(String(allocatedId));
-  nextIdState.value += 1;
-  return allocatedId;
-}
-
-function idsEqual(left, right) {
-  return String(left) === String(right);
 }
 
 function normalizeTemplateInfo(templateInfo) {
@@ -79,7 +44,7 @@ function normalizeTemplateInfo(templateInfo) {
 function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
   const normalized = {
     ...existingHotel,
-    ...hotel,
+    ...hotel
   };
 
   normalized.id = normalizeIntegerLikeValue(normalized.id) ?? normalized.id;
@@ -129,7 +94,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
     let shouldWriteBack = false;
-    const normalizedHotels = hotels.map(hotel => {
+    const normalizedHotels = hotels.map((hotel) => {
       const normalizedHotel = normalizeHotelPayload(hotel);
       if (hasNormalizedValueChanged(hotel, normalizedHotel)) {
         shouldWriteBack = true;
@@ -158,7 +123,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   ipcMain.handle('hotel:add', (event, hotel) => {
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
-    const usedIds = new Set(hotels.map(item => String(item.id)));
+    const usedIds = new Set(hotels.map((item) => String(item.id)));
     const nextIdState = { value: Date.now() };
     const newHotel = normalizeHotelPayload({
       id: allocateUniqueId(null, usedIds, nextIdState),
@@ -177,13 +142,16 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   ipcMain.handle('hotel:update', (event, hotel) => {
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
-    const index = hotels.findIndex(h => String(h.id) === String(hotel.id));
+    const index = hotels.findIndex((h) => String(h.id) === String(hotel.id));
 
     if (index !== -1) {
-      hotels[index] = normalizeHotelPayload({
-        ...hotel,
-        updated_at: new Date().toISOString()
-      }, hotels[index]);
+      hotels[index] = normalizeHotelPayload(
+        {
+          ...hotel,
+          updated_at: new Date().toISOString()
+        },
+        hotels[index]
+      );
       hotelStorage.setExpandedHotelsToStore(store, hotels, normalizeHotelPayload);
       cache.invalidate('hotels');
       return hotels[index];
@@ -198,12 +166,15 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     const results = [];
 
     for (const hotel of hotels) {
-      const index = allHotels.findIndex(h => String(h.id) === String(hotel.id));
+      const index = allHotels.findIndex((h) => String(h.id) === String(hotel.id));
       if (index !== -1) {
-        allHotels[index] = normalizeHotelPayload({
-          ...hotel,
-          updated_at: new Date().toISOString()
-        }, allHotels[index]);
+        allHotels[index] = normalizeHotelPayload(
+          {
+            ...hotel,
+            updated_at: new Date().toISOString()
+          },
+          allHotels[index]
+        );
         results.push(allHotels[index]);
       }
     }
@@ -222,7 +193,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
-    const afterHotels = hotels.filter(h => !idsEqual(h.id, id));
+    const afterHotels = hotels.filter((h) => !idsEqual(h.id, id));
 
     if (afterHotels.length === hotels.length) {
       return { success: false, error: '未找到要删除的宾馆' };
@@ -238,9 +209,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
   ipcMain.handle('hotel:deleteMultiple', (event, ids = []) => {
     const idSet = new Set(
-      ids
-        .map(getIdKey)
-        .filter(id => id && id !== 'undefined' && id !== 'null')
+      ids.map(getIdKey).filter((id) => id && id !== 'undefined' && id !== 'null')
     );
 
     if (idSet.size === 0) {
@@ -249,7 +218,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
     const store = dataService.getStore();
     const before = getNormalizedHotels(store);
-    const after = before.filter(h => !idSet.has(String(h.id)));
+    const after = before.filter((h) => !idSet.has(String(h.id)));
 
     if (after.length === before.length) {
       return { success: false, error: '未找到要删除的宾馆' };
@@ -273,7 +242,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   ipcMain.handle('hotel:getById', (event, id) => {
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
-    return hotels.find(h => idsEqual(h.id, id));
+    return hotels.find((h) => idsEqual(h.id, id));
   });
 }
 

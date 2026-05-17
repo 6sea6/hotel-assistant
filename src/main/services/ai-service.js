@@ -25,11 +25,12 @@ function compactTaskResult(result = {}) {
     : [];
   const firstRoom = eligibleRoomTypes[0] || {};
   const firstHotel = eligibleHotels[0] || {};
-  const totalPrice = result.totalPrice
-    ?? firstRoom.totalPrice
-    ?? firstRoom.total_price
-    ?? firstHotel.total_price
-    ?? null;
+  const totalPrice =
+    result.totalPrice ??
+    firstRoom.totalPrice ??
+    firstRoom.total_price ??
+    firstHotel.total_price ??
+    null;
 
   return {
     success: Boolean(result.success),
@@ -52,8 +53,12 @@ function compactTaskResult(result = {}) {
     eligibleHotels,
     pageSnapshot: result.pageSnapshot || null,
     reviewInputAvailable: Boolean(result.reviewInput),
-    reviewTaskId: result.reviewInput && result.reviewInput.taskMeta ? result.reviewInput.taskMeta.taskId : '',
-    outputFingerprint: result.reviewInput && result.reviewInput.taskMeta ? result.reviewInput.taskMeta.outputFingerprint : '',
+    reviewTaskId:
+      result.reviewInput && result.reviewInput.taskMeta ? result.reviewInput.taskMeta.taskId : '',
+    outputFingerprint:
+      result.reviewInput && result.reviewInput.taskMeta
+        ? result.reviewInput.taskMeta.outputFingerprint
+        : '',
     error: result.error || ''
   };
 }
@@ -180,8 +185,8 @@ function stripReviewExcludedFields(value) {
   }
 
   if (
-    isReviewExcludedTrafficField(value.field)
-    || isReviewExcludedTrafficField(value.sourceField)
+    isReviewExcludedTrafficField(value.field) ||
+    isReviewExcludedTrafficField(value.sourceField)
   ) {
     return undefined;
   }
@@ -232,14 +237,19 @@ function isCancellationError(error, signal) {
     return true;
   }
   const message = compactErrorMessage(error);
-  return /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message)
-    || (error && error.name === 'AbortError');
+  return (
+    /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message) ||
+    (error && error.name === 'AbortError')
+  );
 }
 
 function redactSensitiveText(text) {
   return String(text || '')
     .replace(/(bearer\s+)[a-z0-9._~+/-]+/gi, '$1[REDACTED]')
-    .replace(/((?:api[-_]?key|token|secret|cookie|authorization|password)["'\s:=]+)([^"',\s}{\]]+)/gi, '$1[REDACTED]');
+    .replace(
+      /((?:api[-_]?key|token|secret|cookie|authorization|password)["'\s:=]+)([^"',\s}{\]]+)/gi,
+      '$1[REDACTED]'
+    );
 }
 
 function truncateText(text, maxLength = 8000) {
@@ -316,7 +326,9 @@ function buildEvidenceIndex(reviewInput = {}) {
   for (const source of REVIEW_EVIDENCE_SOURCES) {
     const value = reviewInput[source];
     if (Array.isArray(value)) {
-      const ids = new Set(value.map((item, itemIndex) => String(item && item.id ? item.id : itemIndex)));
+      const ids = new Set(
+        value.map((item, itemIndex) => String(item && item.id ? item.id : itemIndex))
+      );
       index.set(source, ids);
     } else if (value && typeof value === 'object') {
       index.set(source, new Set(Object.keys(value)));
@@ -332,10 +344,18 @@ function normalizeAnalysisResult(rawResult = {}) {
     canApply: Boolean(rawResult.canApply),
     summary: String(rawResult.summary || ''),
     issues: Array.isArray(rawResult.issues) ? rawResult.issues.map(String).filter(Boolean) : [],
-    revisedHotels: Array.isArray(rawResult.revisedHotels) ? rawResult.revisedHotels.filter((item) => item && typeof item === 'object') : [],
-    diffs: Array.isArray(rawResult.diffs) ? rawResult.diffs.filter((item) => item && typeof item === 'object') : [],
-    evidence: Array.isArray(rawResult.evidence) ? rawResult.evidence.filter((item) => item && typeof item === 'object') : [],
-    missingEvidence: Array.isArray(rawResult.missingEvidence) ? rawResult.missingEvidence.map(String).filter(Boolean) : []
+    revisedHotels: Array.isArray(rawResult.revisedHotels)
+      ? rawResult.revisedHotels.filter((item) => item && typeof item === 'object')
+      : [],
+    diffs: Array.isArray(rawResult.diffs)
+      ? rawResult.diffs.filter((item) => item && typeof item === 'object')
+      : [],
+    evidence: Array.isArray(rawResult.evidence)
+      ? rawResult.evidence.filter((item) => item && typeof item === 'object')
+      : [],
+    missingEvidence: Array.isArray(rawResult.missingEvidence)
+      ? rawResult.missingEvidence.map(String).filter(Boolean)
+      : []
   };
 }
 
@@ -372,8 +392,11 @@ function hasPriceEvidence(analysis) {
   return analysis.evidence.some((item) => {
     const source = String(item.source || '');
     const field = String(item.field || '').toLowerCase();
-    return ['finalHotels', 'eligibleRoomTypes', 'rejectedRoomTypes', 'rawRoomCandidates'].includes(source)
-      && /price|价格|total|daily|rawpricetext/.test(field);
+    return (
+      ['finalHotels', 'eligibleRoomTypes', 'rejectedRoomTypes', 'rawRoomCandidates'].includes(
+        source
+      ) && /price|价格|total|daily|rawpricetext/.test(field)
+    );
   });
 }
 
@@ -388,15 +411,13 @@ function validateAnalysisResult(analysis, reviewInput) {
     if (normalized.evidence.length === 0) {
       validationErrors.push('AI 没有返回 evidence，无法确认修正依据。');
     }
-    const hasHotelWithPrice = normalized.revisedHotels.some((hotel) => (
-      hotel.total_price !== null
-      && hotel.total_price !== undefined
-      && hotel.total_price !== ''
-    ) || (
-      hotel.daily_price !== null
-      && hotel.daily_price !== undefined
-      && hotel.daily_price !== ''
-    ));
+    const hasHotelWithPrice = normalized.revisedHotels.some(
+      (hotel) =>
+        (hotel.total_price !== null &&
+          hotel.total_price !== undefined &&
+          hotel.total_price !== '') ||
+        (hotel.daily_price !== null && hotel.daily_price !== undefined && hotel.daily_price !== '')
+    );
     if (hasHotelWithPrice && !hasPriceEvidence(normalized)) {
       validationErrors.push('AI 返回了价格，但没有提供价格证据。');
     }
@@ -404,10 +425,7 @@ function validateAnalysisResult(analysis, reviewInput) {
 
   if (validationErrors.length > 0) {
     normalized.canApply = false;
-    normalized.missingEvidence = [...new Set([
-      ...normalized.missingEvidence,
-      ...validationErrors
-    ])];
+    normalized.missingEvidence = [...new Set([...normalized.missingEvidence, ...validationErrors])];
   }
 
   return normalized;
@@ -493,15 +511,17 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
   function saveProviderConfig(nextConfig = {}) {
     const store = getStore();
     const settings = store.get('settings') || {};
-    const previousConfig = normalizeAiProviderConfig(settings[AI_CONFIG_SETTING_KEY] || getDefaultAiProviderConfig());
+    const previousConfig = normalizeAiProviderConfig(
+      settings[AI_CONFIG_SETTING_KEY] || getDefaultAiProviderConfig()
+    );
     const incomingConfig = { ...nextConfig };
 
     const nextProvider = incomingConfig.provider || previousConfig.provider;
     if (
-      !incomingConfig.clearApiKey
-      && String(nextProvider) === String(previousConfig.provider)
-      && !String(incomingConfig.apiKey || '').trim()
-      && previousConfig.apiKey
+      !incomingConfig.clearApiKey &&
+      String(nextProvider) === String(previousConfig.provider) &&
+      !String(incomingConfig.apiKey || '').trim() &&
+      previousConfig.apiKey
     ) {
       delete incomingConfig.apiKey;
     }
@@ -525,9 +545,8 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       task.events.push(payload);
     }
 
-    const mainWindow = windowService && windowService.getMainWindow
-      ? windowService.getMainWindow()
-      : null;
+    const mainWindow =
+      windowService && windowService.getMainWindow ? windowService.getMainWindow() : null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('ai:task:event', payload);
     }
@@ -586,7 +605,9 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       task.finishedAt = new Date().toISOString();
       emitTaskEvent({
         type: 'task:done',
-        message: result.writeSkipped ? result.writeSkipReason || '任务完成但未写入' : '采集任务完成',
+        message: result.writeSkipped
+          ? result.writeSkipReason || '任务完成但未写入'
+          : '采集任务完成',
         taskId: task.id,
         details: compactTaskResult(result)
       });
@@ -594,9 +615,10 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
     } catch (error) {
       const cancelled = isCancellationError(error, controller.signal);
       task.status = cancelled ? 'cancelled' : 'failed';
-      task.error = cancelled ? '任务已取消' : (error.message || String(error));
+      task.error = cancelled ? '任务已取消' : error.message || String(error);
       task.finishedAt = new Date().toISOString();
-      const cancelAlreadyEmitted = cancelled && task.events.some((event) => event.type === 'task:cancel');
+      const cancelAlreadyEmitted =
+        cancelled && task.events.some((event) => event.type === 'task:cancel');
       if (!cancelAlreadyEmitted) {
         emitTaskEvent({
           type: cancelled ? 'task:cancel' : 'task:error',
@@ -619,34 +641,37 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
   async function startTask(payload = {}) {
     const result = await runTask(async ({ taskId, signal, onTaskEvent }) => {
       const runner = await getHotelTaskRunner();
-      return runner({
-        url: payload.url,
-        urls: payload.urls,
-        text: payload.text || payload.inputText || '',
-        templateId: payload.templateId,
-        templateName: payload.templateName,
-        listFilters: payload.listFilters,
-        excludeAccommodationKeywords: payload.excludeAccommodationKeywords,
-        excludeHotelTypes: payload.excludeHotelTypes,
-        targetCount: payload.targetCount,
-        desiredHotelCount: payload.desiredHotelCount,
-        maxPages: payload.maxPages,
-        maxCandidatesPerPage: payload.maxCandidatesPerPage,
-        amapKey: payload.amapKey,
-        listUrlFilters: payload.listUrlFilters,
-        priceMin: payload.priceMin,
-        priceMax: payload.priceMax,
-        starLevels: payload.starLevels,
-        sortMode: payload.sortMode,
-        freeCancel: payload.freeCancel,
-        reviewCountMin: payload.reviewCountMin,
-        ctripScoreMin: payload.ctripScoreMin
-      }, {
-        taskId,
-        dataFolderPath: dataService.getDataFolderPath(),
-        signal,
-        onEvent: onTaskEvent
-      });
+      return runner(
+        {
+          url: payload.url,
+          urls: payload.urls,
+          text: payload.text || payload.inputText || '',
+          templateId: payload.templateId,
+          templateName: payload.templateName,
+          listFilters: payload.listFilters,
+          excludeAccommodationKeywords: payload.excludeAccommodationKeywords,
+          excludeHotelTypes: payload.excludeHotelTypes,
+          targetCount: payload.targetCount,
+          desiredHotelCount: payload.desiredHotelCount,
+          maxPages: payload.maxPages,
+          maxCandidatesPerPage: payload.maxCandidatesPerPage,
+          amapKey: payload.amapKey,
+          listUrlFilters: payload.listUrlFilters,
+          priceMin: payload.priceMin,
+          priceMax: payload.priceMax,
+          starLevels: payload.starLevels,
+          sortMode: payload.sortMode,
+          freeCancel: payload.freeCancel,
+          reviewCountMin: payload.reviewCountMin,
+          ctripScoreMin: payload.ctripScoreMin
+        },
+        {
+          taskId,
+          dataFolderPath: dataService.getDataFolderPath(),
+          signal,
+          onEvent: onTaskEvent
+        }
+      );
     });
     const compactResult = compactTaskResult(result);
 
@@ -718,18 +743,24 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       rawAnalysis = extractJsonObject(assistantMessage.content || '');
     } catch (parseError) {
       try {
-        const repairMessage = await requestChatCompletion(config, [
+        const repairMessage = await requestChatCompletion(
+          config,
+          [
+            {
+              role: 'system',
+              content:
+                '你是严格 JSON 修复器。你的唯一任务是把输入修成合法 JSON 对象，并且只输出 JSON。'
+            },
+            {
+              role: 'user',
+              content: buildReviewJsonRepairPrompt(assistantMessage.content || '', parseError)
+            }
+          ],
+          [],
           {
-            role: 'system',
-            content: '你是严格 JSON 修复器。你的唯一任务是把输入修成合法 JSON 对象，并且只输出 JSON。'
-          },
-          {
-            role: 'user',
-            content: buildReviewJsonRepairPrompt(assistantMessage.content || '', parseError)
+            maxTokens: 4096
           }
-        ], [], {
-          maxTokens: 4096
-        });
+        );
         rawAnalysis = extractJsonObject(repairMessage.content || '');
       } catch (repairError) {
         rawAnalysis = buildUnparseableReviewResult(parseError, repairError);
@@ -766,14 +797,17 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       throw new Error('当前 AI 分析结果未通过证据校验，不能写入。');
     }
     if (
-      !review.reviewInput
-      || !review.reviewInput.taskMeta
-      || review.reviewInput.taskMeta.outputFingerprint !== review.outputFingerprint
+      !review.reviewInput ||
+      !review.reviewInput.taskMeta ||
+      review.reviewInput.taskMeta.outputFingerprint !== review.outputFingerprint
     ) {
       throw new Error('AI 分析结果和采集任务指纹不一致，已拒绝写入。');
     }
 
-    const reviewedHotels = lockReviewedHotelFields(review.analysis.revisedHotels, review.reviewInput);
+    const reviewedHotels = lockReviewedHotelFields(
+      review.analysis.revisedHotels,
+      review.reviewInput
+    );
     const applyResult = await applyReviewedHotelsLazy(reviewedHotels, {
       taskId: review.taskId,
       outputFingerprint: review.outputFingerprint,
@@ -802,21 +836,27 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
     const previousConfig = getProviderConfig({ includeSecret: true });
     const incomingConfig = { ...configOverride };
     if (
-      String(incomingConfig.provider || previousConfig.provider) === String(previousConfig.provider)
-      && !String(incomingConfig.apiKey || '').trim()
-      && previousConfig.apiKey
+      String(incomingConfig.provider || previousConfig.provider) ===
+        String(previousConfig.provider) &&
+      !String(incomingConfig.apiKey || '').trim() &&
+      previousConfig.apiKey
     ) {
       delete incomingConfig.apiKey;
     }
     const config = normalizeAiProviderConfig(incomingConfig, previousConfig);
-    const message = await requestChatCompletion(config, [
+    const message = await requestChatCompletion(
+      config,
+      [
+        {
+          role: 'user',
+          content: '请只回复 OK。'
+        }
+      ],
+      [],
       {
-        role: 'user',
-        content: '请只回复 OK。'
+        maxTokens: 32
       }
-    ], [], {
-      maxTokens: 32
-    });
+    );
 
     return {
       success: true,
@@ -864,15 +904,19 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         });
         const result = await executeAiTool(toolName, toolArguments, {
           dataService,
-          signal: state.currentTask && state.currentTask.controller
-            ? state.currentTask.controller.signal
-            : null,
+          signal:
+            state.currentTask && state.currentTask.controller
+              ? state.currentTask.controller.signal
+              : null,
           onTaskEvent: emitTaskEvent,
           getTaskStatus,
-          runTask: (taskFn) => runTask(({ signal, onTaskEvent }) => taskFn({
-            signal,
-            onTaskEvent
-          }))
+          runTask: (taskFn) =>
+            runTask(({ signal, onTaskEvent }) =>
+              taskFn({
+                signal,
+                onTaskEvent
+              })
+            )
         });
         const compactResult = compactToolResult(toolName, result);
         toolResults.push({

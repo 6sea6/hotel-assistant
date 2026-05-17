@@ -1,6 +1,9 @@
 const path = require('path');
 const { DEFAULT_COMPARE_APP_FILES } = require('../../shared/compare-app/constants');
-const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT } = require('../../shared/compare-app/prompt-contract');
+const {
+  BUNDLE_RESOURCE_MAP,
+  PROMPT_CONTRACT
+} = require('../../shared/compare-app/prompt-contract');
 
 function getSetupArtifactName(mode, version) {
   return mode === '2'
@@ -47,9 +50,7 @@ function getBundleManifest(bundleRoot) {
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'ws', 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, PROMPT_CONTRACT.unifiedPromptFileName)
       ],
-      baseOnlyAbsentResources: [
-        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js')
-      ],
+      baseOnlyAbsentResources: [path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js')],
       neverResources: [
         path.join(DEFAULT_COMPARE_APP_FILES.appFolderName, DEFAULT_COMPARE_APP_FILES.storeFileName),
         path.join(BUNDLE_RESOURCE_MAP.runtimeWorkDirName, 'state', 'edge-profile'),

@@ -1,5 +1,13 @@
 import { state } from './state.js';
-import { $, escapeHtml, getChecked, getValue, setChecked, setText, setValue } from './dom-helpers.js';
+import {
+  $,
+  escapeHtml,
+  getChecked,
+  getValue,
+  setChecked,
+  setText,
+  setValue
+} from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { actions } from './actions.js';
 import {
@@ -55,9 +63,13 @@ function renderProviderOptions() {
   const select = $('aiProviderSelect');
   if (!select || !state.aiProviderPresets.length) return;
 
-  select.innerHTML = state.aiProviderPresets.map((preset) => `
+  select.innerHTML = state.aiProviderPresets
+    .map(
+      (preset) => `
     <option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>
-  `).join('');
+  `
+    )
+    .join('');
 }
 
 function renderAiTemplateOptions() {
@@ -65,11 +77,14 @@ function renderAiTemplateOptions() {
   if (!select) return;
 
   const currentValue = select.value;
-  select.innerHTML = '<option value="">请选择模板</option>'
-    + (state.templates || []).map((template) => {
-      const id = template.id ?? '';
-      return `<option value="${escapeHtml(String(id))}">${escapeHtml(formatAiTemplateLabel(template))}</option>`;
-    }).join('');
+  select.innerHTML =
+    '<option value="">请选择模板</option>' +
+    (state.templates || [])
+      .map((template) => {
+        const id = template.id ?? '';
+        return `<option value="${escapeHtml(String(id))}">${escapeHtml(formatAiTemplateLabel(template))}</option>`;
+      })
+      .join('');
 
   if (currentValue && Array.from(select.options).some((option) => option.value === currentValue)) {
     select.value = currentValue;
@@ -100,15 +115,17 @@ function renderAiTemplatePicker() {
   text.textContent = selectedOption ? selectedOption.textContent : '请选择模板';
   button.disabled = select.disabled;
 
-  menu.innerHTML = options.map((option) => {
-    const value = option.value || '';
-    const isSelected = String(value) === String(select.value || '');
-    return `
+  menu.innerHTML = options
+    .map((option) => {
+      const value = option.value || '';
+      const isSelected = String(value) === String(select.value || '');
+      return `
       <button class="ai-template-picker-option${isSelected ? ' is-selected' : ''}" type="button" role="option" aria-selected="${isSelected ? 'true' : 'false'}" data-template-value="${escapeHtml(value)}">
         ${escapeHtml(option.textContent || '')}
       </button>
     `;
-  }).join('');
+    })
+    .join('');
 
   positionAiTemplatePickerMenu();
 }
@@ -125,7 +142,10 @@ function positionAiTemplatePickerMenu() {
   const aboveSpace = rect.top - viewportPadding;
   const menuLimit = Math.max(128, Math.min(240, Math.max(belowSpace, aboveSpace)));
   const preferredHeight = Math.min(menu.scrollHeight || menuLimit, menuLimit);
-  const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - rect.width - viewportPadding));
+  const left = Math.max(
+    viewportPadding,
+    Math.min(rect.left, window.innerWidth - rect.width - viewportPadding)
+  );
   const shouldOpenBelow = belowSpace >= preferredHeight || belowSpace >= aboveSpace;
   const top = shouldOpenBelow
     ? rect.bottom + 8
@@ -178,9 +198,8 @@ function setupAiTemplatePicker() {
   });
 
   menu.addEventListener('click', (event) => {
-    const option = event.target && event.target.closest
-      ? event.target.closest('[data-template-value]')
-      : null;
+    const option =
+      event.target && event.target.closest ? event.target.closest('[data-template-value]') : null;
     if (!option) return;
     event.preventDefault();
     chooseAiTemplateOption(option.dataset.templateValue || '');
@@ -227,7 +246,9 @@ function findSelectedAiTemplate() {
     return null;
   }
 
-  return (state.templates || []).find((template) => String(template.id) === String(templateId)) || null;
+  return (
+    (state.templates || []).find((template) => String(template.id) === String(templateId)) || null
+  );
 }
 
 function applyAiConfigToForm(config) {
@@ -238,7 +259,10 @@ function applyAiConfigToForm(config) {
   setValue('aiModelInput', normalized.model || '');
   renderModelOptions(normalized.provider || 'deepseek');
   setValue('aiApiKeyInput', '');
-  setText('aiApiKeyHint', normalized.hasApiKey ? '已保存 API Key；留空保存会继续使用旧 Key' : '尚未保存 API Key');
+  setText(
+    'aiApiKeyHint',
+    normalized.hasApiKey ? '已保存 API Key；留空保存会继续使用旧 Key' : '尚未保存 API Key'
+  );
 }
 
 function getPresetById(providerId) {
@@ -250,9 +274,13 @@ function renderModelOptions(providerId) {
   const preset = getPresetById(providerId);
   if (!datalist || !preset) return;
 
-  datalist.innerHTML = (preset.modelOptions || [preset.model]).map((model) => `
+  datalist.innerHTML = (preset.modelOptions || [preset.model])
+    .map(
+      (model) => `
     <option value="${escapeHtml(model)}"></option>
-  `).join('');
+  `
+    )
+    .join('');
 }
 
 function readAiConfigForm() {
@@ -277,11 +305,13 @@ function getSubmittedUrl() {
 function isCtripListUrl(url) {
   try {
     const parsed = new URL(String(url || '').trim());
-    return /(^|\.)ctrip\.com$/i.test(parsed.hostname)
-      && /hotel|hotels/i.test(parsed.href)
-      && /list|hotelsearch|search|query|keyword|city|location|zone/i.test(parsed.href)
-      && !/[?&]hotel[Ii]d=\d+/.test(parsed.search)
-      && !/\/hotels\/\d+\.html/i.test(parsed.pathname);
+    return (
+      /(^|\.)ctrip\.com$/i.test(parsed.hostname) &&
+      /hotel|hotels/i.test(parsed.href) &&
+      /list|hotelsearch|search|query|keyword|city|location|zone/i.test(parsed.href) &&
+      !/[?&]hotel[Ii]d=\d+/.test(parsed.search) &&
+      !/\/hotels\/\d+\.html/i.test(parsed.pathname)
+    );
   } catch (_error) {
     return false;
   }
@@ -321,7 +351,9 @@ function parseScoreSetting(value) {
 }
 
 function parsePriceMaxSetting(value) {
-  const text = String(value || '').trim().toLowerCase();
+  const text = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!text) return null;
   if (text === 'max') return 'max';
   return parseIntegerSetting(text, { min: 0 });
@@ -334,11 +366,14 @@ function compactActiveCtripUrlFilters(filters = {}) {
 
   if (hasPriceMin) active.priceMin = filters.priceMin;
   if (hasPriceMax) active.priceMax = filters.priceMax;
-  if (Array.isArray(filters.starLevels) && filters.starLevels.length) active.starLevels = filters.starLevels;
+  if (Array.isArray(filters.starLevels) && filters.starLevels.length)
+    active.starLevels = filters.starLevels;
   if (filters.sortMode) active.sortMode = filters.sortMode;
   if (filters.freeCancel === true) active.freeCancel = true;
-  if (filters.reviewCountMin !== null && filters.reviewCountMin !== undefined) active.reviewCountMin = filters.reviewCountMin;
-  if (filters.ctripScoreMin !== null && filters.ctripScoreMin !== undefined) active.ctripScoreMin = filters.ctripScoreMin;
+  if (filters.reviewCountMin !== null && filters.reviewCountMin !== undefined)
+    active.reviewCountMin = filters.reviewCountMin;
+  if (filters.ctripScoreMin !== null && filters.ctripScoreMin !== undefined)
+    active.ctripScoreMin = filters.ctripScoreMin;
 
   return active;
 }
@@ -377,8 +412,11 @@ function applyCtripUrlFilterSettingsToDom() {
   setValue('aiCtripScoreMin', settings.aiCtripScoreMin ?? '');
   setChecked('aiCtripFreeCancel', Boolean(settings.aiCtripFreeCancel));
 
-  const selected = new Set((Array.isArray(settings.aiCtripStarLevels) ? settings.aiCtripStarLevels : [])
-    .map((item) => String(item)));
+  const selected = new Set(
+    (Array.isArray(settings.aiCtripStarLevels) ? settings.aiCtripStarLevels : []).map((item) =>
+      String(item)
+    )
+  );
   document.querySelectorAll('[data-star-level]').forEach((button) => {
     const isSelected = selected.has(String(button.dataset.starLevel));
     button.classList.toggle('is-selected', isSelected);
@@ -388,9 +426,9 @@ function applyCtripUrlFilterSettingsToDom() {
 
 async function persistCtripUrlFilterSettingsFromParsed(parsed) {
   const known = parsed && parsed.knownSettings ? parsed.knownSettings : {};
-  const detected = new Set(Array.isArray(parsed && parsed.detectedKnownFilterKeys)
-    ? parsed.detectedKnownFilterKeys
-    : []);
+  const detected = new Set(
+    Array.isArray(parsed && parsed.detectedKnownFilterKeys) ? parsed.detectedKnownFilterKeys : []
+  );
   if (!detected.size) {
     applyCtripUrlFilterSettingsToDom();
     return;
@@ -399,14 +437,17 @@ async function persistCtripUrlFilterSettingsFromParsed(parsed) {
   const updates = {};
   if (detected.has('priceMin')) updates.aiCtripPriceMin = known.priceMin ?? '';
   if (detected.has('priceMax')) updates.aiCtripPriceMax = known.priceMax ?? '';
-  if (detected.has('starLevels')) updates.aiCtripStarLevels = Array.isArray(known.starLevels) ? known.starLevels : [];
+  if (detected.has('starLevels'))
+    updates.aiCtripStarLevels = Array.isArray(known.starLevels) ? known.starLevels : [];
   if (detected.has('sortMode')) updates.aiCtripSortMode = known.sortMode || '';
   if (detected.has('freeCancel')) updates.aiCtripFreeCancel = Boolean(known.freeCancel);
   if (detected.has('reviewCountMin')) updates.aiCtripReviewCountMin = known.reviewCountMin ?? '';
   if (detected.has('ctripScoreMin')) updates.aiCtripScoreMin = known.ctripScoreMin ?? '';
 
   const entries = Object.entries(updates);
-  const changed = entries.filter(([key, value]) => JSON.stringify(state.settings[key] ?? '') !== JSON.stringify(value));
+  const changed = entries.filter(
+    ([key, value]) => JSON.stringify(state.settings[key] ?? '') !== JSON.stringify(value)
+  );
   if (!changed.length) {
     applyCtripUrlFilterSettingsToDom();
     return;
@@ -458,7 +499,10 @@ export async function syncAiCtripListUrlFromSettings(options = {}) {
       })
     });
     if (nextUrl && nextUrl !== url) {
-      setValue('aiHotelUrlInput', inputText.includes(url) ? inputText.replace(url, nextUrl) : nextUrl);
+      setValue(
+        'aiHotelUrlInput',
+        inputText.includes(url) ? inputText.replace(url, nextUrl) : nextUrl
+      );
       updateTaskInputCount();
     }
     return nextUrl || url;
@@ -501,9 +545,8 @@ function readListFilterForm() {
 }
 
 function buildTaskPayload(task) {
-  const listFilters = task.listFilters && typeof task.listFilters === 'object'
-    ? task.listFilters
-    : {};
+  const listFilters =
+    task.listFilters && typeof task.listFilters === 'object' ? task.listFilters : {};
   return {
     templateId: task.templateId,
     templateName: task.templateName || '',
@@ -642,9 +685,11 @@ function syncDisplayedTask(task) {
 
 function shouldAutoDisplayStartedTask(task) {
   const selectedTask = getSelectedQueueTask();
-  return !state.aiQueueSelectionPinned
-    || !selectedTask
-    || String(state.aiSelectedQueueTaskId) === String(task.id);
+  return (
+    !state.aiQueueSelectionPinned ||
+    !selectedTask ||
+    String(state.aiSelectedQueueTaskId) === String(task.id)
+  );
 }
 
 function startTaskConsole(template, url, queueTask = null) {
@@ -734,8 +779,10 @@ function failTaskConsole(error, queueTask = null) {
 
 function isTaskCancellationError(error) {
   const message = error && error.message ? error.message : String(error || '');
-  return /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message)
-    || (error && error.name === 'AbortError');
+  return (
+    /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message) ||
+    (error && error.name === 'AbortError')
+  );
 }
 
 function showTaskCancellationNotificationOnce(queueTask = null) {
@@ -759,7 +806,9 @@ function cancelTaskConsole(queueTask = null, message = '任务已取消') {
   const cancelEvent = {
     type: 'task:cancel',
     message,
-    taskId: queueTask ? (queueTask.backendTaskId || consoleState.taskId || '') : (consoleState.taskId || ''),
+    taskId: queueTask
+      ? queueTask.backendTaskId || consoleState.taskId || ''
+      : consoleState.taskId || '',
     at: endedAt
   };
 
@@ -787,17 +836,24 @@ function cancelTaskConsole(queueTask = null, message = '任务已取消') {
 }
 
 function getQueueResultWrote(result) {
-  return Boolean(result.collectResult && hasWriteResult(result.collectResult.writeResult))
-    || (Array.isArray(result.toolResults)
-      && result.toolResults.some((item) => item.name === 'collect_and_write_ctrip_hotel' && item.result && hasWriteResult(item.result.writeResult)));
+  return (
+    Boolean(result.collectResult && hasWriteResult(result.collectResult.writeResult)) ||
+    (Array.isArray(result.toolResults) &&
+      result.toolResults.some(
+        (item) =>
+          item.name === 'collect_and_write_ctrip_hotel' &&
+          item.result &&
+          hasWriteResult(item.result.writeResult)
+      ))
+  );
 }
 
 function isDuplicateActiveUrl(url) {
   const normalized = String(url || '').trim();
-  return (state.aiTaskQueue || []).some((task) => (
-    ['waiting', 'running'].includes(task.status)
-    && String(task.url || '').trim() === normalized
-  ));
+  return (state.aiTaskQueue || []).some(
+    (task) =>
+      ['waiting', 'running'].includes(task.status) && String(task.url || '').trim() === normalized
+  );
 }
 
 function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
@@ -945,9 +1001,10 @@ async function initializeAiAssistant() {
           };
         }
         task.events = task.events || [];
-        const existingCancelEvent = event.type === 'task:cancel'
-          ? task.events.find((item) => item.type === 'task:cancel')
-          : null;
+        const existingCancelEvent =
+          event.type === 'task:cancel'
+            ? task.events.find((item) => item.type === 'task:cancel')
+            : null;
         if (existingCancelEvent) {
           existingCancelEvent.taskId = event.taskId || existingCancelEvent.taskId;
           existingCancelEvent.message = event.message || existingCancelEvent.message;
@@ -1001,9 +1058,7 @@ export async function enqueueAiCollectTask() {
   setValue('aiHotelUrlInput', '');
   updateAiInputCount();
   showNotification(
-    state.aiTaskInProgress
-      ? '已加入等待任务'
-      : '已加入任务，准备开始采集',
+    state.aiTaskInProgress ? '已加入等待任务' : '已加入任务，准备开始采集',
     'success'
   );
   runNextQueueTask();
@@ -1116,7 +1171,12 @@ export function retryAiQueueTask(taskId) {
     runNextQueueTask();
     return;
   }
-  const task = createQueueTask(sourceTask.template, sourceTask.url, sourceTask.listFilters || {}, sourceTask.listUrlFilters || {});
+  const task = createQueueTask(
+    sourceTask.template,
+    sourceTask.url,
+    sourceTask.listFilters || {},
+    sourceTask.listUrlFilters || {}
+  );
   state.aiTaskQueue.push(task);
   state.aiSelectedQueueTaskId = task.id;
   state.aiQueueSelectionPinned = false;
@@ -1223,7 +1283,10 @@ export async function analyzeAiCollection() {
       userConcern,
       error: ''
     });
-    showNotification(result.canApply ? '已生成重填预览，请确认后写入' : '分析完成，但证据不足，不能覆盖写入', result.canApply ? 'success' : 'warning');
+    showNotification(
+      result.canApply ? '已生成重填预览，请确认后写入' : '分析完成，但证据不足，不能覆盖写入',
+      result.canApply ? 'success' : 'warning'
+    );
   } catch (error) {
     console.error('AI 分析重填失败:', error);
     const errorMessage = error.message || '分析失败，请稍后重试。';
@@ -1254,7 +1317,8 @@ export async function applyAiCollectionReview() {
 
   try {
     await window.electronAPI.ai.applyCollectionReview({
-      reviewId: (reviewTask && reviewTask.review && reviewTask.review.reviewId) || state.aiReview.reviewId
+      reviewId:
+        (reviewTask && reviewTask.review && reviewTask.review.reviewId) || state.aiReview.reviewId
     });
     await actions.reloadAllData({ includeSettings: true, invalidateCache: true, verbose: false });
     actions.updateTemplateFilter({ interactionFirst: true });
@@ -1285,7 +1349,9 @@ export function showAiTaskDetails() {
 
   const detailParts = [
     collectResult.hotelName ? `酒店：${collectResult.hotelName}` : '',
-    Number.isFinite(Number(collectResult.eligibleCount)) ? `可用房型：${collectResult.eligibleCount} 个` : '',
+    Number.isFinite(Number(collectResult.eligibleCount))
+      ? `可用房型：${collectResult.eligibleCount} 个`
+      : '',
     collectResult.outputPath ? `结果文件：${collectResult.outputPath}` : ''
   ].filter(Boolean);
   showNotification(detailParts.join('\n') || '采集详情已显示在结果分析中。', 'info');

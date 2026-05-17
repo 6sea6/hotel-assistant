@@ -29,7 +29,10 @@ function resolveEdgeProfileDirectory(profileDirectory) {
 }
 
 function getEdgeProfilePath(userDataDir, profileDirectory) {
-  return path.join(resolveEdgeUserDataDir(userDataDir), resolveEdgeProfileDirectory(profileDirectory));
+  return path.join(
+    resolveEdgeUserDataDir(userDataDir),
+    resolveEdgeProfileDirectory(profileDirectory)
+  );
 }
 
 function getEdgeProfileSignalPaths(userDataDir, profileDirectory) {

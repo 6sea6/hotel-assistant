@@ -32,13 +32,15 @@ function isReusableEdgeHotelTarget(targetUrl, requestedUrl) {
     return false;
   }
 
-  return targetSignature.domainFamily === requestedSignature.domainFamily
-    && targetSignature.hotelId === requestedSignature.hotelId
-    && targetSignature.checkIn === requestedSignature.checkIn
-    && targetSignature.checkOut === requestedSignature.checkOut
-    && targetSignature.adult === requestedSignature.adult
-    && targetSignature.children === requestedSignature.children
-    && targetSignature.infants === requestedSignature.infants;
+  return (
+    targetSignature.domainFamily === requestedSignature.domainFamily &&
+    targetSignature.hotelId === requestedSignature.hotelId &&
+    targetSignature.checkIn === requestedSignature.checkIn &&
+    targetSignature.checkOut === requestedSignature.checkOut &&
+    targetSignature.adult === requestedSignature.adult &&
+    targetSignature.children === requestedSignature.children &&
+    targetSignature.infants === requestedSignature.infants
+  );
 }
 
 module.exports = {

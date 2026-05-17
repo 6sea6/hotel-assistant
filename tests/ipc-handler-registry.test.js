@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { HANDLER_REGISTRATIONS, getHandlerRegistrations } = require('../src/main/ipc-handler-registry');
+const {
+  HANDLER_REGISTRATIONS,
+  getHandlerRegistrations
+} = require('../src/main/ipc-handler-registry');
 
 test('IPC handler registry keeps a stable registration order', () => {
   assert.deepEqual(

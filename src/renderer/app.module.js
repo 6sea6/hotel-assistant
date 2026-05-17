@@ -20,44 +20,98 @@ import { perfStart, perfEnd } from './modules/perf.js';
 import { safeExecute, safeAsync } from './modules/safe-exec.js';
 
 import {
-  loadHotels, loadTemplates, loadSettings, reloadAllData,
-  openAddHotelModal, editHotel, closeHotelModal,
-  saveHotel, deleteHotel, toggleFavorite, confirmBatchDelete,
-  applyTemplateToForm, findTemplateById,
-  calculateDays, onCheckInChange, onCheckOutChange,
-  calculateDailyPrice, calculateTotalPrice, onDaysChange,
-  validateScore, formatScoreOnBlur
+  loadHotels,
+  loadTemplates,
+  loadSettings,
+  reloadAllData,
+  openAddHotelModal,
+  editHotel,
+  closeHotelModal,
+  saveHotel,
+  deleteHotel,
+  toggleFavorite,
+  confirmBatchDelete,
+  applyTemplateToForm,
+  findTemplateById,
+  calculateDays,
+  onCheckInChange,
+  onCheckOutChange,
+  calculateDailyPrice,
+  calculateTotalPrice,
+  onDaysChange,
+  validateScore,
+  formatScoreOnBlur
 } from './modules/hotel-crud.js';
 
 import {
-  renderHotelList, handleHotelListClick, handleHotelListChange,
-  handleHotelDetailsClick, showHotelDetails, closeHotelDetails,
-  toggleViewMode, toggleHotelSelection,
-  openRuleDeleteModal, closeRuleDeleteModal, updateRuleDeletePreview, confirmRuleDelete,
-  applyFilters, clearFilters, changeRankingMode, updateWeight,
-  syncHotelNameFilterOptions, buildHotelNameFilterOptions
+  renderHotelList,
+  handleHotelListClick,
+  handleHotelListChange,
+  handleHotelDetailsClick,
+  showHotelDetails,
+  closeHotelDetails,
+  toggleViewMode,
+  toggleHotelSelection,
+  openRuleDeleteModal,
+  closeRuleDeleteModal,
+  updateRuleDeletePreview,
+  confirmRuleDelete,
+  applyFilters,
+  clearFilters,
+  changeRankingMode,
+  updateWeight,
+  syncHotelNameFilterOptions,
+  buildHotelNameFilterOptions
 } from './modules/hotel-list.js';
 
 import {
-  openTemplateManager, closeTemplateModal,
-  renderTemplateList, handleTemplateListClick,
-  openAddTemplateForm, editTemplate, cancelTemplateForm,
-  saveTemplate, deleteTemplate, applyTemplate,
-  updateTemplateFilter, setupTemplateSyncListener
+  openTemplateManager,
+  closeTemplateModal,
+  renderTemplateList,
+  handleTemplateListClick,
+  openAddTemplateForm,
+  editTemplate,
+  cancelTemplateForm,
+  saveTemplate,
+  deleteTemplate,
+  applyTemplate,
+  updateTemplateFilter,
+  setupTemplateSyncListener
 } from './modules/template-ui.js';
 
 import {
-  openSettings, openAiInterfaceSettings, closeSettingsModal, openPersonalization, closePersonalizationModal, applySettings,
-  setAiConfigLoader, changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate, saveAmapApiKeySetting, saveAiListPrefilterSetting,
-  openListPrefilterSettings, closeListPrefilterSettings, saveAiListPrefilterSettings,
-  resetAiListPrefilterSettings, toggleAiCtripStarLevel,
-  loadDataPath, showDataInFolder, changeDataPath,
-  loadAppIconState, chooseAppIcon, resetAppIcon,
+  openSettings,
+  openAiInterfaceSettings,
+  closeSettingsModal,
+  openPersonalization,
+  closePersonalizationModal,
+  applySettings,
+  setAiConfigLoader,
+  changeTheme,
+  toggleIncludeFourPersonRoomsForThreePersonTemplate,
+  saveAmapApiKeySetting,
+  saveAiListPrefilterSetting,
+  openListPrefilterSettings,
+  closeListPrefilterSettings,
+  saveAiListPrefilterSettings,
+  resetAiListPrefilterSettings,
+  toggleAiCtripStarLevel,
+  loadDataPath,
+  showDataInFolder,
+  changeDataPath,
+  loadAppIconState,
+  chooseAppIcon,
+  resetAppIcon,
   resetSettings,
-  openDataTransfer, closeDataTransfer,
-  handleExportData, handleImportData,
-  openCtripWebsite, openFliggyWebsite, openWebsite,
-  refreshCurrentPage, setupMenuListeners
+  openDataTransfer,
+  closeDataTransfer,
+  handleExportData,
+  handleImportData,
+  openCtripWebsite,
+  openFliggyWebsite,
+  openWebsite,
+  refreshCurrentPage,
+  setupMenuListeners
 } from './modules/settings-ui.js';
 import {
   initializeWindowControls,
@@ -67,22 +121,40 @@ import {
 } from './modules/window-controls.js';
 
 import {
-  openAiAssistant, closeAiAssistant,
-  enqueueAiCollectTask, cancelAiTask, clearAiTaskRecords,
-  clearAiTaskQueue, selectAiQueueTask, removeAiQueueTask, retryAiQueueTask, rerunCurrentAiTask,
+  openAiAssistant,
+  closeAiAssistant,
+  enqueueAiCollectTask,
+  cancelAiTask,
+  clearAiTaskRecords,
+  clearAiTaskQueue,
+  selectAiQueueTask,
+  removeAiQueueTask,
+  retryAiQueueTask,
+  rerunCurrentAiTask,
   handleAiTaskInputKeydown,
-  showAiTaskDetails, focusAiTaskStartBar,
-  openAiReviewPanel, closeAiReviewPanel,
-  analyzeAiCollection, applyAiCollectionReview,
-  handleAiTaskInputChange, syncAiCtripListUrlFromSettings,
-  loadAiConfig, onAiProviderChange, saveAiConfig, testAiConnection
+  showAiTaskDetails,
+  focusAiTaskStartBar,
+  openAiReviewPanel,
+  closeAiReviewPanel,
+  analyzeAiCollection,
+  applyAiCollectionReview,
+  handleAiTaskInputChange,
+  syncAiCtripListUrlFromSettings,
+  loadAiConfig,
+  onAiProviderChange,
+  saveAiConfig,
+  testAiConnection
 } from './modules/ai-assistant.js';
 
 import { exportRankingImage } from './modules/ranking-image.js';
 
 import {
-  applyAppMetadata, openAbout, closeAbout,
-  checkAndShowManual, openManual, closeManual
+  applyAppMetadata,
+  openAbout,
+  closeAbout,
+  checkAndShowManual,
+  openManual,
+  closeManual
 } from './modules/about-manual.js';
 
 setAiConfigLoader(loadAiConfig);
@@ -183,9 +255,8 @@ const ACTION_HANDLERS = {
 };
 
 function handleActionClick(event) {
-  const actionElement = event.target && event.target.closest
-    ? event.target.closest('[data-action]')
-    : null;
+  const actionElement =
+    event.target && event.target.closest ? event.target.closest('[data-action]') : null;
   if (!actionElement) return;
 
   const handler = ACTION_HANDLERS[actionElement.dataset.action];
@@ -226,7 +297,9 @@ function setupStaticFormListeners() {
   if (state.staticFormEventsBound) return;
 
   document.querySelectorAll('input[name="rankingMode"]').forEach((input) => {
-    input.addEventListener('change', () => changeRankingMode(input.dataset.rankingMode || input.value));
+    input.addEventListener('change', () =>
+      changeRankingMode(input.dataset.rankingMode || input.value)
+    );
   });
 
   document.querySelectorAll('[data-weight-key]').forEach((input) => {
@@ -250,7 +323,11 @@ function setupStaticFormListeners() {
   addEvent('ruleDeletePrice', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
-  addEvent('includeFourPersonRoomsForThreePersonTemplate', 'change', toggleIncludeFourPersonRoomsForThreePersonTemplate);
+  addEvent(
+    'includeFourPersonRoomsForThreePersonTemplate',
+    'change',
+    toggleIncludeFourPersonRoomsForThreePersonTemplate
+  );
   [
     'aiCtripPriceMin',
     'aiCtripPriceMax',
@@ -261,12 +338,14 @@ function setupStaticFormListeners() {
     'aiListDesiredHotelCount',
     'aiListExcludeHotelTypes',
     'aiListMaxPages'
-  ].forEach((id) => addEvent(id, 'change', async (event) => {
-    await saveAiListPrefilterSetting(event);
-    if (id.startsWith('aiCtrip')) {
-      await syncAiCtripListUrlFromSettings();
-    }
-  }));
+  ].forEach((id) =>
+    addEvent(id, 'change', async (event) => {
+      await saveAiListPrefilterSetting(event);
+      if (id.startsWith('aiCtrip')) {
+        await syncAiCtripListUrlFromSettings();
+      }
+    })
+  );
   addEvent('aiProviderSelect', 'change', onAiProviderChange);
 
   state.staticFormEventsBound = true;

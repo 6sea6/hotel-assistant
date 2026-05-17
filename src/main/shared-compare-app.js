@@ -5,7 +5,15 @@ function resolveSharedCompareAppPath(moduleFile, options = {}) {
   const currentDir = options.currentDir || __dirname;
   const existsSync = options.existsSync || fs.existsSync;
   const resourcesPath = options.resourcesPath || process.resourcesPath || '';
-  const packagedAdjacentPath = path.resolve(currentDir, '..', '..', '..', 'shared', 'compare-app', moduleFile);
+  const packagedAdjacentPath = path.resolve(
+    currentDir,
+    '..',
+    '..',
+    '..',
+    'shared',
+    'compare-app',
+    moduleFile
+  );
 
   const workspacePath = path.resolve(currentDir, '..', '..', 'shared', 'compare-app', moduleFile);
   if (existsSync(workspacePath)) {

@@ -57,8 +57,13 @@ async function searchPlace(keyword, options = {}) {
       id: String(poi.id || '').trim(),
       name: String(poi.name || '').trim(),
       type: String(poi.type || '').trim(),
-      address: String([poi.pname, poi.cityname, poi.adname, poi.address].filter(Boolean).join(' ')).trim(),
-      formattedAddress: String([poi.pname, poi.cityname, poi.adname, poi.address].filter(Boolean).join(' ')).trim() || String(poi.name || '').trim(),
+      address: String(
+        [poi.pname, poi.cityname, poi.adname, poi.address].filter(Boolean).join(' ')
+      ).trim(),
+      formattedAddress:
+        String(
+          [poi.pname, poi.cityname, poi.adname, poi.address].filter(Boolean).join(' ')
+        ).trim() || String(poi.name || '').trim(),
       location: poi.location,
       city: String(poi.cityname || poi.pname || '').trim(),
       query: normalized,
@@ -94,7 +99,14 @@ async function geocodeAddress(address, options = {}) {
   };
 }
 
-async function fetchTransitRoute(originLocation, destinationLocation, city, cityd, key = DEFAULT_AMAP_KEY, options = {}) {
+async function fetchTransitRoute(
+  originLocation,
+  destinationLocation,
+  city,
+  cityd,
+  key = DEFAULT_AMAP_KEY,
+  options = {}
+) {
   const data = await fetchAmapJson('https://restapi.amap.com/v3/direction/transit/integrated', {
     key,
     origin: originLocation,
@@ -145,7 +157,8 @@ async function fetchWalkingRoute(originLocation, destinationLocation, key = DEFA
     hasSubway: false,
     subwayLineNames: [],
     subwayDistanceKm: 0,
-    busRoute: stepTexts.length > 0 && distanceMeters !== null ? `步行${Math.round(distanceMeters)}米` : ''
+    busRoute:
+      stepTexts.length > 0 && distanceMeters !== null ? `步行${Math.round(distanceMeters)}米` : ''
   };
 }
 

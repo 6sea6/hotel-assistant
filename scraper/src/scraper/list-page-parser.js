@@ -2,10 +2,7 @@ const {
   mergeHotelListCandidates,
   parseHotelListCandidatesFromHtml
 } = require('./hotel-list-parser');
-const {
-  normalizeText,
-  toNumber
-} = require('../utils');
+const { normalizeText, toNumber } = require('../utils');
 const { parseHotelIdFromUrl } = require('../ctrip-url');
 
 const DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS = Object.freeze(['民宿', '客栈', '青年旅舍', '公寓']);
@@ -15,9 +12,7 @@ const DEFAULT_MAX_CANDIDATES_PER_PAGE = 80;
 
 function normalizeKeywordList(value) {
   if (Array.isArray(value)) {
-    return value
-      .flatMap((item) => normalizeKeywordList(item))
-      .filter(Boolean);
+    return value.flatMap((item) => normalizeKeywordList(item)).filter(Boolean);
   }
 
   return String(value || '')
@@ -31,9 +26,12 @@ function hasAnyOwnValue(object, keys) {
     return false;
   }
 
-  return keys.some((key) => Object.prototype.hasOwnProperty.call(object, key)
-    && object[key] !== undefined
-    && object[key] !== null);
+  return keys.some(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(object, key) &&
+      object[key] !== undefined &&
+      object[key] !== null
+  );
 }
 
 function normalizePositiveInteger(value, fallback) {
@@ -61,25 +59,21 @@ function normalizeScore(value) {
 
 function normalizeListPageFilterOptions(options = {}) {
   const desiredHotelCount = normalizePositiveInteger(
-    options.desiredHotelCount
-      ?? options.targetCount
-      ?? options.limit
-      ?? options.maxHotels
-      ?? options['desired-hotel-count']
-      ?? options['target-count']
-      ?? options['max-hotels'],
+    options.desiredHotelCount ??
+      options.targetCount ??
+      options.limit ??
+      options.maxHotels ??
+      options['desired-hotel-count'] ??
+      options['target-count'] ??
+      options['max-hotels'],
     DEFAULT_DESIRED_HOTEL_COUNT
   );
   const maxPages = normalizePositiveInteger(
-    options.maxPages
-      ?? options.pageLimit
-      ?? options['max-pages']
-      ?? options['page-limit'],
+    options.maxPages ?? options.pageLimit ?? options['max-pages'] ?? options['page-limit'],
     DEFAULT_MAX_PAGES
   );
   const maxCandidatesPerPage = normalizePositiveInteger(
-    options.maxCandidatesPerPage
-      ?? options['max-candidates-per-page'],
+    options.maxCandidatesPerPage ?? options['max-candidates-per-page'],
     DEFAULT_MAX_CANDIDATES_PER_PAGE
   );
   const hasExplicitHotelTypes = hasAnyOwnValue(options, [
@@ -94,15 +88,15 @@ function normalizeListPageFilterOptions(options = {}) {
   ]);
   const excludeHotelTypes = hasExplicitHotelTypes
     ? normalizeKeywordList(
-      options.excludeHotelTypes
-        ?? options.excludeAccommodationKeywords
-        ?? options.excludeAccommodationTypes
-        ?? options.excludeTypeKeywords
-        ?? options.exclude_type_keywords
-        ?? options['exclude-hotel-types']
-        ?? options['exclude-accommodation-keywords']
-        ?? options['exclude-type-keywords']
-    )
+        options.excludeHotelTypes ??
+          options.excludeAccommodationKeywords ??
+          options.excludeAccommodationTypes ??
+          options.excludeTypeKeywords ??
+          options.exclude_type_keywords ??
+          options['exclude-hotel-types'] ??
+          options['exclude-accommodation-keywords'] ??
+          options['exclude-type-keywords']
+      )
     : [...DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS].map((item) => item.toLowerCase());
 
   return {
@@ -128,9 +122,13 @@ function normalizeListPageCandidate(candidate = {}, index = 0, options = {}) {
   const detailUrl = normalizeText(candidate.detailUrl || candidate.url || candidate.href);
   const hotelId = normalizeText(candidate.hotelId || parseHotelIdFromUrl(detailUrl));
   const hotelName = normalizeText(candidate.hotelName || candidate.name || candidate.title);
-  const hotelType = normalizeText(candidate.hotelType || candidate.accommodationType || candidate.type || candidate.typeName);
+  const hotelType = normalizeText(
+    candidate.hotelType || candidate.accommodationType || candidate.type || candidate.typeName
+  );
   const badges = normalizeTagArray(candidate.badges || candidate.tags || candidate.tagNames);
-  const visibleTags = normalizeTagArray(candidate.visibleTags || candidate.displayTags || candidate.highlightTags);
+  const visibleTags = normalizeTagArray(
+    candidate.visibleTags || candidate.displayTags || candidate.highlightTags
+  );
   const ctripScore = normalizeScore(candidate.ctripScore ?? candidate.score ?? candidate.rating);
   const sourceOrder = Number.isFinite(Number(candidate.sourceOrder))
     ? Number(candidate.sourceOrder)
@@ -161,9 +159,11 @@ function parseListPageCandidatesFromHtml(html, baseUrl, options = {}) {
   });
   const cappedCandidates = rawCandidates.slice(0, filters.maxCandidatesPerPage);
 
-  return cappedCandidates.map((candidate, index) => normalizeListPageCandidate(candidate, index, {
-    sourceOrderOffset: options.sourceOrderOffset || 0
-  }));
+  return cappedCandidates.map((candidate, index) =>
+    normalizeListPageCandidate(candidate, index, {
+      sourceOrderOffset: options.sourceOrderOffset || 0
+    })
+  );
 }
 
 function containsAnyKeyword(value, keywords = []) {
@@ -172,7 +172,9 @@ function containsAnyKeyword(value, keywords = []) {
 }
 
 function mergeListPageCandidates(candidates = []) {
-  const normalized = candidates.map((candidate, index) => normalizeListPageCandidate(candidate, index));
+  const normalized = candidates.map((candidate, index) =>
+    normalizeListPageCandidate(candidate, index)
+  );
   const legacyMerged = mergeHotelListCandidates(normalized);
   const byKey = new Map();
 

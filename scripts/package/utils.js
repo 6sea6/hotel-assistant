@@ -32,7 +32,8 @@ function copyFileSync(src, dest) {
 }
 
 function runCommand(command, args, options = {}) {
-  const needsWindowsShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(command || ''));
+  const needsWindowsShell =
+    process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(command || ''));
   const result = spawnSync(command, args, {
     stdio: 'inherit',
     shell: needsWindowsShell,

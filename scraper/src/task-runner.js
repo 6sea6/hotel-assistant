@@ -31,7 +31,12 @@ const { shouldSkipHotelWrite } = require('./cli/write-policy');
 const { getTransitInfo } = require('./amap');
 const { buildHotelRecord, buildEligibleRoomRecords } = require('./hotel-record');
 const { buildReviewInput } = require('./review-input');
-const { applyMatchedTemplate, loadTemplate, mergeTemplateWithArgs, validateTemplate } = require('./template-loader');
+const {
+  applyMatchedTemplate,
+  loadTemplate,
+  mergeTemplateWithArgs,
+  validateTemplate
+} = require('./template-loader');
 const {
   cleanupOutputArtifacts,
   ensureDir,
@@ -278,7 +283,9 @@ function buildBatchResult({
 }) {
   const firstHotel = allHotels[0] || {};
   const firstResult = childResults[0] || {};
-  const firstRoom = Array.isArray(firstResult.eligibleRoomTypes) ? (firstResult.eligibleRoomTypes[0] || {}) : {};
+  const firstRoom = Array.isArray(firstResult.eligibleRoomTypes)
+    ? firstResult.eligibleRoomTypes[0] || {}
+    : {};
   const finishedAt = new Date().toISOString();
   const batchSummary = {
     ...(expandedInputs.summary || {}),
@@ -299,20 +306,29 @@ function buildBatchResult({
     templateId: firstHotel.template_id ?? effectiveTemplate.template_id ?? null,
     requestedUrl: (expandedInputs.requestedUrls || [])[0] || '',
     requestedUrls: expandedInputs.requestedUrls || [],
-    resolvedUrl: (expandedInputs.hotelInputs && expandedInputs.hotelInputs[0] && expandedInputs.hotelInputs[0].url) || '',
+    resolvedUrl:
+      (expandedInputs.hotelInputs &&
+        expandedInputs.hotelInputs[0] &&
+        expandedInputs.hotelInputs[0].url) ||
+      '',
     resolvedUrls: expandedInputs.hotelInputs.map((item) => item.url),
     inputMode: expandedInputs.inputMode,
     batchSummary,
     batchStats: batchSummary,
     items: buildBatchItems(childResults, failedItems),
     templateSnapshot: {
-      matchedTemplate: buildTemplateSnapshot(matchedTemplate, matchedTemplate ? 'store.templates' : ''),
+      matchedTemplate: buildTemplateSnapshot(
+        matchedTemplate,
+        matchedTemplate ? 'store.templates' : ''
+      ),
       effectiveTemplate: buildTemplateSnapshot(effectiveTemplate, 'effective-template')
     },
     hotelName: firstHotel.name || firstResult.hotelName || '',
     eligibleCount: allHotels.length,
     eligibleHotels: allHotels,
-    eligibleRoomTypes: childResults.flatMap((result) => Array.isArray(result.eligibleRoomTypes) ? result.eligibleRoomTypes : []),
+    eligibleRoomTypes: childResults.flatMap((result) =>
+      Array.isArray(result.eligibleRoomTypes) ? result.eligibleRoomTypes : []
+    ),
     roomType: firstHotel.room_type || firstResult.roomType || firstRoom.roomType || '',
     roomOccupancy: firstHotel.room_count ?? firstResult.roomOccupancy ?? null,
     roomPrices: firstResult.roomPrices || [],
@@ -375,7 +391,9 @@ async function runPreparedSingleDetailImport(context) {
     saveHtml: Boolean(args['save-html']),
     snapshotDir: path.join(outputDir, 'raw-pages'),
     matchingOptions: {
-      includeFourPersonRoomsForThreePersonTemplate: Boolean(compareAppSettings.includeFourPersonRoomsForThreePersonTemplate)
+      includeFourPersonRoomsForThreePersonTemplate: Boolean(
+        compareAppSettings.includeFourPersonRoomsForThreePersonTemplate
+      )
     },
     edgeSession: buildEdgeSessionOptions(itemTemplate),
     autoEdge
@@ -386,16 +404,29 @@ async function runPreparedSingleDetailImport(context) {
   assertNotCancelled(signal);
   emit('transit:start', '正在计算交通与地铁信息');
   const transitStartedAt = Date.now();
-  const transit = await getTransitInfo(scraped.address, effectiveDestination, args.amapKey || DEFAULT_AMAP_KEY, {
-    hotelGeo: scraped.geo,
-    cache: transitCache
-  });
+  const transit = await getTransitInfo(
+    scraped.address,
+    effectiveDestination,
+    args.amapKey || DEFAULT_AMAP_KEY,
+    {
+      hotelGeo: scraped.geo,
+      cache: transitCache
+    }
+  );
   performance.transitMs = durationSince(transitStartedAt);
 
-  const eligibleRoomRecords = buildEligibleRoomRecords(itemTemplate, scraped, transit, matchedTemplate);
-  const hotelRecord = eligibleRoomRecords[0] || buildHotelRecord(itemTemplate, scraped, transit, matchedTemplate);
+  const eligibleRoomRecords = buildEligibleRoomRecords(
+    itemTemplate,
+    scraped,
+    transit,
+    matchedTemplate
+  );
+  const hotelRecord =
+    eligibleRoomRecords[0] || buildHotelRecord(itemTemplate, scraped, transit, matchedTemplate);
   const eligibleRoomSummaries = eligibleRoomRecords.map((roomRecord, index) => {
-    const sourceRoom = Array.isArray(scraped.eligible_rooms) ? (scraped.eligible_rooms[index] || {}) : {};
+    const sourceRoom = Array.isArray(scraped.eligible_rooms)
+      ? scraped.eligible_rooms[index] || {}
+      : {};
     return {
       roomType: roomRecord.room_type,
       originalRoomType: roomRecord.original_room_type,
@@ -407,7 +438,9 @@ async function runPreparedSingleDetailImport(context) {
     };
   });
 
-  const outputPath = path.resolve(preferredOutputPath || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`));
+  const outputPath = path.resolve(
+    preferredOutputPath || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`)
+  );
   const reviewInput = buildReviewInput({
     taskMeta: {
       taskId,
@@ -422,9 +455,11 @@ async function runPreparedSingleDetailImport(context) {
     },
     finalHotels: eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord],
     roomCandidates: scraped.raw_room_candidates || scraped.room_candidates || [],
-    evaluations: scraped.room_selection_diagnostics && Array.isArray(scraped.room_selection_diagnostics.evaluations)
-      ? scraped.room_selection_diagnostics.evaluations
-      : [],
+    evaluations:
+      scraped.room_selection_diagnostics &&
+      Array.isArray(scraped.room_selection_diagnostics.evaluations)
+        ? scraped.room_selection_diagnostics.evaluations
+        : [],
     pageSnapshot: scraped.page_snapshot,
     template: itemTemplate
   });
@@ -459,7 +494,11 @@ async function runPreparedSingleDetailImport(context) {
   outputPayload.scrape_debug.performance = performance;
 
   const cleanupStartedAt = Date.now();
-  const cleanupResult = cleanupOutputArtifacts(outputDir, outputPath, scraped.page_snapshot && scraped.page_snapshot.saved_html_files);
+  const cleanupResult = cleanupOutputArtifacts(
+    outputDir,
+    outputPath,
+    scraped.page_snapshot && scraped.page_snapshot.saved_html_files
+  );
   performance.cleanupMs = durationSince(cleanupStartedAt);
 
   let writeResult = null;
@@ -471,7 +510,8 @@ async function runPreparedSingleDetailImport(context) {
         storePath: getCompareAppStorePath(),
         operation: 'skipped',
         skippedCount: eligibleRoomRecords.length,
-        reason: '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整家跳过，未直写比较助手。'
+        reason:
+          '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整家跳过，未直写比较助手。'
       };
     } else {
       writeResult = appendHotelsToStore(eligibleRoomRecords, { replaceExistingGroup: true });
@@ -497,7 +537,10 @@ async function runPreparedSingleDetailImport(context) {
     requestedUrl: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
     resolvedUrl: itemTemplate.ctrip_url,
     templateSnapshot: {
-      matchedTemplate: buildTemplateSnapshot(matchedTemplate, matchedTemplate ? 'store.templates' : ''),
+      matchedTemplate: buildTemplateSnapshot(
+        matchedTemplate,
+        matchedTemplate ? 'store.templates' : ''
+      ),
       effectiveTemplate: buildTemplateSnapshot(itemTemplate, 'effective-template')
     },
     hotelName: hotelRecord.name,
@@ -557,7 +600,10 @@ async function runBatchHotelImportTask(context) {
     writeMs: 0,
     outputWriteMs: 0,
     cleanupMs: 0,
-    listExpansion: expandedInputs.performance || (expandedInputs.summary && expandedInputs.summary.performance) || null,
+    listExpansion:
+      expandedInputs.performance ||
+      (expandedInputs.summary && expandedInputs.summary.performance) ||
+      null,
     items: []
   };
   const transitCache = createTransitCache();
@@ -568,10 +614,14 @@ async function runBatchHotelImportTask(context) {
   for (let index = 0; index < expandedInputs.hotelInputs.length; index += 1) {
     assertNotCancelled(signal);
     const hotelInput = expandedInputs.hotelInputs[index];
-    emit('batch:item-start', `正在采集第 ${index + 1}/${expandedInputs.hotelInputs.length} 家酒店`, {
-      url: hotelInput.url,
-      source: hotelInput.source
-    });
+    emit(
+      'batch:item-start',
+      `正在采集第 ${index + 1}/${expandedInputs.hotelInputs.length} 家酒店`,
+      {
+        url: hotelInput.url,
+        source: hotelInput.source
+      }
+    );
 
     const childOutputPath = path.join(
       batchItemsDir,
@@ -632,10 +682,11 @@ async function runBatchHotelImportTask(context) {
     }
   }
 
-  const allHotels = resultPayloads.flatMap((payload) => Array.isArray(payload.hotels) ? payload.hotels : []);
-  const reviewInput = resultPayloads
-    .map((payload) => payload && payload.review_input)
-    .filter(Boolean)[0] || null;
+  const allHotels = resultPayloads.flatMap((payload) =>
+    Array.isArray(payload.hotels) ? payload.hotels : []
+  );
+  const reviewInput =
+    resultPayloads.map((payload) => payload && payload.review_input).filter(Boolean)[0] || null;
 
   let writeResult = null;
   if (args['write-app-data']) {
@@ -646,7 +697,8 @@ async function runBatchHotelImportTask(context) {
         storePath: getCompareAppStorePath(),
         operation: 'skipped',
         skippedCount: allHotels.length,
-        reason: '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整批跳过，未直写比较助手。'
+        reason:
+          '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整批跳过，未直写比较助手。'
       };
     } else {
       writeResult = resultPayloads.map((payload, index) => {
@@ -657,7 +709,8 @@ async function runBatchHotelImportTask(context) {
             storePath: getCompareAppStorePath(),
             operation: 'skipped',
             skippedCount: hotels.length,
-            reason: '该酒店所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则跳过。'
+            reason:
+              '该酒店所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则跳过。'
           };
         }
 
@@ -670,10 +723,13 @@ async function runBatchHotelImportTask(context) {
     performance.writeMs = durationSince(writeStartedAt);
   }
 
-  const outputPath = path.resolve(args.out || path.join(
-    outputDir,
-    `batch-${slugify(effectiveTemplate.template_name || matchedTemplate && matchedTemplate.name || 'ctrip-hotels')}.json`
-  ));
+  const outputPath = path.resolve(
+    args.out ||
+      path.join(
+        outputDir,
+        `batch-${slugify(effectiveTemplate.template_name || (matchedTemplate && matchedTemplate.name) || 'ctrip-hotels')}.json`
+      )
+  );
   performance.totalMs = durationSince(batchStartedAt);
   const outputPayload = buildBatchOutputPayload({
     args,
@@ -696,7 +752,9 @@ async function runBatchHotelImportTask(context) {
 
   const snapshotFiles = resultPayloads.flatMap((payload) => {
     const pageSnapshot = payload && payload.scrape_debug && payload.scrape_debug.page_snapshot;
-    return pageSnapshot && Array.isArray(pageSnapshot.saved_html_files) ? pageSnapshot.saved_html_files : [];
+    return pageSnapshot && Array.isArray(pageSnapshot.saved_html_files)
+      ? pageSnapshot.saved_html_files
+      : [];
   });
   const cleanupStartedAt = Date.now();
   const cleanupResult = cleanupOutputArtifacts(outputDir, outputPath, snapshotFiles);
@@ -728,10 +786,13 @@ async function runBatchHotelImportTask(context) {
     performance
   });
 
-  writeLatestRunFile(latestRunPath, buildRunSummary({
-    ...result,
-    eligibleHotels: allHotels
-  }));
+  writeLatestRunFile(
+    latestRunPath,
+    buildRunSummary({
+      ...result,
+      eligibleHotels: allHotels
+    })
+  );
   emit('task:done', '批量采集任务完成', {
     inputMode: expandedInputs.inputMode,
     hotelCount: expandedInputs.hotelInputs.length,
@@ -760,15 +821,19 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         overwriteExistingGroup: Boolean(args['overwrite-existing-group'])
       });
       emit('apply:done', '已完成回写');
-      return buildRunSummary(require('./utils').readJsonFile(latestRunPath, {
-        success: true,
-        startedAt,
-        finishedAt: new Date().toISOString()
-      }));
+      return buildRunSummary(
+        require('./utils').readJsonFile(latestRunPath, {
+          success: true,
+          startedAt,
+          finishedAt: new Date().toISOString()
+        })
+      );
     }
 
     if (args['write-app-data'] && !args['unsafe-allow-unreviewed-write']) {
-      throw new Error('`--write-app-data` 已默认禁用。它会跳过最终房型复核并直接写入比较助手。只有在明确接受风险时，才同时传入 `--unsafe-allow-unreviewed-write`。');
+      throw new Error(
+        '`--write-app-data` 已默认禁用。它会跳过最终房型复核并直接写入比较助手。只有在明确接受风险时，才同时传入 `--unsafe-allow-unreviewed-write`。'
+      );
     }
 
     emit('template:start', '正在读取模板与比较助手设置');
@@ -779,11 +844,17 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
     };
     const templateFromFile = args.template ? loadTemplate(args.template) : {};
     const template = mergeTemplateWithArgs(templateFromFile, args);
-    const matchedTemplate = findTemplateInStore(store, template.template_id, template.template_name || args.templateName);
+    const matchedTemplate = findTemplateInStore(
+      store,
+      template.template_id,
+      template.template_name || args.templateName
+    );
     const effectiveTemplate = applyMatchedTemplate(template, matchedTemplate);
     validateTemplate(effectiveTemplate);
 
-    const effectiveDestination = normalizePlaceName((matchedTemplate && matchedTemplate.destination) || effectiveTemplate.destination);
+    const effectiveDestination = normalizePlaceName(
+      (matchedTemplate && matchedTemplate.destination) || effectiveTemplate.destination
+    );
     const outputDir = path.resolve('output');
     ensureDir(outputDir);
 
@@ -794,10 +865,16 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       assertNotCancelled(signal);
       if (autoEdge) {
         emit('edge:start', '正在准备 Edge 登录态');
-        if (!hasReusableEdgeProfile(effectiveTemplate.edge_user_data_dir, effectiveTemplate.edge_profile_directory)) {
+        if (
+          !hasReusableEdgeProfile(
+            effectiveTemplate.edge_user_data_dir,
+            effectiveTemplate.edge_profile_directory
+          )
+        ) {
           emit('edge:login-required', '首次采集需要登录携程后继续', {
             reason: '未检测到可复用的 Edge 携程登录资料。',
-            instruction: '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，当前采集任务会自动继续。'
+            instruction:
+              '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，当前采集任务会自动继续。'
           });
           await runInteractiveEdgeLoginPrep({
             userDataDir: effectiveTemplate.edge_user_data_dir,
@@ -833,12 +910,15 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           .join('; ');
         const listSummary = expandedInputs.summary || {};
         const listErrors = expandedInputs.listResults
-          .flatMap((item) => Array.isArray(item.errors) ? item.errors : [])
+          .flatMap((item) => (Array.isArray(item.errors) ? item.errors : []))
           .map((item) => item.error)
           .filter(Boolean)
           .join('; ');
         if (Number(listSummary.listInputCount || 0) > 0) {
-          throw new Error(listErrors || '已识别携程酒店列表页，但没有解析到可进入详情页的候选酒店。请确认 Edge 携程登录态可用，或放宽列表页前筛条件后重试。');
+          throw new Error(
+            listErrors ||
+              '已识别携程酒店列表页，但没有解析到可进入详情页的候选酒店。请确认 Edge 携程登录态可用，或放宽列表页前筛条件后重试。'
+          );
         }
         throw new Error(skippedReason || '未从输入中解析到可采集的携程酒店详情页或列表页 URL。');
       }
@@ -882,10 +962,13 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       });
       const result = preparedResult.result;
 
-      writeLatestRunFile(latestRunPath, buildRunSummary({
-        ...result,
-        eligibleHotels: result.eligibleHotels
-      }));
+      writeLatestRunFile(
+        latestRunPath,
+        buildRunSummary({
+          ...result,
+          eligibleHotels: result.eligibleHotels
+        })
+      );
       emit('task:done', '采集任务完成', {
         hotelName: result.hotelName,
         eligibleCount: result.eligibleCount,

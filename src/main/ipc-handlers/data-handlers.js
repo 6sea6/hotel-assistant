@@ -7,6 +7,7 @@ const hotelStorage = require('../hotel-storage');
 const hotelHandlers = require('./hotel-handlers');
 const templateHandlers = require('./template-handlers');
 const { normalizeAiProviderConfig, redactAiProviderConfig } = require('../ai/provider-presets');
+const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared/id-utils');
 
 const EXPORT_SCHEMA_VERSION = 3;
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
@@ -16,42 +17,14 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function getIdKey(value) {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-
-  return String(value);
-}
-
-function allocateImportedId(preferredId, usedIds, nextIdState) {
-  const preferredIdKey = getIdKey(preferredId);
-
-  if (preferredIdKey && !usedIds.has(preferredIdKey)) {
-    usedIds.add(preferredIdKey);
-    return preferredId;
-  }
-
-  if (!Number.isInteger(nextIdState.value)) {
-    nextIdState.value = Date.now();
-  }
-
-  while (usedIds.has(String(nextIdState.value))) {
-    nextIdState.value += 1;
-  }
-
-  const allocatedId = nextIdState.value;
-  usedIds.add(String(allocatedId));
-  nextIdState.value += 1;
-  return allocatedId;
-}
-
 function normalizeImportedSettings(settings) {
   const normalizedSettings = {
     ...APP_CONFIG.STORE_DEFAULTS.settings,
     ...(isPlainObject(settings) ? settings : {})
   };
-  normalizedSettings.ai_provider_config = normalizeAiProviderConfig(normalizedSettings.ai_provider_config);
+  normalizedSettings.ai_provider_config = normalizeAiProviderConfig(
+    normalizedSettings.ai_provider_config
+  );
   normalizedSettings.amapApiKey = String(normalizedSettings.amapApiKey || '').trim();
   if (normalizedSettings.amapApiKey === '[REDACTED]') {
     normalizedSettings.amapApiKey = '';
@@ -65,7 +38,9 @@ function redactSettingsForExport(settings) {
   };
 
   if (isPlainObject(exportedSettings.ai_provider_config)) {
-    exportedSettings.ai_provider_config = redactAiProviderConfig(exportedSettings.ai_provider_config);
+    exportedSettings.ai_provider_config = redactAiProviderConfig(
+      exportedSettings.ai_provider_config
+    );
   }
   if (exportedSettings.amapApiKey) {
     exportedSettings.amapApiKey = '[REDACTED]';
@@ -129,12 +104,10 @@ function processImportedTemplates(importedTemplates, existingTemplates = [], opt
   const skipDuplicates = Boolean(options.skipDuplicates);
   const nextIdState = options.nextIdState || { value: Date.now() };
   const usedIds = new Set(
-    existingTemplates
-      .map(template => getIdKey(template.id))
-      .filter(id => id !== null)
+    existingTemplates.map((template) => getIdKey(template.id)).filter((id) => id !== null)
   );
   const templateByDuplicateKey = new Map(
-    existingTemplates.map(template => [buildTemplateDuplicateKey(template), template])
+    existingTemplates.map((template) => [buildTemplateDuplicateKey(template), template])
   );
   const templateByImportedId = new Map();
   const processedTemplates = [];
@@ -155,10 +128,13 @@ function processImportedTemplates(importedTemplates, existingTemplates = [], opt
     }
 
     const finalTemplateId = allocateImportedId(normalizedTemplate.id, usedIds, nextIdState);
-    const finalTemplate = normalizeTemplatePayload({
-      ...normalizedTemplate,
-      id: finalTemplateId
-    }, normalizedTemplate);
+    const finalTemplate = normalizeTemplatePayload(
+      {
+        ...normalizedTemplate,
+        id: finalTemplateId
+      },
+      normalizedTemplate
+    );
 
     processedTemplates.push(finalTemplate);
     templateByDuplicateKey.set(duplicateKey, finalTemplate);
@@ -175,15 +151,19 @@ function processImportedTemplates(importedTemplates, existingTemplates = [], opt
   };
 }
 
-function resolveImportedHotelTemplate(normalizedHotel, templateByImportedId, templateByDuplicateKey) {
-  const linkedTemplateIdKey = getIdKey(normalizedHotel.template_id)
-    || getIdKey(normalizedHotel.template_info?.id);
-  let matchedTemplate = linkedTemplateIdKey
-    ? templateByImportedId.get(linkedTemplateIdKey)
-    : null;
+function resolveImportedHotelTemplate(
+  normalizedHotel,
+  templateByImportedId,
+  templateByDuplicateKey
+) {
+  const linkedTemplateIdKey =
+    getIdKey(normalizedHotel.template_id) || getIdKey(normalizedHotel.template_info?.id);
+  let matchedTemplate = linkedTemplateIdKey ? templateByImportedId.get(linkedTemplateIdKey) : null;
 
   if (!matchedTemplate && normalizedHotel.template_info) {
-    matchedTemplate = templateByDuplicateKey.get(buildTemplateDuplicateKey(normalizedHotel.template_info));
+    matchedTemplate = templateByDuplicateKey.get(
+      buildTemplateDuplicateKey(normalizedHotel.template_info)
+    );
   }
 
   if (!matchedTemplate) {
@@ -205,14 +185,10 @@ function processImportedHotels(importedHotels, existingHotels = [], options = {}
   const templateByImportedId = options.templateByImportedId || new Map();
   const templateByDuplicateKey = options.templateByDuplicateKey || new Map();
   const usedIds = new Set(
-    existingHotels
-      .map(hotel => getIdKey(hotel.id))
-      .filter(id => id !== null)
+    existingHotels.map((hotel) => getIdKey(hotel.id)).filter((id) => id !== null)
   );
   const hotelDuplicateKeys = new Set(
-    skipDuplicates
-      ? existingHotels.map(hotel => buildHotelDuplicateKey(hotel))
-      : []
+    skipDuplicates ? existingHotels.map((hotel) => buildHotelDuplicateKey(hotel)) : []
   );
   const processedHotels = [];
   let skippedCount = 0;
@@ -237,10 +213,13 @@ function processImportedHotels(importedHotels, existingHotels = [], options = {}
     }
 
     const finalHotelId = allocateImportedId(candidateHotel.id, usedIds, nextIdState);
-    const finalHotel = normalizeHotelPayload({
-      ...candidateHotel,
-      id: finalHotelId
-    }, candidateHotel);
+    const finalHotel = normalizeHotelPayload(
+      {
+        ...candidateHotel,
+        id: finalHotelId
+      },
+      candidateHotel
+    );
 
     processedHotels.push(finalHotel);
     if (skipDuplicates) {
@@ -260,7 +239,9 @@ function buildExportPayload(store) {
     hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload),
     normalizeHotelPayload
   );
-  const templates = (store.get('templates') || []).map(template => normalizeTemplatePayload(template));
+  const templates = (store.get('templates') || []).map((template) =>
+    normalizeTemplatePayload(template)
+  );
   const settings = normalizeImportedSettings(store.get('settings'));
   const exportedSettings = redactSettingsForExport(settings);
   const customAppIcon = appIconManager.readCustomIconExportPayload(settings);
@@ -348,7 +329,7 @@ function normalizeImportedPayload(rawPayload) {
   return {
     hotels: normalizedHotels,
     templates: Array.isArray(rawPayload.templates)
-      ? rawPayload.templates.map(template => normalizeTemplatePayload(template))
+      ? rawPayload.templates.map((template) => normalizeTemplatePayload(template))
       : [],
     settings: normalizeImportedSettings(rawPayload.settings),
     customAppIcon: isPlainObject(rawPayload.meta?.customAppIcon)
@@ -398,13 +379,22 @@ function buildReplaceImportPayload(importedPayload) {
 }
 
 function buildAppendImportPayload(snapshot, importedPayload) {
-  const existingHotels = hotelStorage.expandStoredHotels(snapshot.hotels || [], normalizeHotelPayload);
-  const existingTemplates = (snapshot.templates || []).map(template => normalizeTemplatePayload(template));
+  const existingHotels = hotelStorage.expandStoredHotels(
+    snapshot.hotels || [],
+    normalizeHotelPayload
+  );
+  const existingTemplates = (snapshot.templates || []).map((template) =>
+    normalizeTemplatePayload(template)
+  );
   const nextIdState = { value: Date.now() };
-  const templateProcessingResult = processImportedTemplates(importedPayload.templates, existingTemplates, {
-    skipDuplicates: true,
-    nextIdState
-  });
+  const templateProcessingResult = processImportedTemplates(
+    importedPayload.templates,
+    existingTemplates,
+    {
+      skipDuplicates: true,
+      nextIdState
+    }
+  );
   const hotelProcessingResult = processImportedHotels(importedPayload.hotels, existingHotels, {
     skipDuplicates: true,
     nextIdState,
@@ -435,7 +425,10 @@ function registerDataHandlers({ ipcMain, cache, services }) {
     if (!mainWindow) return { success: false };
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath: 'hotel-data.json',
-      filters: [{ name: 'JSON', extensions: [APP_CONFIG.FILE_EXTENSIONS.JSON] }, { name: 'All Files', extensions: ['*'] }]
+      filters: [
+        { name: 'JSON', extensions: [APP_CONFIG.FILE_EXTENSIONS.JSON] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
     });
     if (result.filePath) {
       const store = dataService.getStore();
@@ -458,7 +451,10 @@ function registerDataHandlers({ ipcMain, cache, services }) {
     if (!mainWindow) return { success: false };
     const importMode = requestedMode === 'append' ? 'append' : 'replace';
     const result = await dialog.showOpenDialog(mainWindow, {
-      filters: [{ name: 'JSON', extensions: [APP_CONFIG.FILE_EXTENSIONS.JSON] }, { name: 'All Files', extensions: ['*'] }],
+      filters: [
+        { name: 'JSON', extensions: [APP_CONFIG.FILE_EXTENSIONS.JSON] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
       properties: ['openFile']
     });
     if (result.filePaths && result.filePaths[0]) {
@@ -468,14 +464,17 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         templates: store.get('templates') || [],
         settings: store.get('settings') || {}
       };
-      const previousIconSnapshot = appIconManager.captureManagedIconSnapshot(previousSnapshot.settings);
+      const previousIconSnapshot = appIconManager.captureManagedIconSnapshot(
+        previousSnapshot.settings
+      );
 
       try {
         const rawText = fs.readFileSync(result.filePaths[0], 'utf-8');
         const importedPayload = normalizeImportedPayload(JSON.parse(rawText));
-        const finalPayload = importMode === 'append'
-          ? buildAppendImportPayload(previousSnapshot, importedPayload)
-          : buildReplaceImportPayload(importedPayload);
+        const finalPayload =
+          importMode === 'append'
+            ? buildAppendImportPayload(previousSnapshot, importedPayload)
+            : buildReplaceImportPayload(importedPayload);
 
         if (importMode === 'replace') {
           if (importedPayload.customAppIcon) {
@@ -501,7 +500,8 @@ function registerDataHandlers({ ipcMain, cache, services }) {
           success: true,
           mode: importMode,
           hotelCount: finalPayload.importStats?.addedHotelCount ?? finalPayload.hotels.length,
-          templateCount: finalPayload.importStats?.addedTemplateCount ?? finalPayload.templates.length,
+          templateCount:
+            finalPayload.importStats?.addedTemplateCount ?? finalPayload.templates.length,
           skippedHotelCount: finalPayload.importStats?.skippedHotelCount || 0,
           skippedTemplateCount: finalPayload.importStats?.skippedTemplateCount || 0,
           meta: importedPayload.meta
@@ -636,7 +636,12 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         fs.rmSync(currentDataFolder, { recursive: true, force: true });
       }
 
-      return { success: true, path: dataService.getStore().path, oldPath: currentDataFolder, deleted: deleteOld === 0 };
+      return {
+        success: true,
+        path: dataService.getStore().path,
+        oldPath: currentDataFolder,
+        deleted: deleteOld === 0
+      };
     } catch (error) {
       console.error('迁移数据失败:', error);
       return { success: false, error: error.message };

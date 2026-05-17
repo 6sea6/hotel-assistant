@@ -45,14 +45,14 @@ function checkFile(filePath) {
   const relativePath = path.relative(PROJECT_ROOT, filePath);
   const result = isModuleSource(source)
     ? spawnSync(process.execPath, ['--check', '--input-type=module'], {
-      cwd: PROJECT_ROOT,
-      input: source,
-      encoding: 'utf8'
-    })
+        cwd: PROJECT_ROOT,
+        input: source,
+        encoding: 'utf8'
+      })
     : spawnSync(process.execPath, ['--check', filePath], {
-      cwd: PROJECT_ROOT,
-      encoding: 'utf8'
-    });
+        cwd: PROJECT_ROOT,
+        encoding: 'utf8'
+      });
 
   if (result.status === 0) {
     return null;

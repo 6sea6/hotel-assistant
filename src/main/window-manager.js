@@ -100,7 +100,11 @@ class WindowManager {
       return;
     }
 
-    if (!this.mainWindow || this.mainWindow.isDestroyed() || typeof this.mainWindow.setAppDetails !== 'function') {
+    if (
+      !this.mainWindow ||
+      this.mainWindow.isDestroyed() ||
+      typeof this.mainWindow.setAppDetails !== 'function'
+    ) {
       return;
     }
 
@@ -130,7 +134,8 @@ class WindowManager {
       const settings = store.get('settings') || {};
       return {
         app_icon_path: typeof settings.app_icon_path === 'string' ? settings.app_icon_path : '',
-        app_icon_file_name: typeof settings.app_icon_file_name === 'string' ? settings.app_icon_file_name : ''
+        app_icon_file_name:
+          typeof settings.app_icon_file_name === 'string' ? settings.app_icon_file_name : ''
       };
     } catch (error) {
       return {
@@ -156,7 +161,9 @@ class WindowManager {
   }
 
   getThemeTitleBarColor(theme = '') {
-    return THEME_TITLEBAR_COLORS[this.normalizeTheme(theme)] || this.getThemeWindowBackground(theme);
+    return (
+      THEME_TITLEBAR_COLORS[this.normalizeTheme(theme)] || this.getThemeWindowBackground(theme)
+    );
   }
 
   getThemeTitleBarSymbolColor(theme = '') {
@@ -179,7 +186,11 @@ class WindowManager {
     const titleBarColor = this.getThemeTitleBarColor(normalizedTheme);
     const symbolColor = this.getThemeTitleBarSymbolColor(normalizedTheme);
 
-    if (this.mainWindow && !this.mainWindow.isDestroyed() && typeof this.mainWindow.setBackgroundColor === 'function') {
+    if (
+      this.mainWindow &&
+      !this.mainWindow.isDestroyed() &&
+      typeof this.mainWindow.setBackgroundColor === 'function'
+    ) {
       this.mainWindow.setBackgroundColor(backgroundColor);
     }
 
@@ -216,7 +227,10 @@ class WindowManager {
     }
 
     candidates.push(paths.DEFAULT_APP_ICON, paths.FALLBACK_APP_ICON);
-    return Array.from(new Set(candidates)).find((candidate) => candidate && fs.existsSync(candidate)) || '';
+    return (
+      Array.from(new Set(candidates)).find((candidate) => candidate && fs.existsSync(candidate)) ||
+      ''
+    );
   }
 
   resolveIconPath(preferredPath = '') {
@@ -247,7 +261,11 @@ class WindowManager {
       return { success: false, error: '图标文件无效或无法读取', path: resolvedPath };
     }
 
-    if (this.mainWindow && !this.mainWindow.isDestroyed() && typeof this.mainWindow.setIcon === 'function') {
+    if (
+      this.mainWindow &&
+      !this.mainWindow.isDestroyed() &&
+      typeof this.mainWindow.setIcon === 'function'
+    ) {
       this.mainWindow.setIcon(iconImage);
     }
 
@@ -255,7 +273,9 @@ class WindowManager {
     this.syncTaskbarAppDetails(resolvedPath);
 
     const isCustom = Boolean(
-      normalizedPreferredPath && preferredResolvedPath && path.resolve(preferredResolvedPath) === path.resolve(resolvedPath)
+      normalizedPreferredPath &&
+      preferredResolvedPath &&
+      path.resolve(preferredResolvedPath) === path.resolve(resolvedPath)
     );
 
     return {
@@ -270,9 +290,10 @@ class WindowManager {
 
   getIconState(preferredPath = '') {
     const storedIconSettings = this.getStoredIconSettings();
-    const normalizedPreferredPath = typeof preferredPath === 'string' && preferredPath.trim()
-      ? preferredPath.trim()
-      : storedIconSettings.app_icon_path;
+    const normalizedPreferredPath =
+      typeof preferredPath === 'string' && preferredPath.trim()
+        ? preferredPath.trim()
+        : storedIconSettings.app_icon_path;
     const customIconPath = appIconManager.resolveStoredIconPath(normalizedPreferredPath);
     const hasCustomIcon = Boolean(customIconPath && fs.existsSync(customIconPath));
     const resolvedPath = this.resolveIconPath(normalizedPreferredPath);
@@ -282,7 +303,9 @@ class WindowManager {
       isManaged: appIconManager.isManagedIconReference(normalizedPreferredPath),
       customPath: normalizedPreferredPath,
       activePath: resolvedPath,
-      fileName: storedIconSettings.app_icon_file_name || (customIconPath ? path.basename(customIconPath) : ''),
+      fileName:
+        storedIconSettings.app_icon_file_name ||
+        (customIconPath ? path.basename(customIconPath) : ''),
       missingCustomIcon: Boolean(normalizedPreferredPath && !hasCustomIcon),
       defaultPath: this.getDefaultIconPath()
     };

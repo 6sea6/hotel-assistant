@@ -5,7 +5,12 @@
 import { state, rankingCache } from './state.js';
 import { $, setChecked, setValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
-import { setModalActive, getEventButton, resetActionButtonConfirmation, startActionButtonConfirmation } from './ui-utils.js';
+import {
+  setModalActive,
+  getEventButton,
+  resetActionButtonConfirmation,
+  startActionButtonConfirmation
+} from './ui-utils.js';
 import { actions } from './actions.js';
 
 const THEME_ALIAS_MAP = Object.freeze({
@@ -219,7 +224,10 @@ function normalizeListPrefilterSettingValue(key, value) {
     const seen = new Set();
     return values
       .map((item) => Number(item))
-      .filter((item) => Number.isInteger(item) && item >= 2 && item <= 5 && !seen.has(item) && seen.add(item))
+      .filter(
+        (item) =>
+          Number.isInteger(item) && item >= 2 && item <= 5 && !seen.has(item) && seen.add(item)
+      )
       .sort((left, right) => left - right);
   }
 
@@ -231,7 +239,9 @@ function normalizeListPrefilterSettingValue(key, value) {
   }
 
   if (key === 'aiCtripPriceMax') {
-    const text = String(value || '').trim().toLowerCase();
+    const text = String(value || '')
+      .trim()
+      .toLowerCase();
     if (!text) return '';
     if (text === 'max') return 'max';
     const number = Number(text);
@@ -263,8 +273,11 @@ function normalizeListPrefilterSettingValue(key, value) {
 }
 
 function applyCtripStarLevelPills() {
-  const selected = new Set((Array.isArray(state.settings.aiCtripStarLevels) ? state.settings.aiCtripStarLevels : [])
-    .map((item) => String(item)));
+  const selected = new Set(
+    (Array.isArray(state.settings.aiCtripStarLevels) ? state.settings.aiCtripStarLevels : []).map(
+      (item) => String(item)
+    )
+  );
   document.querySelectorAll('[data-star-level]').forEach((button) => {
     const isSelected = selected.has(String(button.dataset.starLevel));
     button.classList.toggle('is-selected', isSelected);
@@ -287,24 +300,51 @@ function applyListPrefilterSettings() {
 }
 
 function readListPrefilterFormValues() {
-  const selectedStars = Array.from(document.querySelectorAll('[data-star-level].is-selected'))
-    .map((button) => button.dataset.starLevel);
+  const selectedStars = Array.from(document.querySelectorAll('[data-star-level].is-selected')).map(
+    (button) => button.dataset.starLevel
+  );
   return {
-    aiCtripPriceMin: normalizeListPrefilterSettingValue('aiCtripPriceMin', $('aiCtripPriceMin')?.value),
-    aiCtripPriceMax: normalizeListPrefilterSettingValue('aiCtripPriceMax', $('aiCtripPriceMax')?.value),
+    aiCtripPriceMin: normalizeListPrefilterSettingValue(
+      'aiCtripPriceMin',
+      $('aiCtripPriceMin')?.value
+    ),
+    aiCtripPriceMax: normalizeListPrefilterSettingValue(
+      'aiCtripPriceMax',
+      $('aiCtripPriceMax')?.value
+    ),
     aiCtripStarLevels: normalizeListPrefilterSettingValue('aiCtripStarLevels', selectedStars),
-    aiCtripSortMode: normalizeListPrefilterSettingValue('aiCtripSortMode', $('aiCtripSortMode')?.value),
-    aiCtripFreeCancel: normalizeListPrefilterSettingValue('aiCtripFreeCancel', Boolean($('aiCtripFreeCancel')?.checked)),
-    aiCtripReviewCountMin: normalizeListPrefilterSettingValue('aiCtripReviewCountMin', $('aiCtripReviewCountMin')?.value),
-    aiCtripScoreMin: normalizeListPrefilterSettingValue('aiCtripScoreMin', $('aiCtripScoreMin')?.value),
-    aiListDesiredHotelCount: normalizeListPrefilterSettingValue('aiListDesiredHotelCount', $('aiListDesiredHotelCount')?.value),
-    aiListExcludeHotelTypes: normalizeListPrefilterSettingValue('aiListExcludeHotelTypes', $('aiListExcludeHotelTypes')?.value),
+    aiCtripSortMode: normalizeListPrefilterSettingValue(
+      'aiCtripSortMode',
+      $('aiCtripSortMode')?.value
+    ),
+    aiCtripFreeCancel: normalizeListPrefilterSettingValue(
+      'aiCtripFreeCancel',
+      Boolean($('aiCtripFreeCancel')?.checked)
+    ),
+    aiCtripReviewCountMin: normalizeListPrefilterSettingValue(
+      'aiCtripReviewCountMin',
+      $('aiCtripReviewCountMin')?.value
+    ),
+    aiCtripScoreMin: normalizeListPrefilterSettingValue(
+      'aiCtripScoreMin',
+      $('aiCtripScoreMin')?.value
+    ),
+    aiListDesiredHotelCount: normalizeListPrefilterSettingValue(
+      'aiListDesiredHotelCount',
+      $('aiListDesiredHotelCount')?.value
+    ),
+    aiListExcludeHotelTypes: normalizeListPrefilterSettingValue(
+      'aiListExcludeHotelTypes',
+      $('aiListExcludeHotelTypes')?.value
+    ),
     aiListMaxPages: normalizeListPrefilterSettingValue('aiListMaxPages', $('aiListMaxPages')?.value)
   };
 }
 
 async function persistListPrefilterSettings(nextSettings) {
-  const entries = Object.entries(nextSettings).filter(([key]) => LIST_PREFILTER_SETTING_KEYS.has(key));
+  const entries = Object.entries(nextSettings).filter(([key]) =>
+    LIST_PREFILTER_SETTING_KEYS.has(key)
+  );
   const previousSettings = {};
   entries.forEach(([key]) => {
     previousSettings[key] = state.settings[key];
@@ -376,11 +416,12 @@ export async function saveAiListPrefilterSetting(event) {
   }
 
   const previousValue = state.settings[key] ?? '';
-  const rawValue = key === 'aiCtripFreeCancel'
-    ? input.checked
-    : key === 'aiCtripStarLevels'
-      ? Array.from(input.selectedOptions || []).map((option) => option.value)
-      : input.value;
+  const rawValue =
+    key === 'aiCtripFreeCancel'
+      ? input.checked
+      : key === 'aiCtripStarLevels'
+        ? Array.from(input.selectedOptions || []).map((option) => option.value)
+        : input.value;
   const nextValue = normalizeListPrefilterSettingValue(key, rawValue);
 
   try {
@@ -420,7 +461,9 @@ export async function toggleAiCtripStarLevel(starLevel) {
   }
 
   const current = Array.isArray(state.settings.aiCtripStarLevels)
-    ? state.settings.aiCtripStarLevels.map((item) => Number(item)).filter((item) => [2, 3, 4, 5].includes(item))
+    ? state.settings.aiCtripStarLevels
+        .map((item) => Number(item))
+        .filter((item) => [2, 3, 4, 5].includes(item))
     : [];
   const next = current.includes(star)
     ? current.filter((item) => item !== star)
@@ -586,7 +629,7 @@ export async function resetSettings(eventLike) {
       throw new Error('恢复默认设置失败');
     }
 
-    state.settings = result.settings || await actions.loadSettings();
+    state.settings = result.settings || (await actions.loadSettings());
     rankingCache.invalidate();
     applySettings();
     applyAppIconState(result.iconState);
@@ -628,7 +671,10 @@ export async function handleExportData() {
   try {
     const result = await window.electronAPI.exportData();
     if (result.success) {
-      showNotification(`数据已导出到: ${result.path}\n宾馆 ${result.hotelCount || 0} 条，模板 ${result.templateCount || 0} 条`, 'success');
+      showNotification(
+        `数据已导出到: ${result.path}\n宾馆 ${result.hotelCount || 0} 条，模板 ${result.templateCount || 0} 条`,
+        'success'
+      );
     }
   } catch (error) {
     console.error('导出数据失败:', error);
@@ -647,16 +693,24 @@ export async function handleImportData(mode) {
     const result = await window.electronAPI.importData(mode);
     if (result.success) {
       await actions.refreshCurrentPage({ showSuccess: false, interactionFirst: true });
-      const importedVersion = result.meta?.appVersion ? `\n来源版本: ${result.meta.appVersion}` : '';
-      const importTitle = result.mode === 'append' ? '追加导入成功' : '数据导入成功';
-      const importCountText = result.mode === 'append'
-        ? `新增宾馆 ${result.hotelCount || 0} 条，新增模板 ${result.templateCount || 0} 条`
-        : `宾馆 ${result.hotelCount || 0} 条，模板 ${result.templateCount || 0} 条`;
-      const skippedCountText = result.mode === 'append' && ((result.skippedHotelCount || 0) > 0 || (result.skippedTemplateCount || 0) > 0)
-        ? `\n跳过重复宾馆 ${result.skippedHotelCount || 0} 条，跳过重复模板 ${result.skippedTemplateCount || 0} 条`
+      const importedVersion = result.meta?.appVersion
+        ? `\n来源版本: ${result.meta.appVersion}`
         : '';
+      const importTitle = result.mode === 'append' ? '追加导入成功' : '数据导入成功';
+      const importCountText =
+        result.mode === 'append'
+          ? `新增宾馆 ${result.hotelCount || 0} 条，新增模板 ${result.templateCount || 0} 条`
+          : `宾馆 ${result.hotelCount || 0} 条，模板 ${result.templateCount || 0} 条`;
+      const skippedCountText =
+        result.mode === 'append' &&
+        ((result.skippedHotelCount || 0) > 0 || (result.skippedTemplateCount || 0) > 0)
+          ? `\n跳过重复宾馆 ${result.skippedHotelCount || 0} 条，跳过重复模板 ${result.skippedTemplateCount || 0} 条`
+          : '';
       const settingsNote = result.mode === 'append' ? '\n当前设置和应用图标保持不变' : '';
-      showNotification(`${importTitle}\n${importCountText}${skippedCountText}${importedVersion}${settingsNote}`, 'success');
+      showNotification(
+        `${importTitle}\n${importCountText}${skippedCountText}${importedVersion}${settingsNote}`,
+        'success'
+      );
     } else if (result?.error) {
       showNotification(`导入失败: ${result.error}`, 'error');
     }

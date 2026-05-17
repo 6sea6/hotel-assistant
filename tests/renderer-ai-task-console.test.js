@@ -4,10 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const {
-  buildCtripListUrl,
-  parseCtripListUrl
-} = require('../shared/compare-app/ctrip-url-filters');
+const { buildCtripListUrl, parseCtripListUrl } = require('../shared/compare-app/ctrip-url-filters');
 
 let taskConsoleModuleUrl = '';
 let aiAssistantModuleUrl = '';
@@ -19,7 +16,10 @@ async function loadTaskConsoleModule() {
     const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
     fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
     fs.copyFileSync(path.join(sourceDir, 'dom-helpers.js'), path.join(tempRoot, 'dom-helpers.js'));
-    fs.copyFileSync(path.join(sourceDir, 'ai-task-console.js'), path.join(tempRoot, 'ai-task-console.js'));
+    fs.copyFileSync(
+      path.join(sourceDir, 'ai-task-console.js'),
+      path.join(tempRoot, 'ai-task-console.js')
+    );
     taskConsoleModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-task-console.js')).href;
     process.on('exit', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -167,46 +167,71 @@ test('extractCtripUrls reads multiple detail and list URLs from pasted text', as
 
 test('extractCtripUrls trims prose after a pasted list URL', async () => {
   const { extractCtripUrls, extractCtripUrl } = await loadTaskConsoleModule();
-  const text = 'https://hotels.ctrip.com/hotels/list?cityId=477&checkin=2026-06-01&checkout=2026-06-02&listFilters=29~1*29*1~3&locale=zh-CN,我将链接输入后显示解析错误';
+  const text =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&checkin=2026-06-01&checkout=2026-06-02&listFilters=29~1*29*1~3&locale=zh-CN,我将链接输入后显示解析错误';
   const urls = extractCtripUrls(text);
 
   assert.equal(urls.length, 1);
-  assert.equal(urls[0], 'https://hotels.ctrip.com/hotels/list?cityId=477&checkin=2026-06-01&checkout=2026-06-02&listFilters=29~1*29*1~3&locale=zh-CN');
+  assert.equal(
+    urls[0],
+    'https://hotels.ctrip.com/hotels/list?cityId=477&checkin=2026-06-01&checkout=2026-06-02&listFilters=29~1*29*1~3&locale=zh-CN'
+  );
   assert.equal(extractCtripUrl(text), urls[0]);
 });
 
 test('hasWriteResult understands batch apply summaries', async () => {
   const { hasWriteResult } = await loadTaskConsoleModule();
 
-  assert.equal(hasWriteResult({
-    batchMode: true,
-    appliedCount: 0,
-    skippedCount: 2,
-    items: []
-  }), false);
-  assert.equal(hasWriteResult({
-    batchMode: true,
-    appliedCount: 1,
-    skippedCount: 1,
-    items: []
-  }), true);
-  assert.equal(hasWriteResult({
-    batchMode: true,
-    appliedCount: 0,
-    items: [{
-      writeResult: {
-        operation: 'inserted'
+  assert.equal(
+    hasWriteResult({
+      batchMode: true,
+      appliedCount: 0,
+      skippedCount: 2,
+      items: []
+    }),
+    false
+  );
+  assert.equal(
+    hasWriteResult({
+      batchMode: true,
+      appliedCount: 1,
+      skippedCount: 1,
+      items: []
+    }),
+    true
+  );
+  assert.equal(
+    hasWriteResult({
+      batchMode: true,
+      appliedCount: 0,
+      items: [
+        {
+          writeResult: {
+            operation: 'inserted'
+          }
+        }
+      ]
+    }),
+    true
+  );
+  assert.equal(
+    hasWriteResult([
+      {
+        itemIndex: 1,
+        result: [{ operation: 'skipped' }]
       }
-    }]
-  }), true);
-  assert.equal(hasWriteResult([{
-    itemIndex: 1,
-    result: [{ operation: 'skipped' }]
-  }]), false);
-  assert.equal(hasWriteResult([{
-    itemIndex: 1,
-    result: [{ operation: 'updated' }]
-  }]), true);
+    ]),
+    false
+  );
+  assert.equal(
+    hasWriteResult([
+      {
+        itemIndex: 1,
+        result: [{ operation: 'updated' }]
+      }
+    ]),
+    true
+  );
 });
 
 test('normalizeTaskState keeps batch result display compatible with old fields', async () => {
@@ -228,11 +253,13 @@ test('normalizeTaskState keeps batch result display compatible with old fields',
         },
         hotelName: '第一家酒店',
         eligibleCount: 4,
-        eligibleRoomTypes: [{
-          roomType: '家庭房',
-          dailyPrice: 300,
-          totalPrice: 900
-        }],
+        eligibleRoomTypes: [
+          {
+            roomType: '家庭房',
+            dailyPrice: 300,
+            totalPrice: 900
+          }
+        ],
         writeResult: {
           batchMode: true,
           appliedCount: 2,
@@ -270,11 +297,13 @@ test('normalizeTaskState keeps AI review available for single hotel results only
         reviewInputAvailable: true,
         hotelName: '测试酒店',
         eligibleCount: 1,
-        eligibleRoomTypes: [{
-          roomType: '家庭房',
-          dailyPrice: 300,
-          totalPrice: 300
-        }],
+        eligibleRoomTypes: [
+          {
+            roomType: '家庭房',
+            dailyPrice: 300,
+            totalPrice: 300
+          }
+        ],
         writeResult: {
           operation: 'inserted'
         }
@@ -323,11 +352,13 @@ test('normalizeTaskState renders cancelled tasks as cancelled instead of failed'
       cancelled: true,
       error: '任务已取消'
     },
-    events: [{
-      type: 'task:cancel',
-      message: '任务已取消',
-      at: '2026-06-01T10:00:05.000Z'
-    }],
+    events: [
+      {
+        type: 'task:cancel',
+        message: '任务已取消',
+        at: '2026-06-01T10:00:05.000Z'
+      }
+    ],
     inProgress: false
   });
 
@@ -379,19 +410,29 @@ test('normalizeTaskState derives running batch progress stats from events', asyn
 });
 
 test('batch progress stat icons use svg and animate the running icon', () => {
-  const moduleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'), 'utf8');
+  const moduleSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
   const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles.css'), 'utf8');
 
   assert.match(moduleSource, /<svg class="task-progress-stat-icon task-progress-stat-icon-hotel"/);
   assert.match(moduleSource, /<svg class="task-progress-stat-icon task-progress-stat-icon-done"/);
-  assert.match(moduleSource, /<svg class="task-progress-stat-icon task-progress-stat-icon-running loading-icon"/);
-  assert.match(moduleSource, /<svg class="task-progress-stat-icon task-progress-stat-icon-pending"/);
+  assert.match(
+    moduleSource,
+    /<svg class="task-progress-stat-icon task-progress-stat-icon-running loading-icon"/
+  );
+  assert.match(
+    moduleSource,
+    /<svg class="task-progress-stat-icon task-progress-stat-icon-pending"/
+  );
   assert.match(css, /\.loading-icon\s*\{[\s\S]*animation:\s*spin 1s linear infinite/);
   assert.match(css, /\.task-progress-stat-icon\s*\{[\s\S]*width:\s*22px;[\s\S]*height:\s*22px;/);
 });
 
 test('Ctrip list URL reverse sync does not clear saved filters for unknown native listFilters', async () => {
-  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
   const { elements, setCalls } = installAiAssistantDom(inputUrl);
   const { module, state } = await loadAiAssistantModules();
   state.settings = {
@@ -417,7 +458,8 @@ test('Ctrip list URL reverse sync does not clear saved filters for unknown nativ
 });
 
 test('active Ctrip URL filters are merged into list URL without dropping unknown filters', async () => {
-  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
   const { elements } = installAiAssistantDom(inputUrl);
   const { module, state } = await loadAiAssistantModules();
   state.settings = {
@@ -448,7 +490,8 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
 });
 
 test('active-only Ctrip URL sync preserves pasted known filters when app settings are empty', async () => {
-  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,17~6*17*6&locale=zh-CN';
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,17~6*17*6&locale=zh-CN';
   const { elements } = installAiAssistantDom(inputUrl);
   const { module, state } = await loadAiAssistantModules();
   state.settings = {
@@ -499,9 +542,10 @@ test('cancelled collection only shows one cancellation notification', async () =
     reply: ''
   };
   elements.get('aiTemplateSelect').value = 'tpl-1';
-  global.window.electronAPI.ai.startTask = async () => new Promise((_resolve, reject) => {
-    rejectStartTask = reject;
-  });
+  global.window.electronAPI.ai.startTask = async () =>
+    new Promise((_resolve, reject) => {
+      rejectStartTask = reject;
+    });
   global.window.electronAPI.ai.cancelTask = async () => ({ success: true });
 
   await module.enqueueAiCollectTask();
@@ -568,7 +612,9 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   const startBarMatch = html.match(/<section class="task-start-card"[\s\S]*?<\/section>/);
   const settingsMatch = html.match(/<div id="settingsModal"[\s\S]*?<div id="personalizationModal"/);
   const prefilterMatch = html.match(/<div id="listPrefilterModal"[\s\S]*?<div id="settingsModal"/);
-  const currentTaskHeaderMatch = html.match(/<section class="current-task-card"[\s\S]*?<div id="aiCurrentTaskPanel"/);
+  const currentTaskHeaderMatch = html.match(
+    /<section class="current-task-card"[\s\S]*?<div id="aiCurrentTaskPanel"/
+  );
   const startBarHtml = startBarMatch ? startBarMatch[0] : '';
   const settingsHtml = settingsMatch ? settingsMatch[0] : '';
   const prefilterHtml = prefilterMatch ? prefilterMatch[0] : '';
@@ -612,9 +658,29 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.doesNotMatch(startBarHtml, /可一次粘贴多个/);
 });
 
+test('task console section headings do not show English eyebrow labels', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
+  const taskConsoleSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+
+  assert.doesNotMatch(html, /CURRENT TASK|TASK START BAR/);
+  assert.doesNotMatch(taskConsoleSource, /TASK QUEUE/);
+  assert.match(html, /当前任务/);
+  assert.match(html, /任务启动栏/);
+  assert.match(taskConsoleSource, /任务队列/);
+});
+
 test('settings modal loads AI interface config through module wiring', () => {
-  const settingsUiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'modules', 'settings-ui.js'), 'utf8');
-  const appModuleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'app.module.js'), 'utf8');
+  const settingsUiSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'settings-ui.js'),
+    'utf8'
+  );
+  const appModuleSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'app.module.js'),
+    'utf8'
+  );
 
   assert.match(settingsUiSource, /export function setAiConfigLoader/);
   assert.match(settingsUiSource, /await loadAiInterfaceSettings\(\)/);

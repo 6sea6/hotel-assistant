@@ -2,12 +2,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const test = require('node:test');
 
-const {
-  HttpClientError,
-  get,
-  mergeCookieHeader,
-  mergeHeaders
-} = require('../src/http-client');
+const { HttpClientError, get, mergeCookieHeader, mergeHeaders } = require('../src/http-client');
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -25,7 +20,10 @@ function close(server) {
 
 test('mergeHeaders keeps one value per header name case-insensitively', () => {
   assert.deepEqual(
-    mergeHeaders({ Accept: 'text/html', 'X-Test': 'old' }, { accept: 'application/json', 'x-new': 'yes' }),
+    mergeHeaders(
+      { Accept: 'text/html', 'X-Test': 'old' },
+      { accept: 'application/json', 'x-new': 'yes' }
+    ),
     {
       Accept: 'application/json',
       'X-Test': 'old',
@@ -46,10 +44,12 @@ test('get applies params, timeout and retry/backoff wrapper through axios', asyn
 
     const url = new URL(req.url, 'http://127.0.0.1');
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({
-      ok: true,
-      keyword: url.searchParams.get('keyword')
-    }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        keyword: url.searchParams.get('keyword')
+      })
+    );
   });
 
   const port = await listen(server);
@@ -128,9 +128,8 @@ test('get reports timeout failures with a unified error object', async () => {
   try {
     await assert.rejects(
       () => get(`http://127.0.0.1:${port}/slow`, { timeoutMs: 5, retries: 0 }),
-      (error) => error instanceof HttpClientError
-        && error.method === 'GET'
-        && error.url.includes('/slow')
+      (error) =>
+        error instanceof HttpClientError && error.method === 'GET' && error.url.includes('/slow')
     );
   } finally {
     await close(server);
@@ -142,10 +141,12 @@ test('cookieHeader and userAgent merge into request headers without dropping exi
 
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({
-      cookie: req.headers.cookie,
-      userAgent: req.headers['user-agent']
-    }));
+    res.end(
+      JSON.stringify({
+        cookie: req.headers.cookie,
+        userAgent: req.headers['user-agent']
+      })
+    );
   });
 
   const port = await listen(server);

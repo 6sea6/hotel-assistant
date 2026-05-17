@@ -23,7 +23,12 @@ function getProductionDependencyNames(packageJson = {}) {
   return Object.keys(packageJson.dependencies || {});
 }
 
-function copyProductionDependencyTree({ sourceNodeModules, targetNodeModules, dependencyNames, seen = new Set() }) {
+function copyProductionDependencyTree({
+  sourceNodeModules,
+  targetNodeModules,
+  dependencyNames,
+  seen = new Set()
+}) {
   dependencyNames.forEach((dependencyName) => {
     if (!dependencyName || seen.has(dependencyName)) {
       return;
@@ -42,7 +47,9 @@ function copyProductionDependencyTree({ sourceNodeModules, targetNodeModules, de
     const childDependencies = [
       ...Object.keys(dependencyPackage.dependencies || {}),
       ...Object.keys(dependencyPackage.optionalDependencies || {})
-    ].filter((name) => fs.existsSync(path.join(getPackageDir(sourceNodeModules, name), 'package.json')));
+    ].filter((name) =>
+      fs.existsSync(path.join(getPackageDir(sourceNodeModules, name), 'package.json'))
+    );
 
     copyProductionDependencyTree({
       sourceNodeModules,
@@ -66,9 +73,18 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
   const manifest = getBundleManifest(bundleRoot);
 
   copyDirSync(path.join(scraperDir, 'src'), path.join(manifest.directories.scraperRoot, 'src'));
-  copyFileSync(path.join(scraperDir, 'package.json'), path.join(manifest.directories.scraperRoot, 'package.json'));
-  copyFileSync(path.join(scraperDir, 'README.md'), path.join(manifest.directories.scraperRoot, 'README.md'));
-  copyFileSync(promptGuideFile, path.join(manifest.directories.scraperRoot, path.basename(promptGuideFile)));
+  copyFileSync(
+    path.join(scraperDir, 'package.json'),
+    path.join(manifest.directories.scraperRoot, 'package.json')
+  );
+  copyFileSync(
+    path.join(scraperDir, 'README.md'),
+    path.join(manifest.directories.scraperRoot, 'README.md')
+  );
+  copyFileSync(
+    promptGuideFile,
+    path.join(manifest.directories.scraperRoot, path.basename(promptGuideFile))
+  );
 
   const scraperPackageJson = readPackageJson(scraperDir);
   copyProductionDependencyTree({

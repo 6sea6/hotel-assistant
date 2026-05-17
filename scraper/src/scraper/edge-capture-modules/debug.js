@@ -21,9 +21,7 @@ function writeEdgeDebugArtifact(fileName, content) {
 
   fs.mkdirSync(debugDir, { recursive: true });
   const targetPath = path.join(debugDir, fileName);
-  const payload = typeof content === 'string'
-    ? content
-    : JSON.stringify(content, null, 2);
+  const payload = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
   fs.writeFileSync(targetPath, payload, 'utf8');
 }
 

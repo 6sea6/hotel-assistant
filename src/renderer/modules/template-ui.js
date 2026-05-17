@@ -3,7 +3,18 @@
  */
 
 import { state, rankingCache, TEMPLATE_FILTER_BATCH_SIZE } from './state.js';
-import { $, escapeHtml, getValue, setValue, setText, setStyle, addEvent, idsEqual, normalizeIdValue, getRoomCountText } from './dom-helpers.js';
+import {
+  $,
+  escapeHtml,
+  getValue,
+  setValue,
+  setText,
+  setStyle,
+  addEvent,
+  idsEqual,
+  normalizeIdValue,
+  getRoomCountText
+} from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from './ui-utils.js';
 import { isHotelInputPriorityActive } from './render-scheduler.js';
@@ -55,7 +66,9 @@ export function renderTemplateList() {
     return `<button class="btn ${extraClass} btn-sm" data-action="${actionAttr}" data-id="${idAttr}">${label}</button>`;
   };
 
-  container.innerHTML = state.templates.map(template => `
+  container.innerHTML = state.templates
+    .map(
+      (template) => `
     <div class="template-item">
       <div class="template-info">
         <h4>${escapeHtml(template.name)}</h4>
@@ -71,7 +84,9 @@ export function renderTemplateList() {
         ${buildTemplateActionButton('<span>🗑️</span> 删除', 'delete-template', template.id, 'btn-danger')}
       </div>
     </div>
-  `).join('');
+  `
+    )
+    .join('');
 }
 
 /* ---- 列表事件代理 ---- */
@@ -158,7 +173,9 @@ export async function saveTemplate() {
     if (nameInput) {
       nameInput.focus();
       nameInput.style.borderColor = '#F53F3F';
-      setTimeout(() => { nameInput.style.borderColor = ''; }, 2000);
+      setTimeout(() => {
+        nameInput.style.borderColor = '';
+      }, 2000);
     }
     return;
   }
@@ -213,7 +230,10 @@ export async function deleteTemplate(id) {
     renderTemplateList();
     rankingCache.invalidate();
     actions.renderHotelList();
-    showNotification(`模板已删除${result.affectedHotelCount ? `，同步清理 ${result.affectedHotelCount} 家宾馆的模板关联` : ''}`, 'success');
+    showNotification(
+      `模板已删除${result.affectedHotelCount ? `，同步清理 ${result.affectedHotelCount} 家宾馆的模板关联` : ''}`,
+      'success'
+    );
   } catch (error) {
     console.error('删除模板失败:', error);
     showNotification(`删除模板失败: ${error.message || '请重试'}`, 'error');

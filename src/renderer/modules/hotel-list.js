@@ -2,11 +2,33 @@
  * 宾馆列表渲染 —— 卡片视图、行式视图、批量渲染、事件委托和选择管理。
  */
 
-import { state, rankingCache, HOTEL_RENDER_BATCH_SIZE, LARGE_HOTEL_RENDER_THRESHOLD, INTERACTION_FIRST_RENDER_DELAY } from './state.js';
-import { $, getValue, escapeHtml, escapeHtmlWithLineBreaks, idsEqual, getSelectionKey, hasDisplayValue, formatDateChinese, getRoomCountText, normalizeFilterOptionKey } from './dom-helpers.js';
+import {
+  state,
+  rankingCache,
+  HOTEL_RENDER_BATCH_SIZE,
+  LARGE_HOTEL_RENDER_THRESHOLD,
+  INTERACTION_FIRST_RENDER_DELAY
+} from './state.js';
+import {
+  $,
+  getValue,
+  escapeHtml,
+  escapeHtmlWithLineBreaks,
+  idsEqual,
+  getSelectionKey,
+  hasDisplayValue,
+  formatDateChinese,
+  getRoomCountText,
+  normalizeFilterOptionKey
+} from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { perfStart, perfEnd } from './perf.js';
-import { isHotelInputPriorityActive, clearPendingHotelRenderTimers, queueHotelRenderResume, scheduleHotelRenderTask } from './render-scheduler.js';
+import {
+  isHotelInputPriorityActive,
+  clearPendingHotelRenderTimers,
+  queueHotelRenderResume,
+  scheduleHotelRenderTask
+} from './render-scheduler.js';
 import {
   setModalActive,
   resetDeleteConfirmation,
@@ -17,7 +39,16 @@ import {
   startBatchDeleteConfirmation,
   syncBatchDeleteButton
 } from './ui-utils.js';
-import { applyFiltersToHotels, rankHotels, getVisibleHotelSummary, formatSubwayInfo, formatDistanceValue, formatTransportValue, extractDistanceNumber, extractTimeNumber } from './hotel-filters.js';
+import {
+  applyFiltersToHotels,
+  rankHotels,
+  getVisibleHotelSummary,
+  formatSubwayInfo,
+  formatDistanceValue,
+  formatTransportValue,
+  extractDistanceNumber,
+  extractTimeNumber
+} from './hotel-filters.js';
 import { actions } from './actions.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
@@ -110,7 +141,8 @@ function renderHotelListPreparingState() {
 
 export function renderHotelList(options = {}) {
   state.hotelListRenderVersion += 1;
-  state.pendingRenderInteractionFirst = state.pendingRenderInteractionFirst || Boolean(options.interactionFirst);
+  state.pendingRenderInteractionFirst =
+    state.pendingRenderInteractionFirst || Boolean(options.interactionFirst);
   if (state.renderScheduled) return;
 
   clearPendingHotelRenderTimers();
@@ -167,7 +199,9 @@ export function renderHotelList(options = {}) {
     roomTypeCountElement.textContent = summary.roomTypeCount;
 
     if (sortedHotels.length === 0) {
-      const hasActiveFilters = Object.values(state.currentFilters).some(value => value !== undefined && value !== null && value !== '');
+      const hasActiveFilters = Object.values(state.currentFilters).some(
+        (value) => value !== undefined && value !== null && value !== ''
+      );
       const isFilterEmptyState = state.hotels.length > 0 && hasActiveFilters;
       const emptyAction = isFilterEmptyState ? 'clear-filters' : 'open-add-hotel';
       container.innerHTML = `
@@ -277,7 +311,9 @@ function renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel,
   }
 
   if (isHotelInputPriorityActive()) {
-    queueHotelRenderResume(() => renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel, startIndex));
+    queueHotelRenderResume(() =>
+      renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel, startIndex)
+    );
     return;
   }
 
@@ -291,7 +327,9 @@ function renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel,
   tbody.appendChild(fragment);
 
   if (endIndex < hotelsToRender.length) {
-    requestAnimationFrame(() => renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel, endIndex));
+    requestAnimationFrame(() =>
+      renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel, endIndex)
+    );
     return;
   }
 
@@ -299,14 +337,22 @@ function renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel,
   finishHotelRender(taskVersion, perfLabel);
 }
 
-function renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, startIndex = 0) {
+function renderHotelCardsInBatches(
+  container,
+  hotelsToRender,
+  taskVersion,
+  perfLabel,
+  startIndex = 0
+) {
   if (taskVersion !== state.hotelListRenderVersion) {
     finishHotelRender(taskVersion, perfLabel);
     return;
   }
 
   if (isHotelInputPriorityActive()) {
-    queueHotelRenderResume(() => renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, startIndex));
+    queueHotelRenderResume(() =>
+      renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, startIndex)
+    );
     return;
   }
 
@@ -320,7 +366,9 @@ function renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfL
   container.appendChild(fragment);
 
   if (endIndex < hotelsToRender.length) {
-    requestAnimationFrame(() => renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, endIndex));
+    requestAnimationFrame(() =>
+      renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, endIndex)
+    );
     return;
   }
 
@@ -346,7 +394,9 @@ function renderHotelCardGrid(container, hotelsToRender, taskVersion, perfLabel) 
 function renderHotelListView(container, hotelsToRender, taskVersion, perfLabel) {
   const table = document.createElement('div');
   table.className = 'hotel-table';
-  const isAllSelected = hotelsToRender.length > 0 && hotelsToRender.every(hotel => state.selectedHotels.has(getSelectionKey(hotel.id)));
+  const isAllSelected =
+    hotelsToRender.length > 0 &&
+    hotelsToRender.every((hotel) => state.selectedHotels.has(getSelectionKey(hotel.id)));
 
   const header = document.createElement('div');
   header.className = 'hotel-table-header';
@@ -398,10 +448,26 @@ export function createHotelCard(hotel, index) {
 
   const isFromTemplate = (field) => {
     if (!hasTemplate) return false;
-    if (field === 'destination' && template.destination && hotel.destination === template.destination) return true;
-    if (field === 'room_count' && template.room_count && hotel.room_count === template.room_count) return true;
-    if (field === 'check_in_date' && template.check_in_date && hotel.check_in_date === template.check_in_date) return true;
-    if (field === 'check_out_date' && template.check_out_date && hotel.check_out_date === template.check_out_date) return true;
+    if (
+      field === 'destination' &&
+      template.destination &&
+      hotel.destination === template.destination
+    )
+      return true;
+    if (field === 'room_count' && template.room_count && hotel.room_count === template.room_count)
+      return true;
+    if (
+      field === 'check_in_date' &&
+      template.check_in_date &&
+      hotel.check_in_date === template.check_in_date
+    )
+      return true;
+    if (
+      field === 'check_out_date' &&
+      template.check_out_date &&
+      hotel.check_out_date === template.check_out_date
+    )
+      return true;
     return false;
   };
 
@@ -413,43 +479,69 @@ export function createHotelCard(hotel, index) {
   const fullWidthInfoItems = [];
 
   if (hotel.total_price) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">总价格</div><div class="info-value price">¥${hotel.total_price}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">总价格</div><div class="info-value price">¥${hotel.total_price}</div></div>`
+    );
   }
   if (hotel.daily_price) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">日均价格</div><div class="info-value price">¥${hotel.daily_price}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">日均价格</div><div class="info-value price">¥${hotel.daily_price}</div></div>`
+    );
   }
   if (hotel.destination && !isFromTemplate('destination')) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">目的地</div><div class="info-value">${escapeHtml(hotel.destination)}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">目的地</div><div class="info-value">${escapeHtml(hotel.destination)}</div></div>`
+    );
   }
   if (hotel.distance) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">距离</div><div class="info-value">${escapeHtml(hotel.distance)} 公里</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">距离</div><div class="info-value">${escapeHtml(hotel.distance)} 公里</div></div>`
+    );
   }
   if (hasDisplayValue(hotel.subway_station) || hasDisplayValue(hotel.subway_distance)) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">最近地铁站</div><div class="info-value">${escapeHtml(formatSubwayInfo(hotel.subway_station, hotel.subway_distance))}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">最近地铁站</div><div class="info-value">${escapeHtml(formatSubwayInfo(hotel.subway_station, hotel.subway_distance))}</div></div>`
+    );
   }
   if (hotel.transport_time) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">公共交通</div><div class="info-value">${escapeHtml(hotel.transport_time)} 分钟</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">公共交通</div><div class="info-value">${escapeHtml(hotel.transport_time)} 分钟</div></div>`
+    );
   }
   if (hasDisplayValue(hotel.bus_route)) {
-    fullWidthInfoItems.push(`<div class="info-item info-item-full info-item-route"><div class="info-label">公交路线</div><div class="info-value">${escapeHtmlWithLineBreaks(hotel.bus_route)}</div></div>`);
+    fullWidthInfoItems.push(
+      `<div class="info-item info-item-full info-item-route"><div class="info-label">公交路线</div><div class="info-value">${escapeHtmlWithLineBreaks(hotel.bus_route)}</div></div>`
+    );
   }
   if (hotel.room_type) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">房间类型</div><div class="info-value">${escapeHtml(hotel.room_type)}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">房间类型</div><div class="info-value">${escapeHtml(hotel.room_type)}</div></div>`
+    );
   }
   if (hotel.room_count && !isFromTemplate('room_count')) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">入住人数</div><div class="info-value">${getRoomCountText(hotel.room_count)}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">入住人数</div><div class="info-value">${getRoomCountText(hotel.room_count)}</div></div>`
+    );
   }
   if (hotel.room_area) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">房间面积</div><div class="info-value">${escapeHtml(hotel.room_area)} ㎡</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">房间面积</div><div class="info-value">${escapeHtml(hotel.room_area)} ㎡</div></div>`
+    );
   }
   if (hotel.days) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">住宿天数</div><div class="info-value">${hotel.days}天</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">住宿天数</div><div class="info-value">${hotel.days}天</div></div>`
+    );
   }
   if (hotel.check_in_date && hotel.check_out_date && !isFromTemplate('check_in_date')) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">入住日期</div><div class="info-value">${formatDateChinese(hotel.check_in_date)}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">入住日期</div><div class="info-value">${formatDateChinese(hotel.check_in_date)}</div></div>`
+    );
   }
   if (hotel.check_out_date && !isFromTemplate('check_out_date')) {
-    compactInfoItems.push(`<div class="info-item"><div class="info-label">离店日期</div><div class="info-value">${formatDateChinese(hotel.check_out_date)}</div></div>`);
+    compactInfoItems.push(
+      `<div class="info-item"><div class="info-label">离店日期</div><div class="info-value">${formatDateChinese(hotel.check_out_date)}</div></div>`
+    );
   }
 
   const infoItems = [...compactInfoItems, ...fullWidthInfoItems];
@@ -461,12 +553,16 @@ export function createHotelCard(hotel, index) {
       <div class="hotel-card-header-main">
         <div class="hotel-name ${hotel.is_favorite ? 'favorite-name' : ''}">${escapeHtml(hotel.name)}</div>
         ${hotel.original_room_type ? `<div class="hotel-original-room">原始房型：${escapeHtml(hotel.original_room_type)}</div>` : ''}
-        ${(hotel.address || hotel.website) ? `
+        ${
+          hotel.address || hotel.website
+            ? `
           <div class="hotel-meta-row">
             ${hotel.address ? `<div class="hotel-address">📍 ${escapeHtml(hotel.address)}</div>` : ''}
             ${hotel.website ? `<div class="hotel-website"><span class="hotel-website-icon">🌐</span><a href="#" data-url="${escapeHtml(hotel.website)}" title="${escapeHtml(hotel.website)}">${escapeHtml(hotel.website)}</a></div>` : ''}
           </div>
-        ` : ''}
+        `
+            : ''
+        }
       </div>
     </div>
 
@@ -491,7 +587,7 @@ export function createHotelCard(hotel, index) {
 }
 
 function cleanupHotelActionArtifacts(container) {
-  container.querySelectorAll('.hotel-actions *').forEach(el => {
+  container.querySelectorAll('.hotel-actions *').forEach((el) => {
     if (!el || !el.textContent) return;
     const txt = el.textContent.trim();
     if (/^[\.·\u2026\u22EF]{1,4}$/.test(txt)) {
@@ -585,7 +681,7 @@ export function handleHotelListChange(event) {
 /* ---- 详情弹窗 ---- */
 
 export function showHotelDetails(id) {
-  const hotel = state.hotels.find(h => idsEqual(h.id, id));
+  const hotel = state.hotels.find((h) => idsEqual(h.id, id));
   if (!hotel) return;
 
   const getField = (label, value, allowMultiline = false) => `
@@ -617,10 +713,19 @@ export function showHotelDetails(id) {
   content.push(getField('入住日期', hotel.check_in_date));
   content.push(getField('离店日期', hotel.check_out_date));
   content.push(getField('住宿天数', hotel.days));
-  content.push(getField('携程评分', hotel.ctrip_score !== undefined && hotel.ctrip_score !== null ? hotel.ctrip_score.toFixed(1) : '-'));
+  content.push(
+    getField(
+      '携程评分',
+      hotel.ctrip_score !== undefined && hotel.ctrip_score !== null
+        ? hotel.ctrip_score.toFixed(1)
+        : '-'
+    )
+  );
   content.push(getField('目的地', hotel.destination));
   content.push(getField('距离', formatDistanceValue(hotel.distance, 'km')));
-  content.push(getField('最近地铁站', formatSubwayInfo(hotel.subway_station, hotel.subway_distance, 'km')));
+  content.push(
+    getField('最近地铁站', formatSubwayInfo(hotel.subway_station, hotel.subway_distance, 'km'))
+  );
   content.push(getField('公共交通时间', formatTransportValue(hotel.transport_time, 'min')));
   content.push(getField('公交路线', hotel.bus_route, true));
   content.push(getField('房间类型', hotel.room_type));
@@ -649,7 +754,7 @@ function toggleSelectAll(checkbox) {
   const hotelRows = document.querySelectorAll('.hotel-table-row');
 
   if (checkbox.checked) {
-    hotelRows.forEach(row => {
+    hotelRows.forEach((row) => {
       const hotelId = getSelectionKey(row.dataset.id);
       state.selectedHotels.add(hotelId);
       row.classList.add('selected');
@@ -658,7 +763,7 @@ function toggleSelectAll(checkbox) {
     });
   } else {
     state.selectedHotels.clear();
-    hotelRows.forEach(row => {
+    hotelRows.forEach((row) => {
       row.classList.remove('selected');
       const cb = row.querySelector('input[type="checkbox"]');
       if (cb) cb.checked = false;
@@ -675,7 +780,11 @@ function setHotelRowSelection(row, checked) {
   if (!hotelId) return;
   const hotelKey = getSelectionKey(hotelId);
   const checkbox = row.querySelector('input[data-action="toggle-selection"]');
-  if (checked) { state.selectedHotels.add(hotelKey); } else { state.selectedHotels.delete(hotelKey); }
+  if (checked) {
+    state.selectedHotels.add(hotelKey);
+  } else {
+    state.selectedHotels.delete(hotelKey);
+  }
   row.classList.toggle('selected', checked);
   if (checkbox) checkbox.checked = checked;
 }
@@ -684,9 +793,10 @@ function toggleHotelRowSelection(row, nextChecked = null) {
   if (!row) return;
   const hotelId = row.dataset.id;
   if (!hotelId) return;
-  const shouldSelect = typeof nextChecked === 'boolean'
-    ? nextChecked
-    : !state.selectedHotels.has(getSelectionKey(hotelId));
+  const shouldSelect =
+    typeof nextChecked === 'boolean'
+      ? nextChecked
+      : !state.selectedHotels.has(getSelectionKey(hotelId));
   setHotelRowSelection(row, shouldSelect);
   syncSelectAllCheckboxState();
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
@@ -701,7 +811,9 @@ function syncSelectAllCheckboxState() {
     selectAllCheckbox.indeterminate = false;
     return;
   }
-  const selectedCount = Array.from(hotelRows).filter(row => state.selectedHotels.has(getSelectionKey(row.dataset.id))).length;
+  const selectedCount = Array.from(hotelRows).filter((row) =>
+    state.selectedHotels.has(getSelectionKey(row.dataset.id))
+  ).length;
   selectAllCheckbox.checked = selectedCount > 0 && selectedCount === hotelRows.length;
   selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < hotelRows.length;
 }
@@ -771,9 +883,10 @@ function getRuleDeleteThresholds() {
 }
 
 function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels()) {
-  const hasActiveRule = thresholds.price !== null
-    || thresholds.subwayDistance !== null
-    || thresholds.transportTime !== null;
+  const hasActiveRule =
+    thresholds.price !== null ||
+    thresholds.subwayDistance !== null ||
+    thresholds.transportTime !== null;
 
   if (!hasActiveRule) {
     return [];
@@ -786,8 +899,12 @@ function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels
 
     return (
       (thresholds.price !== null && Number.isFinite(totalPrice) && totalPrice > thresholds.price) ||
-      (thresholds.subwayDistance !== null && subwayDistance !== null && subwayDistance > thresholds.subwayDistance) ||
-      (thresholds.transportTime !== null && transportTime !== null && transportTime > thresholds.transportTime)
+      (thresholds.subwayDistance !== null &&
+        subwayDistance !== null &&
+        subwayDistance > thresholds.subwayDistance) ||
+      (thresholds.transportTime !== null &&
+        transportTime !== null &&
+        transportTime > thresholds.transportTime)
     );
   });
 }
@@ -945,7 +1062,15 @@ export function applyFilters() {
 }
 
 export function clearFilters() {
-  ['filterName', 'priceSort', 'filterScore', 'filterFavorite', 'filterTemplate', 'filterTransportTime', 'filterSubwayDistance'].forEach(id => {
+  [
+    'filterName',
+    'priceSort',
+    'filterScore',
+    'filterFavorite',
+    'filterTemplate',
+    'filterTransportTime',
+    'filterSubwayDistance'
+  ].forEach((id) => {
     const el = $(id);
     if (el) el.value = '';
   });

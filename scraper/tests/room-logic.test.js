@@ -169,8 +169,14 @@ test('selectMatchingRooms keeps occupancy exact by default and can optionally in
     includeFourPersonRoomsForThreePersonTemplate: true
   });
 
-  assert.deepEqual(strictRooms.map((room) => room.occupancy), [3]);
-  assert.deepEqual(relaxedRooms.map((room) => room.occupancy), [3, 4]);
+  assert.deepEqual(
+    strictRooms.map((room) => room.occupancy),
+    [3]
+  );
+  assert.deepEqual(
+    relaxedRooms.map((room) => room.occupancy),
+    [3, 4]
+  );
 });
 
 test('selectMatchingRooms skips non-cancellable and restricted-free-cancellation room variants', () => {

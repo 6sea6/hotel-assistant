@@ -6,9 +6,7 @@ const {
   isPlainObject,
   splitHotelRecord
 } = require('./shared-module').requireSharedCompareAppModule('hotel-groups.js');
-const {
-  normalizeText
-} = require('../utils');
+const { normalizeText } = require('../utils');
 const {
   getCompareAppStorePath,
   loadCompareAppStore,
@@ -109,26 +107,37 @@ function buildTemplateInfo(template) {
 
 function findExistingHotelIndex(hotels, hotelRecord) {
   return hotels.findIndex((item) => {
-    const sameWebsite = normalizeText(item.website) && normalizeText(item.website) === normalizeText(hotelRecord.website);
+    const sameWebsite =
+      normalizeText(item.website) &&
+      normalizeText(item.website) === normalizeText(hotelRecord.website);
     const sameName = normalizeText(item.name) === normalizeText(hotelRecord.name);
     const sameTemplate = String(item.template_id ?? '') === String(hotelRecord.template_id ?? '');
-    const sameDates = normalizeText(item.check_in_date) === normalizeText(hotelRecord.check_in_date)
-      && normalizeText(item.check_out_date) === normalizeText(hotelRecord.check_out_date);
+    const sameDates =
+      normalizeText(item.check_in_date) === normalizeText(hotelRecord.check_in_date) &&
+      normalizeText(item.check_out_date) === normalizeText(hotelRecord.check_out_date);
     const sameRoomType = normalizeText(item.room_type) === normalizeText(hotelRecord.room_type);
-    const sameOriginalRoomType = normalizeText(item.original_room_type || item.room_type)
-      === normalizeText(hotelRecord.original_room_type || hotelRecord.room_type);
+    const sameOriginalRoomType =
+      normalizeText(item.original_room_type || item.room_type) ===
+      normalizeText(hotelRecord.original_room_type || hotelRecord.room_type);
 
-    return (sameWebsite || (sameName && sameDates && sameTemplate)) && sameRoomType && sameOriginalRoomType;
+    return (
+      (sameWebsite || (sameName && sameDates && sameTemplate)) &&
+      sameRoomType &&
+      sameOriginalRoomType
+    );
   });
 }
 
 function isSameHotelGroup(existingHotel, hotelRecord) {
-  const sameWebsite = normalizeText(existingHotel.website)
-    && normalizeText(existingHotel.website) === normalizeText(hotelRecord.website);
+  const sameWebsite =
+    normalizeText(existingHotel.website) &&
+    normalizeText(existingHotel.website) === normalizeText(hotelRecord.website);
   const sameName = normalizeText(existingHotel.name) === normalizeText(hotelRecord.name);
-  const sameTemplate = String(existingHotel.template_id ?? '') === String(hotelRecord.template_id ?? '');
-  const sameDates = normalizeText(existingHotel.check_in_date) === normalizeText(hotelRecord.check_in_date)
-    && normalizeText(existingHotel.check_out_date) === normalizeText(hotelRecord.check_out_date);
+  const sameTemplate =
+    String(existingHotel.template_id ?? '') === String(hotelRecord.template_id ?? '');
+  const sameDates =
+    normalizeText(existingHotel.check_in_date) === normalizeText(hotelRecord.check_in_date) &&
+    normalizeText(existingHotel.check_out_date) === normalizeText(hotelRecord.check_out_date);
 
   return sameWebsite || (sameName && sameDates && sameTemplate);
 }
@@ -163,23 +172,21 @@ function mergeHotelGroup(existingGroup, nextGroup) {
     : [];
   const operations = [];
 
-  (Array.isArray(nextGroup.rooms) ? nextGroup.rooms : [])
-    .filter(isPlainObject)
-    .forEach((room) => {
-      const nextHotel = sanitizeHotelRecordForStore({
-        ...cloneValue(sanitizedMergedShared),
-        ...cloneValue(room)
-      });
-      const existingIndex = findExistingHotelIndex(mergedHotels, nextHotel);
-      if (existingIndex < 0) {
-        mergedHotels.push(nextHotel);
-        operations.push('inserted');
-        return;
-      }
-
-      mergedHotels[existingIndex] = mergeHotelRecord(mergedHotels[existingIndex], nextHotel);
-      operations.push('updated');
+  (Array.isArray(nextGroup.rooms) ? nextGroup.rooms : []).filter(isPlainObject).forEach((room) => {
+    const nextHotel = sanitizeHotelRecordForStore({
+      ...cloneValue(sanitizedMergedShared),
+      ...cloneValue(room)
     });
+    const existingIndex = findExistingHotelIndex(mergedHotels, nextHotel);
+    if (existingIndex < 0) {
+      mergedHotels.push(nextHotel);
+      operations.push('inserted');
+      return;
+    }
+
+    mergedHotels[existingIndex] = mergeHotelRecord(mergedHotels[existingIndex], nextHotel);
+    operations.push('updated');
+  });
 
   const compactedGroups = compactHotels(mergedHotels);
   return {
@@ -193,8 +200,9 @@ function mergeHotelGroup(existingGroup, nextGroup) {
 
 function replaceHotelsToStore(hotelRecords, options = {}) {
   const incomingGroups = compactHotels(
-    expandStoredHotels(Array.isArray(hotelRecords) ? hotelRecords.filter(Boolean) : [])
-      .map((hotelRecord) => sanitizeHotelRecordForStore(hotelRecord))
+    expandStoredHotels(Array.isArray(hotelRecords) ? hotelRecords.filter(Boolean) : []).map(
+      (hotelRecord) => sanitizeHotelRecordForStore(hotelRecord)
+    )
   );
   if (incomingGroups.length === 0) {
     return [];
@@ -206,7 +214,10 @@ function replaceHotelsToStore(hotelRecords, options = {}) {
   const results = [];
 
   for (const incomingGroup of incomingGroups) {
-    const existingGroupIndex = findExistingHotelGroupIndex(groupedHotels, incomingGroup.shared || {});
+    const existingGroupIndex = findExistingHotelGroupIndex(
+      groupedHotels,
+      incomingGroup.shared || {}
+    );
     const { mergedGroup, operations } = mergeHotelGroup(
       existingGroupIndex >= 0 ? groupedHotels[existingGroupIndex] : null,
       incomingGroup
@@ -235,8 +246,9 @@ function replaceHotelsToStore(hotelRecords, options = {}) {
 
 function overwriteHotelsToStore(hotelRecords, options = {}) {
   const incomingGroups = compactHotels(
-    expandStoredHotels(Array.isArray(hotelRecords) ? hotelRecords.filter(Boolean) : [])
-      .map((hotelRecord) => sanitizeHotelRecordForStore(hotelRecord))
+    expandStoredHotels(Array.isArray(hotelRecords) ? hotelRecords.filter(Boolean) : []).map(
+      (hotelRecord) => sanitizeHotelRecordForStore(hotelRecord)
+    )
   );
   if (incomingGroups.length === 0) {
     return [];
@@ -248,7 +260,10 @@ function overwriteHotelsToStore(hotelRecords, options = {}) {
   const results = [];
 
   for (const incomingGroup of incomingGroups) {
-    const existingGroupIndex = findExistingHotelGroupIndex(groupedHotels, incomingGroup.shared || {});
+    const existingGroupIndex = findExistingHotelGroupIndex(
+      groupedHotels,
+      incomingGroup.shared || {}
+    );
     const sanitizedGroup = {
       shared: sanitizeHotelRecordForStore(incomingGroup.shared || {}),
       rooms: (Array.isArray(incomingGroup.rooms) ? incomingGroup.rooms : [])
@@ -280,7 +295,7 @@ function overwriteHotelsToStore(hotelRecords, options = {}) {
 
 function appendHotelToStore(hotelRecord, options = {}) {
   const expandedHotelRecord = isGroupedHotelEntry(hotelRecord)
-    ? (expandStoredHotels([hotelRecord])[0] || null)
+    ? expandStoredHotels([hotelRecord])[0] || null
     : hotelRecord;
   const normalizedHotelRecord = sanitizeHotelRecordForStore(expandedHotelRecord);
   if (!normalizedHotelRecord) {
@@ -319,8 +334,9 @@ function appendHotelsToStore(hotelRecords, options = {}) {
     return replaceHotelsToStore(hotelRecords, options);
   }
 
-  const records = expandStoredHotels(Array.isArray(hotelRecords) ? hotelRecords.filter(Boolean) : [])
-    .map((hotelRecord) => sanitizeHotelRecordForStore(hotelRecord));
+  const records = expandStoredHotels(
+    Array.isArray(hotelRecords) ? hotelRecords.filter(Boolean) : []
+  ).map((hotelRecord) => sanitizeHotelRecordForStore(hotelRecord));
   if (records.length === 0) {
     return [];
   }

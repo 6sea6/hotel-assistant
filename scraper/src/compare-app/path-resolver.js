@@ -2,11 +2,8 @@ const path = require('path');
 const fs = require('fs');
 const { DEFAULT_COMPARE_APP } = require('../constants');
 const { requireSharedCompareAppModule } = require('./shared-module');
-const {
-  buildCompareAppDataPaths,
-  getExplicitDataFolderOverride,
-  resolveCompareAppDataFolder
-} = requireSharedCompareAppModule('runtime-paths.js');
+const { buildCompareAppDataPaths, getExplicitDataFolderOverride, resolveCompareAppDataFolder } =
+  requireSharedCompareAppModule('runtime-paths.js');
 
 function getWorkspaceFallbackDir() {
   const candidates = [

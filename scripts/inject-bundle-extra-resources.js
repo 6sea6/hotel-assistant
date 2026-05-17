@@ -22,7 +22,7 @@ const addEntry = (entry) => {
 addEntry({
   from: '_bundle/scraper',
   to: 'scraper',
-  filter: ['**/*', '!state/**', '!output/**'],
+  filter: ['**/*', '!state/**', '!output/**']
 });
 
 packageJson.build.extraResources = extraResources;

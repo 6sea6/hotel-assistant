@@ -1,6 +1,12 @@
 const hotelHandlers = require('./hotel-handlers');
 const hotelStorage = require('../hotel-storage');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
+const {
+  allocateUniqueId,
+  getIdKey,
+  idsEqual,
+  normalizeIntegerLikeValue
+} = require('../../shared/id-utils');
 
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 
@@ -26,51 +32,10 @@ function normalizeTemplateRoomCount(value) {
   return Math.max(1, Math.min(3, parsed));
 }
 
-function normalizeIntegerLikeValue(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number' && Number.isInteger(value)) return value;
-
-  const normalizedText = String(value).trim();
-  if (normalizedText === '') return null;
-
-  return /^-?\d+$/.test(normalizedText) ? Number(normalizedText) : normalizedText;
-}
-
-function getIdKey(value) {
-  if (value === null || value === undefined || value === '') return null;
-  return String(value);
-}
-
-function allocateUniqueId(preferredId, usedIds, nextIdState) {
-  const preferredIdKey = getIdKey(preferredId);
-
-  if (preferredIdKey && !usedIds.has(preferredIdKey)) {
-    usedIds.add(preferredIdKey);
-    return preferredId;
-  }
-
-  if (!Number.isInteger(nextIdState.value)) {
-    nextIdState.value = Date.now();
-  }
-
-  while (usedIds.has(String(nextIdState.value))) {
-    nextIdState.value += 1;
-  }
-
-  const allocatedId = nextIdState.value;
-  usedIds.add(String(allocatedId));
-  nextIdState.value += 1;
-  return allocatedId;
-}
-
-function idsEqual(left, right) {
-  return String(left) === String(right);
-}
-
 function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
   const normalized = {
     ...existingTemplate,
-    ...template,
+    ...template
   };
 
   normalized.id = normalizeIntegerLikeValue(normalized.id) ?? normalized.id;
@@ -79,7 +44,8 @@ function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
   normalized.check_in_date = normalized.check_in_date || null;
   normalized.check_out_date = normalized.check_out_date || null;
   normalized.room_count = normalizeTemplateRoomCount(normalized.room_count) || 2;
-  normalized.created_at = normalized.created_at || existingTemplate.created_at || new Date().toISOString();
+  normalized.created_at =
+    normalized.created_at || existingTemplate.created_at || new Date().toISOString();
 
   return normalized;
 }
@@ -92,7 +58,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
     let shouldWriteBack = false;
-    const normalizedTemplates = templates.map(template => {
+    const normalizedTemplates = templates.map((template) => {
       const normalizedTemplate = normalizeTemplatePayload(template);
       if (hasNormalizedValueChanged(template, normalizedTemplate)) {
         shouldWriteBack = true;
@@ -121,7 +87,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   ipcMain.handle('template:add', (event, template) => {
     const store = dataService.getStore();
     const templates = getNormalizedTemplates(store);
-    const usedIds = new Set(templates.map(item => String(item.id)));
+    const usedIds = new Set(templates.map((item) => String(item.id)));
     const nextIdState = { value: Date.now() };
     const newTemplate = normalizeTemplatePayload({
       id: allocateUniqueId(null, usedIds, nextIdState),
@@ -138,7 +104,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   ipcMain.handle('template:update', (event, template) => {
     const store = dataService.getStore();
     const templates = getNormalizedTemplates(store);
-    const index = templates.findIndex(t => idsEqual(t.id, template.id));
+    const index = templates.findIndex((t) => idsEqual(t.id, template.id));
     if (index !== -1) {
       templates[index] = normalizeTemplatePayload(template, templates[index]);
       store.set('templates', templates);
@@ -157,7 +123,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
 
     const store = dataService.getStore();
     const templates = getNormalizedTemplates(store);
-    const afterTemplates = templates.filter(t => !idsEqual(t.id, id));
+    const afterTemplates = templates.filter((t) => !idsEqual(t.id, id));
 
     if (afterTemplates.length === templates.length) {
       return { success: false, error: '未找到要删除的模板' };
@@ -165,7 +131,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
 
     const hotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);
     let affectedHotelCount = 0;
-    const afterHotels = hotels.map(hotel => {
+    const afterHotels = hotels.map((hotel) => {
       if (!idsEqual(hotel.template_id, id) && !idsEqual(hotel.template_info?.id, id)) {
         return hotel;
       }
@@ -207,7 +173,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       const templates = getNormalizedTemplates(store);
       console.log('[模板同步] 当前模板数量:', templates.length);
 
-      const index = templates.findIndex(t => idsEqual(t.id, template.id));
+      const index = templates.findIndex((t) => idsEqual(t.id, template.id));
 
       if (index === -1) {
         throw new Error('模板不存在');
@@ -221,7 +187,12 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       cache.invalidate('templates');
 
       console.log('[模板同步] 模板已更新:', syncedTemplate.name);
-      console.log('[模板同步] 目的地从', oldTemplate.destination, '改为', syncedTemplate.destination);
+      console.log(
+        '[模板同步] 目的地从',
+        oldTemplate.destination,
+        '改为',
+        syncedTemplate.destination
+      );
 
       // 准备模板信息
       const templateInfo = {

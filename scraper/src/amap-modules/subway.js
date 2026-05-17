@@ -41,13 +41,17 @@ function buildSubwayStationCandidates(pois) {
       nearestStationLocation: ''
     };
 
-    if (existing.nearestAnyDistanceMeters === null || distanceMeters < existing.nearestAnyDistanceMeters) {
+    if (
+      existing.nearestAnyDistanceMeters === null ||
+      distanceMeters < existing.nearestAnyDistanceMeters
+    ) {
       existing.nearestAnyDistanceMeters = distanceMeters;
       existing.nearestAnyLocation = poiLocation;
     }
     if (
-      isStationLevelSubwayPoi(poi)
-      && (existing.nearestStationDistanceMeters === null || distanceMeters < existing.nearestStationDistanceMeters)
+      isStationLevelSubwayPoi(poi) &&
+      (existing.nearestStationDistanceMeters === null ||
+        distanceMeters < existing.nearestStationDistanceMeters)
     ) {
       existing.nearestStationDistanceMeters = distanceMeters;
       existing.nearestStationLocation = poiLocation;
@@ -59,13 +63,15 @@ function buildSubwayStationCandidates(pois) {
   return [...grouped.values()]
     .map((item) => {
       const distanceMeters = item.nearestStationDistanceMeters ?? item.nearestAnyDistanceMeters;
-      return distanceMeters === null ? null : {
-        name: item.name,
-        distanceMeters,
-        distanceKm: Number((distanceMeters / 1000).toFixed(1)),
-        stationLocation: item.nearestStationLocation || '',
-        anyLocation: item.nearestAnyLocation || ''
-      };
+      return distanceMeters === null
+        ? null
+        : {
+            name: item.name,
+            distanceMeters,
+            distanceKm: Number((distanceMeters / 1000).toFixed(1)),
+            stationLocation: item.nearestStationLocation || '',
+            anyLocation: item.nearestAnyLocation || ''
+          };
     })
     .filter(Boolean)
     .sort((left, right) => left.distanceMeters - right.distanceMeters);
@@ -74,11 +80,13 @@ function buildSubwayStationCandidates(pois) {
 function pickNearestSubwayStation(pois) {
   const candidate = buildSubwayStationCandidates(pois)[0];
 
-  return candidate ? {
-    name: candidate.name,
-    distanceMeters: candidate.distanceMeters,
-    distanceKm: candidate.distanceKm
-  } : null;
+  return candidate
+    ? {
+        name: candidate.name,
+        distanceMeters: candidate.distanceMeters,
+        distanceKm: candidate.distanceKm
+      }
+    : null;
 }
 
 async function resolveNearestSubwayByWalking(originLocation, candidates, key = DEFAULT_AMAP_KEY) {
@@ -87,28 +95,36 @@ async function resolveNearestSubwayByWalking(originLocation, candidates, key = D
     return null;
   }
 
-  const walkingCandidates = (await Promise.all(shortlist.map(async (candidate) => {
-    const locationsToTry = [...new Set([
-      normalizeText(candidate && candidate.stationLocation),
-      normalizeText(candidate && candidate.anyLocation)
-    ].filter(Boolean))];
+  const walkingCandidates = (
+    await Promise.all(
+      shortlist.map(async (candidate) => {
+        const locationsToTry = [
+          ...new Set(
+            [
+              normalizeText(candidate && candidate.stationLocation),
+              normalizeText(candidate && candidate.anyLocation)
+            ].filter(Boolean)
+          )
+        ];
 
-    for (const destinationLocation of locationsToTry) {
-      const route = await fetchWalkingRoute(originLocation, destinationLocation, key);
-      const distanceMeters = toNumber(route && route.distanceMeters);
-      if (distanceMeters === null || distanceMeters <= 0) {
-        continue;
-      }
+        for (const destinationLocation of locationsToTry) {
+          const route = await fetchWalkingRoute(originLocation, destinationLocation, key);
+          const distanceMeters = toNumber(route && route.distanceMeters);
+          if (distanceMeters === null || distanceMeters <= 0) {
+            continue;
+          }
 
-      return {
-        name: candidate.name,
-        distanceMeters,
-        distanceKm: Number((distanceMeters / 1000).toFixed(1))
-      };
-    }
+          return {
+            name: candidate.name,
+            distanceMeters,
+            distanceKm: Number((distanceMeters / 1000).toFixed(1))
+          };
+        }
 
-    return null;
-  }))).filter(Boolean);
+        return null;
+      })
+    )
+  ).filter(Boolean);
 
   if (walkingCandidates.length === 0) {
     return null;

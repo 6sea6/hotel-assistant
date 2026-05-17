@@ -1,8 +1,5 @@
 const path = require('path');
-const {
-  appendHotelsToStore,
-  getCompareAppStorePath
-} = require('../compare-app-bridge');
+const { appendHotelsToStore, getCompareAppStorePath } = require('../compare-app-bridge');
 const { buildRunSummary, writeLatestRunFile } = require('./run-summary');
 const { normalizeText, readJsonFile } = require('../utils');
 
@@ -27,9 +24,10 @@ function applyReviewedOutput(outputPath, latestRunPath, startedAt, options = {})
     overwriteExistingGroup: Boolean(options.overwriteExistingGroup)
   });
   const finishedAt = new Date().toISOString();
-  const hotelName = normalizeText(outputPayload.hotel && outputPayload.hotel.name)
-    || normalizeText(reviewedHotels[0] && reviewedHotels[0].name)
-    || '';
+  const hotelName =
+    normalizeText(outputPayload.hotel && outputPayload.hotel.name) ||
+    normalizeText(reviewedHotels[0] && reviewedHotels[0].name) ||
+    '';
   const result = {
     success: true,
     startedAt,
@@ -41,10 +39,13 @@ function applyReviewedOutput(outputPath, latestRunPath, startedAt, options = {})
     writeResult
   };
 
-  writeLatestRunFile(latestRunPath, buildRunSummary({
-    ...result,
-    eligibleHotels: reviewedHotels
-  }));
+  writeLatestRunFile(
+    latestRunPath,
+    buildRunSummary({
+      ...result,
+      eligibleHotels: reviewedHotels
+    })
+  );
 
   console.log(JSON.stringify(result, null, 2));
 }

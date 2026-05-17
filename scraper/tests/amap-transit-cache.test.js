@@ -24,60 +24,68 @@ test('getTransitInfo reuses destination and route lookups through task cache', a
     nearestSubway: 0
   };
   const mockedPaths = [];
-  mockedPaths.push(installMock('../src/amap-modules/client', {
-    DEFAULT_TRANSIT_TIME: '09:00',
-    fetchTransitRoute: async () => {
-      calls.transit += 1;
-      return [{
-        distance: 10000,
-        duration: 1200,
-        cost: 5,
-        segments: []
-      }];
-    },
-    fetchWalkingRoute: async () => {
-      calls.walking += 1;
-      return {
-        distanceKm: 9,
-        durationMinutes: 99,
-        hasSubway: false,
-        subwayLineNames: [],
-        subwayDistanceKm: 0,
-        busRoute: '步行'
-      };
-    },
-    geocodeAddress: async (address) => {
-      calls.geocode += 1;
-      const isA = String(address).includes('A');
-      return {
-        source: 'mock-geocode',
-        formattedAddress: address,
-        city: '武汉市',
-        location: isA ? '114.000000,30.000000' : '115.000000,31.000000'
-      };
-    },
-    getDefaultTransitDate: () => '2026-06-01'
-  }));
-  mockedPaths.push(installMock('../src/amap-modules/place', {
-    normalizeHotelGeoForAmap: () => null,
-    resolvePlace: async () => {
-      calls.resolvePlace += 1;
-      return {
-        source: 'mock-place',
-        city: '武汉市',
-        location: '116.000000,32.000000'
-      };
-    }
-  }));
-  mockedPaths.push(installMock('../src/amap-modules/subway', {
-    searchNearestSubwayDistanceKm: async () => {
-      calls.nearestSubway += 1;
-      return {
-        name: '测试地铁站',
-        distanceKm: 0.8
-      };
-    }
-  }));
+  mockedPaths.push(
+    installMock('../src/amap-modules/client', {
+      DEFAULT_TRANSIT_TIME: '09:00',
+      fetchTransitRoute: async () => {
+        calls.transit += 1;
+        return [
+          {
+            distance: 10000,
+            duration: 1200,
+            cost: 5,
+            segments: []
+          }
+        ];
+      },
+      fetchWalkingRoute: async () => {
+        calls.walking += 1;
+        return {
+          distanceKm: 9,
+          durationMinutes: 99,
+          hasSubway: false,
+          subwayLineNames: [],
+          subwayDistanceKm: 0,
+          busRoute: '步行'
+        };
+      },
+      geocodeAddress: async (address) => {
+        calls.geocode += 1;
+        const isA = String(address).includes('A');
+        return {
+          source: 'mock-geocode',
+          formattedAddress: address,
+          city: '武汉市',
+          location: isA ? '114.000000,30.000000' : '115.000000,31.000000'
+        };
+      },
+      getDefaultTransitDate: () => '2026-06-01'
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/amap-modules/place', {
+      normalizeHotelGeoForAmap: () => null,
+      resolvePlace: async () => {
+        calls.resolvePlace += 1;
+        return {
+          source: 'mock-place',
+          city: '武汉市',
+          location: '116.000000,32.000000'
+        };
+      }
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/amap-modules/subway', {
+      searchNearestSubwayDistanceKm: async () => {
+        calls.nearestSubway += 1;
+        return {
+          name: '测试地铁站',
+          distanceKm: 0.8
+        };
+      }
+    })
+  );
 
   try {
     const { getTransitInfo } = require('../src/amap-modules/transit');

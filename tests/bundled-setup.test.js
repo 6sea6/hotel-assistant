@@ -62,10 +62,22 @@ test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
   fs.mkdirSync(homeRoot, { recursive: true });
 
   fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
-  fs.writeFileSync(path.join(scraperDir, 'src', 'edge-session.js'), 'module.exports = {};', 'utf-8');
-  fs.writeFileSync(path.join(scraperDir, 'package.json'), JSON.stringify({ name: 'fixture-scraper' }, null, 2), 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, 'src', 'edge-session.js'),
+    'module.exports = {};',
+    'utf-8'
+  );
+  fs.writeFileSync(
+    path.join(scraperDir, 'package.json'),
+    JSON.stringify({ name: 'fixture-scraper' }, null, 2),
+    'utf-8'
+  );
   fs.writeFileSync(path.join(scraperDir, 'README.md'), '# fixture readme\n', 'utf-8');
-  fs.writeFileSync(path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName), '# bundled guide\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName),
+    '# bundled guide\n',
+    'utf-8'
+  );
   fs.writeFileSync(path.join(scraperDir, 'examples', 'sample.json'), '{}\n', 'utf-8');
 
   const prepared = prepareFullBundle({
@@ -88,18 +100,21 @@ test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
   });
 
   delete require.cache[bundledSetupModulePath];
-  withMockedElectron({
-    app: {
-      isPackaged: true,
-      getPath(name) {
-        assert.equal(name, 'appData');
-        return appDataRoot;
+  withMockedElectron(
+    {
+      app: {
+        isPackaged: true,
+        getPath(name) {
+          assert.equal(name, 'appData');
+          return appDataRoot;
+        }
       }
+    },
+    () => {
+      const bundledSetup = require(bundledSetupModulePath);
+      bundledSetup.setupBundledModules();
     }
-  }, () => {
-    const bundledSetup = require(bundledSetupModulePath);
-    bundledSetup.setupBundledModules();
-  });
+  );
 
   const dataDir = path.join(installDir, '宾馆比较助手');
   const workDir = path.join(dataDir, 'scraper-data');

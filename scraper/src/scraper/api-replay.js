@@ -4,14 +4,15 @@ const { buildMobileUrl, buildUrlOverridesFromTemplate } = require('../ctrip-url'
 const { mergeRoomCandidates, selectBestRoom } = require('./room-logic');
 const { findRoomBlocksFromStructuredText } = require('./html-parser');
 const { MOBILE_HEADERS } = require('./html-parser');
-const { deepClone, formatCompactDate, collectRoomCandidatesFromPayload, extractRoomReplayContext } = require('./structured-extractor');
+const {
+  deepClone,
+  formatCompactDate,
+  collectRoomCandidatesFromPayload,
+  extractRoomReplayContext
+} = require('./structured-extractor');
 
 function extractSpiderErrorCode(payload) {
-  const code = toNumber(
-    payload
-    && payload.data
-    && payload.data.htlSpiderActionErrorCode
-  );
+  const code = toNumber(payload && payload.data && payload.data.htlSpiderActionErrorCode);
   return code !== null ? code : null;
 }
 
@@ -26,9 +27,10 @@ function mergeDefined(target, source) {
     }
 
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const existing = target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
-        ? target[key]
-        : {};
+      const existing =
+        target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
+          ? target[key]
+          : {};
       target[key] = mergeDefined(existing, value);
       continue;
     }
@@ -42,10 +44,12 @@ function mergeDefined(target, source) {
 function shouldInspectNetworkResponse(url, mimeType) {
   const normalizedUrl = String(url || '').toLowerCase();
   const normalizedMimeType = String(mimeType || '').toLowerCase();
-  return normalizedUrl.includes('/restapi/soa2/')
-    || normalizedUrl.includes('room')
-    || normalizedUrl.includes('hotel')
-    || normalizedMimeType.includes('json');
+  return (
+    normalizedUrl.includes('/restapi/soa2/') ||
+    normalizedUrl.includes('room') ||
+    normalizedUrl.includes('hotel') ||
+    normalizedMimeType.includes('json')
+  );
 }
 
 function buildDefaultRoomListSearch(context) {
@@ -98,29 +102,52 @@ function buildRoomListRequestVariants(context) {
 
   const ssrSearch = deepClone(seededSearch);
 
-  ssrSearch.hotelId = context.hotelId || toNumber(ssrSearch.hotelId) || toNumber(detailRequest.hotelId) || 0;
-  ssrSearch.checkIn = context.compactCheckIn || ssrSearch.checkIn || formatCompactDate(detailRequest.checkIn || '');
-  ssrSearch.checkOut = context.compactCheckOut || ssrSearch.checkOut || formatCompactDate(detailRequest.checkOut || '');
+  ssrSearch.hotelId =
+    context.hotelId || toNumber(ssrSearch.hotelId) || toNumber(detailRequest.hotelId) || 0;
+  ssrSearch.checkIn =
+    context.compactCheckIn || ssrSearch.checkIn || formatCompactDate(detailRequest.checkIn || '');
+  ssrSearch.checkOut =
+    context.compactCheckOut ||
+    ssrSearch.checkOut ||
+    formatCompactDate(detailRequest.checkOut || '');
   ssrSearch.roomQuantity = 1;
   ssrSearch.adult = context.adult;
   ssrSearch.child = 0;
-  ssrSearch.childrenAgeList = Array.isArray(ssrSearch.childrenAgeList) ? ssrSearch.childrenAgeList : [];
-  ssrSearch.childInfoItems = Array.isArray(ssrSearch.childInfoItems) ? ssrSearch.childInfoItems : [];
+  ssrSearch.childrenAgeList = Array.isArray(ssrSearch.childrenAgeList)
+    ? ssrSearch.childrenAgeList
+    : [];
+  ssrSearch.childInfoItems = Array.isArray(ssrSearch.childInfoItems)
+    ? ssrSearch.childInfoItems
+    : [];
   ssrSearch.roomListQueryId = ssrSearch.roomListQueryId || `copilot-ssr-${Date.now()}`;
   ssrSearch.scenario = deepClone(detailRequest.scenario || ssrSearch.scenario || {});
-  ssrSearch.location = deepClone(detailRequest.location || ssrSearch.location || { geo: { cityID: 0 } });
+  ssrSearch.location = deepClone(
+    detailRequest.location || ssrSearch.location || { geo: { cityID: 0 } }
+  );
   ssrSearch.filters = Array.isArray(ssrSearch.filters)
     ? ssrSearch.filters
-    : (Array.isArray(detailRequest.filterInfoList) ? deepClone(detailRequest.filterInfoList) : []);
+    : Array.isArray(detailRequest.filterInfoList)
+      ? deepClone(detailRequest.filterInfoList)
+      : [];
   ssrSearch.roomFilters = Array.isArray(ssrSearch.roomFilters) ? ssrSearch.roomFilters : [];
-  ssrSearch.mustShowRoomList = Array.isArray(ssrSearch.mustShowRoomList) ? ssrSearch.mustShowRoomList : [];
-  ssrSearch.meta = mergeDefined({ fgt: -1, roomkey: '', minCurr: '', minPrice: '', roomToken: '' }, deepClone(ssrSearch.meta || {}));
+  ssrSearch.mustShowRoomList = Array.isArray(ssrSearch.mustShowRoomList)
+    ? ssrSearch.mustShowRoomList
+    : [];
+  ssrSearch.meta = mergeDefined(
+    { fgt: -1, roomkey: '', minCurr: '', minPrice: '', roomToken: '' },
+    deepClone(ssrSearch.meta || {})
+  );
 
   const baseSearch = deepClone(ssrSearch);
 
-  baseSearch.hotelId = context.hotelId || toNumber(baseSearch.hotelId) || toNumber(detailRequest.hotelId) || 0;
-  baseSearch.checkIn = context.compactCheckIn || baseSearch.checkIn || formatCompactDate(detailRequest.checkIn || '');
-  baseSearch.checkOut = context.compactCheckOut || baseSearch.checkOut || formatCompactDate(detailRequest.checkOut || '');
+  baseSearch.hotelId =
+    context.hotelId || toNumber(baseSearch.hotelId) || toNumber(detailRequest.hotelId) || 0;
+  baseSearch.checkIn =
+    context.compactCheckIn || baseSearch.checkIn || formatCompactDate(detailRequest.checkIn || '');
+  baseSearch.checkOut =
+    context.compactCheckOut ||
+    baseSearch.checkOut ||
+    formatCompactDate(detailRequest.checkOut || '');
   baseSearch.roomQuantity = 1;
   baseSearch.adult = context.adult;
   baseSearch.child = 0;
@@ -130,13 +157,22 @@ function buildRoomListRequestVariants(context) {
   baseSearch.isRSC = false;
   baseSearch.roomListQueryId = baseSearch.roomListQueryId || `copilot-${Date.now()}`;
   baseSearch.scenario = deepClone(detailRequest.scenario || baseSearch.scenario || {});
-  baseSearch.location = deepClone(detailRequest.location || baseSearch.location || { geo: { cityID: 0 } });
+  baseSearch.location = deepClone(
+    detailRequest.location || baseSearch.location || { geo: { cityID: 0 } }
+  );
   baseSearch.filters = Array.isArray(baseSearch.filters)
     ? baseSearch.filters
-    : (Array.isArray(detailRequest.filterInfoList) ? deepClone(detailRequest.filterInfoList) : []);
+    : Array.isArray(detailRequest.filterInfoList)
+      ? deepClone(detailRequest.filterInfoList)
+      : [];
   baseSearch.roomFilters = Array.isArray(baseSearch.roomFilters) ? baseSearch.roomFilters : [];
-  baseSearch.mustShowRoomList = Array.isArray(baseSearch.mustShowRoomList) ? baseSearch.mustShowRoomList : [];
-  baseSearch.meta = mergeDefined({ fgt: -1, roomkey: '', minCurr: '', minPrice: '', roomToken: '' }, deepClone(baseSearch.meta || {}));
+  baseSearch.mustShowRoomList = Array.isArray(baseSearch.mustShowRoomList)
+    ? baseSearch.mustShowRoomList
+    : [];
+  baseSearch.meta = mergeDefined(
+    { fgt: -1, roomkey: '', minCurr: '', minPrice: '', roomToken: '' },
+    deepClone(baseSearch.meta || {})
+  );
 
   const extras = {
     globalCacheCheckIn: baseSearch.checkIn,
@@ -147,7 +183,10 @@ function buildRoomListRequestVariants(context) {
     globalCacheChildAgeList: [],
     combineRoomPriceMode: 0,
     timeZone: pickFirst(
-      context.detailResponse && context.detailResponse.data && context.detailResponse.data.hotelBaseInfo && context.detailResponse.data.hotelBaseInfo.timeOffset
+      context.detailResponse &&
+        context.detailResponse.data &&
+        context.detailResponse.data.hotelBaseInfo &&
+        context.detailResponse.data.hotelBaseInfo.timeOffset
         ? String(Math.round(Number(context.detailResponse.data.hotelBaseInfo.timeOffset) / 3600))
         : null,
       '8'
@@ -192,11 +231,13 @@ function buildRoomListRequestVariants(context) {
     `https://m.ctrip.com/restapi/soa2/33278/h5-json/${operation}`
   ];
 
-  return endpoints.flatMap((endpoint) => bodies.map((body, index) => ({
-    endpoint,
-    body,
-    variantName: `${endpoint.includes('/h5-json/') ? 'h5-json' : 'plain'}-${index + 1}`
-  })));
+  return endpoints.flatMap((endpoint) =>
+    bodies.map((body, index) => ({
+      endpoint,
+      body,
+      variantName: `${endpoint.includes('/h5-json/') ? 'h5-json' : 'plain'}-${index + 1}`
+    }))
+  );
 }
 
 async function captureRoomCandidatesDirect(url, template, parsedSources) {
@@ -210,7 +251,8 @@ async function captureRoomCandidatesDirect(url, template, parsedSources) {
     };
   }
 
-  const referer = context.mobileUrl || buildMobileUrl(url, buildUrlOverridesFromTemplate(template)) || url;
+  const referer =
+    context.mobileUrl || buildMobileUrl(url, buildUrlOverridesFromTemplate(template)) || url;
   const attempts = [];
   const variants = buildRoomListRequestVariants(context);
   const spiderErrorCodes = new Set();
@@ -289,9 +331,10 @@ async function captureRoomCandidatesDirect(url, template, parsedSources) {
     trackedUrls: [],
     attempts,
     spiderErrorCodes: [...spiderErrorCodes],
-    error: spiderErrorCodes.size > 0
-      ? `direct room-list replay blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
-      : 'direct room-list replay completed but did not find a matching priced room'
+    error:
+      spiderErrorCodes.size > 0
+        ? `direct room-list replay blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
+        : 'direct room-list replay completed but did not find a matching priced room'
   };
 }
 

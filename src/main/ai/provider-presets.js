@@ -19,11 +19,7 @@ const AI_PROVIDER_PRESETS = Object.freeze({
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
     model: 'deepseek-v4-pro',
-    modelOptions: [
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
-      'deepseek-chat'
-    ]
+    modelOptions: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat']
   },
   qwen: {
     id: 'qwen',
@@ -45,13 +41,7 @@ const AI_PROVIDER_PRESETS = Object.freeze({
     name: '智谱',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-5.1',
-    modelOptions: [
-      'glm-5.1',
-      'glm-5',
-      'glm-4.7',
-      'glm-4.6',
-      'glm-4.5-air'
-    ]
+    modelOptions: ['glm-5.1', 'glm-5', 'glm-4.7', 'glm-4.6', 'glm-4.5-air']
   },
   mimo: {
     id: 'mimo',
@@ -76,7 +66,9 @@ const DEFAULT_AI_PROVIDER_ID = 'deepseek';
 const DEFAULT_AI_TEMPERATURE = 0.2;
 
 function normalizeProviderId(provider) {
-  const normalized = String(provider || '').trim().toLowerCase();
+  const normalized = String(provider || '')
+    .trim()
+    .toLowerCase();
   return AI_PROVIDER_PRESETS[normalized] ? normalized : DEFAULT_AI_PROVIDER_ID;
 }
 
@@ -96,7 +88,9 @@ function getDefaultAiProviderConfig(provider = DEFAULT_AI_PROVIDER_ID) {
 }
 
 function normalizeBaseUrl(baseUrl, fallbackBaseUrl) {
-  const normalized = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const normalized = String(baseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
   return normalized || fallbackBaseUrl;
 }
 
@@ -106,7 +100,9 @@ function normalizeProviderBaseUrl(provider, baseUrl, fallbackBaseUrl) {
     return fallbackBaseUrl;
   }
   if (provider === 'mimo') {
-    const regionMatch = normalizedBaseUrl.match(/^https:\/\/(token-plan-(?:cn|sgp|ams)\.xiaomimimo\.com)\/v1$/i);
+    const regionMatch = normalizedBaseUrl.match(
+      /^https:\/\/(token-plan-(?:cn|sgp|ams)\.xiaomimimo\.com)\/v1$/i
+    );
     if (regionMatch) {
       return `https://${regionMatch[1]}/anthropic`;
     }
@@ -121,9 +117,7 @@ function normalizeProviderModel(provider, model, fallbackModel) {
     return normalizedModel;
   }
 
-  return normalizedModel
-    .replace(/^xiaomi\//i, '')
-    .toLowerCase();
+  return normalizedModel.replace(/^xiaomi\//i, '').toLowerCase();
 }
 
 function normalizeAiProviderConfig(config = {}, previousConfig = {}) {
@@ -136,7 +130,11 @@ function normalizeAiProviderConfig(config = {}, previousConfig = {}) {
 
   return {
     provider,
-    baseUrl: normalizeProviderBaseUrl(provider, config.baseUrl ?? previousConfig.baseUrl, preset.baseUrl),
+    baseUrl: normalizeProviderBaseUrl(
+      provider,
+      config.baseUrl ?? previousConfig.baseUrl,
+      preset.baseUrl
+    ),
     protocol: preset.protocol || 'openai',
     model: normalizeProviderModel(provider, config.model || previousConfig.model, preset.model),
     modelOptions: preset.modelOptions.slice(),

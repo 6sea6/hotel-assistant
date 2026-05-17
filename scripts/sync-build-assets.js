@@ -16,8 +16,9 @@ const VERIFY_DEFAULT_ICON_PATH = path.join(BUILD_DIR, 'verify-default-icon.png')
 const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256];
 
 function findSourceImage() {
-  const candidates = ['png', 'jpg', 'jpeg', 'bmp', 'webp']
-    .map((extension) => path.join(ASSETS_DIR, `app-icon.${extension}`));
+  const candidates = ['png', 'jpg', 'jpeg', 'bmp', 'webp'].map((extension) =>
+    path.join(ASSETS_DIR, `app-icon.${extension}`)
+  );
   return candidates.find((candidate) => fs.existsSync(candidate)) || '';
 }
 
@@ -51,10 +52,10 @@ function writeBmp24({ width, height, rgbaBuffer, outputPath }) {
 
   for (let y = 0; y < height; y += 1) {
     const sourceY = height - 1 - y;
-    const rowOffset = 54 + (y * rowSize);
+    const rowOffset = 54 + y * rowSize;
     for (let x = 0; x < width; x += 1) {
-      const sourceOffset = ((sourceY * width) + x) * 4;
-      const targetOffset = rowOffset + (x * 3);
+      const sourceOffset = (sourceY * width + x) * 4;
+      const targetOffset = rowOffset + x * 3;
       bmp[targetOffset] = rgbaBuffer[sourceOffset + 2];
       bmp[targetOffset + 1] = rgbaBuffer[sourceOffset + 1];
       bmp[targetOffset + 2] = rgbaBuffer[sourceOffset];

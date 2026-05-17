@@ -40,10 +40,7 @@ test('workspace and explicit overrides are normalized through shared runtime pat
       env,
       fallbackWorkspaceDir: 'E:/实验/1/宾馆比较助手'
     }),
-    [
-      path.resolve('E:/实验/custom-workspace'),
-      path.resolve('E:/实验/1/宾馆比较助手')
-    ]
+    [path.resolve('E:/实验/custom-workspace'), path.resolve('E:/实验/1/宾馆比较助手')]
   );
 });
 
@@ -147,7 +144,11 @@ test('resolveCompareAppDataFolder respects explicit, workspace, pointer, install
 
 test('shared bundled resource paths keep prompt and scraper locations stable', () => {
   const resourcesPath = path.join('E:/实验', 'hotel-comparison-app', 'resources');
-  const appDataPath = path.join('E:/实验', 'hotel-comparison-app', DEFAULT_COMPARE_APP_FILES.appFolderName);
+  const appDataPath = path.join(
+    'E:/实验',
+    'hotel-comparison-app',
+    DEFAULT_COMPARE_APP_FILES.appFolderName
+  );
 
   const resourcePaths = getBundledResourcePaths({
     resourcesPath,
@@ -156,8 +157,14 @@ test('shared bundled resource paths keep prompt and scraper locations stable', (
 
   assert.equal(resourcePaths.scraperPath, path.join(resourcesPath, 'scraper'));
   assert.equal(resourcePaths.bundledWorkDir, path.join(appDataPath, 'scraper-data'));
-  assert.equal(resourcePaths.unifiedPromptSourcePath, path.join(resourcesPath, 'scraper', '00-后续AI统一提示词.md'));
-  assert.equal(resourcePaths.unifiedPromptTargetPath, path.join(appDataPath, 'scraper-data', '00-后续AI统一提示词.md'));
+  assert.equal(
+    resourcePaths.unifiedPromptSourcePath,
+    path.join(resourcesPath, 'scraper', '00-后续AI统一提示词.md')
+  );
+  assert.equal(
+    resourcePaths.unifiedPromptTargetPath,
+    path.join(appDataPath, 'scraper-data', '00-后续AI统一提示词.md')
+  );
 
   const compareAppPaths = buildCompareAppDataPaths({
     dataFolder: appDataPath,
@@ -180,7 +187,11 @@ test('shared bundled scraper detection only depends on bundled cli presence', (t
   assert.equal(isBundledScraperAvailable(resourcePaths), false);
 
   fs.mkdirSync(path.join(resourcePaths.scraperPath, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(resourcePaths.scraperPath, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    path.join(resourcePaths.scraperPath, 'src', 'cli.js'),
+    'module.exports = {};',
+    'utf-8'
+  );
 
   assert.equal(isBundledScraperAvailable(resourcePaths), true);
 });

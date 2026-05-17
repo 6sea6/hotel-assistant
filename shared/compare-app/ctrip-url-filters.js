@@ -13,9 +13,9 @@ const SORT_MODE_TO_FILTER = Object.freeze({
   review_high: '17~6*17*6'
 });
 
-const FILTER_TO_SORT_MODE = Object.freeze(Object.fromEntries(
-  Object.entries(SORT_MODE_TO_FILTER).map(([mode, filter]) => [filter, mode])
-));
+const FILTER_TO_SORT_MODE = Object.freeze(
+  Object.fromEntries(Object.entries(SORT_MODE_TO_FILTER).map(([mode, filter]) => [filter, mode]))
+);
 
 const FREE_CANCEL_FILTER = '23~10*23*10';
 
@@ -25,9 +25,11 @@ const REVIEW_COUNT_TO_FILTER = Object.freeze({
   500: '25~7*25*500'
 });
 
-const FILTER_TO_REVIEW_COUNT = Object.freeze(Object.fromEntries(
-  Object.entries(REVIEW_COUNT_TO_FILTER).map(([count, filter]) => [filter, Number(count)])
-));
+const FILTER_TO_REVIEW_COUNT = Object.freeze(
+  Object.fromEntries(
+    Object.entries(REVIEW_COUNT_TO_FILTER).map(([count, filter]) => [filter, Number(count)])
+  )
+);
 
 const SCORE_MIN_TO_FILTER = Object.freeze({
   4: '6~3*6*3',
@@ -35,9 +37,11 @@ const SCORE_MIN_TO_FILTER = Object.freeze({
   4.7: '6~11*6*11'
 });
 
-const FILTER_TO_SCORE_MIN = Object.freeze(Object.fromEntries(
-  Object.entries(SCORE_MIN_TO_FILTER).map(([score, filter]) => [filter, Number(score)])
-));
+const FILTER_TO_SCORE_MIN = Object.freeze(
+  Object.fromEntries(
+    Object.entries(SCORE_MIN_TO_FILTER).map(([score, filter]) => [filter, Number(score)])
+  )
+);
 
 const CONTROLLED_SETTING_KEYS = Object.freeze([
   'priceMin',
@@ -90,7 +94,11 @@ function toIntegerOrNull(value, options = {}) {
 }
 
 function normalizePriceMax(value) {
-  if (String(value || '').trim().toLowerCase() === 'max') {
+  if (
+    String(value || '')
+      .trim()
+      .toLowerCase() === 'max'
+  ) {
     return 'max';
   }
 
@@ -98,9 +106,7 @@ function normalizePriceMax(value) {
 }
 
 function normalizeStarLevels(value) {
-  const values = Array.isArray(value)
-    ? value
-    : String(value || '').split(/[,，;；\s|]+/);
+  const values = Array.isArray(value) ? value : String(value || '').split(/[,，;；\s|]+/);
   const seen = new Set();
   const levels = [];
 
@@ -137,13 +143,21 @@ function normalizeCtripScoreMin(value) {
 
 function normalizeCtripUrlFilterSettings(settings = {}) {
   return {
-    priceMin: hasOwn(settings, 'priceMin') ? toIntegerOrNull(settings.priceMin, { min: 0 }) : undefined,
+    priceMin: hasOwn(settings, 'priceMin')
+      ? toIntegerOrNull(settings.priceMin, { min: 0 })
+      : undefined,
     priceMax: hasOwn(settings, 'priceMax') ? normalizePriceMax(settings.priceMax) : undefined,
-    starLevels: hasOwn(settings, 'starLevels') ? normalizeStarLevels(settings.starLevels) : undefined,
+    starLevels: hasOwn(settings, 'starLevels')
+      ? normalizeStarLevels(settings.starLevels)
+      : undefined,
     sortMode: hasOwn(settings, 'sortMode') ? normalizeSortMode(settings.sortMode) : undefined,
     freeCancel: hasOwn(settings, 'freeCancel') ? Boolean(settings.freeCancel) : undefined,
-    reviewCountMin: hasOwn(settings, 'reviewCountMin') ? normalizeReviewCountMin(settings.reviewCountMin) : undefined,
-    ctripScoreMin: hasOwn(settings, 'ctripScoreMin') ? normalizeCtripScoreMin(settings.ctripScoreMin) : undefined
+    reviewCountMin: hasOwn(settings, 'reviewCountMin')
+      ? normalizeReviewCountMin(settings.reviewCountMin)
+      : undefined,
+    ctripScoreMin: hasOwn(settings, 'ctripScoreMin')
+      ? normalizeCtripScoreMin(settings.ctripScoreMin)
+      : undefined
   };
 }
 
@@ -193,9 +207,8 @@ function readKnownFilterSettings(parts = []) {
     const priceMatch = part.match(PRICE_FILTER_PATTERN);
     if (priceMatch) {
       knownSettings.priceMin = Number(priceMatch[1]);
-      knownSettings.priceMax = priceMatch[2].toLowerCase() === 'max'
-        ? 'max'
-        : Number(priceMatch[2]);
+      knownSettings.priceMax =
+        priceMatch[2].toLowerCase() === 'max' ? 'max' : Number(priceMatch[2]);
       detectedKnownFilterKeys.add('priceMin');
       detectedKnownFilterKeys.add('priceMax');
       continue;
@@ -260,7 +273,8 @@ function parseCtripListUrl(rawUrl) {
     }
   });
 
-  const { knownSettings, unknownFilters, detectedKnownFilterKeys } = readKnownFilterSettings(listFilterParts);
+  const { knownSettings, unknownFilters, detectedKnownFilterKeys } =
+    readKnownFilterSettings(listFilterParts);
 
   return {
     originalUrl,
@@ -276,7 +290,10 @@ function parseCtripListUrl(rawUrl) {
 }
 
 function shouldRemoveExistingFilter(part, settings = {}) {
-  if ((hasOwn(settings, 'priceMin') || hasOwn(settings, 'priceMax')) && PRICE_FILTER_PATTERN.test(part)) {
+  if (
+    (hasOwn(settings, 'priceMin') || hasOwn(settings, 'priceMax')) &&
+    PRICE_FILTER_PATTERN.test(part)
+  ) {
     return true;
   }
   if (hasOwn(settings, 'starLevels') && isStarFilter(part)) {
@@ -349,14 +366,15 @@ function buildKnownFilterParts(rawSettings = {}) {
 }
 
 function mergeCtripFilters(existingFilters = [], settings = {}) {
-  const normalizedExisting = (Array.isArray(existingFilters) ? existingFilters : splitListFilters(existingFilters))
+  const normalizedExisting = (
+    Array.isArray(existingFilters) ? existingFilters : splitListFilters(existingFilters)
+  )
     .map(normalizeFilterPart)
     .filter(Boolean);
-  const preserved = normalizedExisting.filter((part) => !shouldRemoveExistingFilter(part, settings));
-  return [
-    ...preserved,
-    ...buildKnownFilterParts(settings)
-  ];
+  const preserved = normalizedExisting.filter(
+    (part) => !shouldRemoveExistingFilter(part, settings)
+  );
+  return [...preserved, ...buildKnownFilterParts(settings)];
 }
 
 function buildCtripListUrl(baseUrl, settings = {}) {

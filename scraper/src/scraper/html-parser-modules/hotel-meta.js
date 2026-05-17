@@ -26,7 +26,10 @@ function extractHotelMetaFromHtml(html, url) {
   const jsonName = pickFirst(
     extractFirstMatch(html, /"nameInfo":\{"name":"([^"]+?)"/),
     extractFirstMatch(html, /"hotelDescriptionInfo":\{"hotelDescTitle":"[^\"]+","name":"([^"]+?)"/),
-    extractFirstMatch(html, /"seoFooterModule":\{"description":\[\{"text":"携程网为您推荐"\},\{"text":"([^"]+?)"/)
+    extractFirstMatch(
+      html,
+      /"seoFooterModule":\{"description":\[\{"text":"携程网为您推荐"\},\{"text":"([^"]+?)"/
+    )
   );
   const headingName = pickFirst(headingLabel, headingText);
   const title = pickFirst(headingName, normalizedTitle, jsonName, seoName, titleTag);
@@ -37,7 +40,10 @@ function extractHotelMetaFromHtml(html, url) {
     jsonName,
     normalizedTitle,
     extractFirstMatch(mergedText, /#\s*([^#]+?)\s+显示地图/),
-    extractFirstMatch(mergedText, /([\u4e00-\u9fa5A-Za-z0-9（）()·\-]{3,80}(?:酒店|宾馆|客栈|公寓|旅舍|Hotel))/),
+    extractFirstMatch(
+      mergedText,
+      /([\u4e00-\u9fa5A-Za-z0-9（）()·\-]{3,80}(?:酒店|宾馆|客栈|公寓|旅舍|Hotel))/
+    ),
     seoName,
     title.replace(/[-|_].*$/, '').trim()
   );
@@ -67,23 +73,47 @@ function extractHotelScoreFromHtml(html, mergedText = '', description = '') {
   const $ = cheerio.load(source);
 
   const selectorScore = pickFirst(
-    toNumber(normalizeText($('[class*="reviewScores_reviewOverallScores-currentScore"]').first().text())),
+    toNumber(
+      normalizeText($('[class*="reviewScores_reviewOverallScores-currentScore"]').first().text())
+    ),
     toNumber(normalizeText($('[class*="reviewTop_reviewTop-score"]').first().text())),
     toNumber(normalizeText($('[aria-label*="out of 10"]').first().attr('aria-label'))),
-    toNumber(normalizeText($('[aria-label*="Rated"]').closest('div').find('[aria-hidden="true"]').first().text()))
+    toNumber(
+      normalizeText(
+        $('[aria-label*="Rated"]').closest('div').find('[aria-hidden="true"]').first().text()
+      )
+    )
   );
 
   return pickFirst(
     selectorScore,
-    toNumber(extractFirstMatch(source, /reviewScores_reviewOverallScores-currentScore[^>]*>\s*([0-9]\.[0-9])\s*</i)),
-    toNumber(extractFirstMatch(source, /reviewTop_reviewTop-score(?:-ctrip)?[^>]*>\s*([0-9]\.[0-9])\s*</i)),
+    toNumber(
+      extractFirstMatch(
+        source,
+        /reviewScores_reviewOverallScores-currentScore[^>]*>\s*([0-9]\.[0-9])\s*</i
+      )
+    ),
+    toNumber(
+      extractFirstMatch(source, /reviewTop_reviewTop-score(?:-ctrip)?[^>]*>\s*([0-9]\.[0-9])\s*</i)
+    ),
     toNumber(extractFirstMatch(source, /aria-label="([0-9]\.[0-9]) out of 10"/i)),
-    toNumber(extractFirstMatch(source, /"hotelComment"\s*:\s*\{.*?"score"\s*:\s*"([0-9]\.[0-9])"/i)),
+    toNumber(
+      extractFirstMatch(source, /"hotelComment"\s*:\s*\{.*?"score"\s*:\s*"([0-9]\.[0-9])"/i)
+    ),
     toNumber(extractFirstMatch(source, /"ratingAll"\s*:\s*"([0-9]\.[0-9])"/i)),
-    toNumber(extractFirstMatch(source, /"commentStaticInfo"\s*:\s*\{.*?"ratingAll"\s*:\s*"([0-9]\.[0-9])"/i)),
-    toNumber(extractFirstMatch(source, /"commentRating"\s*:\s*\{.*?"ratingAll"\s*:\s*"([0-9]\.[0-9])"/i)),
+    toNumber(
+      extractFirstMatch(
+        source,
+        /"commentStaticInfo"\s*:\s*\{.*?"ratingAll"\s*:\s*"([0-9]\.[0-9])"/i
+      )
+    ),
+    toNumber(
+      extractFirstMatch(source, /"commentRating"\s*:\s*\{.*?"ratingAll"\s*:\s*"([0-9]\.[0-9])"/i)
+    ),
     toNumber(extractFirstMatch(source, /"score"\s*:\s*"([0-9]\.[0-9])"\s*,\s*"scoreDescription"/i)),
-    toNumber(extractFirstMatch(normalizedText, /([0-9]\.[0-9])\s*(?:超棒|很好|不错|棒|分|点评|条评论)/)),
+    toNumber(
+      extractFirstMatch(normalizedText, /([0-9]\.[0-9])\s*(?:超棒|很好|不错|棒|分|点评|条评论)/)
+    ),
     toNumber(extractFirstMatch(description, /([0-9]\.[0-9])/))
   );
 }
@@ -124,15 +154,19 @@ function buildNearestSubwayFromPlaceInfo(placeInfo) {
     return null;
   }
 
-  const wholePoiCandidates = (Array.isArray(placeInfo.wholePoiInfoList) ? placeInfo.wholePoiInfoList : [])
+  const wholePoiCandidates = (
+    Array.isArray(placeInfo.wholePoiInfoList) ? placeInfo.wholePoiInfoList : []
+  )
     .filter((item) => normalizeText(item && item.type) === 'metro')
-    .map((item) => buildNearestSubwayCandidate(
-      (item && (item.poiName || item.desc)) || '',
-      pickFirst(
-        toNumber(item && item.walkDriveDistance),
-        parseDistanceMeters(item && item.distance)
+    .map((item) =>
+      buildNearestSubwayCandidate(
+        (item && (item.poiName || item.desc)) || '',
+        pickFirst(
+          toNumber(item && item.walkDriveDistance),
+          parseDistanceMeters(item && item.distance)
+        )
       )
-    ))
+    )
     .filter(Boolean)
     .sort((left, right) => left.distanceMeters - right.distanceMeters);
 
@@ -151,10 +185,7 @@ function buildNearestSubwayFromPlaceInfo(placeInfo) {
           normalizeText(item && item.poiName),
           normalizeText(item && item.desc)
         ),
-        pickFirst(
-          parseDistanceMeters(item && item.distance),
-          parseDistanceMeters(desc)
-        )
+        pickFirst(parseDistanceMeters(item && item.distance), parseDistanceMeters(desc))
       );
     })
     .filter(Boolean)
@@ -164,9 +195,11 @@ function buildNearestSubwayFromPlaceInfo(placeInfo) {
 }
 
 function extractNearestSubwayFromEncodedTraffic(source) {
-  const candidates = [...String(source || '').matchAll(
-    /positionShowText(?:&quot;|"):\s*(?:&quot;|")地铁[:：]\s*([^"&<]+?地铁站)(?:&quot;|")[\s\S]{0,160}?walkDriveDistance(?:&quot;|"):\s*(?:&quot;|")([0-9.]+)/g
-  )]
+  const candidates = [
+    ...String(source || '').matchAll(
+      /positionShowText(?:&quot;|"):\s*(?:&quot;|")地铁[:：]\s*([^"&<]+?地铁站)(?:&quot;|")[\s\S]{0,160}?walkDriveDistance(?:&quot;|"):\s*(?:&quot;|")([0-9.]+)/g
+    )
+  ]
     .map((match) => buildNearestSubwayCandidate(match[1], match[2]))
     .filter(Boolean)
     .sort((left, right) => left.distanceMeters - right.distanceMeters);
@@ -175,9 +208,11 @@ function extractNearestSubwayFromEncodedTraffic(source) {
 }
 
 function extractNearestSubwayFromVisibleTraffic(source) {
-  const candidates = [...String(source || '').matchAll(
-    /地铁[:：]\s*([^<（()]+?地铁站)[\s\S]{0,120}?（([0-9.]+)(公里|千米|米)）/g
-  )]
+  const candidates = [
+    ...String(source || '').matchAll(
+      /地铁[:：]\s*([^<（()]+?地铁站)[\s\S]{0,120}?（([0-9.]+)(公里|千米|米)）/g
+    )
+  ]
     .map((match) => buildNearestSubwayCandidate(match[1], `${match[2]}${match[3]}`))
     .filter(Boolean)
     .sort((left, right) => left.distanceMeters - right.distanceMeters);
@@ -187,8 +222,9 @@ function extractNearestSubwayFromVisibleTraffic(source) {
 
 function extractGeoInfoFromHtml(html) {
   const source = String(html || '');
-  const positionInfo = extractEmbeddedObject(source, '"hotelPositionInfo":')
-    || extractEmbeddedObject(source, '\\"hotelPositionInfo\\":');
+  const positionInfo =
+    extractEmbeddedObject(source, '"hotelPositionInfo":') ||
+    extractEmbeddedObject(source, '\\"hotelPositionInfo\\":');
   const normalized = normalizeText(source);
   const address = pickFirst(
     positionInfo && positionInfo.address,
@@ -210,9 +246,10 @@ function extractGeoInfoFromHtml(html) {
     extractFirstMatch(normalized, /"hotelPositionInfo":\{.*?"mapType":"([^"]+)"/),
     extractFirstMatch(normalized, /\\"hotelPositionInfo\\":\{.*?\\"mapType\\":\\"([^"]+)\\"/)
   );
-  const nearestSubway = buildNearestSubwayFromPlaceInfo(positionInfo && positionInfo.placeInfo)
-    || extractNearestSubwayFromEncodedTraffic(source)
-    || extractNearestSubwayFromVisibleTraffic(source);
+  const nearestSubway =
+    buildNearestSubwayFromPlaceInfo(positionInfo && positionInfo.placeInfo) ||
+    extractNearestSubwayFromEncodedTraffic(source) ||
+    extractNearestSubwayFromVisibleTraffic(source);
 
   if (!address && !lng && !lat) {
     return null;

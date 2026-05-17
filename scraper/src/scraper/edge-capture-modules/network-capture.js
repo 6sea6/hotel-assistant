@@ -2,7 +2,11 @@ const fs = require('fs');
 const { normalizeText } = require('../../utils');
 const { parseHotelIdFromUrl } = require('../../ctrip-url');
 const { mergeRoomCandidates, selectBestRoom, selectMatchingRooms } = require('../room-logic');
-const { findRoomBlocksFromStructuredText, findRoomBlocksFromHtml, safeJsonParse } = require('../html-parser');
+const {
+  findRoomBlocksFromStructuredText,
+  findRoomBlocksFromHtml,
+  safeJsonParse
+} = require('../html-parser');
 const { collectRoomCandidatesFromPayload } = require('../structured-extractor');
 const { extractSpiderErrorCode, shouldInspectNetworkResponse } = require('../api-replay');
 const { killProcessTree, findEdgeExecutable } = require('../process-utils');
@@ -33,7 +37,9 @@ function shouldAttemptSupplementalCapture(roomBlocks, selectedRoom, template, op
     return true;
   }
 
-  const hiddenOrLockedCount = roomBlocks.filter((room) => room.price === null || room.price_locked).length;
+  const hiddenOrLockedCount = roomBlocks.filter(
+    (room) => room.price === null || room.price_locked
+  ).length;
   return Boolean(options.autoEdge) && hiddenOrLockedCount > 0 && eligibleRooms.length < 3;
 }
 
@@ -42,15 +48,14 @@ function shouldPreferEdgeCapture(options = {}) {
     return false;
   }
 
-  const edgeSession = options.edgeSession && typeof options.edgeSession === 'object'
-    ? options.edgeSession
-    : {};
+  const edgeSession =
+    options.edgeSession && typeof options.edgeSession === 'object' ? options.edgeSession : {};
 
   return Boolean(
-    options.autoEdge
-    || edgeSession.debuggerUrl
-    || edgeSession.debuggingPort
-    || edgeSession.userDataDir
+    options.autoEdge ||
+    edgeSession.debuggerUrl ||
+    edgeSession.debuggingPort ||
+    edgeSession.userDataDir
   );
 }
 
@@ -84,10 +89,12 @@ function collectRoomCandidatesFromDomPayload(payload) {
     candidates.push(...findRoomBlocksFromHtml(payload.bodyHtml));
   }
 
-  return mergeRoomCandidates(candidates.map((candidate) => ({
-    ...candidate,
-    source: candidate.source || 'edge-dom'
-  })));
+  return mergeRoomCandidates(
+    candidates.map((candidate) => ({
+      ...candidate,
+      source: candidate.source || 'edge-dom'
+    }))
+  );
 }
 
 async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions = {}) {
@@ -109,7 +116,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         roomBlocks: [],
         selectedRoom: null,
         trackedUrls: [],
-        error: 'edge-cdp fallback unavailable: global WebSocket is not present and ws package not installed'
+        error:
+          'edge-cdp fallback unavailable: global WebSocket is not present and ws package not installed'
       };
     }
   }
@@ -145,7 +153,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         if (!edgeExecutable) {
           throw _error;
         }
-        const launched = await launchManagedEdgeSession(edgeExecutable, sessionOptions, sessionOptions.debuggingPort);
+        const launched = await launchManagedEdgeSession(
+          edgeExecutable,
+          sessionOptions,
+          sessionOptions.debuggingPort
+        );
         browser = launched.browser;
         userDataDir = launched.userDataDir;
         shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
@@ -172,7 +184,9 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         targetInitialUrl = matchingTarget.url || '';
         targetMode = 'reused-match';
       } else {
-        const blankTarget = targets.find((t) => t.type === 'page' && (!t.url || t.url === 'about:blank'));
+        const blankTarget = targets.find(
+          (t) => t.type === 'page' && (!t.url || t.url === 'about:blank')
+        );
         if (blankTarget) {
           targetId = blankTarget.targetId;
           targetInitialUrl = blankTarget.url || '';
@@ -198,7 +212,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       };
     }
 
-    const attachedTarget = await connection.send('Target.attachToTarget', { targetId, flatten: true });
+    const attachedTarget = await connection.send('Target.attachToTarget', {
+      targetId,
+      flatten: true
+    });
     sessionId = attachedTarget && attachedTarget.sessionId;
     if (!sessionId) {
       return {
@@ -221,7 +238,9 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     await connection.send('Runtime.enable', {}, sessionId);
 
     if (targetMode === 'reused-match') {
-      console.log(`[edge-cdp] reusing matched tab and navigating: ${targetInitialUrl || 'about:blank'} -> ${url}`);
+      console.log(
+        `[edge-cdp] reusing matched tab and navigating: ${targetInitialUrl || 'about:blank'} -> ${url}`
+      );
       const removeListener = connection.addListener((message) => {
         if (message.sessionId !== sessionId || message.method !== 'Network.responseReceived') {
           return;
@@ -248,14 +267,17 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       });
 
       await connection.send('Page.navigate', { url }, sessionId);
-      await Promise.race([
-        loadEvent,
-        new Promise((resolve) => setTimeout(resolve, 15000))
-      ]);
-      await waitForSessionCondition(connection, sessionId, `(() => {
+      await Promise.race([loadEvent, new Promise((resolve) => setTimeout(resolve, 15000))]);
+      await waitForSessionCondition(
+        connection,
+        sessionId,
+        `(() => {
         const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
         return document.readyState === 'complete' && /(房型|展示额外|更多房型|登录看低价|¥|每晚)/.test(bodyText);
-      })()`, 4500, 250);
+      })()`,
+        4500,
+        250
+      );
       await settleRoomListInEdgeSession(connection, sessionId);
 
       const trackedBeforeExpand = trackedUrls.size;
@@ -266,13 +288,19 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         intervalMs: 200
       });
 
-      console.log(`[edge-cdp] tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`);
+      console.log(
+        `[edge-cdp] tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`
+      );
 
       removeListener();
 
       for (const [requestId, meta] of requestMeta.entries()) {
         try {
-          const responseBody = await connection.send('Network.getResponseBody', { requestId }, sessionId);
+          const responseBody = await connection.send(
+            'Network.getResponseBody',
+            { requestId },
+            sessionId
+          );
           const rawBody = responseBody && responseBody.body ? responseBody.body : '';
           if (!rawBody) continue;
           const body = responseBody.base64Encoded
@@ -295,16 +323,22 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
           const beforeCount = roomBlocks.length;
           const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
-          const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map((candidate) => ({
-            ...candidate,
-            source: candidate.source || 'edge-cdp-raw'
-          }));
+          const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map(
+            (candidate) => ({
+              ...candidate,
+              source: candidate.source || 'edge-cdp-raw'
+            })
+          );
           roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
           const extractedCount = roomBlocks.length - beforeCount;
           if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
-            console.log(`[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`);
+            console.log(
+              `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`
+            );
           }
-        } catch (_error) { /* skip */ }
+        } catch (_error) {
+          /* skip */
+        }
       }
     } else {
       const removeListener = connection.addListener((message) => {
@@ -333,14 +367,17 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       });
 
       await connection.send('Page.navigate', { url }, sessionId);
-      await Promise.race([
-        loadEvent,
-        new Promise((resolve) => setTimeout(resolve, 12000))
-      ]);
-      await waitForSessionCondition(connection, sessionId, `(() => {
+      await Promise.race([loadEvent, new Promise((resolve) => setTimeout(resolve, 12000))]);
+      await waitForSessionCondition(
+        connection,
+        sessionId,
+        `(() => {
         const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
         return document.readyState === 'complete' && /(房型|展示额外|更多房型|登录看低价|¥|每晚)/.test(bodyText);
-      })()`, 4500, 250);
+      })()`,
+        4500,
+        250
+      );
       await settleRoomListInEdgeSession(connection, sessionId);
 
       const trackedBeforeExpand = trackedUrls.size;
@@ -351,12 +388,18 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         intervalMs: 200
       });
 
-      console.log(`[edge-cdp] new-tab tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`);
+      console.log(
+        `[edge-cdp] new-tab tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`
+      );
       removeListener();
 
       for (const [requestId, meta] of requestMeta.entries()) {
         try {
-          const responseBody = await connection.send('Network.getResponseBody', { requestId }, sessionId);
+          const responseBody = await connection.send(
+            'Network.getResponseBody',
+            { requestId },
+            sessionId
+          );
           const rawBody = responseBody && responseBody.body ? responseBody.body : '';
           if (!rawBody) continue;
           const body = responseBody.base64Encoded
@@ -379,22 +422,31 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
           const beforeCount = roomBlocks.length;
           const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
-          const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map((candidate) => ({
-            ...candidate,
-            source: candidate.source || 'edge-cdp-raw'
-          }));
+          const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map(
+            (candidate) => ({
+              ...candidate,
+              source: candidate.source || 'edge-cdp-raw'
+            })
+          );
           roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
           const extractedCount = roomBlocks.length - beforeCount;
           if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
-            console.log(`[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`);
+            console.log(
+              `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`
+            );
           }
-        } catch (_error) { /* skip */ }
+        } catch (_error) {
+          /* skip */
+        }
       }
     }
 
     // Always run DOM extraction (works for both reused and new tabs).
     try {
-      const domPayloadResult = await evaluateInSession(connection, sessionId, `(async () => {
+      const domPayloadResult = await evaluateInSession(
+        connection,
+        sessionId,
+        `(async () => {
         const roomPattern = /(家庭房|家庭间|双床房|双床间|大床房|大床间|三人间|三人房|三床房|套房|单人间|标准间|高级房|高级间|豪华房|豪华间|商务房|商务间|景观房|景观间|亲子房|亲子间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间)/;
         const pricePattern = /(¥|登录看低价|解锁优惠|券后|每晚|起)/;
         const titlePattern = /[\\u4e00-\\u9fa5A-Za-z0-9（）()·\\-]{2,40}(?:大床房|大床间|双床房|双床间|家庭房|家庭间|三床房|三人房|三人间|景观房|景观间|商务房|商务间|豪华房|豪华间|特惠房|特惠间|标准房|标准间|高级房|高级间|精品房|精品间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间|亲子房|亲子间|套房)/g;
@@ -534,10 +586,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           snippets: texts,
           snapshots
         });
-      })()`);
-      const domPayload = typeof domPayloadResult === 'string'
-        ? safeJsonParse(domPayloadResult)
-        : domPayloadResult;
+      })()`
+      );
+      const domPayload =
+        typeof domPayloadResult === 'string' ? safeJsonParse(domPayloadResult) : domPayloadResult;
       writeEdgeDebugArtifact(`${debugHotelId}-dom-payload.json`, domPayload);
       roomBlocks.push(...collectRoomCandidatesFromDomPayload(domPayload));
     } catch (error) {
@@ -556,9 +608,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         selectedRoom: null,
         trackedUrls: [...trackedUrls],
         spiderErrorCodes: [...spiderErrorCodes],
-        error: spiderErrorCodes.size > 0
-          ? `edge-cdp fallback blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
-          : 'edge-cdp fallback captured network responses but did not find a matching priced room'
+        error:
+          spiderErrorCodes.size > 0
+            ? `edge-cdp fallback blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
+            : 'edge-cdp fallback captured network responses but did not find a matching priced room'
       };
     }
 

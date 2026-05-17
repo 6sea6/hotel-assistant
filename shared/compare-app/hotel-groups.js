@@ -51,17 +51,13 @@ function buildGroupKey(shared) {
   return JSON.stringify(
     SHARED_HOTEL_FIELDS.map((field) => {
       const value = shared[field];
-      return isPlainObject(value) || Array.isArray(value)
-        ? JSON.stringify(value)
-        : (value ?? null);
+      return isPlainObject(value) || Array.isArray(value) ? JSON.stringify(value) : (value ?? null);
     })
   );
 }
 
 function normalizeHotelRecord(normalizeHotelPayload, hotel) {
-  return typeof normalizeHotelPayload === 'function'
-    ? normalizeHotelPayload(hotel)
-    : hotel;
+  return typeof normalizeHotelPayload === 'function' ? normalizeHotelPayload(hotel) : hotel;
 }
 
 function expandStoredHotels(rawHotels = [], normalizeHotelPayload) {
@@ -80,10 +76,12 @@ function expandStoredHotels(rawHotels = [], normalizeHotelPayload) {
           return;
         }
 
-        expandedHotels.push(normalizeHotelRecord(normalizeHotelPayload, {
-          ...shared,
-          ...room
-        }));
+        expandedHotels.push(
+          normalizeHotelRecord(normalizeHotelPayload, {
+            ...shared,
+            ...room
+          })
+        );
       });
 
       return;

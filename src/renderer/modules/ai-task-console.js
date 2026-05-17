@@ -126,7 +126,9 @@ export function formatAiTemplateLabel(template = {}) {
   const labelParts = [
     template.name || `模板 ${id}`,
     template.destination,
-    template.check_in_date && template.check_out_date ? `${template.check_in_date} 至 ${template.check_out_date}` : '',
+    template.check_in_date && template.check_out_date
+      ? `${template.check_in_date} 至 ${template.check_out_date}`
+      : '',
     template.room_count ? `${template.room_count}人` : ''
   ].filter(Boolean);
   return labelParts.join(' · ');
@@ -168,7 +170,9 @@ export function extractCtripUrls(text) {
 
 export function getCollectToolResult(result = {}) {
   if (!Array.isArray(result.toolResults)) return null;
-  return result.toolResults.find((item) => item && item.name === 'collect_and_write_ctrip_hotel') || null;
+  return (
+    result.toolResults.find((item) => item && item.name === 'collect_and_write_ctrip_hotel') || null
+  );
 }
 
 export function hasWriteResult(writeResult) {
@@ -176,15 +180,24 @@ export function hasWriteResult(writeResult) {
     return writeResult.some((item) => {
       if (!item) return false;
       if (item.operation) return item.operation !== 'skipped';
-      return hasWriteResult(item.result || item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult));
+      return hasWriteResult(
+        item.result ||
+          item.writeResult ||
+          (item.latestApplyResult && item.latestApplyResult.writeResult)
+      );
     });
   }
   if (writeResult && writeResult.batchMode) {
     if (Number(writeResult.appliedCount || 0) > 0) {
       return true;
     }
-    return (Array.isArray(writeResult.items) ? writeResult.items : [])
-      .some((item) => item && hasWriteResult(item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)));
+    return (Array.isArray(writeResult.items) ? writeResult.items : []).some(
+      (item) =>
+        item &&
+        hasWriteResult(
+          item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)
+        )
+    );
   }
   return Boolean(writeResult && writeResult.operation !== 'skipped');
 }
@@ -194,16 +207,27 @@ function countWriteOperations(writeResult) {
     return writeResult.reduce((sum, item) => {
       if (!item) return sum;
       if (item.operation) return item.operation === 'skipped' ? sum : sum + 1;
-      return sum + countWriteOperations(item.result || item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult));
+      return (
+        sum +
+        countWriteOperations(
+          item.result ||
+            item.writeResult ||
+            (item.latestApplyResult && item.latestApplyResult.writeResult)
+        )
+      );
     }, 0);
   }
 
   if (writeResult && writeResult.batchMode) {
-    return (Array.isArray(writeResult.items) ? writeResult.items : [])
-      .reduce((sum, item) => {
-        if (!item || item.skipped) return sum;
-        return sum + countWriteOperations(item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult));
-      }, 0);
+    return (Array.isArray(writeResult.items) ? writeResult.items : []).reduce((sum, item) => {
+      if (!item || item.skipped) return sum;
+      return (
+        sum +
+        countWriteOperations(
+          item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)
+        )
+      );
+    }, 0);
   }
 
   return writeResult && writeResult.operation && writeResult.operation !== 'skipped' ? 1 : 0;
@@ -227,7 +251,14 @@ function getBatchWriteStats(collectResult = {}) {
 
   if (writeResult && writeResult.batchMode) {
     const appliedItems = Array.isArray(writeResult.items)
-      ? writeResult.items.filter((item) => item && !item.skipped && hasWriteResult(item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)))
+      ? writeResult.items.filter(
+          (item) =>
+            item &&
+            !item.skipped &&
+            hasWriteResult(
+              item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)
+            )
+        )
       : [];
     const hotelCount = Number.isFinite(Number(writeResult.appliedCount))
       ? Math.max(0, Number(writeResult.appliedCount))
@@ -249,7 +280,9 @@ function getBatchWriteStats(collectResult = {}) {
   }
 
   if (Array.isArray(writeResult)) {
-    const appliedItems = writeResult.filter((item) => item && hasWriteResult(item.result || item.writeResult || item));
+    const appliedItems = writeResult.filter(
+      (item) => item && hasWriteResult(item.result || item.writeResult || item)
+    );
     return {
       hotelCount: appliedItems.length,
       roomTypeCount: countWriteOperations(writeResult)
@@ -284,9 +317,11 @@ export function getReadableToolLabel(toolName) {
 function localizeReviewText(value) {
   let text = typeof value === 'string' ? value : JSON.stringify(value);
   if (!text) return '';
-  [...Object.entries(REVIEW_SOURCE_LABELS), ...Object.entries(REVIEW_FIELD_LABELS)].forEach(([key, label]) => {
-    text = text.replace(new RegExp(`\\b${key}\\b`, 'g'), label);
-  });
+  [...Object.entries(REVIEW_SOURCE_LABELS), ...Object.entries(REVIEW_FIELD_LABELS)].forEach(
+    ([key, label]) => {
+      text = text.replace(new RegExp(`\\b${key}\\b`, 'g'), label);
+    }
+  );
   return text.replace(/\breview_input\b/g, '复核数据包');
 }
 
@@ -304,7 +339,8 @@ function getEventStepKey(event = {}) {
   if (type === 'task:error') return 'error';
   if (type === 'task:cancel') return 'cancel';
   if (toolName === 'list_templates' || toolName === 'get_settings') return 'template';
-  if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done') return 'login';
+  if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done')
+    return 'login';
   if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
   if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return 'received';
   if (type === 'scrape:retry') return 'scrape';
@@ -329,12 +365,15 @@ function getReadableEventTitle(event = {}) {
   if (type === 'edge:login-window') return event.message || '已打开 Edge 登录窗口，等待你完成登录';
   if (type === 'edge:login-done') return event.message || '携程登录窗口已关闭，继续采集';
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
-  if (type.startsWith('batch:') || type.startsWith('list:')) return event.message || '正在处理批量采集任务';
+  if (type.startsWith('batch:') || type.startsWith('list:'))
+    return event.message || '正在处理批量采集任务';
   if (toolName) {
     const label = getReadableToolLabel(toolName);
-    if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return '已接收采集任务';
+    if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start')
+      return '已接收采集任务';
     if (toolName === 'collect_and_write_ctrip_hotel') return '正在采集携程酒店页面';
-    if (toolName === 'list_templates' || toolName === 'get_settings') return '正在读取模板与比较助手设置';
+    if (toolName === 'list_templates' || toolName === 'get_settings')
+      return '正在读取模板与比较助手设置';
     return label.startsWith('正在') ? label : `正在${label}`;
   }
 
@@ -362,12 +401,20 @@ function getEventDetailText(event = {}) {
 
 function getLastTaskError(events = [], task = {}) {
   if (task.error) return task.error;
-  const errorEvent = events.slice().reverse().find((event) => event.type === 'task:error' || event.type === 'task:cancel');
-  return errorEvent ? (errorEvent.message || errorEvent.type) : '';
+  const errorEvent = events
+    .slice()
+    .reverse()
+    .find((event) => event.type === 'task:error' || event.type === 'task:cancel');
+  return errorEvent ? errorEvent.message || errorEvent.type : '';
 }
 
 function findStepEvent(normalizedEvents, key) {
-  return normalizedEvents.slice().reverse().find((event) => event.key === key) || null;
+  return (
+    normalizedEvents
+      .slice()
+      .reverse()
+      .find((event) => event.key === key) || null
+  );
 }
 
 function parseBatchProgressEvent(event = {}) {
@@ -459,8 +506,13 @@ function getStepDefinitions(normalizedEvents = []) {
 function buildTaskSteps(task, events, status) {
   const normalizedEvents = (events || []).map(normalizeEvent).filter((event) => event.title);
   const stepDefinitions = getStepDefinitions(normalizedEvents);
-  const lastProgressEvent = normalizedEvents.slice().reverse()
-    .find((event) => event.key && event.key !== 'done' && event.key !== 'error' && event.key !== 'cancel');
+  const lastProgressEvent = normalizedEvents
+    .slice()
+    .reverse()
+    .find(
+      (event) =>
+        event.key && event.key !== 'done' && event.key !== 'error' && event.key !== 'cancel'
+    );
   const currentKey = status === 'running' && lastProgressEvent ? lastProgressEvent.key : '';
   const currentIndex = stepDefinitions.findIndex((step) => step.key === currentKey);
   const errorKey = status === 'error' && lastProgressEvent ? lastProgressEvent.key : 'scrape';
@@ -493,9 +545,17 @@ function buildTaskSteps(task, events, status) {
 
     return {
       key: definition.key,
-      time: matchedEvent ? matchedEvent.time : (definition.key === 'received' ? task.startedAt : ''),
-      title: status === 'success' ? definition.doneTitle : (matchedEvent ? matchedEvent.title : definition.title),
-      detail: matchedEvent && matchedEvent.toolName ? getReadableToolLabel(matchedEvent.toolName) : getEventDetailText(matchedEvent),
+      time: matchedEvent ? matchedEvent.time : definition.key === 'received' ? task.startedAt : '',
+      title:
+        status === 'success'
+          ? definition.doneTitle
+          : matchedEvent
+            ? matchedEvent.title
+            : definition.title,
+      detail:
+        matchedEvent && matchedEvent.toolName
+          ? getReadableToolLabel(matchedEvent.toolName)
+          : getEventDetailText(matchedEvent),
       toolName: matchedEvent ? matchedEvent.toolName : '',
       status: stepStatus
     };
@@ -527,7 +587,7 @@ function formatReviewDuration(ms) {
 function getElapsedText(taskInfo = {}, status = 'idle', now = Date.now()) {
   const start = getTimeValue(taskInfo.startTime);
   if (!start) return '00:00:00';
-  const end = status === 'running' ? now : (getTimeValue(taskInfo.endTime) || now);
+  const end = status === 'running' ? now : getTimeValue(taskInfo.endTime) || now;
   return formatDuration(end - start);
 }
 
@@ -535,10 +595,13 @@ function updateElapsedTimerText() {
   const timer = $('aiTaskElapsedTime');
   if (!timer) return;
 
-  timer.textContent = getElapsedText({
-    startTime: timer.dataset.startTime,
-    endTime: timer.dataset.endTime
-  }, timer.dataset.status || 'idle');
+  timer.textContent = getElapsedText(
+    {
+      startTime: timer.dataset.startTime,
+      endTime: timer.dataset.endTime
+    },
+    timer.dataset.status || 'idle'
+  );
 }
 
 function syncElapsedTimer(status) {
@@ -557,7 +620,7 @@ function syncElapsedTimer(status) {
 function getReviewElapsedText(review = {}, now = Date.now()) {
   const start = getTimeValue(review.startedAt);
   if (!start) return '00:00';
-  const end = review.inProgress ? now : (getTimeValue(review.endedAt) || now);
+  const end = review.inProgress ? now : getTimeValue(review.endedAt) || now;
   return formatReviewDuration(end - start);
 }
 
@@ -575,7 +638,8 @@ function updateReviewElapsedTimerText() {
 function syncReviewElapsedTimer(review = {}) {
   updateReviewElapsedTimerText();
   if (review.inProgress) {
-    if (!reviewElapsedTimer) reviewElapsedTimer = globalThis.setInterval(updateReviewElapsedTimerText, 1000);
+    if (!reviewElapsedTimer)
+      reviewElapsedTimer = globalThis.setInterval(updateReviewElapsedTimerText, 1000);
     return;
   }
 
@@ -586,25 +650,34 @@ function syncReviewElapsedTimer(review = {}) {
 }
 
 function getTaskCollectResult(task = {}) {
-  return task.collectResult
-    || (task.result && task.result.collectResult)
-    || (getCollectToolResult(task.result || {}) || {}).result
-    || {};
+  return (
+    task.collectResult ||
+    (task.result && task.result.collectResult) ||
+    (getCollectToolResult(task.result || {}) || {}).result ||
+    {}
+  );
 }
 
 function buildTaskResult(task = {}) {
   const collectResult = getTaskCollectResult(task);
   const eligibleCount = Number(collectResult.eligibleCount || 0);
-  const matchedRooms = Array.isArray(collectResult.eligibleRoomTypes) ? collectResult.eligibleRoomTypes : [];
-  const eligibleHotels = Array.isArray(collectResult.eligibleHotels) ? collectResult.eligibleHotels : [];
+  const matchedRooms = Array.isArray(collectResult.eligibleRoomTypes)
+    ? collectResult.eligibleRoomTypes
+    : [];
+  const eligibleHotels = Array.isArray(collectResult.eligibleHotels)
+    ? collectResult.eligibleHotels
+    : [];
   const firstRoom = matchedRooms[0] || {};
   const firstHotel = eligibleHotels[0] || {};
-  const totalPrice = collectResult.totalPrice ?? firstRoom.totalPrice ?? firstRoom.total_price ?? firstHotel.total_price ?? null;
-  const dailyPrice = firstRoom.dailyPrice ?? firstRoom.daily_price ?? firstHotel.daily_price ?? null;
-  const reasons = [
-    collectResult.writeSkipReason,
-    collectResult.error
-  ].filter(Boolean);
+  const totalPrice =
+    collectResult.totalPrice ??
+    firstRoom.totalPrice ??
+    firstRoom.total_price ??
+    firstHotel.total_price ??
+    null;
+  const dailyPrice =
+    firstRoom.dailyPrice ?? firstRoom.daily_price ?? firstHotel.daily_price ?? null;
+  const reasons = [collectResult.writeSkipReason, collectResult.error].filter(Boolean);
   const wroteResult = hasWriteResult(collectResult.writeResult);
   const batchSummary = collectResult.batchStats || collectResult.batchSummary || null;
   const batchCount = Number(
@@ -617,7 +690,8 @@ function buildTaskResult(task = {}) {
   const isBatchResult = Boolean(collectResult.batchMode);
   const batchWriteStats = getBatchWriteStats(collectResult);
   const batchWriteText = `本次最终写入 ${batchWriteStats.hotelCount} 家宾馆，${batchWriteStats.roomTypeCount} 种房型`;
-  const batchResultText = batchCount > 0 ? `批量 ${batchCount} 家，${batchWriteText}` : `批量采集完成，${batchWriteText}`;
+  const batchResultText =
+    batchCount > 0 ? `批量 ${batchCount} 家，${batchWriteText}` : `批量采集完成，${batchWriteText}`;
   const singleResultText = `${collectResult.hotelName || '暂无'}，可用房型 ${Number.isFinite(eligibleCount) ? eligibleCount : 0} 个`;
 
   if (reasons.length === 0 && eligibleCount <= 0) {
@@ -626,22 +700,28 @@ function buildTaskResult(task = {}) {
 
   return {
     hasMatchedRoom: eligibleCount > 0 && !collectResult.writeSkipped,
-    hotelName: isBatchResult ? batchResultText : (collectResult.hotelName || '暂无'),
+    hotelName: isBatchResult ? batchResultText : collectResult.hotelName || '暂无',
     actualResultText: isBatchResult ? batchResultText : singleResultText,
     isBatchResult,
     eligibleCount: Number.isFinite(eligibleCount) ? eligibleCount : 0,
-    priceText: [formatCurrency(dailyPrice) ? `${formatCurrency(dailyPrice)} / 晚` : '', formatCurrency(totalPrice) ? `${formatCurrency(totalPrice)} 总价` : '']
-      .filter(Boolean)
-      .join('，') || '暂无',
-    matchedRooms: matchedRooms.length ? matchedRooms : eligibleHotels.map((hotel) => ({
-      roomType: hotel.room_type || '',
-      originalRoomType: hotel.original_room_type || '',
-      dailyPrice: hotel.daily_price ?? null,
-      totalPrice: hotel.total_price ?? null,
-      occupancy: hotel.room_count ?? null,
-      cancelPolicy: hotel.cancel_policy || '',
-      windowStatus: hotel.window_status || ''
-    })),
+    priceText:
+      [
+        formatCurrency(dailyPrice) ? `${formatCurrency(dailyPrice)} / 晚` : '',
+        formatCurrency(totalPrice) ? `${formatCurrency(totalPrice)} 总价` : ''
+      ]
+        .filter(Boolean)
+        .join('，') || '暂无',
+    matchedRooms: matchedRooms.length
+      ? matchedRooms
+      : eligibleHotels.map((hotel) => ({
+          roomType: hotel.room_type || '',
+          originalRoomType: hotel.original_room_type || '',
+          dailyPrice: hotel.daily_price ?? null,
+          totalPrice: hotel.total_price ?? null,
+          occupancy: hotel.room_count ?? null,
+          cancelPolicy: hotel.cancel_policy || '',
+          windowStatus: hotel.window_status || ''
+        })),
     reasons,
     writeBackStatus: wroteResult ? '已写入数据' : '未写入数据',
     summary: collectResult.writeSkipped
@@ -655,7 +735,9 @@ function buildTaskResult(task = {}) {
 
 function buildTaskError(task = {}, events = []) {
   const message = getLastTaskError(events, task) || '系统在采集携程酒店页面时发生异常。';
-  const cancelled = /任务已取消|采集任务已取消/.test(message) || events.some((event) => event.type === 'task:cancel');
+  const cancelled =
+    /任务已取消|采集任务已取消/.test(message) ||
+    events.some((event) => event.type === 'task:cancel');
   return {
     message,
     reason: message,
@@ -669,8 +751,15 @@ function buildTaskError(task = {}, events = []) {
   };
 }
 
-export function normalizeTaskState({ task = {}, events = [], inProgress = false, review = {} } = {}) {
-  const submitted = Boolean(task.submitted || task.hotelUrl || task.result || task.error || events.length);
+export function normalizeTaskState({
+  task = {},
+  events = [],
+  inProgress = false,
+  review = {}
+} = {}) {
+  const submitted = Boolean(
+    task.submitted || task.hotelUrl || task.result || task.error || events.length
+  );
   let status = 'idle';
   const hasCancelEvent = events.some((event) => event.type === 'task:cancel');
   const cancellationError = /任务已取消|采集任务已取消/.test(String(task.error || ''));
@@ -691,11 +780,11 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false,
   const collectResult = getTaskCollectResult(task);
   const taskStatus = task.result && task.result.taskStatus ? task.result.taskStatus : {};
   const reviewInputAvailable = Boolean(
-    collectResult.reviewInputAvailable
-    || taskStatus.reviewInputAvailable
+    collectResult.reviewInputAvailable || taskStatus.reviewInputAvailable
   );
   const taskInfo = {
-    taskId: task.taskId || (task.result && task.result.taskStatus && task.result.taskStatus.id) || '',
+    taskId:
+      task.taskId || (task.result && task.result.taskStatus && task.result.taskStatus.id) || '',
     templateName: task.templateLabel || formatAiTemplateLabel(task.template || {}) || '暂无',
     hotelUrl: task.hotelUrl || '',
     startTime: task.startedAt || '',
@@ -710,11 +799,7 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false,
     result: buildTaskResult(task),
     error: buildTaskError(task, events),
     review,
-    canReview: Boolean(
-      taskInfo.taskId
-      && reviewInputAvailable
-      && !collectResult.batchMode
-    )
+    canReview: Boolean(taskInfo.taskId && reviewInputAvailable && !collectResult.batchMode)
   };
 }
 
@@ -748,7 +833,9 @@ function renderQueueTaskItem(task = {}, fallbackIndex = 0) {
         <span class="task-queue-title">${escapeHtml(getQueueTaskTitle(task))}</span>
         <span class="task-queue-badge">${escapeHtml(statusLabel)}</span>
       </button>
-      ${canShowMenu ? `
+      ${
+        canShowMenu
+          ? `
         <details class="task-queue-menu">
           <summary title="更多操作">⋯</summary>
           <div class="task-queue-menu-popover">
@@ -756,13 +843,17 @@ function renderQueueTaskItem(task = {}, fallbackIndex = 0) {
             <button type="button" class="is-danger" data-action="remove-ai-queue-task" data-task-id="${escapeHtml(task.id || '')}">删除记录</button>
           </div>
         </details>
-      ` : ''}
+      `
+          : ''
+      }
     </div>
   `;
 }
 
 function renderQueueGroup(label, tasks, selectedId, emptyText = '') {
-  const rows = (tasks || []).map((task, index) => renderQueueTaskItem({ ...task, selectedId }, index)).join('');
+  const rows = (tasks || [])
+    .map((task, index) => renderQueueTaskItem({ ...task, selectedId }, index))
+    .join('');
   return `
     <section class="task-queue-group">
       <div class="task-queue-group-title">
@@ -787,7 +878,6 @@ function renderTaskQueue(queue = [], options = {}) {
     <div class="task-queue-shell">
       <div class="task-card-header task-queue-header">
         <div>
-          <span class="task-card-eyebrow">TASK QUEUE</span>
           <h2>任务队列</h2>
         </div>
         <div class="task-queue-header-actions">
@@ -829,7 +919,9 @@ function renderTaskTimeline(steps, options = {}) {
   const compact = options.compact ? ' task-timeline-compact' : '';
   return `
     <div class="task-timeline${compact}">
-      ${steps.map((step) => `
+      ${steps
+        .map(
+          (step) => `
         <div class="task-timeline-row task-step-${escapeHtml(step.status)}">
           <div class="task-step-time">${escapeHtml(formatAiTime(step.time) || '--:--:--')}</div>
           <div class="task-step-marker" aria-hidden="true"></div>
@@ -838,7 +930,9 @@ function renderTaskTimeline(steps, options = {}) {
             ${step.detail ? `<span>${escapeHtml(step.detail)}</span>` : ''}
           </div>
         </div>
-      `).join('')}
+      `
+        )
+        .join('')}
     </div>
   `;
 }
@@ -894,13 +988,17 @@ function renderProgressStats(stats) {
 
   return `
     <div class="task-progress-stats" aria-label="批量采集进度统计">
-      ${cards.map((card) => `
+      ${cards
+        .map(
+          (card) => `
         <div class="task-progress-stat-card">
           ${renderProgressIcon(card.type)}
           <span>${escapeHtml(card.label)}</span>
           <strong>${escapeHtml(String(card.value))}</strong>
         </div>
-      `).join('')}
+      `
+        )
+        .join('')}
     </div>
   `;
 }
@@ -924,13 +1022,17 @@ function renderReviewDiffs(diffs = []) {
   }
   return `
     <div class="ai-review-diff-list">
-      ${rows.map((diff) => `
+      ${rows
+        .map(
+          (diff) => `
         <div class="ai-review-diff-item">
           <strong>${escapeHtml(getReviewFieldLabel(diff.field || '字段'))}</strong>
           <span>${escapeHtml(localizeReviewText(String(diff.before ?? '')))} → ${escapeHtml(localizeReviewText(String(diff.after ?? '')))}</span>
           ${diff.reason ? `<small>${escapeHtml(localizeReviewText(diff.reason))}</small>` : ''}
         </div>
-      `).join('')}
+      `
+        )
+        .join('')}
     </div>
   `;
 }
@@ -1004,12 +1106,16 @@ function renderReviewOutput(review = {}) {
       <h3>差异预览</h3>
       ${renderReviewDiffs(result.diffs)}
     </div>
-    ${result.canApply ? '' : `
+    ${
+      result.canApply
+        ? ''
+        : `
       <div class="ai-review-section result-fade-in result-fade-delay-4">
         <h3>缺少证据</h3>
         ${renderReviewList(result.missingEvidence, '暂无。')}
       </div>
-    `}
+    `
+    }
   `;
 }
 
@@ -1020,9 +1126,12 @@ function renderReviewReplaceView(taskState) {
     : review.error
       ? ' ai-review-failed'
       : review.result
-    ? (review.result.canApply ? ' ai-review-can-apply' : ' ai-review-cannot-apply')
-    : '';
-  const applyDisabled = !review.result || !review.result.canApply || !review.reviewId || review.applyInProgress;
+        ? review.result.canApply
+          ? ' ai-review-can-apply'
+          : ' ai-review-cannot-apply'
+        : '';
+  const applyDisabled =
+    !review.result || !review.result.canApply || !review.reviewId || review.applyInProgress;
   return `
     <section class="task-review-console task-review-replace-view" aria-label="AI分析重填">
       <div class="task-review-header">
@@ -1099,9 +1208,10 @@ function renderSummaryCards(taskState, variant) {
   const { taskInfo, result, error } = taskState;
   const isError = variant === 'error';
   const isCancelled = variant === 'cancelled';
-  const reasonItems = isError || isCancelled
-    ? [error.reason || error.message, ...error.suggestions].filter(Boolean)
-    : result.reasons;
+  const reasonItems =
+    isError || isCancelled
+      ? [error.reason || error.message, ...error.suggestions].filter(Boolean)
+      : result.reasons;
   const reasonList = reasonItems.length
     ? `<ul class="task-reason-list">
         ${reasonItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
@@ -1115,8 +1225,8 @@ function renderSummaryCards(taskState, variant) {
         <dl>
           <div><dt>模板</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
           <div><dt>开始时间</dt><dd>${escapeHtml(formatAiTime(taskInfo.startTime) || '暂无')}</dd></div>
-          <div><dt>${isCancelled ? '取消时间' : (isError ? '失败时间' : '完成时间')}</dt><dd>${escapeHtml(formatAiTime(taskInfo.endTime) || '暂无')}</dd></div>
-          <div><dt>执行状态</dt><dd>${escapeHtml(isCancelled ? '已取消' : (isError ? '执行失败' : '已完成'))}</dd></div>
+          <div><dt>${isCancelled ? '取消时间' : isError ? '失败时间' : '完成时间'}</dt><dd>${escapeHtml(formatAiTime(taskInfo.endTime) || '暂无')}</dd></div>
+          <div><dt>执行状态</dt><dd>${escapeHtml(isCancelled ? '已取消' : isError ? '执行失败' : '已完成')}</dd></div>
         </dl>
       </section>
 
@@ -1126,19 +1236,23 @@ function renderSummaryCards(taskState, variant) {
       </section>
 
       <section class="task-result-card">
-        <h3>${isCancelled ? '取消详情' : (isError ? '错误详情' : '结果分析')}</h3>
-        ${isError || isCancelled ? `
+        <h3>${isCancelled ? '取消详情' : isError ? '错误详情' : '结果分析'}</h3>
+        ${
+          isError || isCancelled
+            ? `
           <dl>
             <div><dt>${isCancelled ? '取消原因' : '错误原因'}</dt><dd>${escapeHtml(error.message || (isCancelled ? '任务已取消' : '暂无详细原因'))}</dd></div>
             <div><dt>建议操作</dt><dd>${escapeHtml(isCancelled ? '如需继续，请重新采集。' : '检查链接、刷新登录态、重新执行任务。')}</dd></div>
           </dl>
-        ` : `
+        `
+            : `
           <dl>
             <div><dt>模板规则</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
             <div><dt>实际采集结果</dt><dd>${escapeHtml(result.actualResultText || result.hotelName)}</dd></div>
             <div><dt>写入状态</dt><dd>${escapeHtml(result.writeBackStatus)}</dd></div>
           </dl>
-        `}
+        `
+        }
         ${reasonList}
       </section>
     </div>
@@ -1224,8 +1338,9 @@ function updateStartBar(taskState) {
 export function renderAiTaskConsole(state) {
   const panel = $('aiCurrentTaskPanel');
   if (!panel) return null;
-  const selectedQueueTask = (state.aiTaskQueue || [])
-    .find((task) => String(task.id || '') === String(state.aiSelectedQueueTaskId || ''));
+  const selectedQueueTask = (state.aiTaskQueue || []).find(
+    (task) => String(task.id || '') === String(state.aiSelectedQueueTaskId || '')
+  );
   const selectedTaskInProgress = selectedQueueTask
     ? selectedQueueTask.status === 'running'
     : Boolean(state.aiTaskInProgress);
@@ -1234,7 +1349,10 @@ export function renderAiTaskConsole(state) {
     task: state.aiTaskConsole || {},
     events: state.aiTaskEvents || [],
     inProgress: selectedTaskInProgress,
-    review: selectedQueueTask && selectedQueueTask.review ? selectedQueueTask.review : (state.aiReview || {})
+    review:
+      selectedQueueTask && selectedQueueTask.review
+        ? selectedQueueTask.review
+        : state.aiReview || {}
   });
 
   const shouldShowReview = taskState.canReview && taskState.review && taskState.review.isOpen;

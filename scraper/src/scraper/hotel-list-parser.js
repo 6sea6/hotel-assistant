@@ -6,29 +6,20 @@ const {
   extractUrlsFromText,
   parseHotelIdFromUrl
 } = require('../ctrip-url');
-const {
-  extractFirstMatch,
-  normalizeText,
-  pickFirst,
-  toNumber
-} = require('../utils');
-const {
-  extractJsonBlock,
-  safeJsonParse
-} = require('./html-parser-modules/embedded-json');
+const { extractFirstMatch, normalizeText, pickFirst, toNumber } = require('../utils');
+const { extractJsonBlock, safeJsonParse } = require('./html-parser-modules/embedded-json');
 
 const DEFAULT_LIST_TARGET_COUNT = 10;
 const DEFAULT_LIST_MAX_PAGES = 3;
 const MAX_JSON_WALK_NODES = 12000;
 
 const HOTEL_NAME_PATTERN = /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假|Hotel|Inn|Hostel|Apartment)/i;
-const DETAIL_URL_PATTERN = /https?:\/\/[^\s"'<>]*(?:hotels\/\d+\.html|hoteldetail\/\d+\.html|hotels\/detail\/?[^\s"'<>]*hotelId=\d+)[^\s"'<>]*/gi;
+const DETAIL_URL_PATTERN =
+  /https?:\/\/[^\s"'<>]*(?:hotels\/\d+\.html|hoteldetail\/\d+\.html|hotels\/detail\/?[^\s"'<>]*hotelId=\d+)[^\s"'<>]*/gi;
 
 function normalizeKeywordList(value) {
   if (Array.isArray(value)) {
-    return value
-      .flatMap((item) => normalizeKeywordList(item))
-      .filter(Boolean);
+    return value.flatMap((item) => normalizeKeywordList(item)).filter(Boolean);
   }
 
   return String(value || '')
@@ -39,33 +30,29 @@ function normalizeKeywordList(value) {
 
 function normalizeListFilterOptions(options = {}) {
   const targetCount = toNumber(
-    options.targetCount
-      ?? options.limit
-      ?? options.maxHotels
-      ?? options['target-count']
-      ?? options['max-hotels']
+    options.targetCount ??
+      options.limit ??
+      options.maxHotels ??
+      options['target-count'] ??
+      options['max-hotels']
   );
   const maxPages = toNumber(
-    options.maxPages
-      ?? options.pageLimit
-      ?? options['max-pages']
-      ?? options['page-limit']
+    options.maxPages ?? options.pageLimit ?? options['max-pages'] ?? options['page-limit']
   );
 
   return {
     excludeAccommodationKeywords: normalizeKeywordList(
-      options.excludeAccommodationKeywords
-        ?? options.excludeAccommodationTypes
-        ?? options.excludeTypeKeywords
-        ?? options['exclude-accommodation-keywords']
-        ?? options['exclude-type-keywords']
+      options.excludeAccommodationKeywords ??
+        options.excludeAccommodationTypes ??
+        options.excludeTypeKeywords ??
+        options['exclude-accommodation-keywords'] ??
+        options['exclude-type-keywords']
     ),
-    targetCount: targetCount && targetCount > 0
-      ? Math.max(1, Math.trunc(targetCount))
-      : DEFAULT_LIST_TARGET_COUNT,
-    maxPages: maxPages && maxPages > 0
-      ? Math.max(1, Math.trunc(maxPages))
-      : DEFAULT_LIST_MAX_PAGES
+    targetCount:
+      targetCount && targetCount > 0
+        ? Math.max(1, Math.trunc(targetCount))
+        : DEFAULT_LIST_TARGET_COUNT,
+    maxPages: maxPages && maxPages > 0 ? Math.max(1, Math.trunc(maxPages)) : DEFAULT_LIST_MAX_PAGES
   };
 }
 
@@ -250,37 +237,34 @@ function extractCandidateFromObject(object, baseUrl, template = {}) {
     return null;
   }
 
-  const name = readStringByKey(object, [
-    /hotel.*name/i,
-    /name.*hotel/i,
-    /^displayName$/i,
-    /^name$/i,
-    /^title$/i
-  ], 2);
-  const address = readStringByKey(object, [
-    /address/i,
-    /position.*name/i,
-    /zone.*name/i,
-    /business.*name/i,
-    /location.*name/i
-  ], 2);
-  const score = readNumberByKey(object, [
-    /comment.*score/i,
-    /review.*score/i,
-    /rating.*all/i,
-    /^rating$/i,
-    /^score$/i,
-    /user.*rating/i
-  ], 2);
-  const accommodationType = readStringByKey(object, [
-    /hotel.*type/i,
-    /accommodation.*type/i,
-    /property.*type/i,
-    /type.*name/i,
-    /star.*name/i,
-    /level.*name/i,
-    /^tagName$/i
-  ], 2);
+  const name = readStringByKey(
+    object,
+    [/hotel.*name/i, /name.*hotel/i, /^displayName$/i, /^name$/i, /^title$/i],
+    2
+  );
+  const address = readStringByKey(
+    object,
+    [/address/i, /position.*name/i, /zone.*name/i, /business.*name/i, /location.*name/i],
+    2
+  );
+  const score = readNumberByKey(
+    object,
+    [/comment.*score/i, /review.*score/i, /rating.*all/i, /^rating$/i, /^score$/i, /user.*rating/i],
+    2
+  );
+  const accommodationType = readStringByKey(
+    object,
+    [
+      /hotel.*type/i,
+      /accommodation.*type/i,
+      /property.*type/i,
+      /type.*name/i,
+      /star.*name/i,
+      /level.*name/i,
+      /^tagName$/i
+    ],
+    2
+  );
 
   if (!name && !address && score === null) {
     return null;
@@ -372,7 +356,9 @@ function collectJsonRootsFromScripts(html) {
 function parseScoreFromText(text) {
   const normalized = normalizeText(text);
   return pickFirst(
-    normalizeScore(extractFirstMatch(normalized, /([0-9](?:\.[0-9])?)\s*(?:分|点评|好评|超棒|很好|不错|棒)/)),
+    normalizeScore(
+      extractFirstMatch(normalized, /([0-9](?:\.[0-9])?)\s*(?:分|点评|好评|超棒|很好|不错|棒)/)
+    ),
     normalizeScore(extractFirstMatch(normalized, /评分[:：]?\s*([0-9](?:\.[0-9])?)/))
   );
 }
@@ -450,10 +436,17 @@ function extractStructuredCardCandidates(html, baseUrl, template = {}) {
     }
 
     const text = normalizeText($element.text());
-    const name = normalizeText($element.find('.hotelName').first().text())
-      || findTextByClassPattern($, element, /hotel-name|hotel_title|hotel-title/i)
-      || extractFirstMatch(text, /([\u4e00-\u9fa5A-Za-z0-9（）()·\- ]{2,80}(?:酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment))/i);
-    const accommodationType = extractFirstMatch(text, /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment)/i);
+    const name =
+      normalizeText($element.find('.hotelName').first().text()) ||
+      findTextByClassPattern($, element, /hotel-name|hotel_title|hotel-title/i) ||
+      extractFirstMatch(
+        text,
+        /([\u4e00-\u9fa5A-Za-z0-9（）()·\- ]{2,80}(?:酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment))/i
+      );
+    const accommodationType = extractFirstMatch(
+      text,
+      /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment)/i
+    );
     const address = findTextByClassPattern($, element, /position|address|location/i);
 
     candidates.push({
@@ -492,7 +485,10 @@ function extractAnchorCandidates(html, baseUrl, template = {}) {
       url: detailUrl,
       name: HOTEL_NAME_PATTERN.test(text) ? text : '',
       score: parseScoreFromText(parentText),
-      accommodationType: extractFirstMatch(parentText, /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村)/),
+      accommodationType: extractFirstMatch(
+        parentText,
+        /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村)/
+      ),
       address: '',
       source: 'html-anchor'
     });
@@ -515,11 +511,17 @@ function extractRegexUrlCandidates(html, baseUrl, template = {}) {
     }
 
     const index = match.index || 0;
-    const nearby = normalizeText(source.slice(Math.max(0, index - 500), Math.min(source.length, index + 900)));
+    const nearby = normalizeText(
+      source.slice(Math.max(0, index - 500), Math.min(source.length, index + 900))
+    );
     candidates.push({
       hotelId: parseHotelIdFromUrl(detailUrl),
       url: detailUrl,
-      name: extractFirstMatch(nearby, /([\u4e00-\u9fa5A-Za-z0-9（）()·\- ]{2,80}(?:酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment))/i) || '',
+      name:
+        extractFirstMatch(
+          nearby,
+          /([\u4e00-\u9fa5A-Za-z0-9（）()·\- ]{2,80}(?:酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment))/i
+        ) || '',
       score: parseScoreFromText(nearby),
       accommodationType: extractFirstMatch(nearby, /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村)/),
       address: '',
@@ -560,7 +562,10 @@ function mergeHotelListCandidates(candidates = []) {
     byKey.set(key, {
       ...existing,
       name: existing.name || normalizeText(candidate.name),
-      score: existing.score !== null && existing.score !== undefined ? existing.score : normalizeScore(candidate.score),
+      score:
+        existing.score !== null && existing.score !== undefined
+          ? existing.score
+          : normalizeScore(candidate.score),
       accommodationType: existing.accommodationType || normalizeText(candidate.accommodationType),
       address: existing.address || normalizeText(candidate.address),
       source: [...new Set([existing.source, candidate.source].filter(Boolean))].join('+')
@@ -572,8 +577,9 @@ function mergeHotelListCandidates(candidates = []) {
 
 function parseHotelListCandidatesFromHtml(html, baseUrl, options = {}) {
   const template = options.template || {};
-  const jsonCandidates = collectJsonRootsFromScripts(html)
-    .flatMap((root) => walkJsonForCandidates(root, baseUrl, template));
+  const jsonCandidates = collectJsonRootsFromScripts(html).flatMap((root) =>
+    walkJsonForCandidates(root, baseUrl, template)
+  );
   const urlCandidates = extractUrlsFromText(html)
     .filter((url) => parseHotelIdFromUrl(url))
     .map((url) => ({
@@ -608,7 +614,10 @@ function applyListPrefilter(candidates = [], rawFilters = {}) {
 
   for (const candidate of mergedCandidates) {
     const score = normalizeScore(candidate.score);
-    const typeKeyword = containsAnyKeyword(candidate.accommodationType, filters.excludeAccommodationKeywords);
+    const typeKeyword = containsAnyKeyword(
+      candidate.accommodationType,
+      filters.excludeAccommodationKeywords
+    );
     let rejectReason = '';
 
     if (typeKeyword) {

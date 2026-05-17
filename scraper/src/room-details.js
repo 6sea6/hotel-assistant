@@ -21,9 +21,7 @@ function getRoomPayload(room) {
     return room.raw;
   }
 
-  return safeParseJson(room.raw)
-    || safeParseJson(room.text)
-    || null;
+  return safeParseJson(room.raw) || safeParseJson(room.text) || null;
 }
 
 function normalizeAreaValue(value) {
@@ -34,28 +32,30 @@ function normalizeAreaValue(value) {
 function extractAreaValue(room, payload) {
   const physicalRoom = payload && payload.physicalRoom ? payload.physicalRoom : payload;
   const saleRoom = payload && payload.saleRoom ? payload.saleRoom : null;
-  const areaValue = normalizeAreaValue(pickFirst(
-    room && room.area,
-    physicalRoom && physicalRoom.area,
-    physicalRoom && physicalRoom.roomArea,
-    physicalRoom && physicalRoom.areaInfo && physicalRoom.areaInfo.title,
-    payload && payload.area,
-    payload && payload.roomArea,
-    payload && payload.areaInfo && payload.areaInfo.title,
-    saleRoom && saleRoom.area,
-    saleRoom && saleRoom.roomArea
-  ));
+  const areaValue = normalizeAreaValue(
+    pickFirst(
+      room && room.area,
+      physicalRoom && physicalRoom.area,
+      physicalRoom && physicalRoom.roomArea,
+      physicalRoom && physicalRoom.areaInfo && physicalRoom.areaInfo.title,
+      payload && payload.area,
+      payload && payload.roomArea,
+      payload && payload.areaInfo && payload.areaInfo.title,
+      saleRoom && saleRoom.area,
+      saleRoom && saleRoom.roomArea
+    )
+  );
 
   if (areaValue !== null) {
     return areaValue;
   }
 
   const rawText = normalizeText(
-    room && (room.raw || room.text)
-      ? String(room.raw || room.text)
-      : ''
+    room && (room.raw || room.text) ? String(room.raw || room.text) : ''
   );
-  const rawMatch = rawText.match(/(\d+(?:\.\d+)?)(?:\s*[–-]\s*\d+(?:\.\d+)?)?\s*(?:平方米|平米|㎡|m²)/i);
+  const rawMatch = rawText.match(
+    /(\d+(?:\.\d+)?)(?:\s*[–-]\s*\d+(?:\.\d+)?)?\s*(?:平方米|平米|㎡|m²)/i
+  );
   return rawMatch ? normalizeAreaValue(rawMatch[0]) : null;
 }
 
@@ -64,9 +64,10 @@ function collectBedDetailTexts(bedInfo) {
     return [];
   }
 
-  const detailGroups = bedInfo.cpxBedInfo && Array.isArray(bedInfo.cpxBedInfo.bedDetail)
-    ? bedInfo.cpxBedInfo.bedDetail
-    : [];
+  const detailGroups =
+    bedInfo.cpxBedInfo && Array.isArray(bedInfo.cpxBedInfo.bedDetail)
+      ? bedInfo.cpxBedInfo.bedDetail
+      : [];
   const detailTexts = [];
 
   for (const group of detailGroups) {
@@ -91,10 +92,7 @@ function collectBedDetailTexts(bedInfo) {
 
 function extractBedNote(room, payload) {
   const physicalRoom = payload && payload.physicalRoom ? payload.physicalRoom : payload;
-  const bedInfo = pickFirst(
-    physicalRoom && physicalRoom.bedInfo,
-    payload && payload.bedInfo
-  );
+  const bedInfo = pickFirst(physicalRoom && physicalRoom.bedInfo, payload && payload.bedInfo);
 
   const detailTexts = collectBedDetailTexts(bedInfo);
   if (detailTexts.length > 0) {
@@ -111,17 +109,17 @@ function normalizeMealExtra(value) {
     return '';
   }
 
-  return text
-    .replace(/^加餐信息[:：]?\s*/i, '可加购')
-    .replace(/每份/g, '/份');
+  return text.replace(/^加餐信息[:：]?\s*/i, '可加购').replace(/每份/g, '/份');
 }
 
 function extractMealNote(payload) {
   const saleRoom = payload && payload.saleRoom ? payload.saleRoom : payload;
-  const mealTitle = normalizeText(pickFirst(
-    saleRoom && saleRoom.mealInfo && saleRoom.mealInfo.title,
-    payload && payload.mealInfo && payload.mealInfo.title
-  ));
+  const mealTitle = normalizeText(
+    pickFirst(
+      saleRoom && saleRoom.mealInfo && saleRoom.mealInfo.title,
+      payload && payload.mealInfo && payload.mealInfo.title
+    )
+  );
 
   const mealHover = normalizeText(
     saleRoom && saleRoom.mealInfo && Array.isArray(saleRoom.mealInfo.hover)
@@ -133,10 +131,12 @@ function extractMealNote(payload) {
       ? saleRoom.availParam.extendParam
       : ''
   );
-  const mealExtra = normalizeMealExtra(pickFirst(
-    extendParam && extendParam.mealDesc,
-    mealHover && mealHover !== mealTitle ? mealHover : ''
-  ));
+  const mealExtra = normalizeMealExtra(
+    pickFirst(
+      extendParam && extendParam.mealDesc,
+      mealHover && mealHover !== mealTitle ? mealHover : ''
+    )
+  );
 
   if (!mealTitle && !mealExtra) {
     return '';

@@ -2,14 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { DataFolderManager } = require('./utils');
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
-const {
-  BUNDLE_RESOURCE_MAP,
-  PROMPT_CONTRACT
-} = requireSharedCompareAppModule('prompt-contract.js');
-const {
-  getBundledResourcePaths,
-  isBundledScraperAvailable
-} = requireSharedCompareAppModule('runtime-paths.js');
+const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT } =
+  requireSharedCompareAppModule('prompt-contract.js');
+const { getBundledResourcePaths, isBundledScraperAvailable } =
+  requireSharedCompareAppModule('runtime-paths.js');
 
 function resolveBundledPaths(appDataPath = getBundledAppDataPath()) {
   return getBundledResourcePaths({
@@ -92,13 +88,16 @@ function ensureBundledRuntimeDirs() {
 }
 
 function scheduleBundledSetup(delayMs = 0) {
-  const timer = setTimeout(() => {
-    try {
-      setupBundledModules();
-    } catch (error) {
-      console.error('[bundled-setup] 初始化失败:', error);
-    }
-  }, Math.max(0, Number(delayMs) || 0));
+  const timer = setTimeout(
+    () => {
+      try {
+        setupBundledModules();
+      } catch (error) {
+        console.error('[bundled-setup] 初始化失败:', error);
+      }
+    },
+    Math.max(0, Number(delayMs) || 0)
+  );
 
   if (typeof timer.unref === 'function') {
     timer.unref();

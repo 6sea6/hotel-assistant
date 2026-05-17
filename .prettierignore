@@ -1,0 +1,15 @@
+node_modules/
+coverage/
+dist/
+dist-smoke/
+build/
+output/
+state/
+scraper-data/
+scraper/output/
+scraper/state/
+scraper/scraper-data/
+宾馆比较助手/
+hotel-comparison-app/
+*.log
+package-lock.json

@@ -10,10 +10,7 @@ const {
   redactAiProviderConfig
 } = require('../src/main/ai/provider-presets');
 const registerAiHandlers = require('../src/main/ipc-handlers/ai-handlers');
-const {
-  buildSystemPrompt,
-  createAiService
-} = require('../src/main/services/ai-service');
+const { buildSystemPrompt, createAiService } = require('../src/main/services/ai-service');
 const {
   buildAnthropicMessagesUrl,
   buildChatCompletionRequest,
@@ -63,23 +60,29 @@ test('AI provider presets include MiMo and normalize config', () => {
 });
 
 test('MiMo normalizer migrates old non-TokenPlan base URL to TokenPlan endpoint', () => {
-  const normalized = normalizeAiProviderConfig({
-    provider: 'mimo'
-  }, {
-    provider: 'mimo',
-    baseUrl: 'https://api.xiaomimimo.com/v1',
-    model: 'mimo-v2.5-pro'
-  });
+  const normalized = normalizeAiProviderConfig(
+    {
+      provider: 'mimo'
+    },
+    {
+      provider: 'mimo',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
+      model: 'mimo-v2.5-pro'
+    }
+  );
 
   assert.equal(normalized.baseUrl, 'https://token-plan-cn.xiaomimimo.com/anthropic');
 
-  const regional = normalizeAiProviderConfig({
-    provider: 'mimo'
-  }, {
-    provider: 'mimo',
-    baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
-    model: 'mimo-v2.5-pro'
-  });
+  const regional = normalizeAiProviderConfig(
+    {
+      provider: 'mimo'
+    },
+    {
+      provider: 'mimo',
+      baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      model: 'mimo-v2.5-pro'
+    }
+  );
 
   assert.equal(regional.baseUrl, 'https://token-plan-sgp.xiaomimimo.com/anthropic');
 });
@@ -100,23 +103,25 @@ test('Chat completion request uses OpenAI-compatible tools shape', () => {
     'https://api.deepseek.com/chat/completions'
   );
 
-  const request = buildChatCompletionRequest({
-    provider: 'deepseek',
-    baseUrl: 'https://api.deepseek.com',
-    model: 'deepseek-chat',
-    apiKey: 'secret',
-    temperature: 0.3
-  }, [
-    { role: 'user', content: 'hello' }
-  ], [
+  const request = buildChatCompletionRequest(
     {
-      type: 'function',
-      function: {
-        name: 'list_templates',
-        parameters: { type: 'object', properties: {} }
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-chat',
+      apiKey: 'secret',
+      temperature: 0.3
+    },
+    [{ role: 'user', content: 'hello' }],
+    [
+      {
+        type: 'function',
+        function: {
+          name: 'list_templates',
+          parameters: { type: 'object', properties: {} }
+        }
       }
-    }
-  ]);
+    ]
+  );
 
   assert.equal(request.url, 'https://api.deepseek.com/chat/completions');
   assert.equal(request.body.model, 'deepseek-chat');
@@ -130,27 +135,32 @@ test('MiMo requests use Anthropic-compatible TokenPlan shape', () => {
     'https://token-plan-cn.xiaomimimo.com/anthropic/v1/messages'
   );
 
-  const request = buildChatCompletionRequest({
-    provider: 'mimo',
-    baseUrl: 'https://token-plan-cn.xiaomimimo.com/anthropic',
-    model: 'mimo-v2.5',
-    apiKey: 'secret',
-    temperature: 0.2
-  }, [
-    { role: 'system', content: 'system prompt' },
-    { role: 'user', content: 'hello' }
-  ], [
+  const request = buildChatCompletionRequest(
     {
-      type: 'function',
-      function: {
-        name: 'list_templates',
-        description: 'list',
-        parameters: { type: 'object', properties: {} }
+      provider: 'mimo',
+      baseUrl: 'https://token-plan-cn.xiaomimimo.com/anthropic',
+      model: 'mimo-v2.5',
+      apiKey: 'secret',
+      temperature: 0.2
+    },
+    [
+      { role: 'system', content: 'system prompt' },
+      { role: 'user', content: 'hello' }
+    ],
+    [
+      {
+        type: 'function',
+        function: {
+          name: 'list_templates',
+          description: 'list',
+          parameters: { type: 'object', properties: {} }
+        }
       }
+    ],
+    {
+      maxTokens: 32
     }
-  ], {
-    maxTokens: 32
-  });
+  );
 
   assert.equal(request.url, 'https://token-plan-cn.xiaomimimo.com/anthropic/v1/messages');
   assert.equal(request.body.system, 'system prompt');
@@ -304,7 +314,9 @@ test('AI fallback system prompt is compact and ignores legacy guide text', () =>
 });
 
 test('AI collect tool schema documents list and detail URL inputs', () => {
-  const collectTool = AI_TOOL_DEFINITIONS.find((tool) => tool.function.name === 'collect_and_write_ctrip_hotel');
+  const collectTool = AI_TOOL_DEFINITIONS.find(
+    (tool) => tool.function.name === 'collect_and_write_ctrip_hotel'
+  );
   const properties = collectTool.function.parameters.properties;
 
   assert.match(collectTool.function.description, /详情页/);
@@ -409,7 +421,11 @@ test('scraper runner resolves the embedded scraper in the app repository', (t) =
   });
 
   assert.equal(
-    resolveScraperPath({ currentDir, existsSync: fs.existsSync, isBundledWithScraper: () => false }),
+    resolveScraperPath({
+      currentDir,
+      existsSync: fs.existsSync,
+      isBundledWithScraper: () => false
+    }),
     path.join(tempRoot, 'project', 'scraper')
   );
 });
@@ -446,14 +462,19 @@ test('AI scraper write rollback restores compare-app store snapshot', async (t) 
 
   const rollbackState = {};
   await createWriteRollbackSnapshot(resolveScraperPath(), rollbackState);
-  fs.writeFileSync(storePath, JSON.stringify({
-    hotels: [
-      ...originalStore.hotels,
-      { id: 'cancelled-task-hotel', name: '本次任务写入酒店' }
-    ],
-    templates: [],
-    settings: {}
-  }, null, 2), 'utf8');
+  fs.writeFileSync(
+    storePath,
+    JSON.stringify(
+      {
+        hotels: [...originalStore.hotels, { id: 'cancelled-task-hotel', name: '本次任务写入酒店' }],
+        templates: [],
+        settings: {}
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
 
   const result = restoreWriteRollbackSnapshot(rollbackState, {
     onEvent(event) {
@@ -508,7 +529,13 @@ test('AI scraper cancellation detector accepts abort signals and cancellation er
   controller.abort();
   assert.equal(isTaskCancelled(new Error('普通失败'), controller.signal), true);
   assert.equal(isTaskCancelled(new Error('任务已取消'), null), true);
-  assert.equal(isTaskCancelled(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }), null), true);
+  assert.equal(
+    isTaskCancelled(
+      Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }),
+      null
+    ),
+    true
+  );
 });
 
 test('direct AI task start runs the hotel task runner without provider config', async () => {
@@ -583,7 +610,9 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(result.collectResult.hotelName, '测试酒店');
   assert.equal(result.collectResult.totalPrice, 300);
   assert.equal(result.toolResults[0].name, 'collect_and_write_ctrip_hotel');
-  assert.ok(events.some((event) => event.channel === 'ai:task:event' && event.payload.type === 'task:done'));
+  assert.ok(
+    events.some((event) => event.channel === 'ai:task:event' && event.payload.type === 'task:done')
+  );
 });
 
 test('direct AI task cancellation emits cancel status instead of task error', async () => {
@@ -637,7 +666,10 @@ test('direct AI task cancellation emits cancel status instead of task error', as
   assert.equal(status.status, 'cancelled');
   assert.equal(status.error, '任务已取消');
   assert.ok(events.some((event) => event.payload.type === 'task:cancel'));
-  assert.equal(events.some((event) => event.payload.type === 'task:error'), false);
+  assert.equal(
+    events.some((event) => event.payload.type === 'task:error'),
+    false
+  );
 });
 
 test('AI collect analysis uses task review_input and disables apply on invalid evidence', async (t) => {
@@ -649,35 +681,43 @@ test('AI collect analysis uses task review_input and disables apply on invalid e
       ok: true,
       async text() {
         return JSON.stringify({
-          choices: [{
-            message: {
-              role: 'assistant',
-              content: JSON.stringify({
-                canApply: true,
-                summary: '建议改价',
-                issues: ['价格证据不足'],
-                revisedHotels: [{
-                  name: '测试酒店',
-                  website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-                  total_price: 999
-                }],
-                diffs: [{
-                  field: 'total_price',
-                  before: 300,
-                  after: 999,
-                  reason: '用户怀疑价格错误'
-                }],
-                evidence: [{
-                  source: 'rawRoomCandidates',
-                  id: 'missing-id',
-                  field: 'rawPriceText',
-                  value: '999',
-                  supports: '价格'
-                }],
-                missingEvidence: []
-              })
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: JSON.stringify({
+                  canApply: true,
+                  summary: '建议改价',
+                  issues: ['价格证据不足'],
+                  revisedHotels: [
+                    {
+                      name: '测试酒店',
+                      website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+                      total_price: 999
+                    }
+                  ],
+                  diffs: [
+                    {
+                      field: 'total_price',
+                      before: 300,
+                      after: 999,
+                      reason: '用户怀疑价格错误'
+                    }
+                  ],
+                  evidence: [
+                    {
+                      source: 'rawRoomCandidates',
+                      id: 'missing-id',
+                      field: 'rawPriceText',
+                      value: '999',
+                      supports: '价格'
+                    }
+                  ],
+                  missingEvidence: []
+                })
+              }
             }
-          }]
+          ]
         });
       }
     };
@@ -728,42 +768,51 @@ test('AI collect analysis uses task review_input and disables apply on invalid e
           templateName: input.templateName,
           outputFingerprint: 'fingerprint'
         },
-        finalHotels: [{
-          id: 'final-1',
-          name: '测试酒店',
-          website: input.url,
-          total_price: 300,
-          template_id: input.templateId,
-          distance: '2公里',
-          subway_station: '江汉路站',
-          subway_distance: '600米',
-          transport_time: '18分钟',
-          bus_route: '乘地铁2号线'
-        }],
-        eligibleRoomTypes: [{
-          id: 'room-candidate-001',
-          totalPrice: 300
-        }],
+        finalHotels: [
+          {
+            id: 'final-1',
+            name: '测试酒店',
+            website: input.url,
+            total_price: 300,
+            template_id: input.templateId,
+            distance: '2公里',
+            subway_station: '江汉路站',
+            subway_distance: '600米',
+            transport_time: '18分钟',
+            bus_route: '乘地铁2号线'
+          }
+        ],
+        eligibleRoomTypes: [
+          {
+            id: 'room-candidate-001',
+            totalPrice: 300
+          }
+        ],
         rejectedRoomTypes: [],
-        rawRoomCandidates: [{
-          id: 'room-candidate-001',
-          rawPriceText: '¥300'
-        }],
+        rawRoomCandidates: [
+          {
+            id: 'room-candidate-001',
+            rawPriceText: '¥300'
+          }
+        ],
         normalizeLogs: [],
         selectionLogs: [],
-        finalHotelFieldLogs: [{
-          id: 'field-distance',
-          hotelId: 'final-1',
-          field: 'distance',
-          value: '2公里',
-          source: 'finalHotels'
-        }, {
-          id: 'field-area',
-          hotelId: 'final-1',
-          field: 'room_area',
-          value: '40平方米',
-          source: 'rawRoomCandidates'
-        }],
+        finalHotelFieldLogs: [
+          {
+            id: 'field-distance',
+            hotelId: 'final-1',
+            field: 'distance',
+            value: '2公里',
+            source: 'finalHotels'
+          },
+          {
+            id: 'field-area',
+            hotelId: 'final-1',
+            field: 'room_area',
+            value: '40平方米',
+            source: 'rawRoomCandidates'
+          }
+        ],
         pageSnapshotSummary: {
           hasPriceArea: true
         },
@@ -803,43 +852,52 @@ test('AI collect analysis repairs invalid JSON response before validation', asyn
   const capturedRequests = [];
   globalThis.fetch = async (url, init) => {
     capturedRequests.push({ url, body: JSON.parse(init.body) });
-    const content = capturedRequests.length === 1
-      ? '{"canApply": true, "summary": "建议重填", "issues": ["价格可能漏选" "缺少逗号"], "revisedHotels": []}'
-      : JSON.stringify({
-          canApply: true,
-          summary: '建议重填',
-          issues: ['价格可能漏选'],
-          revisedHotels: [{
-            name: '测试酒店',
-            website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-            total_price: 300,
-            template_id: '100'
-          }],
-          diffs: [{
-            field: 'total_price',
-            before: '',
-            after: 300,
-            reason: 'rawRoomCandidates 中存在价格证据'
-          }],
-          evidence: [{
-            source: 'rawRoomCandidates',
-            id: 'room-candidate-001',
-            field: 'rawPriceText',
-            value: '¥300',
-            supports: 'total_price'
-          }],
-          missingEvidence: []
-        });
+    const content =
+      capturedRequests.length === 1
+        ? '{"canApply": true, "summary": "建议重填", "issues": ["价格可能漏选" "缺少逗号"], "revisedHotels": []}'
+        : JSON.stringify({
+            canApply: true,
+            summary: '建议重填',
+            issues: ['价格可能漏选'],
+            revisedHotels: [
+              {
+                name: '测试酒店',
+                website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+                total_price: 300,
+                template_id: '100'
+              }
+            ],
+            diffs: [
+              {
+                field: 'total_price',
+                before: '',
+                after: 300,
+                reason: 'rawRoomCandidates 中存在价格证据'
+              }
+            ],
+            evidence: [
+              {
+                source: 'rawRoomCandidates',
+                id: 'room-candidate-001',
+                field: 'rawPriceText',
+                value: '¥300',
+                supports: 'total_price'
+              }
+            ],
+            missingEvidence: []
+          });
     return {
       ok: true,
       async text() {
         return JSON.stringify({
-          choices: [{
-            message: {
-              role: 'assistant',
-              content
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content
+              }
             }
-          }]
+          ]
         });
       }
     };
@@ -889,19 +947,23 @@ test('AI collect analysis repairs invalid JSON response before validation', asyn
           templateName: input.templateName,
           outputFingerprint: 'fingerprint'
         },
-        finalHotels: [{
-          id: 'final-1',
-          name: '测试酒店',
-          website: input.url,
-          total_price: 300,
-          template_id: input.templateId
-        }],
+        finalHotels: [
+          {
+            id: 'final-1',
+            name: '测试酒店',
+            website: input.url,
+            total_price: 300,
+            template_id: input.templateId
+          }
+        ],
         eligibleRoomTypes: [],
         rejectedRoomTypes: [],
-        rawRoomCandidates: [{
-          id: 'room-candidate-001',
-          rawPriceText: '¥300'
-        }],
+        rawRoomCandidates: [
+          {
+            id: 'room-candidate-001',
+            rawPriceText: '¥300'
+          }
+        ],
         normalizeLogs: [],
         selectionLogs: [],
         pageSnapshotSummary: {

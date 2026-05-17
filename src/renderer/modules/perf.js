@@ -5,7 +5,10 @@
 const __perf = { marks: {}, measures: [] };
 
 export function perfStart(name) {
-  try { __perf.marks[name] = performance.now(); console.debug(`[perf] start ${name}`); } catch (e) {}
+  try {
+    __perf.marks[name] = performance.now();
+    console.debug(`[perf] start ${name}`);
+  } catch (e) {}
 }
 
 export function perfEnd(name) {
@@ -20,4 +23,4 @@ export function perfEnd(name) {
 }
 
 // 暴露到全局供控制台调试
-window.__getPerfMeasures = () => (__perf.measures.slice());
+window.__getPerfMeasures = () => __perf.measures.slice();

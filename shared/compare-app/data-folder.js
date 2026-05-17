@@ -42,8 +42,10 @@ function getInstalledDataFolderPath({ execPath, executableDir, appFolderName }) 
 
 function looksLikeManagedAppExecutable(execPath) {
   const executableName = path.basename(execPath || '').toLowerCase();
-  return Boolean(executableName)
-    && !['node', 'node.exe', 'electron', 'electron.exe'].includes(executableName);
+  return (
+    Boolean(executableName) &&
+    !['node', 'node.exe', 'electron', 'electron.exe'].includes(executableName)
+  );
 }
 
 function pickFirstExistingPath(candidates = []) {

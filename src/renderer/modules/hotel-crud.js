@@ -3,10 +3,28 @@
  */
 
 import { state, rankingCache, TEMPLATE_SELECT_BATCH_SIZE } from './state.js';
-import { $, getValue, setValue, idsEqual, normalizeIdValue, getSelectionKey } from './dom-helpers.js';
+import {
+  $,
+  getValue,
+  setValue,
+  idsEqual,
+  normalizeIdValue,
+  getSelectionKey
+} from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { perfStart, perfEnd } from './perf.js';
-import { setModalActive, getEventButton, resetBatchDeleteConfirmation, startBatchDeleteConfirmation, syncBatchDeleteButton, scheduleHotelModalFocus, resetDeleteConfirmation, startDeleteConfirmation, resetActionButtonConfirmation, startActionButtonConfirmation } from './ui-utils.js';
+import {
+  setModalActive,
+  getEventButton,
+  resetBatchDeleteConfirmation,
+  startBatchDeleteConfirmation,
+  syncBatchDeleteButton,
+  scheduleHotelModalFocus,
+  resetDeleteConfirmation,
+  startDeleteConfirmation,
+  resetActionButtonConfirmation,
+  startActionButtonConfirmation
+} from './ui-utils.js';
 import { actions } from './actions.js';
 
 /* ---- 公共数据加载 ---- */
@@ -26,7 +44,7 @@ export async function loadHotels() {
 
 export async function loadTemplates() {
   try {
-    return await window.electronAPI.getAllTemplates() || [];
+    return (await window.electronAPI.getAllTemplates()) || [];
   } catch (error) {
     console.error('加载模板失败:', error);
     return [];
@@ -49,10 +67,7 @@ export async function reloadAllData(options = {}) {
     window.electronAPI.invalidateRendererCache();
   }
 
-  const requests = [
-    window.electronAPI.getAllHotels(),
-    window.electronAPI.getAllTemplates()
-  ];
+  const requests = [window.electronAPI.getAllHotels(), window.electronAPI.getAllTemplates()];
 
   if (includeSettings) {
     requests.push(window.electronAPI.getAllSettings());
@@ -91,7 +106,7 @@ export async function reloadAllData(options = {}) {
 /* ---- 模板查找 ---- */
 
 export function findTemplateById(templateId) {
-  return state.templates.find(template => idsEqual(template.id, templateId));
+  return state.templates.find((template) => idsEqual(template.id, templateId));
 }
 
 /* ---- 宾馆编辑弹窗 ---- */
@@ -130,7 +145,7 @@ export function openAddHotelModal(templateId = null) {
 }
 
 export function editHotel(id) {
-  const hotel = state.hotels.find(h => idsEqual(h.id, id));
+  const hotel = state.hotels.find((h) => idsEqual(h.id, id));
   if (!hotel) {
     console.error('[editHotel] 未找到宾馆ID:', id);
     return;
@@ -139,7 +154,11 @@ export function editHotel(id) {
   const setElementValue = (elementId, value, isCheckbox = false) => {
     const element = document.getElementById(elementId);
     if (element) {
-      if (isCheckbox) { element.checked = value; } else { element.value = value; }
+      if (isCheckbox) {
+        element.checked = value;
+      } else {
+        element.value = value;
+      }
     }
   };
 
@@ -249,8 +268,14 @@ export function applyTemplateToForm() {
 /* ---- 保存宾馆 ---- */
 
 export async function saveHotel() {
-  const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
-  const getChk = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
+  const getVal = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  };
+  const getChk = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.checked : false;
+  };
 
   const id = getVal('hotelId');
   const selectedTemplateId = getVal('hotelTemplateSelect');
@@ -301,7 +326,9 @@ export async function saveHotel() {
     if (nameInput) {
       nameInput.focus();
       nameInput.style.borderColor = '#F53F3F';
-      setTimeout(() => { nameInput.style.borderColor = ''; }, 2000);
+      setTimeout(() => {
+        nameInput.style.borderColor = '';
+      }, 2000);
     }
     return;
   }
@@ -323,7 +350,7 @@ export async function saveHotel() {
   } catch (error) {
     console.error('保存宾馆失败:', error);
     try {
-      state.hotels = previousHotels || await loadHotels();
+      state.hotels = previousHotels || (await loadHotels());
       rankingCache.invalidate();
       actions.renderHotelList();
     } catch (recoveryError) {
@@ -338,7 +365,7 @@ export async function saveHotel() {
 export async function deleteHotel(id) {
   perfStart('deleteHotel');
   try {
-    const idx = state.hotels.findIndex(h => idsEqual(h.id, id));
+    const idx = state.hotels.findIndex((h) => idsEqual(h.id, id));
     if (idx !== -1) {
       state.hotels.splice(idx, 1);
       rankingCache.invalidate();
@@ -381,7 +408,7 @@ export async function deleteHotel(id) {
 
 export async function toggleFavorite(id, currentStatus) {
   try {
-    const hotel = state.hotels.find(h => idsEqual(h.id, id));
+    const hotel = state.hotels.find((h) => idsEqual(h.id, id));
     if (!hotel) return;
 
     perfStart('toggleFavorite');
@@ -449,7 +476,7 @@ export async function confirmBatchDelete() {
       throw new Error('批量删除失败');
     }
 
-    state.hotels = previousHotels.filter(h => !hotelIdSet.has(getSelectionKey(h.id)));
+    state.hotels = previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id)));
     state.selectedHotels.clear();
     rankingCache.invalidate();
     actions.renderHotelList();

@@ -46,17 +46,20 @@ test('extractGeoInfoFromHtml prefers wholePoiInfoList walking metro distance whe
 });
 
 test('normalizeHotelGeoForAmap converts bd09 hotel coordinates before calling AMap', () => {
-  const normalized = normalizeHotelGeoForAmap({
-    address: '湖北武汉洪山区张家湾街道烽火崇文兰庭武梁路',
-    location: '114.303931,30.503373',
-    mapType: 'bd',
-    nearestSubway: {
-      name: '张家湾地铁站',
-      distanceMeters: 480,
-      distanceKm: 0.5,
-      source: 'ctrip-page'
-    }
-  }, '');
+  const normalized = normalizeHotelGeoForAmap(
+    {
+      address: '湖北武汉洪山区张家湾街道烽火崇文兰庭武梁路',
+      location: '114.303931,30.503373',
+      mapType: 'bd',
+      nearestSubway: {
+        name: '张家湾地铁站',
+        distanceMeters: 480,
+        distanceKm: 0.5,
+        source: 'ctrip-page'
+      }
+    },
+    ''
+  );
 
   assert.equal(normalized.source, 'hotel-geo-bd09-converted');
   assert.equal(normalized.location, '114.297325,30.497709');

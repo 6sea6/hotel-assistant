@@ -1,7 +1,14 @@
-const { extractCityName, includesNormalizedPlace, normalizePlaceName, normalizeText, pickFirst, toNumber } = require('../utils');
+const {
+  extractCityName,
+  includesNormalizedPlace,
+  normalizePlaceName,
+  normalizeText,
+  pickFirst,
+  toNumber
+} = require('../utils');
 const { geocodeAddress, searchPlace } = require('./client');
 
-const X_PI = Math.PI * 3000.0 / 180.0;
+const X_PI = (Math.PI * 3000.0) / 180.0;
 
 function parseLocationPoint(location) {
   const [lngText, latText] = String(location || '').split(',');
@@ -14,7 +21,13 @@ function parseLocationPoint(location) {
 }
 
 function formatLocationPoint(point) {
-  if (!point || point.lng === null || point.lat === null || point.lng === undefined || point.lat === undefined) {
+  if (
+    !point ||
+    point.lng === null ||
+    point.lat === null ||
+    point.lng === undefined ||
+    point.lat === undefined
+  ) {
     return '';
   }
   return `${Number(point.lng).toFixed(6)},${Number(point.lat).toFixed(6)}`;
@@ -36,12 +49,13 @@ function normalizeHotelGeoForAmap(hotelGeo, hotelAddress = '') {
     return null;
   }
 
-  const fallbackPoint = toNumber(hotelGeo.lng) !== null && toNumber(hotelGeo.lat) !== null
-    ? {
-        lng: Number(hotelGeo.lng),
-        lat: Number(hotelGeo.lat)
-      }
-    : null;
+  const fallbackPoint =
+    toNumber(hotelGeo.lng) !== null && toNumber(hotelGeo.lat) !== null
+      ? {
+          lng: Number(hotelGeo.lng),
+          lat: Number(hotelGeo.lat)
+        }
+      : null;
   const rawPoint = parseLocationPoint(hotelGeo.location) || fallbackPoint;
   const mapType = normalizeText(hotelGeo.mapType || hotelGeo.coordinateType).toLowerCase();
 
@@ -49,10 +63,11 @@ function normalizeHotelGeoForAmap(hotelGeo, hotelAddress = '') {
     return null;
   }
 
-  const normalizedPoint = rawPoint && mapType === 'bd'
-    ? bd09ToGcj02(rawPoint.lng, rawPoint.lat)
-    : rawPoint;
-  const embeddedNearestSubway = normalizeText(hotelGeo && hotelGeo.nearestSubway && hotelGeo.nearestSubway.name)
+  const normalizedPoint =
+    rawPoint && mapType === 'bd' ? bd09ToGcj02(rawPoint.lng, rawPoint.lat) : rawPoint;
+  const embeddedNearestSubway = normalizeText(
+    hotelGeo && hotelGeo.nearestSubway && hotelGeo.nearestSubway.name
+  )
     ? {
         name: normalizeText(hotelGeo.nearestSubway.name),
         distanceMeters: toNumber(hotelGeo.nearestSubway.distanceMeters),
@@ -68,7 +83,9 @@ function normalizeHotelGeoForAmap(hotelGeo, hotelAddress = '') {
 
   return {
     formattedAddress: normalizeText(hotelGeo.address || hotelAddress),
-    location: normalizedPoint ? formatLocationPoint(normalizedPoint) : normalizeText(hotelGeo.location),
+    location: normalizedPoint
+      ? formatLocationPoint(normalizedPoint)
+      : normalizeText(hotelGeo.location),
     city: extractCityName(hotelGeo.address || hotelAddress),
     query: normalizeText(hotelGeo.location || hotelGeo.address || hotelAddress),
     source: mapType === 'bd' ? 'hotel-geo-bd09-converted' : 'hotel-geo',
@@ -91,11 +108,15 @@ function chooseBestPlaceCandidate(candidates, keyword, cityHint) {
       const haystack = normalizeText(`${candidate.name} ${candidate.formattedAddress}`);
       let score = 0;
       const exactVenueNames = ['国家会展中心(上海)', '上海国家会展中心', '国家会展中心 上海'];
-      const venueSubPoiPattern = /[0-9一二三四五六七八九十]+号馆|[东南西北]门|入口|出口|停车场|F\d+/;
+      const venueSubPoiPattern =
+        /[0-9一二三四五六七八九十]+号馆|[东南西北]门|入口|出口|停车场|F\d+/;
       if (candidate.name && includesNormalizedPlace(candidate.name, normalizedKeyword)) {
         score += 8;
       }
-      if (candidate.formattedAddress && includesNormalizedPlace(candidate.formattedAddress, normalizedKeyword)) {
+      if (
+        candidate.formattedAddress &&
+        includesNormalizedPlace(candidate.formattedAddress, normalizedKeyword)
+      ) {
         score += 4;
       }
       if (normalizedCity && haystack.includes(normalizedCity)) {
@@ -115,8 +136,7 @@ function chooseBestPlaceCandidate(candidates, keyword, cityHint) {
       }
       return { candidate, score };
     })
-    .sort((left, right) => right.score - left.score)[0]
-    .candidate;
+    .sort((left, right) => right.score - left.score)[0].candidate;
 }
 
 async function resolvePlace(address, options = {}) {

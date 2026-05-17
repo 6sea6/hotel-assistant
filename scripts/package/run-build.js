@@ -5,11 +5,7 @@ const { createBuilderConfig } = require('./create-builder-config');
 const { getSetupArtifactName } = require('./bundle-manifest');
 const { prepareFullBundle } = require('./prepare-full-bundle');
 const { verifyPackageLayout } = require('./verify-package-layout');
-const {
-  removeIfExists,
-  resolveWindowsCommand,
-  runCommand
-} = require('./utils');
+const { removeIfExists, resolveWindowsCommand, runCommand } = require('./utils');
 
 function getArgValue(argv, ...keys) {
   for (let index = 0; index < argv.length; index += 1) {
@@ -27,10 +23,19 @@ function getArgValue(argv, ...keys) {
 }
 
 function runElectronBuilder({ projectRoot, configPath }) {
-  const electronBuilderBin = path.join(projectRoot, 'node_modules', '.bin', resolveWindowsCommand('electron-builder'));
-  runCommand(electronBuilderBin, ['--win', 'nsis', '--x64', '--publish', 'never', '--config', configPath], {
-    cwd: projectRoot
-  });
+  const electronBuilderBin = path.join(
+    projectRoot,
+    'node_modules',
+    '.bin',
+    resolveWindowsCommand('electron-builder')
+  );
+  runCommand(
+    electronBuilderBin,
+    ['--win', 'nsis', '--x64', '--publish', 'never', '--config', configPath],
+    {
+      cwd: projectRoot
+    }
+  );
 }
 
 function copyFinalInstaller({ projectRoot, tempBuildDir, version, mode }) {
@@ -40,8 +45,12 @@ function copyFinalInstaller({ projectRoot, tempBuildDir, version, mode }) {
   const setupName = getSetupArtifactName(mode, version);
   const targetPath = path.join(distDir, setupName);
   const lastSetupFilePath = path.join(distDir, 'last-successful-setup.txt');
-  const sourceEntry = fs.readdirSync(tempBuildDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.exe') && /setup/i.test(entry.name))
+  const sourceEntry = fs
+    .readdirSync(tempBuildDir, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isFile() && entry.name.toLowerCase().endsWith('.exe') && /setup/i.test(entry.name)
+    )
     .map((entry) => ({
       name: entry.name,
       fullPath: path.join(tempBuildDir, entry.name),
@@ -74,17 +83,28 @@ function ensureNodeModules(projectRoot) {
     ...Object.keys(packageJson.dependencies || {}),
     ...Object.keys(scraperPackageJson.dependencies || {})
   ];
-  const hasAllPackages = requiredPackages.every((packageName) => (
+  const hasAllPackages = requiredPackages.every((packageName) =>
     fs.existsSync(path.join(projectRoot, 'node_modules', ...packageName.split('/'), 'package.json'))
-  ));
+  );
 
   if (fs.existsSync(path.join(projectRoot, 'node_modules')) && hasAllPackages) {
     return;
   }
 
-  runCommand(resolveWindowsCommand('npm'), ['ci', '--prefer-offline', '--no-audit', '--progress=false', '--fund=false', '--loglevel=error'], {
-    cwd: projectRoot
-  });
+  runCommand(
+    resolveWindowsCommand('npm'),
+    [
+      'ci',
+      '--prefer-offline',
+      '--no-audit',
+      '--progress=false',
+      '--fund=false',
+      '--loglevel=error'
+    ],
+    {
+      cwd: projectRoot
+    }
+  );
 }
 
 function syncBuildAssets(projectRoot) {
@@ -142,14 +162,11 @@ function main() {
 
     const refreshScript = path.join(projectRoot, 'scripts', 'refresh-shell-icons.ps1');
     if (fs.existsSync(refreshScript)) {
-      spawnSync('powershell', [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        refreshScript,
-        finalInstaller
-      ], { cwd: projectRoot, stdio: 'inherit' });
+      spawnSync(
+        'powershell',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', refreshScript, finalInstaller],
+        { cwd: projectRoot, stdio: 'inherit' }
+      );
     }
 
     console.log(finalInstaller);

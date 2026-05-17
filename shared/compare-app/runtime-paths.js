@@ -9,10 +9,7 @@ const {
   pickFirstExistingPath,
   readPointerDataFolder
 } = require('./data-folder');
-const {
-  BUNDLE_RESOURCE_MAP,
-  PROMPT_CONTRACT
-} = require('./prompt-contract');
+const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT } = require('./prompt-contract');
 
 function normalizeText(value) {
   return value === null || value === undefined ? '' : String(value).trim();
@@ -98,16 +95,15 @@ function resolveCompareAppDataFolder(options = {}) {
     appFolderName
   });
 
-  return pickFirstExistingPath([installedDataFolder, legacyDataFolder])
-    || installedDataFolder
-    || legacyDataFolder;
+  return (
+    pickFirstExistingPath([installedDataFolder, legacyDataFolder]) ||
+    installedDataFolder ||
+    legacyDataFolder
+  );
 }
 
 function buildCompareAppDataPaths(options = {}) {
-  const {
-    dataFolder,
-    storeFileName
-  } = options;
+  const { dataFolder, storeFileName } = options;
 
   return {
     dataFolder,
@@ -139,7 +135,9 @@ function getBundledResourcePaths(options = {}) {
 }
 
 function isBundledScraperAvailable(resourcePaths, existsSync = fs.existsSync) {
-  return Boolean(resourcePaths && existsSync(path.join(resourcePaths.scraperPath, 'src', 'cli.js')));
+  return Boolean(
+    resourcePaths && existsSync(path.join(resourcePaths.scraperPath, 'src', 'cli.js'))
+  );
 }
 
 module.exports = {

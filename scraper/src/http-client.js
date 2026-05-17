@@ -5,7 +5,8 @@ const axios = require('axios');
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_RETRIES = 1;
 const DEFAULT_RETRY_DELAY_MS = 250;
-const SENSITIVE_KEY_PATTERN = /(authorization|cookie|token|api[-_]?key|apikey|secret|password|key)$/i;
+const SENSITIVE_KEY_PATTERN =
+  /(authorization|cookie|token|api[-_]?key|apikey|secret|password|key)$/i;
 const KEEP_ALIVE_HTTP_AGENT = new http.Agent({
   keepAlive: true,
   maxSockets: 16,
@@ -39,7 +40,9 @@ function getHeaderEntry(headers, targetName) {
   }
 
   const normalizedTarget = String(targetName).toLowerCase();
-  const key = Object.keys(headers).find((headerName) => headerName.toLowerCase() === normalizedTarget);
+  const key = Object.keys(headers).find(
+    (headerName) => headerName.toLowerCase() === normalizedTarget
+  );
   return key ? { key, value: headers[key] } : null;
 }
 
@@ -75,10 +78,7 @@ function normalizeCookiePairs(cookieText) {
 }
 
 function mergeCookieHeader(existingCookie, cookieHeader) {
-  const pairs = [
-    ...normalizeCookiePairs(existingCookie),
-    ...normalizeCookiePairs(cookieHeader)
-  ];
+  const pairs = [...normalizeCookiePairs(existingCookie), ...normalizeCookiePairs(cookieHeader)];
   return [...new Set(pairs)].join('; ');
 }
 
@@ -94,7 +94,10 @@ function applyHeaderOptions(headers, options = {}) {
 
   if (options.cookieHeader) {
     const existingCookie = getHeaderEntry(output, 'cookie');
-    const mergedCookie = mergeCookieHeader(existingCookie && existingCookie.value, options.cookieHeader);
+    const mergedCookie = mergeCookieHeader(
+      existingCookie && existingCookie.value,
+      options.cookieHeader
+    );
     if (mergedCookie) {
       if (existingCookie) {
         output[existingCookie.key] = mergedCookie;
@@ -134,7 +137,10 @@ function redactUrl(rawUrl) {
     }
     return parsed.toString();
   } catch (_error) {
-    return String(rawUrl).replace(/([?&][^=]*(?:token|key|secret|password)[^=]*=)[^&\s]+/gi, '$1[REDACTED]');
+    return String(rawUrl).replace(
+      /([?&][^=]*(?:token|key|secret|password)[^=]*=)[^&\s]+/gi,
+      '$1[REDACTED]'
+    );
   }
 }
 
@@ -147,10 +153,12 @@ function redactObject(input) {
     return input.map(redactObject);
   }
 
-  return Object.fromEntries(Object.entries(input).map(([key, value]) => [
-    key,
-    SENSITIVE_KEY_PATTERN.test(key) ? redactValue(value) : redactObject(value)
-  ]));
+  return Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [
+      key,
+      SENSITIVE_KEY_PATTERN.test(key) ? redactValue(value) : redactObject(value)
+    ])
+  );
 }
 
 function stringifySnippet(data) {
@@ -215,7 +223,9 @@ function normalizeHttpError(error, context = {}) {
     return error;
   }
 
-  const method = String(context.method || (error && error.config && error.config.method) || 'GET').toUpperCase();
+  const method = String(
+    context.method || (error && error.config && error.config.method) || 'GET'
+  ).toUpperCase();
   const url = redactUrl(context.url || (error && error.config && error.config.url) || '');
   const status = error && error.response ? error.response.status : undefined;
   const code = error && error.code;
@@ -249,13 +259,10 @@ function buildAxiosConfig(config = {}) {
   const method = String(config.method || 'GET').toUpperCase();
   const timeoutMs = Number(config.timeoutMs || config.timeout || DEFAULT_TIMEOUT_MS);
   const data = config.data !== undefined ? config.data : config.body;
-  const headers = applyHeaderOptions(
-    mergeHeaders(config.defaultHeaders, config.headers),
-    {
-      cookieHeader: config.cookieHeader,
-      userAgent: config.userAgent
-    }
-  );
+  const headers = applyHeaderOptions(mergeHeaders(config.defaultHeaders, config.headers), {
+    cookieHeader: config.cookieHeader,
+    userAgent: config.userAgent
+  });
 
   const axiosConfig = {
     url: config.url,
@@ -302,7 +309,7 @@ async function request(config = {}) {
         throw normalizedError;
       }
 
-      await delay(retryDelayMs * (2 ** attempt));
+      await delay(retryDelayMs * 2 ** attempt);
     }
   }
 

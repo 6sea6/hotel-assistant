@@ -10,10 +10,7 @@ test('resolveSharedCompareAppPath prefers workspace shared modules during develo
   const resolved = resolveSharedCompareAppPath('constants.js');
 
   assert.equal(fs.existsSync(resolved), true);
-  assert.equal(
-    resolved,
-    path.resolve(__dirname, '..', 'shared', 'compare-app', 'constants.js')
-  );
+  assert.equal(resolved, path.resolve(__dirname, '..', 'shared', 'compare-app', 'constants.js'));
 });
 
 test('resolveSharedCompareAppPath falls back to packaged resources adjacent to app.asar', (t) => {

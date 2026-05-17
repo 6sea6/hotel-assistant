@@ -1,7 +1,10 @@
 const { evaluateInSession } = require('../cdp-utils');
 
 async function settleRoomListInEdgeSession(connection, sessionId) {
-  await evaluateInSession(connection, sessionId, `(async () => {
+  await evaluateInSession(
+    connection,
+    sessionId,
+    `(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const waitForDomIdle = async (idleMs = 220, timeoutMs = 1000) => {
       const root = document.body || document.documentElement;
@@ -202,7 +205,8 @@ async function settleRoomListInEdgeSession(connection, sessionId) {
     window.scrollTo({ top: 0, behavior: 'instant' });
     await sleep(100);
     return true;
-  })()`);
+  })()`
+  );
 }
 
 module.exports = {

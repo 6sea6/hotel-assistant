@@ -1,12 +1,6 @@
 const crypto = require('crypto');
-const {
-  classifyCancelPolicy,
-  rankRoomMatch
-} = require('./scraper/room-logic');
-const {
-  normalizeText,
-  sanitizeSensitiveData
-} = require('./utils');
+const { classifyCancelPolicy, rankRoomMatch } = require('./scraper/room-logic');
+const { normalizeText, sanitizeSensitiveData } = require('./utils');
 const { extractRoomOutputDetails } = require('./room-details');
 
 const COMPACT_TEXT_LIMIT = 700;
@@ -14,7 +8,10 @@ const COMPACT_TEXT_LIMIT = 700;
 function redactSensitiveText(text) {
   return String(text || '')
     .replace(/(bearer\s+)[a-z0-9._~+/-]+/gi, '$1[REDACTED]')
-    .replace(/((?:api[-_]?key|token|secret|cookie|authorization|password)["'\s:=]+)([^"',\s}{\]]+)/gi, '$1[REDACTED]');
+    .replace(
+      /((?:api[-_]?key|token|secret|cookie|authorization|password)["'\s:=]+)([^"',\s}{\]]+)/gi,
+      '$1[REDACTED]'
+    );
 }
 
 function compactText(value, limit = COMPACT_TEXT_LIMIT) {
@@ -143,15 +140,28 @@ function buildRejectedRoomType(room = {}, index = 0, evaluation = {}) {
   };
 }
 
-function pushNormalizeLog(logs, candidateId, field, rawValue, normalizedValue, templateValue, method) {
+function pushNormalizeLog(
+  logs,
+  candidateId,
+  field,
+  rawValue,
+  normalizedValue,
+  templateValue,
+  method
+) {
   logs.push({
     id: `normalize-${String(logs.length + 1).padStart(3, '0')}`,
     candidateId,
     field,
     rawValue: rawValue === null || rawValue === undefined ? '' : String(rawValue),
-    normalizedValue: normalizedValue === null || normalizedValue === undefined ? '' : String(normalizedValue),
-    matchedTemplate: templateValue === null || templateValue === undefined ? '' : String(templateValue),
-    confidence: normalizedValue !== null && normalizedValue !== undefined && String(normalizedValue) !== '' ? 0.9 : 0.2,
+    normalizedValue:
+      normalizedValue === null || normalizedValue === undefined ? '' : String(normalizedValue),
+    matchedTemplate:
+      templateValue === null || templateValue === undefined ? '' : String(templateValue),
+    confidence:
+      normalizedValue !== null && normalizedValue !== undefined && String(normalizedValue) !== ''
+        ? 0.9
+        : 0.2,
     method
   });
 }
@@ -253,7 +263,13 @@ function guessNotePartSource(notePart, roomDetails = {}, template = {}, pageSnap
   return '最终记录备注拼接结果';
 }
 
-function buildFinalHotelFieldLogs(finalHotels = [], candidates = [], eligibleIndexes = [], template = {}, pageSnapshot = {}) {
+function buildFinalHotelFieldLogs(
+  finalHotels = [],
+  candidates = [],
+  eligibleIndexes = [],
+  template = {},
+  pageSnapshot = {}
+) {
   const logs = [];
   const selectedCandidateIds = eligibleIndexes.map(({ index }) => ({
     index,
@@ -261,12 +277,21 @@ function buildFinalHotelFieldLogs(finalHotels = [], candidates = [], eligibleInd
   }));
 
   finalHotels.forEach((hotel, hotelIndex) => {
-    const selected = selectedCandidateIds[hotelIndex] || selectedCandidateIds[0] || { index: hotelIndex, candidateId: buildCandidateId(hotelIndex) };
+    const selected = selectedCandidateIds[hotelIndex] ||
+      selectedCandidateIds[0] || { index: hotelIndex, candidateId: buildCandidateId(hotelIndex) };
     const room = candidates[selected.index] || {};
     const roomDetails = extractRoomOutputDetails(room);
-    const hotelId = hotel && hotel.id ? String(hotel.id) : `final-hotel-${String(hotelIndex + 1).padStart(3, '0')}`;
+    const hotelId =
+      hotel && hotel.id
+        ? String(hotel.id)
+        : `final-hotel-${String(hotelIndex + 1).padStart(3, '0')}`;
 
-    if (hotel && hotel.room_area !== undefined && hotel.room_area !== null && normalizeText(hotel.room_area) !== '') {
+    if (
+      hotel &&
+      hotel.room_area !== undefined &&
+      hotel.room_area !== null &&
+      normalizeText(hotel.room_area) !== ''
+    ) {
       logs.push({
         id: `final-field-${String(logs.length + 1).padStart(3, '0')}`,
         hotelId,
@@ -274,12 +299,16 @@ function buildFinalHotelFieldLogs(finalHotels = [], candidates = [], eligibleInd
         field: 'room_area',
         value: normalizeText(hotel.room_area),
         source: roomDetails.areaValue !== null ? '房型详情面积解析' : '最终酒店记录',
-        sourceField: roomDetails.areaValue !== null ? 'roomDetails.areaValue' : 'finalHotels.room_area',
+        sourceField:
+          roomDetails.areaValue !== null ? 'roomDetails.areaValue' : 'finalHotels.room_area',
         rawValue: normalizeText(room.area || extractAreaText(room) || hotel.room_area),
-        explanation: roomDetails.areaValue !== null
-          ? '写入面积来自房型结构化详情或原始房型文本中的面积信息。'
-          : '写入面积存在于最终酒店记录，但未找到更早阶段的面积解析来源。',
-        candidateRoomName: normalizeText(room.original_title || room.title || hotel.original_room_type || hotel.room_type)
+        explanation:
+          roomDetails.areaValue !== null
+            ? '写入面积来自房型结构化详情或原始房型文本中的面积信息。'
+            : '写入面积存在于最终酒店记录，但未找到更早阶段的面积解析来源。',
+        candidateRoomName: normalizeText(
+          room.original_title || room.title || hotel.original_room_type || hotel.room_type
+        )
       });
     }
 
@@ -294,8 +323,11 @@ function buildFinalHotelFieldLogs(finalHotels = [], candidates = [], eligibleInd
         source: guessNotePartSource(notePart, roomDetails, template, pageSnapshot),
         sourceField: 'finalHotels.notes',
         rawValue: notePart,
-        explanation: '该备注是最终酒店记录写入 notes 前的组成片段，用于复核备注是否来自模板、房型详情、登录价格状态或交通计算。',
-        candidateRoomName: normalizeText(room.original_title || room.title || hotel.original_room_type || hotel.room_type)
+        explanation:
+          '该备注是最终酒店记录写入 notes 前的组成片段，用于复核备注是否来自模板、房型详情、登录价格状态或交通计算。',
+        candidateRoomName: normalizeText(
+          room.original_title || room.title || hotel.original_room_type || hotel.room_type
+        )
       });
     });
   });
@@ -303,27 +335,44 @@ function buildFinalHotelFieldLogs(finalHotels = [], candidates = [], eligibleInd
   return logs;
 }
 
-function summarizePageSnapshot(pageSnapshot = {}, roomCandidates = [], eligibleRooms = [], rejectedRooms = []) {
+function summarizePageSnapshot(
+  pageSnapshot = {},
+  roomCandidates = [],
+  eligibleRooms = [],
+  rejectedRooms = []
+) {
   const sources = Array.isArray(pageSnapshot.sources) ? pageSnapshot.sources : [];
-  const apiSources = sources.filter((source) => /api|replay|edge/i.test(String(source.source || '')));
-  const hasPriceArea = Boolean(pageSnapshot.room_price_visible)
-    || sources.some((source) => source && source.room_price_visible);
-  const hasLockedPriceHint = Boolean(pageSnapshot.selected_room_price_locked)
-    || sources.some((source) => source && source.locked_price_detected);
+  const apiSources = sources.filter((source) =>
+    /api|replay|edge/i.test(String(source.source || ''))
+  );
+  const hasPriceArea =
+    Boolean(pageSnapshot.room_price_visible) ||
+    sources.some((source) => source && source.room_price_visible);
+  const hasLockedPriceHint =
+    Boolean(pageSnapshot.selected_room_price_locked) ||
+    sources.some((source) => source && source.locked_price_detected);
 
   return {
     roomCardCount: sources
       .filter((source) => ['desktop', 'mobile', 'local-html'].includes(String(source.source || '')))
       .reduce((sum, source) => sum + (Number(source.room_candidates_count) || 0), 0),
-    apiRoomCount: apiSources.reduce((sum, source) => sum + (Number(source.room_candidates_count) || 0), 0),
+    apiRoomCount: apiSources.reduce(
+      (sum, source) => sum + (Number(source.room_candidates_count) || 0),
+      0
+    ),
     rawCandidateCount: roomCandidates.length,
     eligibleCount: eligibleRooms.length,
     rejectedCount: rejectedRooms.length,
     hasPriceArea,
     hasLockedPriceHint,
     suspectedLoginPrice: hasLockedPriceHint || (roomCandidates.length > 0 && !hasPriceArea),
-    expandedAllRooms: sources.some((source) => /edge|direct-room-list-replay/i.test(String(source.source || ''))),
-    apiError: sources.map((source) => source && source.error).filter(Boolean).join('; '),
+    expandedAllRooms: sources.some((source) =>
+      /edge|direct-room-list-replay/i.test(String(source.source || ''))
+    ),
+    apiError: sources
+      .map((source) => source && source.error)
+      .filter(Boolean)
+      .join('; '),
     sourceSummary: sources.map((source) => ({
       source: source.source || '',
       roomCandidatesCount: source.room_candidates_count ?? 0,
@@ -358,10 +407,7 @@ function fingerprintReviewInput(reviewInput) {
     },
     userConcern: ''
   };
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(stable))
-    .digest('hex');
+  return crypto.createHash('sha256').update(JSON.stringify(stable)).digest('hex');
 }
 
 function buildReviewInput({
@@ -381,8 +427,12 @@ function buildReviewInput({
   const rejectedIndexes = safeEvaluations
     .map((evaluation, index) => ({ evaluation, index }))
     .filter((item) => item.evaluation.action !== 'selected');
-  const eligibleRoomTypes = eligibleIndexes.map(({ index }) => buildEligibleRoomType(candidates[index], index, template));
-  const rejectedRoomTypes = rejectedIndexes.map(({ evaluation, index }) => buildRejectedRoomType(candidates[index], index, evaluation));
+  const eligibleRoomTypes = eligibleIndexes.map(({ index }) =>
+    buildEligibleRoomType(candidates[index], index, template)
+  );
+  const rejectedRoomTypes = rejectedIndexes.map(({ evaluation, index }) =>
+    buildRejectedRoomType(candidates[index], index, evaluation)
+  );
   const rawRoomCandidates = candidates.map(buildRawRoomCandidate);
   const normalizeLogs = buildNormalizeLogs(candidates, template);
   const selectionLogs = buildSelectionLogs(safeEvaluations);
@@ -402,7 +452,12 @@ function buildReviewInput({
     normalizeLogs,
     selectionLogs,
     finalHotelFieldLogs,
-    pageSnapshotSummary: summarizePageSnapshot(pageSnapshot, candidates, eligibleRoomTypes, rejectedRoomTypes),
+    pageSnapshotSummary: summarizePageSnapshot(
+      pageSnapshot,
+      candidates,
+      eligibleRoomTypes,
+      rejectedRoomTypes
+    ),
     userConcern: normalizeText(userConcern)
   });
 

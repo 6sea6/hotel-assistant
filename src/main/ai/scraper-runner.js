@@ -20,14 +20,17 @@ function resolveScraperPath(options = {}) {
   const existsSync = options.existsSync || fs.existsSync;
   let bundledAvailable = false;
   try {
-    bundledAvailable = typeof options.isBundledWithScraper === 'function'
-      ? options.isBundledWithScraper()
-      : isBundledWithScraper();
+    bundledAvailable =
+      typeof options.isBundledWithScraper === 'function'
+        ? options.isBundledWithScraper()
+        : isBundledWithScraper();
   } catch (error) {
     bundledAvailable = false;
   }
   const bundledScraperPath = bundledAvailable
-    ? (typeof options.getScraperPath === 'function' ? options.getScraperPath() : getScraperPath())
+    ? typeof options.getScraperPath === 'function'
+      ? options.getScraperPath()
+      : getScraperPath()
     : '';
   const candidates = [
     bundledAvailable ? bundledScraperPath : '',
@@ -35,7 +38,9 @@ function resolveScraperPath(options = {}) {
     process.resourcesPath ? path.join(process.resourcesPath, 'scraper') : ''
   ].filter(Boolean);
 
-  const resolved = candidates.find((candidate) => existsSync(path.join(candidate, 'src', 'task-runner.js')));
+  const resolved = candidates.find((candidate) =>
+    existsSync(path.join(candidate, 'src', 'task-runner.js'))
+  );
   if (!resolved) {
     throw new Error('未找到内置采集器，请确认项目内 scraper 目录或完整版采集资源存在。');
   }
@@ -74,7 +79,9 @@ function applyScraperVendorPath(scraperPath) {
   }
 
   const previousNodePath = process.env.NODE_PATH;
-  const currentPaths = previousNodePath ? previousNodePath.split(path.delimiter).filter(Boolean) : [];
+  const currentPaths = previousNodePath
+    ? previousNodePath.split(path.delimiter).filter(Boolean)
+    : [];
   if (!currentPaths.includes(vendorPath)) {
     process.env.NODE_PATH = [vendorPath, ...currentPaths].join(path.delimiter);
     Module._initPaths();
@@ -120,13 +127,16 @@ async function loadScraperModule(scraperPath, moduleFile) {
   const modulePath = path.join(scraperPath, 'src', moduleFile);
   const cacheKey = path.resolve(modulePath);
   if (!scraperModuleCache.has(cacheKey)) {
-    scraperModuleCache.set(cacheKey, import(pathToFileURL(modulePath).href)
-      .then((module) => module.default || module)
-      .catch((error) => {
-        scraperModuleCache.delete(cacheKey);
-        const message = error && error.message ? error.message : String(error || '未知错误');
-        throw new Error(`采集模块加载失败（${moduleFile}）：${message}`);
-      }));
+    scraperModuleCache.set(
+      cacheKey,
+      import(pathToFileURL(modulePath).href)
+        .then((module) => module.default || module)
+        .catch((error) => {
+          scraperModuleCache.delete(cacheKey);
+          const message = error && error.message ? error.message : String(error || '未知错误');
+          throw new Error(`采集模块加载失败（${moduleFile}）：${message}`);
+        })
+    );
   }
 
   return scraperModuleCache.get(cacheKey);
@@ -134,7 +144,9 @@ async function loadScraperModule(scraperPath, moduleFile) {
 
 function isCtripHotelUrl(url) {
   try {
-    let cleaned = String(url || '').replace(/&amp;/g, '&').trim();
+    let cleaned = String(url || '')
+      .replace(/&amp;/g, '&')
+      .trim();
     const inlineTextIndex = cleaned.search(INLINE_URL_TEXT_SEPARATOR);
     if (inlineTextIndex > 0) {
       cleaned = cleaned.slice(0, inlineTextIndex);
@@ -180,12 +192,7 @@ function extractUrlsFromText(value) {
 }
 
 function getCtripHotelInputUrls(input = {}) {
-  const rawValues = [
-    input.url,
-    input.urls,
-    input.text,
-    input.inputText
-  ];
+  const rawValues = [input.url, input.urls, input.text, input.inputText];
   return extractUrlsFromText(rawValues).filter(isCtripHotelUrl);
 }
 
@@ -194,8 +201,12 @@ function buildScraperArgs(input, workDir) {
     url: input.url,
     urls: Array.isArray(input.urls) ? input.urls.join('\n') : input.urls,
     text: input.text || input.inputText || '',
-    listFilters: input.listFilters && typeof input.listFilters === 'object' ? input.listFilters : undefined,
-    listUrlFilters: input.listUrlFilters && typeof input.listUrlFilters === 'object' ? input.listUrlFilters : undefined,
+    listFilters:
+      input.listFilters && typeof input.listFilters === 'object' ? input.listFilters : undefined,
+    listUrlFilters:
+      input.listUrlFilters && typeof input.listUrlFilters === 'object'
+        ? input.listUrlFilters
+        : undefined,
     'auto-edge': true,
     'edge-user-data-dir': path.join(workDir, 'state', 'edge-profile'),
     'edge-profile-directory': 'Default',
@@ -216,10 +227,18 @@ function buildScraperArgs(input, workDir) {
   if (input.maxPages !== null && input.maxPages !== undefined && input.maxPages !== '') {
     args.maxPages = input.maxPages;
   }
-  if (input.maxCandidatesPerPage !== null && input.maxCandidatesPerPage !== undefined && input.maxCandidatesPerPage !== '') {
+  if (
+    input.maxCandidatesPerPage !== null &&
+    input.maxCandidatesPerPage !== undefined &&
+    input.maxCandidatesPerPage !== ''
+  ) {
     args.maxCandidatesPerPage = input.maxCandidatesPerPage;
   }
-  if (input.desiredHotelCount !== null && input.desiredHotelCount !== undefined && input.desiredHotelCount !== '') {
+  if (
+    input.desiredHotelCount !== null &&
+    input.desiredHotelCount !== undefined &&
+    input.desiredHotelCount !== ''
+  ) {
     args.desiredHotelCount = input.desiredHotelCount;
   }
   if (input.excludeHotelTypes) {
@@ -228,7 +247,11 @@ function buildScraperArgs(input, workDir) {
   if (input.excludeAccommodationKeywords) {
     args.excludeAccommodationKeywords = input.excludeAccommodationKeywords;
   }
-  if (input.amapKey !== null && input.amapKey !== undefined && String(input.amapKey).trim() !== '') {
+  if (
+    input.amapKey !== null &&
+    input.amapKey !== undefined &&
+    String(input.amapKey).trim() !== ''
+  ) {
     args.amapKey = String(input.amapKey).trim();
   }
   [
@@ -290,8 +313,9 @@ function hasLockedPriceSignal(result = {}) {
     return true;
   }
 
-  return (Array.isArray(pageSnapshot.sources) ? pageSnapshot.sources : [])
-    .some((source) => source && source.locked_price_detected);
+  return (Array.isArray(pageSnapshot.sources) ? pageSnapshot.sources : []).some(
+    (source) => source && source.locked_price_detected
+  );
 }
 
 function getVisibleLoginRetryNeed(result = {}) {
@@ -303,7 +327,8 @@ function getVisibleLoginRetryNeed(result = {}) {
   }
 
   const pageSnapshot = getPageSnapshot(result) || {};
-  const totalPriceMissing = result.totalPrice === null || result.totalPrice === undefined || result.totalPrice === '';
+  const totalPriceMissing =
+    result.totalPrice === null || result.totalPrice === undefined || result.totalPrice === '';
   const roomPricesMissing = !Array.isArray(result.roomPrices) || result.roomPrices.length === 0;
   const candidatesCount = Number(pageSnapshot.room_candidates_count || 0);
   const visiblePriceMissing = candidatesCount > 0 && pageSnapshot.room_price_visible === false;
@@ -368,9 +393,7 @@ async function createWriteRollbackSnapshot(scraperPath, rollbackState = {}) {
   rollbackState.restored = false;
   rollbackState.storePath = storePath;
   rollbackState.storeExisted = fs.existsSync(storePath);
-  rollbackState.snapshotJson = rollbackState.storeExisted
-    ? fs.readFileSync(storePath, 'utf8')
-    : '';
+  rollbackState.snapshotJson = rollbackState.storeExisted ? fs.readFileSync(storePath, 'utf8') : '';
 
   return rollbackState;
 }
@@ -510,15 +533,23 @@ async function applyReviewedHotels(hotels, context = {}) {
   return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
     const fileName = `ai-review-${String(context.taskId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}.json`;
     const outputPath = path.join(workDir, 'output', fileName);
-    fs.writeFileSync(outputPath, JSON.stringify({
-      hotels,
-      hotel: hotels[0] || null,
-      review: {
-        taskId: context.taskId || '',
-        outputFingerprint: context.outputFingerprint || '',
-        createdAt: new Date().toISOString()
-      }
-    }, null, 2), 'utf8');
+    fs.writeFileSync(
+      outputPath,
+      JSON.stringify(
+        {
+          hotels,
+          hotel: hotels[0] || null,
+          review: {
+            taskId: context.taskId || '',
+            outputFingerprint: context.outputFingerprint || '',
+            createdAt: new Date().toISOString()
+          }
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
 
     return runApplyTask(scraperPath, outputPath, workDir, context, {
       overwriteExistingGroup: true
@@ -554,14 +585,18 @@ async function collectAndWriteCtripHotel(input, context = {}) {
       if (retryNeed.needed && !(collectResult.loginRetry && collectResult.loginRetry.attempted)) {
         emitScraperEvent(context, 'edge:login-required', '需要重新登录携程后继续采集', {
           reason: retryNeed.reason,
-          instruction: '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
+          instruction:
+            '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
         });
         emitScraperEvent(context, 'edge:login-window', '已打开 Edge 登录窗口，等待你完成登录', {
           instruction: '登录完成后请关闭 Edge 窗口；关闭后程序会继续采集，不需要重新发送链接。'
         });
 
         assertNotCancelled(context.signal);
-        const { runInteractiveEdgeLoginPrep } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
+        const { runInteractiveEdgeLoginPrep } = await loadScraperModule(
+          scraperPath,
+          'cli/auto-edge.js'
+        );
         await runInteractiveEdgeLoginPrep({
           userDataDir: path.join(workDir, 'state', 'edge-profile'),
           profileDirectory: 'Default',
@@ -582,14 +617,19 @@ async function collectAndWriteCtripHotel(input, context = {}) {
       }
 
       if (collectResult.batchMode) {
-        const batchApplyResult = await applyBatchItemOutputs(scraperPath, collectResult, workDir, context, rollbackState);
+        const batchApplyResult = await applyBatchItemOutputs(
+          scraperPath,
+          collectResult,
+          workDir,
+          context,
+          rollbackState
+        );
         assertNotCancelled(context.signal);
         return {
           ...collectResult,
           writeSkipped: batchApplyResult.appliedCount === 0,
-          writeSkipReason: batchApplyResult.appliedCount === 0
-            ? '批量采集没有可安全写入的详情页结果。'
-            : '',
+          writeSkipReason:
+            batchApplyResult.appliedCount === 0 ? '批量采集没有可安全写入的详情页结果。' : '',
           writeResult: batchApplyResult,
           latestApplyResult: batchApplyResult
         };
@@ -597,9 +637,10 @@ async function collectAndWriteCtripHotel(input, context = {}) {
 
       const writeSafety = assertSafeWriteResult(collectResult);
       if (!writeSafety.ok) {
-        const retriedButStillMissingPrice = collectResult.loginRetry
-          && collectResult.loginRetry.attempted
-          && writeSafety.reason.includes('未采集到有效价格');
+        const retriedButStillMissingPrice =
+          collectResult.loginRetry &&
+          collectResult.loginRetry.attempted &&
+          writeSafety.reason.includes('未采集到有效价格');
         return {
           ...collectResult,
           writeSkipped: true,
@@ -611,7 +652,12 @@ async function collectAndWriteCtripHotel(input, context = {}) {
       }
 
       await createWriteRollbackSnapshot(scraperPath, rollbackState);
-      const applyResult = await runApplyTask(scraperPath, collectResult.outputPath, workDir, context);
+      const applyResult = await runApplyTask(
+        scraperPath,
+        collectResult.outputPath,
+        workDir,
+        context
+      );
       assertNotCancelled(context.signal);
 
       return {
@@ -639,7 +685,10 @@ async function openVisibleEdgeLogin(input, context = {}) {
   ensureScraperRuntimeDirs(workDir);
 
   return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
-    const { runInteractiveEdgeLoginPrep } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
+    const { runInteractiveEdgeLoginPrep } = await loadScraperModule(
+      scraperPath,
+      'cli/auto-edge.js'
+    );
     await runInteractiveEdgeLoginPrep({
       userDataDir: path.join(workDir, 'state', 'edge-profile'),
       profileDirectory: 'Default',

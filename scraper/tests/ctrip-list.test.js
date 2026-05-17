@@ -12,10 +12,7 @@ const {
   normalizeListPageFilterOptions,
   parseListPageCandidatesFromHtml
 } = require('../src/scraper/list-page-parser');
-const {
-  expandCtripHotelInputs,
-  normalizeListFiltersFromArgs
-} = require('../src/ctrip-list');
+const { expandCtripHotelInputs, normalizeListFiltersFromArgs } = require('../src/ctrip-list');
 const {
   collectListPageCandidates: collectRawListPageCandidates
 } = require('../src/scraper/list-page-collector');
@@ -24,12 +21,16 @@ function buildListHtml(cards = []) {
   return `
     <html>
       <body>
-        ${cards.map((card) => `
+        ${cards
+          .map(
+            (card) => `
           <div class="right-card" data-offline-hotelId="${card.id}">
             <span class="hotelName">${card.name}</span>
             <span class="score">${card.score || '4.8'}</span>
           </div>
-        `).join('')}
+        `
+          )
+          .join('')}
       </body>
     </html>
   `;
@@ -107,7 +108,10 @@ test('parseListPageCandidatesFromHtml reads ctrip structured list cards', () => 
     }
   );
 
-  assert.deepEqual(candidates.map((candidate) => candidate.hotelId), ['117627065', '712581']);
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.hotelId),
+    ['117627065', '712581']
+  );
   assert.equal(candidates[0].hotelName, '丽怡酒店(武汉泛海CBD汉口火车站店)');
   assert.equal(candidates[0].ctripScore, 4.8);
   assert.equal(candidates[0].sourceOrder, 1);
@@ -168,8 +172,15 @@ test('parseListPageCandidatesFromHtml reads embedded JSON and emits normalized c
   );
 
   assert.ok(candidates.some((candidate) => candidate.hotelId === '1001'));
-  assert.ok(candidates.find((candidate) => candidate.hotelId === '1001').detailUrl.includes('checkIn=2026-06-01'));
-  assert.equal(candidates.find((candidate) => candidate.hotelId === '1001').hotelName, '江汉路示例酒店');
+  assert.ok(
+    candidates
+      .find((candidate) => candidate.hotelId === '1001')
+      .detailUrl.includes('checkIn=2026-06-01')
+  );
+  assert.equal(
+    candidates.find((candidate) => candidate.hotelId === '1001').hotelName,
+    '江汉路示例酒店'
+  );
   assert.equal(candidates.find((candidate) => candidate.hotelId === '1001').ctripScore, 4.8);
   assert.equal(candidates.find((candidate) => candidate.hotelId === '1001').sourceOrder, 1);
 
@@ -181,10 +192,21 @@ test('parseListPageCandidatesFromHtml reads embedded JSON and emits normalized c
   assert.equal(prefilter.selected.length, 2);
   assert.equal(prefilter.selected[0].hotelId, '1001');
   assert.equal(prefilter.selected[1].hotelId, '1003');
-  assert.ok(!prefilter.rejected.some((candidate) => candidate.rejectReason === 'score_below_minimum'));
-  assert.ok(!prefilter.rejected.some((candidate) => String(candidate.rejectReason).startsWith('name_keyword:')));
-  assert.ok(prefilter.rejected.some((candidate) => candidate.rejectReason === 'hotel_type_keyword:青年旅舍'));
-  assert.deepEqual(prefilter.detailUrls, prefilter.selected.map((candidate) => candidate.detailUrl));
+  assert.ok(
+    !prefilter.rejected.some((candidate) => candidate.rejectReason === 'score_below_minimum')
+  );
+  assert.ok(
+    !prefilter.rejected.some((candidate) =>
+      String(candidate.rejectReason).startsWith('name_keyword:')
+    )
+  );
+  assert.ok(
+    prefilter.rejected.some((candidate) => candidate.rejectReason === 'hotel_type_keyword:青年旅舍')
+  );
+  assert.deepEqual(
+    prefilter.detailUrls,
+    prefilter.selected.map((candidate) => candidate.detailUrl)
+  );
 });
 
 test('list page filters support defaults, desired count and max candidates per page', () => {
@@ -223,111 +245,129 @@ test('normalizeListFiltersFromArgs supports CLI aliases', () => {
 
 test('expandCtripHotelInputs expands list URLs to ordered detail URLs', async () => {
   const calls = [];
-  const expanded = await expandCtripHotelInputs({
-    url: 'https://hotels.ctrip.com/hotels/list?city=2'
-  }, {
-    check_in_date: '2026-06-01',
-    check_out_date: '2026-06-02',
-    room_count: 2
-  }, {
-    desiredHotelCount: 2,
-    maxPages: 1
-  }, {
-    collectListPageCandidates: async (url, template, filters) => {
-      calls.push({ url, template, filters });
-      return {
-        inputUrl: url,
-        pageUrls: [url],
-        pages: [],
-        filters,
-        totalCandidates: 2,
-        candidates: [],
-        rejected: [],
-        detailUrls: [
-          'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
-          'https://hotels.ctrip.com/hotels/detail/?hotelId=2002'
-        ],
-        selected: [
-          {
-            hotelId: '2001',
-            hotelName: '第一家酒店',
-            ctripScore: 4.8,
-            detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
-            badges: [],
-            hotelType: '酒店',
-            visibleTags: [],
-            sourceOrder: 1
-          },
-          {
-            hotelId: '2002',
-            hotelName: '第二家酒店',
-            ctripScore: 4.7,
-            detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2002',
-            badges: [],
-            hotelType: '酒店',
-            visibleTags: [],
-            sourceOrder: 2
-          }
-        ],
-        errors: [],
-        edgeFallbackUsed: false
-      };
+  const expanded = await expandCtripHotelInputs(
+    {
+      url: 'https://hotels.ctrip.com/hotels/list?city=2'
+    },
+    {
+      check_in_date: '2026-06-01',
+      check_out_date: '2026-06-02',
+      room_count: 2
+    },
+    {
+      desiredHotelCount: 2,
+      maxPages: 1
+    },
+    {
+      collectListPageCandidates: async (url, template, filters) => {
+        calls.push({ url, template, filters });
+        return {
+          inputUrl: url,
+          pageUrls: [url],
+          pages: [],
+          filters,
+          totalCandidates: 2,
+          candidates: [],
+          rejected: [],
+          detailUrls: [
+            'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
+            'https://hotels.ctrip.com/hotels/detail/?hotelId=2002'
+          ],
+          selected: [
+            {
+              hotelId: '2001',
+              hotelName: '第一家酒店',
+              ctripScore: 4.8,
+              detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
+              badges: [],
+              hotelType: '酒店',
+              visibleTags: [],
+              sourceOrder: 1
+            },
+            {
+              hotelId: '2002',
+              hotelName: '第二家酒店',
+              ctripScore: 4.7,
+              detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2002',
+              badges: [],
+              hotelType: '酒店',
+              visibleTags: [],
+              sourceOrder: 2
+            }
+          ],
+          errors: [],
+          edgeFallbackUsed: false
+        };
+      }
     }
-  });
+  );
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].filters.desiredHotelCount, 2);
   assert.equal(expanded.inputMode, 'list');
-  assert.deepEqual(expanded.hotelInputs.map((item) => item.hotelId), ['2001', '2002']);
-  assert.deepEqual(expanded.hotelInputs.map((item) => item.source), ['list-prefilter', 'list-prefilter']);
+  assert.deepEqual(
+    expanded.hotelInputs.map((item) => item.hotelId),
+    ['2001', '2002']
+  );
+  assert.deepEqual(
+    expanded.hotelInputs.map((item) => item.source),
+    ['list-prefilter', 'list-prefilter']
+  );
   assert.ok(expanded.hotelInputs[0].url.includes('checkIn=2026-06-01'));
   assert.equal(expanded.summary.expandedHotelCount, 2);
 });
 
 test('expandCtripHotelInputs merges Ctrip URL filters before collecting list pages', async () => {
   const calls = [];
-  await expandCtripHotelInputs({
-    url: 'https://hotels.ctrip.com/hotels/list?city=2&listFilters=29~1*29*1~3*2,17~3*17*3',
-    listUrlFilters: {
-      priceMin: 50,
-      priceMax: 200,
-      sortMode: 'review_high',
-      freeCancel: true
+  await expandCtripHotelInputs(
+    {
+      url: 'https://hotels.ctrip.com/hotels/list?city=2&listFilters=29~1*29*1~3*2,17~3*17*3',
+      listUrlFilters: {
+        priceMin: 50,
+        priceMax: 200,
+        sortMode: 'review_high',
+        freeCancel: true
+      }
+    },
+    {
+      check_in_date: '2026-06-01',
+      check_out_date: '2026-06-02',
+      room_count: 2
+    },
+    {
+      desiredHotelCount: 1,
+      maxPages: 1
+    },
+    {
+      collectListPageCandidates: async (url, template, filters) => {
+        calls.push({ url, template, filters });
+        return {
+          inputUrl: url,
+          pageUrls: [url],
+          pages: [],
+          filters,
+          totalCandidates: 1,
+          candidates: [],
+          rejected: [],
+          detailUrls: ['https://hotels.ctrip.com/hotels/detail/?hotelId=2001'],
+          selected: [
+            {
+              hotelId: '2001',
+              hotelName: '第一家酒店',
+              ctripScore: 4.8,
+              detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
+              badges: [],
+              hotelType: '酒店',
+              visibleTags: [],
+              sourceOrder: 1
+            }
+          ],
+          errors: [],
+          edgeFallbackUsed: false
+        };
+      }
     }
-  }, {
-    check_in_date: '2026-06-01',
-    check_out_date: '2026-06-02',
-    room_count: 2
-  }, {
-    desiredHotelCount: 1,
-    maxPages: 1
-  }, {
-    collectListPageCandidates: async (url, template, filters) => {
-      calls.push({ url, template, filters });
-      return {
-        inputUrl: url,
-        pageUrls: [url],
-        pages: [],
-        filters,
-        totalCandidates: 1,
-        candidates: [],
-        rejected: [],
-        detailUrls: ['https://hotels.ctrip.com/hotels/detail/?hotelId=2001'],
-        selected: [{
-          hotelId: '2001',
-          hotelName: '第一家酒店',
-          ctripScore: 4.8,
-          detailUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2001',
-          badges: [],
-          hotelType: '酒店',
-          visibleTags: [],
-          sourceOrder: 1
-        }],
-        errors: [],
-        edgeFallbackUsed: false
-      };
-    }
-  });
+  );
 
   assert.equal(calls.length, 1);
   const decodedUrl = decodeURIComponent(calls[0].url);
@@ -388,7 +428,12 @@ test('collectListPageCandidates Edge fallback parses pages incrementally and sto
           processedEdgeUrls.push(url);
           const page = {
             url,
-            html: buildListHtml([{ id: `400${processedEdgeUrls.length}`, name: `Edge 第 ${processedEdgeUrls.length} 家` }]),
+            html: buildListHtml([
+              {
+                id: `400${processedEdgeUrls.length}`,
+                name: `Edge 第 ${processedEdgeUrls.length} 家`
+              }
+            ]),
             source: 'edge-cdp',
             durationMs: 1
           };
@@ -424,9 +469,10 @@ test('collectListPageCandidates preserves page order when Edge fills an earlier 
       fetchHtml: async () => {
         htmlFetchIndex += 1;
         return {
-          html: htmlFetchIndex === 1
-            ? buildListHtml([])
-            : buildListHtml([{ id: '5002', name: 'HTML 第二页' }])
+          html:
+            htmlFetchIndex === 1
+              ? buildListHtml([])
+              : buildListHtml([{ id: '5002', name: 'HTML 第二页' }])
         };
       },
       captureListHtmlPagesWithEdge: async (urls, _edgeSession, options = {}) => {
@@ -446,6 +492,9 @@ test('collectListPageCandidates preserves page order when Edge fills an earlier 
     }
   );
 
-  assert.deepEqual(result.selected.map((candidate) => candidate.hotelId), ['5001', '5002']);
+  assert.deepEqual(
+    result.selected.map((candidate) => candidate.hotelId),
+    ['5001', '5002']
+  );
   assert.ok(result.selected[0].sourceOrder < result.selected[1].sourceOrder);
 });

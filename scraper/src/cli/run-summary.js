@@ -13,11 +13,11 @@ function pickFirst(...values) {
 }
 
 function getFirstEligibleHotel(payload) {
-  return Array.isArray(payload.eligibleHotels) ? (payload.eligibleHotels[0] || {}) : {};
+  return Array.isArray(payload.eligibleHotels) ? payload.eligibleHotels[0] || {} : {};
 }
 
 function getFirstEligibleRoom(payload) {
-  return Array.isArray(payload.eligibleRoomTypes) ? (payload.eligibleRoomTypes[0] || {}) : {};
+  return Array.isArray(payload.eligibleRoomTypes) ? payload.eligibleRoomTypes[0] || {} : {};
 }
 
 function buildPageSnapshotSummary(pageSnapshot) {
@@ -49,7 +49,9 @@ function buildPageSnapshotSummary(pageSnapshot) {
     room_price_visible: Boolean(pageSnapshot.room_price_visible),
     selected_room_source: pageSnapshot.selected_room_source || '',
     selected_room_price_locked: Boolean(pageSnapshot.selected_room_price_locked),
-    saved_html_file_count: Array.isArray(pageSnapshot.saved_html_files) ? pageSnapshot.saved_html_files.length : 0,
+    saved_html_file_count: Array.isArray(pageSnapshot.saved_html_files)
+      ? pageSnapshot.saved_html_files.length
+      : 0,
     sources: Array.isArray(pageSnapshot.sources)
       ? pageSnapshot.sources.map(summarizeSource).filter(Boolean)
       : []
@@ -85,7 +87,12 @@ function buildRunSummary(payload) {
     roomType: payload.roomType || '',
     roomOccupancy: payload.roomOccupancy ?? null,
     roomPrices: payload.roomPrices || [],
-    totalPrice: pickFirst(payload.totalPrice, firstRoom.totalPrice, firstRoom.total_price, firstHotel.total_price),
+    totalPrice: pickFirst(
+      payload.totalPrice,
+      firstRoom.totalPrice,
+      firstRoom.total_price,
+      firstHotel.total_price
+    ),
     ctripScore: pickFirst(payload.ctripScore, firstHotel.ctrip_score),
     distance: pickFirst(payload.distance, firstHotel.distance, ''),
     subwayDistance: pickFirst(payload.subwayDistance, firstHotel.subway_distance, ''),

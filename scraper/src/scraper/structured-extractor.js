@@ -1,7 +1,16 @@
 const { normalizeText, pickFirst, toNumber, extractFirstMatch } = require('../utils');
-const { buildMobileUrl, parseHotelIdFromUrl, buildUrlOverridesFromTemplate } = require('../ctrip-url');
+const {
+  buildMobileUrl,
+  parseHotelIdFromUrl,
+  buildUrlOverridesFromTemplate
+} = require('../ctrip-url');
 const { normalizeRoomCandidate, mergeRoomCandidates } = require('./room-logic');
-const { inferOccupancy, extractRelevantPricesFromSnippet, extractExcludedPricesFromSnippet, extractEmbeddedObject } = require('./html-parser');
+const {
+  inferOccupancy,
+  extractRelevantPricesFromSnippet,
+  extractExcludedPricesFromSnippet,
+  extractEmbeddedObject
+} = require('./html-parser');
 
 function deepClone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -197,12 +206,9 @@ function collectVisiblePhysicalRoomIds(record) {
   }
 
   for (const group of groups) {
-    const physicalRoomId = normalizeText(String(pickFirst(
-      group && group.key,
-      group && group.physicalRoomId,
-      group && group.id,
-      ''
-    )));
+    const physicalRoomId = normalizeText(
+      String(pickFirst(group && group.key, group && group.physicalRoomId, group && group.id, ''))
+    );
     if (physicalRoomId) {
       ids.add(physicalRoomId);
     }
@@ -212,13 +218,22 @@ function collectVisiblePhysicalRoomIds(record) {
 }
 
 function hasVisibleTagSignals(tags) {
-  return Array.isArray(tags) && tags.some((tag) => Boolean(normalizeText(pickFirst(
-    tag && tag.tagTitle,
-    tag && tag.title,
-    tag && tag.name,
-    tag && tag.text,
-    tag && tag.content
-  ))));
+  return (
+    Array.isArray(tags) &&
+    tags.some((tag) =>
+      Boolean(
+        normalizeText(
+          pickFirst(
+            tag && tag.tagTitle,
+            tag && tag.title,
+            tag && tag.name,
+            tag && tag.text,
+            tag && tag.content
+          )
+        )
+      )
+    )
+  );
 }
 
 function isExplicitlyHiddenSaleRoom(saleRoom) {
@@ -227,12 +242,12 @@ function isExplicitlyHiddenSaleRoom(saleRoom) {
   }
 
   if (
-    saleRoom.visible === false
-    || saleRoom.isVisible === false
-    || saleRoom.isShow === false
-    || saleRoom.showSaleRoom === false
-    || saleRoom.display === false
-    || saleRoom.hidden === true
+    saleRoom.visible === false ||
+    saleRoom.isVisible === false ||
+    saleRoom.isShow === false ||
+    saleRoom.showSaleRoom === false ||
+    saleRoom.display === false ||
+    saleRoom.hidden === true
   ) {
     return true;
   }
@@ -246,19 +261,25 @@ function isFoldedRoomRecord(record) {
     return false;
   }
 
-  return record.isFoldStatus === true
-    || record.isFold === true
-    || record.isFold === 1
-    || record.foldStatus === true
-    || record.foldStatus === 1;
+  return (
+    record.isFoldStatus === true ||
+    record.isFold === true ||
+    record.isFold === 1 ||
+    record.foldStatus === true ||
+    record.foldStatus === 1
+  );
 }
 
 function hasFallbackVisibilityEvidence(physicalRoom, saleRoom, visiblePhysicalRoomIds) {
-  const physicalRoomId = normalizeText(String(pickFirst(
-    physicalRoom && (physicalRoom.id || physicalRoom.physicalRoomId || physicalRoom.roomId),
-    saleRoom && (saleRoom.physicalRoomId || saleRoom.physicRoomId || saleRoom.roomId),
-    ''
-  )));
+  const physicalRoomId = normalizeText(
+    String(
+      pickFirst(
+        physicalRoom && (physicalRoom.id || physicalRoom.physicalRoomId || physicalRoom.roomId),
+        saleRoom && (saleRoom.physicalRoomId || saleRoom.physicRoomId || saleRoom.roomId),
+        ''
+      )
+    )
+  );
 
   if (physicalRoomId && visiblePhysicalRoomIds.has(physicalRoomId)) {
     return true;
@@ -267,18 +288,20 @@ function hasFallbackVisibilityEvidence(physicalRoom, saleRoom, visiblePhysicalRo
   if (saleRoom && saleRoom.bookingStatusInfo) {
     const remainRoomQuantity = toNumber(saleRoom.bookingStatusInfo.remainRoomQuantity);
     if (
-      saleRoom.bookingStatusInfo.isBooking === true
-      || saleRoom.bookingStatusInfo.isHidePrice === true
-      || (remainRoomQuantity !== null && remainRoomQuantity > 0)
+      saleRoom.bookingStatusInfo.isBooking === true ||
+      saleRoom.bookingStatusInfo.isHidePrice === true ||
+      (remainRoomQuantity !== null && remainRoomQuantity > 0)
     ) {
       return true;
     }
   }
 
-  return extractStructuredRecordOccupancy(saleRoom) !== null
-    || hasVisibleTagSignals(saleRoom && saleRoom.tagInfoList)
-    || hasVisibleTagSignals(saleRoom && saleRoom.saleRoomCategoryList)
-    || hasVisibleTagSignals(physicalRoom && physicalRoom.physicalFacilityList);
+  return (
+    extractStructuredRecordOccupancy(saleRoom) !== null ||
+    hasVisibleTagSignals(saleRoom && saleRoom.tagInfoList) ||
+    hasVisibleTagSignals(saleRoom && saleRoom.saleRoomCategoryList) ||
+    hasVisibleTagSignals(physicalRoom && physicalRoom.physicalFacilityList)
+  );
 }
 
 function buildCandidateFromRoomMapping(physicalRoom, saleRoom, subRoom, source) {
@@ -309,14 +332,17 @@ function buildCandidateFromRoomMapping(physicalRoom, saleRoom, subRoom, source) 
   ];
   const effectivePrices = [...new Set(prices)].sort((left, right) => left - right);
   const isPriceLocked = Boolean(
-    (saleRoom && saleRoom.bookingStatusInfo && saleRoom.bookingStatusInfo.isHidePrice)
-    || /登录看低价|解锁优惠/.test(snippet)
+    (saleRoom && saleRoom.bookingStatusInfo && saleRoom.bookingStatusInfo.isHidePrice) ||
+    /登录看低价|解锁优惠/.test(snippet)
   );
-  const hasRoomIdentity = Boolean(title) && Boolean(
-    (physicalRoom && (physicalRoom.id || physicalRoom.physicalRoomId || physicalRoom.roomId))
-    || (saleRoom && (saleRoom.id || saleRoom.roomId || saleRoom.physicalRoomId || saleRoom.roomCode))
-    || (subRoom && (subRoom.key || subRoom.sRoomId || subRoom.skey || subRoom.roomToken))
-  );
+  const hasRoomIdentity =
+    Boolean(title) &&
+    Boolean(
+      (physicalRoom && (physicalRoom.id || physicalRoom.physicalRoomId || physicalRoom.roomId)) ||
+      (saleRoom &&
+        (saleRoom.id || saleRoom.roomId || saleRoom.physicalRoomId || saleRoom.roomCode)) ||
+      (subRoom && (subRoom.key || subRoom.sRoomId || subRoom.skey || subRoom.roomToken))
+    );
 
   if (!hasRoomIdentity || (!isPriceLocked && effectivePrices.length === 0)) {
     return null;
@@ -376,12 +402,21 @@ function collectCandidatesFromRoomMapping(record, source = 'api-json') {
   }
 
   for (const group of groups) {
-    const physicalRoomId = String(group && pickFirst(group.key, group.physicalRoomId, group.id, ''));
-    const physicalRoom = record.physicRoomMap[physicalRoomId] || record.physicRoomMap[toNumber(physicalRoomId)] || null;
+    const physicalRoomId = String(
+      group && pickFirst(group.key, group.physicalRoomId, group.id, '')
+    );
+    const physicalRoom =
+      record.physicRoomMap[physicalRoomId] ||
+      record.physicRoomMap[toNumber(physicalRoomId)] ||
+      null;
     const subRoomList = Array.isArray(group && group.subRoomList) ? group.subRoomList : [];
 
     for (const subRoom of subRoomList) {
-      const saleRoomKey = pickFirst(subRoom && subRoom.skey, subRoom && subRoom.key, subRoom && subRoom.roomToken);
+      const saleRoomKey = pickFirst(
+        subRoom && subRoom.skey,
+        subRoom && subRoom.key,
+        subRoom && subRoom.roomToken
+      );
       if (saleRoomKey) {
         referencedSaleRoomKeys.add(saleRoomKey);
       }
@@ -398,21 +433,24 @@ function collectCandidatesFromRoomMapping(record, source = 'api-json') {
       continue;
     }
 
-    const physicalRoomId = String(pickFirst(
-      saleRoom.physicalRoomId,
-      saleRoom.physicRoomId,
-      saleRoom.roomId,
-      ''
-    ));
+    const physicalRoomId = String(
+      pickFirst(saleRoom.physicalRoomId, saleRoom.physicRoomId, saleRoom.roomId, '')
+    );
     if (!physicalRoomId) {
       continue;
     }
 
-    const physicalRoom = record.physicRoomMap[physicalRoomId] || record.physicRoomMap[toNumber(physicalRoomId)] || null;
+    const physicalRoom =
+      record.physicRoomMap[physicalRoomId] ||
+      record.physicRoomMap[toNumber(physicalRoomId)] ||
+      null;
     if (!physicalRoom) {
       continue;
     }
-    if (isExplicitlyHiddenSaleRoom(saleRoom) || !hasFallbackVisibilityEvidence(physicalRoom, saleRoom, visiblePhysicalRoomIds)) {
+    if (
+      isExplicitlyHiddenSaleRoom(saleRoom) ||
+      !hasFallbackVisibilityEvidence(physicalRoom, saleRoom, visiblePhysicalRoomIds)
+    ) {
       continue;
     }
 
@@ -427,7 +465,12 @@ function collectCandidatesFromRoomMapping(record, source = 'api-json') {
         saleRoom.priceInfo && saleRoom.priceInfo.price
       )
     };
-    const candidate = buildCandidateFromRoomMapping(physicalRoom, saleRoom, syntheticSubRoom, source);
+    const candidate = buildCandidateFromRoomMapping(
+      physicalRoom,
+      saleRoom,
+      syntheticSubRoom,
+      source
+    );
     if (candidate) {
       candidates.push(candidate);
     }
@@ -457,29 +500,52 @@ function buildRoomCandidateFromRecord(record, source = '') {
     )
   );
   const snippet = normalizeText(JSON.stringify(stripRoomDebugPayload(record)));
-  const invalidTitleMarkers = ['政策', '费用', '收费', '加床', '早餐', '确认', '取消', '餐食', '付款', '发票', '儿童', '入住人数'];
-  const canonicalRoomTitle = /大床房|双床房|家庭房|三人房|三床房|套房|标准房|高级房|豪华房|商务房|景观房|特惠房|精品房|影音房|棋牌/i.test(title);
+  const invalidTitleMarkers = [
+    '政策',
+    '费用',
+    '收费',
+    '加床',
+    '早餐',
+    '确认',
+    '取消',
+    '餐食',
+    '付款',
+    '发票',
+    '儿童',
+    '入住人数'
+  ];
+  const canonicalRoomTitle =
+    /大床房|双床房|家庭房|三人房|三床房|套房|标准房|高级房|豪华房|商务房|景观房|特惠房|精品房|影音房|棋牌/i.test(
+      title
+    );
   const structuredPriceCandidates = extractStructuredRecordPrices(record);
   const isPriceLocked = Boolean(
-    (record.bookingStatusInfo && record.bookingStatusInfo.isHidePrice)
-    || /登录看低价|解锁优惠/.test(snippet)
+    (record.bookingStatusInfo && record.bookingStatusInfo.isHidePrice) ||
+    /登录看低价|解锁优惠/.test(snippet)
   );
   const allowSnippetPriceFallback = !/^(?:api-json|edge-cdp)$/.test(source);
-  const prices = [...new Set(
-    structuredPriceCandidates.length > 0
-      ? structuredPriceCandidates
-      : (allowSnippetPriceFallback ? extractRelevantPricesFromSnippet(snippet) : [])
-  )].sort((left, right) => left - right);
+  const prices = [
+    ...new Set(
+      structuredPriceCandidates.length > 0
+        ? structuredPriceCandidates
+        : allowSnippetPriceFallback
+          ? extractRelevantPricesFromSnippet(snippet)
+          : []
+    )
+  ].sort((left, right) => left - right);
   const excludedPrices = extractExcludedPricesFromSnippet(snippet);
   const filteredPrices = prices.filter((value) => !excludedPrices.has(value));
-  const hasRoomIdentity = Boolean(title) && !invalidTitleMarkers.some((marker) => title.includes(marker)) && (canonicalRoomTitle
-    || record.roomId
-    || record.physicRoomId
-    || record.physicalRoomId
-    || record.saleRoomId
-    || record.roomTypeId
-    || record.roomToken
-    || record.roomNo);
+  const hasRoomIdentity =
+    Boolean(title) &&
+    !invalidTitleMarkers.some((marker) => title.includes(marker)) &&
+    (canonicalRoomTitle ||
+      record.roomId ||
+      record.physicRoomId ||
+      record.physicalRoomId ||
+      record.saleRoomId ||
+      record.roomTypeId ||
+      record.roomToken ||
+      record.roomNo);
 
   if (!hasRoomIdentity || (!isPriceLocked && filteredPrices.length === 0 && prices.length === 0)) {
     return null;
@@ -496,10 +562,7 @@ function buildRoomCandidateFromRecord(record, source = '') {
   return normalizeRoomCandidate({
     title,
     text: snippet,
-    occupancy: pickFirst(
-      extractStructuredRecordOccupancy(record),
-      inferOccupancy(title, snippet)
-    ),
+    occupancy: pickFirst(extractStructuredRecordOccupancy(record), inferOccupancy(title, snippet)),
     prices: effectivePrices,
     price: effectivePrices[0],
     total_price: totalPrice,
@@ -552,29 +615,51 @@ function collectRoomCandidatesFromPayload(payload, template, seen = new Set()) {
 }
 
 function extractRoomReplayContext(parsedSources, url, template) {
-  const desktopSource = parsedSources.find((item) => item.source === 'desktop') || parsedSources[0] || null;
+  const desktopSource =
+    parsedSources.find((item) => item.source === 'desktop') || parsedSources[0] || null;
   const mobileSource = parsedSources.find((item) => item.source === 'mobile') || null;
   const desktopHtml = desktopSource ? desktopSource.html : '';
   const mobileHtml = mobileSource ? mobileSource.html : '';
-  const cookieHeader = [...new Set(parsedSources
-    .flatMap((item) => String(item.cookieHeader || '').split(';'))
-    .map((item) => item.trim())
-    .filter(Boolean))].join('; ');
+  const cookieHeader = [
+    ...new Set(
+      parsedSources
+        .flatMap((item) => String(item.cookieHeader || '').split(';'))
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  ].join('; ');
   const hotelId = toNumber(parseHotelIdFromUrl(url));
   const roomListSeed = extractEmbeddedObject(desktopHtml, '"ssrHotelRoomListRequest":');
   const detailRequestParam = extractEmbeddedObject(mobileHtml, '"detailRequestParam":');
   const detailResponse = extractEmbeddedObject(mobileHtml, '"detailResponse":');
   const urlQuery = extractEmbeddedObject(mobileHtml, '"urlQuery":');
-  const isOversea = Boolean(detailResponse && detailResponse.data && detailResponse.data.hotelBaseInfo && detailResponse.data.hotelBaseInfo.isOversea);
-  const searchSeed = deepClone(roomListSeed && roomListSeed.search ? roomListSeed.search : roomListSeed);
-  const compactCheckIn = formatCompactDate(template.check_in_date || (urlQuery && urlQuery.checkIn) || '');
-  const compactCheckOut = formatCompactDate(template.check_out_date || (urlQuery && urlQuery.checkOut) || '');
-  const adult = Number(template.room_count) || toNumber(searchSeed && searchSeed.adult) || toNumber(detailRequestParam && detailRequestParam.adult) || 1;
+  const isOversea = Boolean(
+    detailResponse &&
+    detailResponse.data &&
+    detailResponse.data.hotelBaseInfo &&
+    detailResponse.data.hotelBaseInfo.isOversea
+  );
+  const searchSeed = deepClone(
+    roomListSeed && roomListSeed.search ? roomListSeed.search : roomListSeed
+  );
+  const compactCheckIn = formatCompactDate(
+    template.check_in_date || (urlQuery && urlQuery.checkIn) || ''
+  );
+  const compactCheckOut = formatCompactDate(
+    template.check_out_date || (urlQuery && urlQuery.checkOut) || ''
+  );
+  const adult =
+    Number(template.room_count) ||
+    toNumber(searchSeed && searchSeed.adult) ||
+    toNumber(detailRequestParam && detailRequestParam.adult) ||
+    1;
 
   return {
     hotelId,
     isOversea,
-    mobileUrl: mobileSource ? mobileSource.url : buildMobileUrl(url, buildUrlOverridesFromTemplate(template)),
+    mobileUrl: mobileSource
+      ? mobileSource.url
+      : buildMobileUrl(url, buildUrlOverridesFromTemplate(template)),
     searchSeed,
     detailRequestParam,
     detailResponse,

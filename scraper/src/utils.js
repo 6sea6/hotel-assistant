@@ -44,7 +44,8 @@ function writeJsonFile(filePath, content) {
   fs.writeFileSync(filePath, JSON.stringify(content, null, 2), 'utf-8');
 }
 
-const SENSITIVE_KEY_PATTERN = /(^|[_-]?)(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret|provider[_-]?secret|token)$/i;
+const SENSITIVE_KEY_PATTERN =
+  /(^|[_-]?)(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|secret|provider[_-]?secret|token)$/i;
 
 function sanitizeSensitiveData(value) {
   if (Array.isArray(value)) {
@@ -55,12 +56,14 @@ function sanitizeSensitiveData(value) {
     return value;
   }
 
-  return Object.fromEntries(Object.entries(value).map(([key, entryValue]) => {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
-      return [key, '[REDACTED]'];
-    }
-    return [key, sanitizeSensitiveData(entryValue)];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entryValue]) => {
+      if (SENSITIVE_KEY_PATTERN.test(key)) {
+        return [key, '[REDACTED]'];
+      }
+      return [key, sanitizeSensitiveData(entryValue)];
+    })
+  );
 }
 
 function removeFileIfExists(filePath) {
@@ -84,11 +87,13 @@ function cleanupOutputArtifacts(outputDir, currentOutputPath, snapshotFiles = []
       currentOutputPath ? path.resolve(currentOutputPath) : ''
     ].filter(Boolean)
   );
-  const keepSnapshotFiles = new Set((snapshotFiles || []).map((filePath) => path.resolve(filePath)));
+  const keepSnapshotFiles = new Set(
+    (snapshotFiles || []).map((filePath) => path.resolve(filePath))
+  );
   const deletedFiles = [];
   const keepEdgeDebugArtifacts = Boolean(
-    normalizeText(process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR)
-    || normalizeText(process.env.HOTEL_DEBUG_EDGE_CAPTURE) === '1'
+    normalizeText(process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR) ||
+    normalizeText(process.env.HOTEL_DEBUG_EDGE_CAPTURE) === '1'
   );
 
   const rootEntries = fs.readdirSync(outputRoot, { withFileTypes: true });
@@ -107,7 +112,8 @@ function cleanupOutputArtifacts(outputDir, currentOutputPath, snapshotFiles = []
           continue;
         }
         const snapshotPath = path.resolve(path.join(entryPath, snapshotEntry.name));
-        const shouldKeepSnapshot = entry.name === 'raw-pages' && keepSnapshotFiles.has(snapshotPath);
+        const shouldKeepSnapshot =
+          entry.name === 'raw-pages' && keepSnapshotFiles.has(snapshotPath);
         const shouldKeepDebugArtifact = entry.name === 'edge-debug' && keepEdgeDebugArtifacts;
         if (shouldKeepSnapshot || shouldKeepDebugArtifact || snapshotEntry.name === '.keep') {
           continue;
@@ -122,12 +128,13 @@ function cleanupOutputArtifacts(outputDir, currentOutputPath, snapshotFiles = []
       continue;
     }
 
-    const shouldDelete = /^run(?:-[^.\\/]+)?\.log$/i.test(entry.name)
-      || /^task-ping(?:-[^.\\/]+)?\.txt$/i.test(entry.name)
-      || /\.log$/i.test(entry.name)
-      || /^debug(?:-[^.\\/]+)?\.(?:txt|log)$/i.test(entry.name)
-      || /^debug-.*\.json$/i.test(entry.name)
-      || (/\.json$/i.test(entry.name) && !keepFiles.has(resolvedEntryPath));
+    const shouldDelete =
+      /^run(?:-[^.\\/]+)?\.log$/i.test(entry.name) ||
+      /^task-ping(?:-[^.\\/]+)?\.txt$/i.test(entry.name) ||
+      /\.log$/i.test(entry.name) ||
+      /^debug(?:-[^.\\/]+)?\.(?:txt|log)$/i.test(entry.name) ||
+      /^debug-.*\.json$/i.test(entry.name) ||
+      (/\.json$/i.test(entry.name) && !keepFiles.has(resolvedEntryPath));
 
     if (!shouldDelete || keepFiles.has(resolvedEntryPath)) {
       continue;
@@ -158,7 +165,10 @@ function toStringNumber(value, digits = 1) {
   if (parsed === null) {
     return '';
   }
-  return parsed.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+  return parsed
+    .toFixed(digits)
+    .replace(/\.0+$/, '')
+    .replace(/(\.\d*[1-9])0+$/, '$1');
 }
 
 function differenceInDays(checkInDate, checkOutDate) {
@@ -188,7 +198,9 @@ function isRestrictedPostConfirmationFreeCancellation(value) {
     return false;
   }
 
-  return /(?:(?:订单|预订|预定)(?:确认)?后|确认后).{0,12}?(?:\d+|[一二两三四五六七八九十百半]+)(?:个)?(?:分钟|分|小时|钟头|天|日)(?:内)?.{0,8}?(?:可)?免费取消/.test(text);
+  return /(?:(?:订单|预订|预定)(?:确认)?后|确认后).{0,12}?(?:\d+|[一二两三四五六七八九十百半]+)(?:个)?(?:分钟|分|小时|钟头|天|日)(?:内)?.{0,8}?(?:可)?免费取消/.test(
+    text
+  );
 }
 
 function normalizePlaceName(value) {
@@ -198,12 +210,16 @@ function normalizePlaceName(value) {
     .replace(/上海\s+国家会展中心/g, '上海国家会展中心')
     .replace(/国家会展中心\s*上海/g, '上海国家会展中心');
 
-  const citySuffixMatch = text.match(/^(.*?)[\s,，]+(北京|上海|天津|重庆|广州|深圳|杭州|南京|成都|武汉|西安|苏州|长沙|青岛|厦门)$/);
+  const citySuffixMatch = text.match(
+    /^(.*?)[\s,，]+(北京|上海|天津|重庆|广州|深圳|杭州|南京|成都|武汉|西安|苏州|长沙|青岛|厦门)$/
+  );
   if (citySuffixMatch) {
     return normalizeText(`${citySuffixMatch[2]}${citySuffixMatch[1]}`);
   }
 
-  const cityParenMatch = text.match(/^(.*?)(北京|上海|天津|重庆|广州|深圳|杭州|南京|成都|武汉|西安|苏州|长沙|青岛|厦门)$/);
+  const cityParenMatch = text.match(
+    /^(.*?)(北京|上海|天津|重庆|广州|深圳|杭州|南京|成都|武汉|西安|苏州|长沙|青岛|厦门)$/
+  );
   if (cityParenMatch && /国家会展中心/.test(text)) {
     return normalizeText(`${cityParenMatch[2]}${cityParenMatch[1]}`);
   }
@@ -217,14 +233,18 @@ function includesNormalizedPlace(left, right) {
   if (!normalizedLeft || !normalizedRight) {
     return false;
   }
-  return normalizedLeft === normalizedRight
-    || normalizedLeft.includes(normalizedRight)
-    || normalizedRight.includes(normalizedLeft);
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
 }
 
 function extractCityName(value) {
   const text = normalizePlaceName(value);
-  const cityMatch = text.match(/(北京|上海|天津|重庆|广州|深圳|杭州|南京|成都|武汉|西安|苏州|长沙|青岛|厦门)(?:市)?/);
+  const cityMatch = text.match(
+    /(北京|上海|天津|重庆|广州|深圳|杭州|南京|成都|武汉|西安|苏州|长沙|青岛|厦门)(?:市)?/
+  );
   return cityMatch ? `${cityMatch[1]}市` : '';
 }
 

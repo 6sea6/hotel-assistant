@@ -14,14 +14,15 @@ function getFinalSetupName(buildMode, version) {
 }
 
 function findSetupExecutable(tempBuildDir) {
-  const entries = fs.readdirSync(tempBuildDir, { withFileTypes: true })
+  const entries = fs
+    .readdirSync(tempBuildDir, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => {
       const fullPath = path.join(tempBuildDir, entry.name);
       return {
         name: entry.name,
         fullPath,
-        stat: fs.statSync(fullPath),
+        stat: fs.statSync(fullPath)
       };
     })
     .filter((entry) => entry.name.toLowerCase().endsWith('.exe') && /setup/i.test(entry.name))
@@ -33,7 +34,9 @@ function findSetupExecutable(tempBuildDir) {
 function main() {
   const [tempBuildDir, distDir, appVersion, buildMode] = process.argv.slice(2);
   if (!tempBuildDir || !distDir || !appVersion || !buildMode) {
-    fail('Usage: node scripts/finalize-nsis-output.js <tempBuildDir> <distDir> <appVersion> <buildMode>');
+    fail(
+      'Usage: node scripts/finalize-nsis-output.js <tempBuildDir> <distDir> <appVersion> <buildMode>'
+    );
   }
 
   if (!fs.existsSync(tempBuildDir)) {

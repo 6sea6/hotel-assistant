@@ -44,7 +44,9 @@ function parseHotelIdFromUrl(url) {
 
   try {
     const parsed = new URL(normalizedUrl);
-    const queryHotelId = normalizeText(parsed.searchParams.get('hotelId') || parsed.searchParams.get('hotelid'));
+    const queryHotelId = normalizeText(
+      parsed.searchParams.get('hotelId') || parsed.searchParams.get('hotelid')
+    );
     if (/^\d+$/.test(queryHotelId)) {
       return queryHotelId;
     }
@@ -123,9 +125,11 @@ function isCtripHotelListUrl(url) {
   try {
     const parsed = new URL(cleanExtractedUrl(url));
     const href = parsed.href.toLowerCase();
-    return /list|hotelsearch|search|query|keyword|city|location|zone/.test(href)
-      || /\/hotels\/?$/.test(parsed.pathname.toLowerCase())
-      || /\/hotel\/?$/.test(parsed.pathname.toLowerCase());
+    return (
+      /list|hotelsearch|search|query|keyword|city|location|zone/.test(href) ||
+      /\/hotels\/?$/.test(parsed.pathname.toLowerCase()) ||
+      /\/hotel\/?$/.test(parsed.pathname.toLowerCase())
+    );
   } catch (_error) {
     return false;
   }

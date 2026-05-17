@@ -11,16 +11,9 @@ const {
   hasCtripUrlFilterSettings,
   normalizeCtripUrlFilterSettings
 } = require('./ctrip-url-filters');
-const {
-  DESKTOP_HEADERS,
-  fetchHtml
-} = require('./scraper/html-parser');
-const {
-  collectListPageCandidates
-} = require('./scraper/list-page-collector');
-const {
-  normalizeListPageFilterOptions
-} = require('./scraper/list-page-parser');
+const { DESKTOP_HEADERS, fetchHtml } = require('./scraper/html-parser');
+const { collectListPageCandidates } = require('./scraper/list-page-collector');
+const { normalizeListPageFilterOptions } = require('./scraper/list-page-parser');
 const {
   connectToDebugger,
   evaluateInSession,
@@ -29,22 +22,18 @@ const {
   waitForDebuggerEndpoint,
   waitForSessionCondition
 } = require('./scraper/cdp-utils');
-const {
-  findEdgeExecutable,
-  killProcessTree
-} = require('./scraper/process-utils');
+const { findEdgeExecutable, killProcessTree } = require('./scraper/process-utils');
 const { normalizeText } = require('./utils');
 
 function shouldAttemptEdgeListFallback(options = {}) {
-  const edgeSession = options.edgeSession && typeof options.edgeSession === 'object'
-    ? options.edgeSession
-    : {};
+  const edgeSession =
+    options.edgeSession && typeof options.edgeSession === 'object' ? options.edgeSession : {};
 
   return Boolean(
-    options.autoEdge
-    || edgeSession.debuggerUrl
-    || edgeSession.debuggingPort
-    || edgeSession.userDataDir
+    options.autoEdge ||
+    edgeSession.debuggerUrl ||
+    edgeSession.debuggingPort ||
+    edgeSession.userDataDir
   );
 }
 
@@ -72,7 +61,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   if (!EdgeWebSocket) {
     return {
       pages: [],
-      error: 'edge-cdp list fallback unavailable: WebSocket is not present and ws package not installed'
+      error:
+        'edge-cdp list fallback unavailable: WebSocket is not present and ws package not installed'
     };
   }
 
@@ -104,7 +94,11 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         if (!edgeExecutable) {
           throw error;
         }
-        const launched = await launchManagedEdgeSession(edgeExecutable, sessionOptions, sessionOptions.debuggingPort);
+        const launched = await launchManagedEdgeSession(
+          edgeExecutable,
+          sessionOptions,
+          sessionOptions.debuggingPort
+        );
         browser = launched.browser;
         userDataDir = launched.userDataDir;
         shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
@@ -121,7 +115,9 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     try {
       const targetsResponse = await connection.send('Target.getTargets');
       const targets = (targetsResponse && targetsResponse.targetInfos) || [];
-      const blankTarget = targets.find((target) => target.type === 'page' && (!target.url || target.url === 'about:blank'));
+      const blankTarget = targets.find(
+        (target) => target.type === 'page' && (!target.url || target.url === 'about:blank')
+      );
       if (blankTarget) {
         targetId = blankTarget.targetId;
       }
@@ -142,7 +138,10 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       };
     }
 
-    const attachedTarget = await connection.send('Target.attachToTarget', { targetId, flatten: true });
+    const attachedTarget = await connection.send('Target.attachToTarget', {
+      targetId,
+      flatten: true
+    });
     sessionId = attachedTarget && attachedTarget.sessionId;
     if (!sessionId) {
       return {
@@ -166,16 +165,22 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       });
 
       await connection.send('Page.navigate', { url }, sessionId);
-      await Promise.race([
-        loadEvent,
-        new Promise((resolve) => setTimeout(resolve, 15000))
-      ]);
-      await waitForSessionCondition(connection, sessionId, `(() => {
+      await Promise.race([loadEvent, new Promise((resolve) => setTimeout(resolve, 15000))]);
+      await waitForSessionCondition(
+        connection,
+        sessionId,
+        `(() => {
         const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
         return document.readyState === 'complete' && /(酒店|宾馆|评分|点评|价格|携程)/.test(bodyText);
-      })()`, 5000, 250);
+      })()`,
+        5000,
+        250
+      );
 
-      const html = await evaluateInSession(connection, sessionId, `(async () => {
+      const html = await evaluateInSession(
+        connection,
+        sessionId,
+        `(async () => {
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         for (let index = 0; index < 4; index += 1) {
           window.scrollTo(0, Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
@@ -184,7 +189,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         window.scrollTo(0, 0);
         await sleep(150);
         return document.documentElement ? document.documentElement.outerHTML : '';
-      })()`);
+      })()`
+      );
 
       pages.push({
         url,
@@ -200,7 +206,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   } catch (error) {
     return {
       pages: [],
-      error: error && error.message ? error.message : 'edge-cdp list fallback failed with unknown error'
+      error:
+        error && error.message ? error.message : 'edge-cdp list fallback failed with unknown error'
     };
   } finally {
     if (connection && sessionId) {
@@ -253,11 +260,12 @@ function buildDetailInput(url, template = {}, source = 'detail-input', listCandi
 }
 
 function pickCtripUrlFilterSettings(rawInput = {}) {
-  const nested = rawInput.listUrlFilters
-    || rawInput.ctripUrlFilters
-    || rawInput.ctripListFilters
-    || rawInput.urlFilters
-    || null;
+  const nested =
+    rawInput.listUrlFilters ||
+    rawInput.ctripUrlFilters ||
+    rawInput.ctripListFilters ||
+    rawInput.urlFilters ||
+    null;
   if (nested && typeof nested === 'object' && hasCtripUrlFilterSettings(nested)) {
     return normalizeCtripUrlFilterSettings(nested);
   }
@@ -277,9 +285,7 @@ function pickCtripUrlFilterSettings(rawInput = {}) {
     }
   });
 
-  return hasCtripUrlFilterSettings(topLevel)
-    ? normalizeCtripUrlFilterSettings(topLevel)
-    : null;
+  return hasCtripUrlFilterSettings(topLevel) ? normalizeCtripUrlFilterSettings(topLevel) : null;
 }
 
 async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters = {}, options = {}) {
@@ -288,7 +294,7 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
     ...rawInput,
     url: rawInput.url || rawInput.ctrip_url || rawInput['ctrip-url'] || template.ctrip_url
   });
-  const urls = inputUrls.length ? inputUrls : (template.ctrip_url ? [template.ctrip_url] : []);
+  const urls = inputUrls.length ? inputUrls : template.ctrip_url ? [template.ctrip_url] : [];
   const details = [];
   const listResults = [];
   const skipped = [];
@@ -330,11 +336,16 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
       : url;
     const remainingTarget = Math.max(1, filters.desiredHotelCount - selectedFromLists);
     const listStartedAt = Date.now();
-    const listResult = await collectHotelListCandidates(effectiveListUrl, template, {
-      ...filters,
-      desiredHotelCount: remainingTarget,
-      targetCount: remainingTarget
-    }, options);
+    const listResult = await collectHotelListCandidates(
+      effectiveListUrl,
+      template,
+      {
+        ...filters,
+        desiredHotelCount: remainingTarget,
+        targetCount: remainingTarget
+      },
+      options
+    );
     const listDurationMs = durationSince(listStartedAt);
     performance.listCollectMs += listDurationMs;
     performance.lists.push({
@@ -350,19 +361,27 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
     selectedFromLists += listResult.selected.length;
 
     for (const candidate of listResult.selected) {
-      addDetail(buildDetailInput(candidate.detailUrl || candidate.url, template, 'list-prefilter', candidate));
+      addDetail(
+        buildDetailInput(
+          candidate.detailUrl || candidate.url,
+          template,
+          'list-prefilter',
+          candidate
+        )
+      );
     }
   }
 
   const listCount = listResults.length;
   const detailInputCount = details.filter((item) => item.source === 'detail-input').length;
-  const inputMode = listCount > 0 && detailInputCount > 0
-    ? 'mixed'
-    : listCount > 0
-      ? 'list'
-      : details.length > 1
-        ? 'multi-detail'
-      : 'detail';
+  const inputMode =
+    listCount > 0 && detailInputCount > 0
+      ? 'mixed'
+      : listCount > 0
+        ? 'list'
+        : details.length > 1
+          ? 'multi-detail'
+          : 'detail';
   performance.totalMs = durationSince(startedAt);
 
   return {
@@ -380,8 +399,14 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
       expandedHotelCount: details.length,
       listSelectedCount: details.filter((item) => item.source === 'list-prefilter').length,
       skippedUrlCount: skipped.length,
-      listCandidateCount: listResults.reduce((sum, item) => sum + (Number(item.totalCandidates) || 0), 0),
-      listRejectedCount: listResults.reduce((sum, item) => sum + (Array.isArray(item.rejected) ? item.rejected.length : 0), 0),
+      listCandidateCount: listResults.reduce(
+        (sum, item) => sum + (Number(item.totalCandidates) || 0),
+        0
+      ),
+      listRejectedCount: listResults.reduce(
+        (sum, item) => sum + (Array.isArray(item.rejected) ? item.rejected.length : 0),
+        0
+      ),
       filters,
       performance
     }
@@ -389,35 +414,38 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
 }
 
 function normalizeListFiltersFromArgs(args = {}) {
-  const listFilters = args.listFilters && typeof args.listFilters === 'object' ? args.listFilters : {};
+  const listFilters =
+    args.listFilters && typeof args.listFilters === 'object' ? args.listFilters : {};
   return normalizeListPageFilterOptions({
     ...listFilters,
-    excludeHotelTypes: args.excludeHotelTypes
-      ?? args.excludeAccommodationKeywords
-      ?? args.excludeAccommodationTypes
-      ?? args.excludeTypeKeywords
-      ?? args['exclude-hotel-types']
-      ?? args['exclude-accommodation-keywords']
-      ?? args['exclude-type-keywords']
-      ?? listFilters.excludeHotelTypes
-      ?? listFilters.excludeAccommodationKeywords,
-    desiredHotelCount: args.desiredHotelCount
-      ?? args.targetCount
-      ?? args['desired-hotel-count']
-      ?? args['target-count']
-      ?? args.limit
-      ?? listFilters.desiredHotelCount
-      ?? listFilters.targetCount,
+    excludeHotelTypes:
+      args.excludeHotelTypes ??
+      args.excludeAccommodationKeywords ??
+      args.excludeAccommodationTypes ??
+      args.excludeTypeKeywords ??
+      args['exclude-hotel-types'] ??
+      args['exclude-accommodation-keywords'] ??
+      args['exclude-type-keywords'] ??
+      listFilters.excludeHotelTypes ??
+      listFilters.excludeAccommodationKeywords,
+    desiredHotelCount:
+      args.desiredHotelCount ??
+      args.targetCount ??
+      args['desired-hotel-count'] ??
+      args['target-count'] ??
+      args.limit ??
+      listFilters.desiredHotelCount ??
+      listFilters.targetCount,
     maxPages: args.maxPages ?? args['max-pages'] ?? args.pageLimit ?? listFilters.maxPages,
-    maxCandidatesPerPage: args.maxCandidatesPerPage
-      ?? args['max-candidates-per-page']
-      ?? listFilters.maxCandidatesPerPage
+    maxCandidatesPerPage:
+      args.maxCandidatesPerPage ??
+      args['max-candidates-per-page'] ??
+      listFilters.maxCandidatesPerPage
   });
 }
 
 function hasMultipleHotelInputs(expandedInputs = {}) {
-  return Array.isArray(expandedInputs.hotelInputs)
-    && expandedInputs.hotelInputs.length > 1;
+  return Array.isArray(expandedInputs.hotelInputs) && expandedInputs.hotelInputs.length > 1;
 }
 
 function describeExpandedInput(expandedInputs = {}) {

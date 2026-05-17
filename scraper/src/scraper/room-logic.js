@@ -20,7 +20,12 @@ function pickLowestPositiveNumber(...values) {
 
 function classifyCancelPolicy(cancelPolicy) {
   const text = normalizeText(String(cancelPolicy || ''));
-  if (/不可取消|不可(随时)?取消|不支持取消|确认(后)?不(可|能)取消|一经确认.*不可(改|退)|预订(后)?不(可|能)(改|退)/.test(text)) return 'non_cancellable';
+  if (
+    /不可取消|不可(随时)?取消|不支持取消|确认(后)?不(可|能)取消|一经确认.*不可(改|退)|预订(后)?不(可|能)(改|退)/.test(
+      text
+    )
+  )
+    return 'non_cancellable';
   if (isRestrictedPostConfirmationFreeCancellation(text)) return 'partial_cancellable';
   if (/可免费取消|可(随时)?取消|免费取消|允许取消/.test(text)) return 'free_cancellable';
   if (/部分取消|有条件取消|限时取消|变更/.test(text)) return 'partial_cancellable';
@@ -42,25 +47,40 @@ function mergeRoomCandidates(roomBlocks) {
     if (!existing) {
       grouped.set(key, {
         ...room,
-        prices: Array.isArray(room.prices) ? [...room.prices] : (room.price !== null ? [room.price] : []),
+        prices: Array.isArray(room.prices)
+          ? [...room.prices]
+          : room.price !== null
+            ? [room.price]
+            : [],
         cancelPolicyType: cancelType
       });
       continue;
     }
 
-    const mergedPrices = [...new Set([...(existing.prices || []), ...(room.prices || []), existing.price, room.price].filter((value) => value !== null))]
-      .sort((left, right) => left - right);
+    const mergedPrices = [
+      ...new Set(
+        [...(existing.prices || []), ...(room.prices || []), existing.price, room.price].filter(
+          (value) => value !== null
+        )
+      )
+    ].sort((left, right) => left - right);
 
     existing.prices = mergedPrices;
     existing.price = mergedPrices.length > 0 ? mergedPrices[0] : existing.price;
-    existing.price_locked = mergedPrices.length === 0 && (existing.price_locked || room.price_locked);
+    existing.price_locked =
+      mergedPrices.length === 0 && (existing.price_locked || room.price_locked);
     existing.total_price = pickFirst(
       pickLowestPositiveNumber(existing.total_price, room.total_price),
       existing.total_price,
       room.total_price
     );
     const incomingCancelType = classifyCancelPolicy(room.cancelPolicy);
-    const priority = { free_cancellable: 4, partial_cancellable: 3, unknown: 2, non_cancellable: 1 };
+    const priority = {
+      free_cancellable: 4,
+      partial_cancellable: 3,
+      unknown: 2,
+      non_cancellable: 1
+    };
     if ((priority[incomingCancelType] || 0) > (priority[existing.cancelPolicyType || 0] || 0)) {
       existing.cancelPolicy = room.cancelPolicy;
       existing.cancelPolicyType = incomingCancelType;
@@ -89,8 +109,14 @@ function extractBedSummary(room) {
     extractFirstMatch(raw, /"bedInfo"\s*:\s*\{[^{}]{0,200}?"title"\s*:\s*"([^"]{2,40})"/),
     extractFirstMatch(raw, /"cpxBedInfo"\s*:\s*\{[^{}]{0,200}?"title"\s*:\s*"([^"]{2,40})"/),
     extractFirstMatch(raw, /床型[^\u4e00-\u9fa5A-Za-z0-9（）()]*([^"',}{]{4,80})/),
-    extractFirstMatch(raw, /(\d张(?:\d+(?:\.\d+)?米)?(?:上下铺|双人床|大床|特大床|单人床|小床|沙发床)(?:\d+(?:\.\d+)?米)?[^"',}{]{0,40})/),
-    extractFirstMatch(raw, /((?:上下铺|双人床|大床|特大床|单人床|小床|沙发床)(?:\d+(?:\.\d+)?米)?[^"',}{]{0,40})/)
+    extractFirstMatch(
+      raw,
+      /(\d张(?:\d+(?:\.\d+)?米)?(?:上下铺|双人床|大床|特大床|单人床|小床|沙发床)(?:\d+(?:\.\d+)?米)?[^"',}{]{0,40})/
+    ),
+    extractFirstMatch(
+      raw,
+      /((?:上下铺|双人床|大床|特大床|单人床|小床|沙发床)(?:\d+(?:\.\d+)?米)?[^"',}{]{0,40})/
+    )
   );
 }
 
@@ -111,13 +137,18 @@ function deriveStandardRoomType(room) {
 
 function tryParseBedInfo(room) {
   try {
-    const data = JSON.parse(room && room.text || '{}');
+    const data = JSON.parse((room && room.text) || '{}');
     const bedInfo = data && data.physicalRoom && data.physicalRoom.bedInfo;
     if (!bedInfo || !bedInfo.title) return null;
 
     const title = normalizeText(room && room.title);
     const bedTitle = normalizeText(bedInfo.title);
-    const bedCount = toNumber(data && data.physicalRoom && data.physicalRoom.houseTypeInfo && data.physicalRoom.houseTypeInfo.bedCount);
+    const bedCount = toNumber(
+      data &&
+        data.physicalRoom &&
+        data.physicalRoom.houseTypeInfo &&
+        data.physicalRoom.houseTypeInfo.bedCount
+    );
     return deriveRoomTypeFromStructuredBed({ title, bedTitle, bedCount });
   } catch (e) {
     return null;
@@ -144,9 +175,11 @@ function isPersistableRoomCandidate(room) {
 function isThreePersonEquivalentRoom(room) {
   const title = normalizeText((room && room.standard_title) || (room && room.title));
   const raw = normalizeText(room && room.raw);
-  return /三人房|三床房|家庭房|套房/.test(title)
-    || (/家庭房/.test(title) && /特大床|大床/.test(raw) && /单人床|小床|沙发床/.test(raw))
-    || (/特大床|大床/.test(raw) && /单人床|小床|沙发床/.test(raw));
+  return (
+    /三人房|三床房|家庭房|套房/.test(title) ||
+    (/家庭房/.test(title) && /特大床|大床/.test(raw) && /单人床|小床|沙发床/.test(raw)) ||
+    (/特大床|大床/.test(raw) && /单人床|小床|沙发床/.test(raw))
+  );
 }
 
 function rankRoomTypeMatch(room, template) {
@@ -186,13 +219,25 @@ function rankRoomMatch(room, template) {
   if (room.price !== null && !room.price_locked) {
     score += 6;
   }
-  if (!normalizeText(template.room_type) && room.occupancy && Number(room.occupancy) === Number(template.room_count)) {
+  if (
+    !normalizeText(template.room_type) &&
+    room.occupancy &&
+    Number(room.occupancy) === Number(template.room_count)
+  ) {
     score += 3;
   }
-  if (desiredOccupancy >= 3 && /三人房|家庭房|套房/.test(normalizeText(room.standard_title || room.title))) {
+  if (
+    desiredOccupancy >= 3 &&
+    /三人房|家庭房|套房/.test(normalizeText(room.standard_title || room.title))
+  ) {
     score += 4;
   }
-  if (desiredOccupancy >= 3 && /家庭房/.test(normalizeText(room.standard_title || room.title)) && /特大床|大床/.test(normalizeText(room.raw)) && /单人床|小床|沙发床/.test(normalizeText(room.raw))) {
+  if (
+    desiredOccupancy >= 3 &&
+    /家庭房/.test(normalizeText(room.standard_title || room.title)) &&
+    /特大床|大床/.test(normalizeText(room.raw)) &&
+    /单人床|小床|沙发床/.test(normalizeText(room.raw))
+  ) {
     score += 2;
   }
   if (/双床|大床|家庭|三床/.test(normalizeText(room.standard_title || room.title))) {
@@ -215,8 +260,7 @@ function selectBestRoom(roomBlocks, template) {
       const leftPrice = left.room.price ?? Number.MAX_SAFE_INTEGER;
       const rightPrice = right.room.price ?? Number.MAX_SAFE_INTEGER;
       return leftPrice - rightPrice;
-    })[0]
-    .room;
+    })[0].room;
 }
 
 function isEffectivelyWindowed(windowStatus) {
@@ -235,9 +279,9 @@ function isAllowedOccupancy(room, desiredOccupancy, options = {}) {
     return true;
   }
   if (
-    desiredOccupancy === 3
-    && occupancy === 4
-    && Boolean(options.includeFourPersonRoomsForThreePersonTemplate)
+    desiredOccupancy === 3 &&
+    occupancy === 4 &&
+    Boolean(options.includeFourPersonRoomsForThreePersonTemplate)
   ) {
     return true;
   }
@@ -268,13 +312,7 @@ function createRoomEvaluation(room, template, options, seen) {
     action: 'selected',
     reason: '符合模板人数、价格、取消规则和房型筛选规则。',
     reasonCode: 'selected',
-    evidenceFields: [
-      'standard_title',
-      'price',
-      'occupancy',
-      'cancelPolicy',
-      'windowStatus'
-    ]
+    evidenceFields: ['standard_title', 'price', 'occupancy', 'cancelPolicy', 'windowStatus']
   };
 
   const reject = (reasonCode, action = 'rejected', evidenceFields = base.evidenceFields) => ({
@@ -316,8 +354,9 @@ function createRoomEvaluation(room, template, options, seen) {
 
 function buildRoomSelectionDiagnostics(roomBlocks, template, options = {}) {
   const seen = new Set();
-  const evaluations = (Array.isArray(roomBlocks) ? roomBlocks : [])
-    .map((room) => createRoomEvaluation(room, template, options, seen));
+  const evaluations = (Array.isArray(roomBlocks) ? roomBlocks : []).map((room) =>
+    createRoomEvaluation(room, template, options, seen)
+  );
   const selectedEvaluations = evaluations
     .filter((item) => item.action === 'selected')
     .filter((item) => item.score >= 0)

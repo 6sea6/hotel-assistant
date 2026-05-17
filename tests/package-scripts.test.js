@@ -17,11 +17,19 @@ function makeTempRoot() {
 function writePackageFixture(nodeModulesDir, packageName, packageJson = {}) {
   const packageDir = path.join(nodeModulesDir, ...packageName.split('/'));
   fs.mkdirSync(packageDir, { recursive: true });
-  fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({
-    name: packageName,
-    version: '1.0.0',
-    ...packageJson
-  }, null, 2), 'utf-8');
+  fs.writeFileSync(
+    path.join(packageDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: packageName,
+        version: '1.0.0',
+        ...packageJson
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  );
   fs.writeFileSync(path.join(packageDir, 'index.js'), 'module.exports = {};\n', 'utf-8');
   return packageDir;
 }
@@ -31,21 +39,22 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
 
   assert.equal(getSetupArtifactName('1', '7.8.0'), '宾馆比较终极版-基础版-7.8.0.exe');
   assert.equal(getSetupArtifactName('2', '7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
-  assert.deepEqual(
-    manifest.expectations.fullOnlyResources,
-    [
-      path.join('scraper', 'src', 'cli.js'),
-      path.join('scraper', 'vendor', 'axios', 'package.json'),
-      path.join('scraper', 'vendor', 'cheerio', 'package.json'),
-      path.join('scraper', 'vendor', 'ws', 'package.json'),
-      path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
-    ]
-  );
+  assert.deepEqual(manifest.expectations.fullOnlyResources, [
+    path.join('scraper', 'src', 'cli.js'),
+    path.join('scraper', 'vendor', 'axios', 'package.json'),
+    path.join('scraper', 'vendor', 'cheerio', 'package.json'),
+    path.join('scraper', 'vendor', 'ws', 'package.json'),
+    path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
+  ]);
 });
 
 test('scraper dependency packages are declared only in the workspace package', () => {
-  const rootPackage = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'));
-  const scraperPackage = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'scraper', 'package.json'), 'utf-8'));
+  const rootPackage = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+  );
+  const scraperPackage = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'scraper', 'package.json'), 'utf-8')
+  );
   const scraperDependencyNames = ['axios', 'cheerio', 'ws'];
 
   assert.ok(Array.isArray(rootPackage.workspaces));
@@ -101,16 +110,28 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
   fs.mkdirSync(path.join(scraperDir, 'examples'), { recursive: true });
   fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
-  fs.writeFileSync(path.join(scraperDir, 'package.json'), JSON.stringify({
-    name: 'fixture-scraper',
-    dependencies: {
-      axios: '^1.0.0',
-      cheerio: '^1.0.0',
-      ws: '^8.0.0'
-    }
-  }, null, 2), 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'fixture-scraper',
+        dependencies: {
+          axios: '^1.0.0',
+          cheerio: '^1.0.0',
+          ws: '^8.0.0'
+        }
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  );
   fs.writeFileSync(path.join(scraperDir, 'README.md'), '# fixture\n', 'utf-8');
-  fs.writeFileSync(path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName), '# guide\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName),
+    '# guide\n',
+    'utf-8'
+  );
   fs.writeFileSync(path.join(scraperDir, 'examples', 'sample.json'), '{}\n', 'utf-8');
   writePackageFixture(nodeModulesDir, 'axios', {
     dependencies: {
@@ -131,13 +152,49 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
     fs.rmSync(prepared.bundleRoot, { recursive: true, force: true });
   });
 
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'src', 'cli.js')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName)), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'axios', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'cheerio', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'ws', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'follow-redirects', 'package.json')), true);
-  assert.equal(fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'examples')), false);
+  assert.equal(
+    fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'src', 'cli.js')),
+    true
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName)
+    ),
+    true
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'axios', 'package.json')
+    ),
+    true
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'cheerio', 'package.json')
+    ),
+    true
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'ws', 'package.json')
+    ),
+    true
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(
+        prepared.manifest.directories.scraperRoot,
+        'vendor',
+        'follow-redirects',
+        'package.json'
+      )
+    ),
+    true
+  );
+  assert.equal(
+    fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'examples')),
+    false
+  );
 });
 
 test('verifyPackageLayout distinguishes base and full resource layouts', (t) => {
@@ -168,8 +225,12 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
     writeFile(fullResourcesDir, relativePath);
   });
 
-  assert.doesNotThrow(() => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'base'), mode: '1' }));
-  assert.doesNotThrow(() => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full'), mode: '2' }));
+  assert.doesNotThrow(() =>
+    verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'base'), mode: '1' })
+  );
+  assert.doesNotThrow(() =>
+    verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full'), mode: '2' })
+  );
 
   writeFile(baseResourcesDir, path.join('scraper', 'src', 'cli.js'));
   assert.throws(
@@ -234,10 +295,22 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
 test('build asset sync is implemented by the Node script without Python or Pillow', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
-  const syncScript = fs.readFileSync(path.join(projectRoot, 'scripts', 'sync-build-assets.js'), 'utf-8');
-  const psWrapper = fs.readFileSync(path.join(projectRoot, 'scripts', 'sync-build-assets.ps1'), 'utf-8');
-  const runBuildScript = fs.readFileSync(path.join(projectRoot, 'scripts', 'package', 'run-build.js'), 'utf-8');
-  const smokeBuildScript = fs.readFileSync(path.join(projectRoot, 'scripts', 'package', 'smoke-build.js'), 'utf-8');
+  const syncScript = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'sync-build-assets.js'),
+    'utf-8'
+  );
+  const psWrapper = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'sync-build-assets.ps1'),
+    'utf-8'
+  );
+  const runBuildScript = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'package', 'run-build.js'),
+    'utf-8'
+  );
+  const smokeBuildScript = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'package', 'smoke-build.js'),
+    'utf-8'
+  );
 
   assert.equal(packageJson.scripts['sync-build-assets'], 'node scripts/sync-build-assets.js');
   assert.match(syncScript, /require\('sharp'\)/);

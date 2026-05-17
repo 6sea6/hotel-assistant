@@ -40,10 +40,14 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     };
     delete normalizedSettings.autoMatchTemplate;
     normalizedSettings.theme = normalizeThemeSetting(normalizedSettings.theme);
-    normalizedSettings.ai_provider_config = normalizeAiProviderConfig(normalizedSettings.ai_provider_config);
+    normalizedSettings.ai_provider_config = normalizeAiProviderConfig(
+      normalizedSettings.ai_provider_config
+    );
     normalizedSettings.amapApiKey = String(normalizedSettings.amapApiKey || '').trim();
 
-    const managedReference = appIconManager.toManagedIconReference(normalizedSettings.app_icon_path);
+    const managedReference = appIconManager.toManagedIconReference(
+      normalizedSettings.app_icon_path
+    );
     if (managedReference) {
       normalizedSettings.app_icon_path = managedReference;
     }
@@ -78,7 +82,7 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
   // 获取设置
   ipcMain.handle('settings:get', (event, key) => {
     const { settings } = getSettingsObject();
-    return settings.hasOwnProperty(key) ? settings[key] : null;
+    return Object.prototype.hasOwnProperty.call(settings, key) ? settings[key] : null;
   });
 
   // 设置设置
@@ -88,7 +92,8 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
 
     if (key === 'app_icon_path') {
       settings.app_icon_file_name = value
-        ? (settings.app_icon_file_name || path.basename(appIconManager.resolveStoredIconPath(value) || value))
+        ? settings.app_icon_file_name ||
+          path.basename(appIconManager.resolveStoredIconPath(value) || value)
         : '';
     }
 
@@ -151,7 +156,10 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     const previousIconSnapshot = appIconManager.captureManagedIconSnapshot(settings);
 
     try {
-      const persistedIcon = appIconManager.persistCustomIcon(selectedPath, path.basename(selectedPath));
+      const persistedIcon = appIconManager.persistCustomIcon(
+        selectedPath,
+        path.basename(selectedPath)
+      );
       const applied = windowService.applyWindowIcon(persistedIcon.path);
       if (!applied.success) {
         throw new Error(applied.error || '图标应用失败');

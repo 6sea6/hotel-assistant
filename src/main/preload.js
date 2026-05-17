@@ -54,7 +54,7 @@ const shouldCacheChannel = (channel) => CACHED_CHANNELS.has(channel);
 const cachedInvoke = async (channel, ...args) => {
   const cacheKey = buildCacheKey(channel, args);
   const cached = invokeCache.get(cacheKey);
-  
+
   if (cached && Date.now() - cached.time < CACHE_TTL) {
     return cached.data;
   }
@@ -74,7 +74,7 @@ const cachedInvoke = async (channel, ...args) => {
     }
     invokeCache.set(cacheKey, { data: result, time: Date.now() });
   }
-  
+
   return result;
 };
 
@@ -226,7 +226,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('ai:task:event', (event, data) => callback(data));
     }
   },
-  
+
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel);
   },

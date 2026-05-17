@@ -23,7 +23,9 @@ function getManagedIconDirectory() {
 }
 
 function normalizeExtension(extension = '') {
-  return String(extension || '').trim().toLowerCase();
+  return String(extension || '')
+    .trim()
+    .toLowerCase();
 }
 
 function toPosixPath(filePath = '') {
@@ -39,7 +41,9 @@ function ensureAllowedExtension(filePath) {
 }
 
 function isManagedIconReference(storedPath = '') {
-  return String(storedPath || '').trim().startsWith(MANAGED_ICON_PREFIX);
+  return String(storedPath || '')
+    .trim()
+    .startsWith(MANAGED_ICON_PREFIX);
 }
 
 function buildManagedIconReference(extension) {
@@ -53,7 +57,9 @@ function resolveStoredIconPath(storedPath = '') {
   }
 
   if (isManagedIconReference(normalizedStoredPath)) {
-    const relativePath = normalizedStoredPath.slice(MANAGED_ICON_PREFIX.length).replace(/\//g, path.sep);
+    const relativePath = normalizedStoredPath
+      .slice(MANAGED_ICON_PREFIX.length)
+      .replace(/\//g, path.sep);
     return path.join(getDataFolderPath(), relativePath);
   }
 
@@ -74,7 +80,10 @@ function toManagedIconReference(storedPath = '') {
     return '';
   }
 
-  const relativePath = path.relative(path.resolve(getDataFolderPath()), path.resolve(normalizedStoredPath));
+  const relativePath = path.relative(
+    path.resolve(getDataFolderPath()),
+    path.resolve(normalizedStoredPath)
+  );
   if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
     return '';
   }
@@ -84,7 +93,8 @@ function toManagedIconReference(storedPath = '') {
 
 function listManagedIconFiles() {
   const iconDirectory = getManagedIconDirectory();
-  return fs.readdirSync(iconDirectory)
+  return fs
+    .readdirSync(iconDirectory)
     .filter((fileName) => {
       const extension = normalizeExtension(path.extname(fileName));
       return fileName.startsWith(`${MANAGED_ICON_BASENAME}.`) && ALLOWED_EXTENSIONS.has(extension);
@@ -132,7 +142,11 @@ function persistCustomIcon(sourcePath, originalFileName = '') {
 
   const extension = ensureAllowedExtension(normalizedSourcePath);
   const buffer = fs.readFileSync(normalizedSourcePath);
-  return writeManagedIconFromBuffer(buffer, extension, originalFileName || path.basename(normalizedSourcePath));
+  return writeManagedIconFromBuffer(
+    buffer,
+    extension,
+    originalFileName || path.basename(normalizedSourcePath)
+  );
 }
 
 function removeManagedIcon() {
@@ -168,7 +182,11 @@ function restoreExportedIcon(iconPayload) {
     throw new Error('导出图标内容为空');
   }
 
-  return writeManagedIconFromBuffer(buffer, normalizedExtension, iconPayload.fileName || '自定义图标');
+  return writeManagedIconFromBuffer(
+    buffer,
+    normalizedExtension,
+    iconPayload.fileName || '自定义图标'
+  );
 }
 
 function captureManagedIconSnapshot(settings = {}) {

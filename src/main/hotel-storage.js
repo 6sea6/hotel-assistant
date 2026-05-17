@@ -1,8 +1,5 @@
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
-const {
-  compactHotels,
-  expandStoredHotels
-} = requireSharedCompareAppModule('hotel-groups.js');
+const { compactHotels, expandStoredHotels } = requireSharedCompareAppModule('hotel-groups.js');
 const { hasNormalizedValueChanged } = require('./normalization-utils');
 
 function getExpandedHotelsFromStore(store, normalizeHotelPayload) {

@@ -121,7 +121,8 @@ export async function exportRankingImage() {
     ctx.fillStyle = '#1D2129';
     ctx.font = 'bold 22px "Segoe UI", sans-serif';
     if (hotel.total_price) drawSingleLineText(`¥${hotel.total_price}`, x + 100, y, cellWidth - 110);
-    if (hotel.daily_price) drawSingleLineText(`¥${hotel.daily_price}`, x + 100, y + priceLineGap, cellWidth - 110);
+    if (hotel.daily_price)
+      drawSingleLineText(`¥${hotel.daily_price}`, x + 100, y + priceLineGap, cellWidth - 110);
     ctx.font = '18px "Segoe UI", sans-serif';
   };
 
@@ -193,7 +194,9 @@ export async function exportRankingImage() {
 
       const gridItems = [
         hasDisplayValue(hotel.distance) ? ['距离:', `${hotel.distance}公里`] : null,
-        hasDisplayValue(hotel.subway_distance) ? ['距地铁:', formatSubwayDistanceValue(hotel.subway_distance)] : null,
+        hasDisplayValue(hotel.subway_distance)
+          ? ['距地铁:', formatSubwayDistanceValue(hotel.subway_distance)]
+          : null,
         hasDisplayValue(hotel.transport_time) ? ['交通:', `${hotel.transport_time}分钟`] : null,
         hasDisplayValue(hotel.room_type) ? ['房型:', hotel.room_type] : null,
         hasDisplayValue(hotel.original_room_type) ? ['原始房型:', hotel.original_room_type] : null,
@@ -201,8 +204,11 @@ export async function exportRankingImage() {
       ].filter(Boolean);
 
       const positions = [
-        [col2X, row1Y], [col3X, row1Y],
-        [col1X, row2Y], [col2X, row2Y], [col3X, row2Y]
+        [col2X, row1Y],
+        [col3X, row1Y],
+        [col1X, row2Y],
+        [col2X, row2Y],
+        [col3X, row2Y]
       ];
 
       gridItems.slice(0, positions.length).forEach(([label, value], itemIndex) => {

@@ -4,14 +4,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const {
-  buildPageSnapshotSummary,
-  buildRunSummary
-} = require('../src/cli/run-summary');
-const {
-  classifyWriteCancelPolicy,
-  shouldSkipHotelWrite
-} = require('../src/cli/write-policy');
+const { buildPageSnapshotSummary, buildRunSummary } = require('../src/cli/run-summary');
+const { classifyWriteCancelPolicy, shouldSkipHotelWrite } = require('../src/cli/write-policy');
 const {
   hasReusableEdgeProfile,
   resolveEdgeProfileDirectory,
@@ -26,7 +20,11 @@ const {
 const { buildReviewInput } = require('../src/review-input');
 const { resolveSharedCompareAppModule } = require('../src/compare-app/shared-module');
 const { cleanupOutputArtifacts, parseArgs, sanitizeSensitiveData } = require('../src/utils');
-const { applyMatchedTemplate, mergeTemplateWithArgs, validateTemplate } = require('../src/template-loader');
+const {
+  applyMatchedTemplate,
+  mergeTemplateWithArgs,
+  validateTemplate
+} = require('../src/template-loader');
 
 test('buildPageSnapshotSummary keeps only compact fields needed for latest-run', () => {
   const summary = buildPageSnapshotSummary({
@@ -89,13 +87,15 @@ test('buildRunSummary preserves runtime result fields and nests page summary', (
     batchMode: true,
     requestedUrls: ['https://hotels.ctrip.com/hotels/list?city=1'],
     resolvedUrls: ['https://hotels.ctrip.com/hotels/detail/?hotelId=1'],
-    items: [{
-      index: 1,
-      success: true,
-      hotelName: '测试酒店',
-      outputPath: 'output/batch-items/item.json',
-      eligibleCount: 2
-    }],
+    items: [
+      {
+        index: 1,
+        success: true,
+        hotelName: '测试酒店',
+        outputPath: 'output/batch-items/item.json',
+        eligibleCount: 2
+      }
+    ],
     batchStats: {
       expandedHotelCount: 1,
       succeededCount: 1
@@ -187,14 +187,16 @@ test('buildReviewInput keeps final, eligible, rejected, raw and diagnostic evide
       guestCount: 3,
       destination: '江汉路'
     },
-    finalHotels: [{
-      name: '测试酒店',
-      website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-      room_type: '家庭房',
-      total_price: 600,
-      room_area: '40',
-      notes: '早餐：无早餐'
-    }],
+    finalHotels: [
+      {
+        name: '测试酒店',
+        website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+        room_type: '家庭房',
+        total_price: 600,
+        room_area: '40',
+        notes: '早餐：无早餐'
+      }
+    ],
     template: {
       room_count: 3,
       room_type: '家庭房'
@@ -248,12 +250,14 @@ test('buildReviewInput keeps final, eligible, rejected, raw and diagnostic evide
     ],
     pageSnapshot: {
       room_price_visible: true,
-      sources: [{
-        source: 'desktop',
-        room_candidates_count: 2,
-        room_price_visible: false,
-        locked_price_detected: true
-      }]
+      sources: [
+        {
+          source: 'desktop',
+          room_candidates_count: 2,
+          room_price_visible: false,
+          locked_price_detected: true
+        }
+      ]
     }
   });
 
@@ -266,30 +270,44 @@ test('buildReviewInput keeps final, eligible, rejected, raw and diagnostic evide
   assert.doesNotMatch(reviewInput.rawRoomCandidates[1].compactRawText, /secret-token/);
   assert.ok(reviewInput.normalizeLogs.some((item) => item.field === 'price'));
   assert.equal(reviewInput.selectionLogs[1].candidateId, 'room-candidate-002');
-  assert.ok(reviewInput.finalHotelFieldLogs.some((item) => item.field === 'room_area' && item.source === '房型详情面积解析'));
-  assert.ok(reviewInput.finalHotelFieldLogs.some((item) => item.field === 'notes' && item.source === '房型详情中的早餐信息'));
+  assert.ok(
+    reviewInput.finalHotelFieldLogs.some(
+      (item) => item.field === 'room_area' && item.source === '房型详情面积解析'
+    )
+  );
+  assert.ok(
+    reviewInput.finalHotelFieldLogs.some(
+      (item) => item.field === 'notes' && item.source === '房型详情中的早餐信息'
+    )
+  );
   assert.equal(reviewInput.pageSnapshotSummary.rejectedCount, 1);
 });
 
 test('task runner exposes reusable helpers for Electron integration', () => {
   assert.equal(typeof runHotelImportTask, 'function');
-  assert.deepEqual(buildTemplateSnapshot({
-    id: 1,
-    name: 'bw',
-    destination: '上海',
-    check_in_date: '2026-05-01',
-    check_out_date: '2026-05-03',
-    room_count: 2
-  }, 'store.templates'), {
-    source: 'store.templates',
-    id: 1,
-    name: 'bw',
-    destination: '上海',
-    check_in_date: '2026-05-01',
-    check_out_date: '2026-05-03',
-    room_count: 2,
-    created_at: null
-  });
+  assert.deepEqual(
+    buildTemplateSnapshot(
+      {
+        id: 1,
+        name: 'bw',
+        destination: '上海',
+        check_in_date: '2026-05-01',
+        check_out_date: '2026-05-03',
+        room_count: 2
+      },
+      'store.templates'
+    ),
+    {
+      source: 'store.templates',
+      id: 1,
+      name: 'bw',
+      destination: '上海',
+      check_in_date: '2026-05-01',
+      check_out_date: '2026-05-03',
+      room_count: 2,
+      created_at: null
+    }
+  );
 
   const failure = buildFailureResult(new Error('boom'), 'output/latest-run.json', 'start');
   assert.equal(failure.success, false);
@@ -318,19 +336,28 @@ test('shared module resolver supports packaged adjacent shared resources', (t) =
 
 test('write policy skips only when every candidate room is non cancellable or confirmation restricted', () => {
   assert.equal(classifyWriteCancelPolicy('不可取消'), 'non_cancellable');
-  assert.equal(classifyWriteCancelPolicy('订单确认后30分钟内免费取消'), 'restricted_free_cancellation');
+  assert.equal(
+    classifyWriteCancelPolicy('订单确认后30分钟内免费取消'),
+    'restricted_free_cancellation'
+  );
   assert.equal(classifyWriteCancelPolicy('入住前一天可免费取消'), 'cancellable');
   assert.equal(classifyWriteCancelPolicy(''), 'assumed_cancellable');
 
-  assert.equal(shouldSkipHotelWrite([
-    { cancel_policy: '不可取消' },
-    { cancel_policy: '订单确认后30分钟内免费取消' }
-  ]), true);
+  assert.equal(
+    shouldSkipHotelWrite([
+      { cancel_policy: '不可取消' },
+      { cancel_policy: '订单确认后30分钟内免费取消' }
+    ]),
+    true
+  );
 
-  assert.equal(shouldSkipHotelWrite([
-    { cancel_policy: '不可取消' },
-    { cancel_policy: '入住前一天可免费取消' }
-  ]), false);
+  assert.equal(
+    shouldSkipHotelWrite([
+      { cancel_policy: '不可取消' },
+      { cancel_policy: '入住前一天可免费取消' }
+    ]),
+    false
+  );
 });
 
 test('edge runtime resolves profile paths and detects reusable profile markers', (t) => {
@@ -384,28 +411,34 @@ test('mergeTemplateWithArgs accepts url aliases and keeps template validation pa
 });
 
 test('applyMatchedTemplate does not inject a default template name and reuses matched template metadata', () => {
-  const explicitTemplate = applyMatchedTemplate({
-    ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-    template_name: '',
-    check_in_date: '2026-05-01',
-    check_out_date: '2026-05-03',
-    room_count: 2
-  }, null);
-  const matchedById = applyMatchedTemplate({
-    ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-    template_id: 2001,
-    template_name: '',
-    check_in_date: '',
-    check_out_date: '',
-    room_count: null
-  }, {
-    id: 2001,
-    name: '武汉',
-    destination: '江汉路步行街',
-    check_in_date: '2026-04-30',
-    check_out_date: '2026-05-03',
-    room_count: 3
-  });
+  const explicitTemplate = applyMatchedTemplate(
+    {
+      ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      template_name: '',
+      check_in_date: '2026-05-01',
+      check_out_date: '2026-05-03',
+      room_count: 2
+    },
+    null
+  );
+  const matchedById = applyMatchedTemplate(
+    {
+      ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      template_id: 2001,
+      template_name: '',
+      check_in_date: '',
+      check_out_date: '',
+      room_count: null
+    },
+    {
+      id: 2001,
+      name: '武汉',
+      destination: '江汉路步行街',
+      check_in_date: '2026-04-30',
+      check_out_date: '2026-05-03',
+      room_count: 3
+    }
+  );
 
   assert.equal(explicitTemplate.template_name, '');
   assert.equal(matchedById.template_name, '武汉');

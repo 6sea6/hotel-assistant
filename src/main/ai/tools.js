@@ -30,7 +30,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
     type: 'function',
     function: {
       name: 'collect_and_write_ctrip_hotel',
-      description: '采集携程酒店详情页或酒店列表页链接，支持多个 URL 和混合粘贴文本；列表页先前筛，再逐个进入详情页并在安全门通过后自动写入宾馆比较数据。',
+      description:
+        '采集携程酒店详情页或酒店列表页链接，支持多个 URL 和混合粘贴文本；列表页先前筛，再逐个进入详情页并在安全门通过后自动写入宾馆比较数据。',
       parameters: {
         type: 'object',
         properties: {
@@ -51,7 +52,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           },
           templateId: {
             type: 'string',
-            description: '比较助手模板 ID，可把数字 ID 写成字符串。templateId 和 templateName 至少提供一个。'
+            description:
+              '比较助手模板 ID，可把数字 ID 写成字符串。templateId 和 templateName 至少提供一个。'
           },
           templateName: {
             type: 'string',
@@ -59,7 +61,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           },
           listFilters: {
             type: 'object',
-            description: '本地列表页前筛条件。详情页输入会忽略这些条件；这些条件不会写入携程 listFilters。',
+            description:
+              '本地列表页前筛条件。详情页输入会忽略这些条件；这些条件不会写入携程 listFilters。',
             properties: {
               excludeAccommodationKeywords: {
                 type: 'array',
@@ -69,7 +72,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
               excludeHotelTypes: {
                 type: 'array',
                 items: { type: 'string' },
-                description: '排除住宿类型关键词，excludeAccommodationKeywords 的别名。默认前筛会排除民宿、客栈、青年旅舍、公寓。'
+                description:
+                  '排除住宿类型关键词，excludeAccommodationKeywords 的别名。默认前筛会排除民宿、客栈、青年旅舍、公寓。'
               },
               targetCount: {
                 type: 'integer',
@@ -92,7 +96,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           },
           listUrlFilters: {
             type: 'object',
-            description: '携程列表页 URL 原生前筛条件，会合并进 listFilters 并保留未知片段。详情页输入会忽略。',
+            description:
+              '携程列表页 URL 原生前筛条件，会合并进 listFilters 并保留未知片段。详情页输入会忽略。',
             properties: {
               priceMin: {
                 type: ['number', 'null'],
@@ -113,7 +118,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
               sortMode: {
                 type: ['string', 'null'],
                 enum: ['popularity', 'price_low', 'review_high', null],
-                description: '携程 URL 排序：popularity 默认/欢迎度，price_low 低价优先，review_high 好评优先。'
+                description:
+                  '携程 URL 排序：popularity 默认/欢迎度，price_low 低价优先，review_high 好评优先。'
               },
               freeCancel: {
                 type: 'boolean',
@@ -245,9 +251,11 @@ async function executeAiTool(name, rawArguments, context) {
     case 'get_task_status':
       return getTaskStatus();
     case 'open_visible_edge_login':
-      return loadScraperRunner().then(({ openVisibleEdgeLogin }) => openVisibleEdgeLogin(args, {
-        dataFolderPath: dataService.getDataFolderPath()
-      }));
+      return loadScraperRunner().then(({ openVisibleEdgeLogin }) =>
+        openVisibleEdgeLogin(args, {
+          dataFolderPath: dataService.getDataFolderPath()
+        })
+      );
     default:
       throw new Error(`未知 AI 工具：${name}`);
   }

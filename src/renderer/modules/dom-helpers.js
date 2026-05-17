@@ -111,5 +111,7 @@ export function getRoomCountText(count) {
 }
 
 export function normalizeFilterOptionKey(value) {
-  return String(value ?? '').trim().toLocaleLowerCase('zh-CN');
+  return String(value ?? '')
+    .trim()
+    .toLocaleLowerCase('zh-CN');
 }

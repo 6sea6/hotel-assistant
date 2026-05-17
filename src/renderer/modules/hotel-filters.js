@@ -60,7 +60,7 @@ export function computeHotelsHash(hotels) {
 export function applyFiltersToHotels(hotels, filters) {
   const normalizedNameFilter = normalizeFilterOptionKey(filters.name);
 
-  return hotels.filter(hotel => {
+  return hotels.filter((hotel) => {
     if (normalizedNameFilter && normalizeFilterOptionKey(hotel.name) !== normalizedNameFilter) {
       return false;
     }
@@ -99,7 +99,11 @@ export function applyFiltersToHotels(hotels, filters) {
         }
       } else {
         const maxDistance = parseFloat(filters.subwayDistance);
-        if (hotelSubwayDistance === null || hotelSubwayDistance === 0 || hotelSubwayDistance > maxDistance) {
+        if (
+          hotelSubwayDistance === null ||
+          hotelSubwayDistance === 0 ||
+          hotelSubwayDistance > maxDistance
+        ) {
           return false;
         }
       }
@@ -112,32 +116,40 @@ export function applyFiltersToHotels(hotels, filters) {
 export function rankHotels(hotels) {
   if (hotels.length === 0) return [];
 
-  const weights = state.rankingMode === 'manual' ? {
-    price: parseFloat(getValue('weightPrice', 0.25)),
-    score: parseFloat(getValue('weightScore', 0.35)),
-    distance: parseFloat(getValue('weightDistance', 0.2)),
-    transport: parseFloat(getValue('weightTransport', 0.2))
-  } : {
-    price: parseFloat(state.settings.weight_price || 0.25),
-    score: parseFloat(state.settings.weight_score || 0.35),
-    distance: parseFloat(state.settings.weight_distance || 0.2),
-    transport: parseFloat(state.settings.weight_transport || 0.2)
-  };
+  const weights =
+    state.rankingMode === 'manual'
+      ? {
+          price: parseFloat(getValue('weightPrice', 0.25)),
+          score: parseFloat(getValue('weightScore', 0.35)),
+          distance: parseFloat(getValue('weightDistance', 0.2)),
+          transport: parseFloat(getValue('weightTransport', 0.2))
+        }
+      : {
+          price: parseFloat(state.settings.weight_price || 0.25),
+          score: parseFloat(state.settings.weight_score || 0.35),
+          distance: parseFloat(state.settings.weight_distance || 0.2),
+          transport: parseFloat(state.settings.weight_transport || 0.2)
+        };
 
   const weightsKey = `${weights.price}-${weights.score}-${weights.distance}-${weights.transport}`;
   const filtersKey = state.currentFilters.name || '';
   const hotelsHash = computeHotelsHash(hotels);
 
-  if (rankingCache.data &&
-      rankingCache.hotelsHash === hotelsHash &&
-      rankingCache.filters === filtersKey &&
-      rankingCache.weights === weightsKey) {
+  if (
+    rankingCache.data &&
+    rankingCache.hotelsHash === hotelsHash &&
+    rankingCache.filters === filtersKey &&
+    rankingCache.weights === weightsKey
+  ) {
     return rankingCache.data;
   }
 
-  let maxPrice = 0, minPrice = Infinity;
-  let maxDistance = 0, minDistance = Infinity;
-  let maxTime = 0, minTime = Infinity;
+  let maxPrice = 0,
+    minPrice = Infinity;
+  let maxDistance = 0,
+    minDistance = Infinity;
+  let maxTime = 0,
+    minTime = Infinity;
 
   for (let i = 0; i < hotels.length; i++) {
     const hotel = hotels[i];
@@ -165,7 +177,7 @@ export function rankHotels(hotels) {
   const distanceRange = maxDistance - minDistance;
   const timeRange = maxTime - minTime;
 
-  const scoredHotels = hotels.map(hotel => {
+  const scoredHotels = hotels.map((hotel) => {
     let score = 0;
 
     if (hotel.daily_price && priceRange > 0) {
@@ -213,8 +225,9 @@ export function getVisibleHotelSummary(sourceHotels = []) {
 
     hotelKeys.add(hotelIdentity);
 
-    const roomTypeKey = normalizeFilterOptionKey(hotel?.original_room_type)
-      || normalizeFilterOptionKey(hotel?.room_type);
+    const roomTypeKey =
+      normalizeFilterOptionKey(hotel?.original_room_type) ||
+      normalizeFilterOptionKey(hotel?.room_type);
 
     if (roomTypeKey) {
       roomTypeKeys.add(`${hotelIdentity}::${roomTypeKey}`);

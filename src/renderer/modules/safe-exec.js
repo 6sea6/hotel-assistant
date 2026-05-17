@@ -3,7 +3,7 @@
  */
 
 export const safeExecute = (fn, context = '') => {
-  return function(...args) {
+  return function (...args) {
     try {
       return fn.apply(this, args);
     } catch (error) {

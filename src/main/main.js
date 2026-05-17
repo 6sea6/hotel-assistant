@@ -56,10 +56,13 @@ if (!gotSingleInstanceLock) {
     });
   }
 
-  app.whenReady().then(bootstrapApp).catch((error) => {
-    console.error('[main] 应用初始化失败:', error);
-    app.quit();
-  });
+  app
+    .whenReady()
+    .then(bootstrapApp)
+    .catch((error) => {
+      console.error('[main] 应用初始化失败:', error);
+      app.quit();
+    });
 }
 
 // 所有窗口关闭事件

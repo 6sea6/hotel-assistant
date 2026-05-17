@@ -2,10 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { createBuilderConfig } = require('./create-builder-config');
 const { verifyPackageLayout } = require('./verify-package-layout');
-const {
-  removeIfExists,
-  runCommand
-} = require('./utils');
+const { removeIfExists, runCommand } = require('./utils');
 
 function runNodeScriptIfPresent(scriptPath, cwd) {
   if (!fs.existsSync(scriptPath)) return;
@@ -14,13 +11,17 @@ function runNodeScriptIfPresent(scriptPath, cwd) {
 
 function runElectronBuilderDirectoryBuild({ projectRoot, configPath }) {
   const electronBuilderCli = path.join(projectRoot, 'node_modules', 'electron-builder', 'cli.js');
-  runCommand(process.execPath, [electronBuilderCli, '--win', '--x64', '--dir', '--publish', 'never', '--config', configPath], {
-    cwd: projectRoot,
-    env: {
-      ...process.env,
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  runCommand(
+    process.execPath,
+    [electronBuilderCli, '--win', '--x64', '--dir', '--publish', 'never', '--config', configPath],
+    {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      }
     }
-  });
+  );
 }
 
 function main() {
@@ -48,7 +49,11 @@ function main() {
       signAndEditExecutable: false
     };
     builderConfig.buildConfig.directories.output = outputDir;
-    fs.writeFileSync(builderConfig.configPath, `${JSON.stringify(builderConfig.buildConfig, null, 2)}\n`, 'utf-8');
+    fs.writeFileSync(
+      builderConfig.configPath,
+      `${JSON.stringify(builderConfig.buildConfig, null, 2)}\n`,
+      'utf-8'
+    );
 
     runElectronBuilderDirectoryBuild({
       projectRoot,

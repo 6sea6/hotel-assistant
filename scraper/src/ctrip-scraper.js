@@ -8,7 +8,12 @@
 
 const path = require('path');
 const { normalizeText, pickFirst, slugify } = require('./utils');
-const { buildDesktopUrl, buildMobileUrl, buildUrlOverridesFromTemplate, parseHotelIdFromUrl } = require('./ctrip-url');
+const {
+  buildDesktopUrl,
+  buildMobileUrl,
+  buildUrlOverridesFromTemplate,
+  parseHotelIdFromUrl
+} = require('./ctrip-url');
 const {
   extractHotelMetaFromHtml,
   extractHotelScoreFromHtml,
@@ -19,9 +24,18 @@ const {
   DESKTOP_HEADERS,
   MOBILE_HEADERS
 } = require('./scraper/html-parser');
-const { mergeRoomCandidates, selectBestRoom, buildRoomSelectionDiagnostics, isPersistableRoomCandidate } = require('./scraper/room-logic');
+const {
+  mergeRoomCandidates,
+  selectBestRoom,
+  buildRoomSelectionDiagnostics,
+  isPersistableRoomCandidate
+} = require('./scraper/room-logic');
 const { captureRoomCandidatesDirect } = require('./scraper/api-replay');
-const { shouldAttemptSupplementalCapture, shouldPreferEdgeCapture, captureRoomCandidatesWithEdge } = require('./scraper/edge-capture');
+const {
+  shouldAttemptSupplementalCapture,
+  shouldPreferEdgeCapture,
+  captureRoomCandidatesWithEdge
+} = require('./scraper/edge-capture');
 
 function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
@@ -101,7 +115,11 @@ async function scrapeCtripHotel(url, template, options = {}) {
   const preferEdgeCapture = shouldPreferEdgeCapture(options);
 
   const applyCaptureResult = (captureResult) => {
-    if (!captureResult || !Array.isArray(captureResult.roomBlocks) || captureResult.roomBlocks.length === 0) {
+    if (
+      !captureResult ||
+      !Array.isArray(captureResult.roomBlocks) ||
+      captureResult.roomBlocks.length === 0
+    ) {
       return false;
     }
 
@@ -113,13 +131,19 @@ async function scrapeCtripHotel(url, template, options = {}) {
   if (preferEdgeCapture) {
     if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
       const edgeStartedAt = Date.now();
-      fallbackCapture = await captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {});
+      fallbackCapture = await captureRoomCandidatesWithEdge(
+        desktopUrl,
+        template,
+        options.edgeSession || {}
+      );
       performance.edgeCaptureMs += durationSince(edgeStartedAt);
       applyCaptureResult(fallbackCapture);
     }
 
-    if ((!selectedRoom || selectedRoom.price === null)
-      && shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
+    if (
+      (!selectedRoom || selectedRoom.price === null) &&
+      shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
+    ) {
       const replayStartedAt = Date.now();
       directReplay = await captureRoomCandidatesDirect(desktopUrl, template, parsedSources);
       performance.directReplayMs += durationSince(replayStartedAt);
@@ -135,32 +159,51 @@ async function scrapeCtripHotel(url, template, options = {}) {
 
     if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
       const edgeStartedAt = Date.now();
-      fallbackCapture = await captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {});
+      fallbackCapture = await captureRoomCandidatesWithEdge(
+        desktopUrl,
+        template,
+        options.edgeSession || {}
+      );
       performance.edgeCaptureMs += durationSince(edgeStartedAt);
       applyCaptureResult(fallbackCapture);
     }
   }
 
-  const primarySource = parsedSources.find((item) => item.meta.hotelName || item.meta.address) || parsedSources[0] || { meta: {} };
+  const primarySource = parsedSources.find((item) => item.meta.hotelName || item.meta.address) ||
+    parsedSources[0] || { meta: {} };
   const resolvedScore = pickFirst(
     ...parsedSources.map((item) => item.meta.score),
     ...parsedSources.map((item) => extractHotelScoreFromHtml(item.html))
   );
-  const shouldSaveSnapshots = !options.htmlPath && (options.saveHtml || !selectedRoom || selectedRoom.price === null);
-  const snapshotDir = shouldSaveSnapshots ? path.resolve(options.snapshotDir || path.join('output', 'raw-pages')) : null;
-  const snapshotStem = slugify(primarySource.meta.hotelName || parseHotelIdFromUrl(desktopUrl) || 'hotel-page');
+  const shouldSaveSnapshots =
+    !options.htmlPath && (options.saveHtml || !selectedRoom || selectedRoom.price === null);
+  const snapshotDir = shouldSaveSnapshots
+    ? path.resolve(options.snapshotDir || path.join('output', 'raw-pages'))
+    : null;
+  const snapshotStem = slugify(
+    primarySource.meta.hotelName || parseHotelIdFromUrl(desktopUrl) || 'hotel-page'
+  );
   const snapshotFiles = shouldSaveSnapshots
-    ? parsedSources.map((item) => saveHtmlSnapshot(snapshotDir, snapshotStem, item.source, item.html)).filter(Boolean)
+    ? parsedSources
+        .map((item) => saveHtmlSnapshot(snapshotDir, snapshotStem, item.source, item.html))
+        .filter(Boolean)
     : [];
 
   const persistedRoomBlocks = normalizedRoomBlocks.filter(isPersistableRoomCandidate);
-  const selectionDiagnostics = buildRoomSelectionDiagnostics(normalizedRoomBlocks, template, options.matchingOptions || {});
+  const selectionDiagnostics = buildRoomSelectionDiagnostics(
+    normalizedRoomBlocks,
+    template,
+    options.matchingOptions || {}
+  );
   const eligibleRooms = selectionDiagnostics.eligibleRooms;
   performance.totalMs = durationSince(totalStartedAt);
 
   return {
     hotel_name: primarySource.meta.hotelName,
-    address: pickFirst(primarySource.meta.geoInfo && primarySource.meta.geoInfo.address, primarySource.meta.address),
+    address: pickFirst(
+      primarySource.meta.geoInfo && primarySource.meta.geoInfo.address,
+      primarySource.meta.address
+    ),
     ctrip_score: resolvedScore,
     geo: primarySource.meta.geoInfo,
     room: selectedRoom,
@@ -175,32 +218,51 @@ async function scrapeCtripHotel(url, template, options = {}) {
       room_candidates_count: persistedRoomBlocks.length,
       room_price_visible: Boolean(selectedRoom && selectedRoom.price !== null),
       selected_room_source: selectedRoom ? selectedRoom.source : '',
-      sources: parsedSources.map((item) => ({
-        source: item.source,
-        url: item.url,
-        room_candidates_count: item.roomBlocks.length,
-        room_price_visible: item.roomBlocks.some((room) => room.price !== null),
-        locked_price_detected: item.roomBlocks.some((room) => room.price_locked)
-      })).concat(directReplay ? [{
-        source: 'direct-room-list-replay',
-        url: desktopUrl,
-        room_candidates_count: directReplay.roomBlocks.length,
-        room_price_visible: directReplay.roomBlocks.some((room) => room.price !== null),
-        locked_price_detected: directReplay.roomBlocks.some((room) => room.price_locked),
-        tracked_urls: directReplay.trackedUrls,
-        spider_error_codes: directReplay.spiderErrorCodes || [],
-        attempts: directReplay.attempts || [],
-        error: directReplay.error || ''
-      }] : []).concat(fallbackCapture ? [{
-        source: 'edge-cdp',
-        url: desktopUrl,
-        room_candidates_count: fallbackCapture.roomBlocks.length,
-        room_price_visible: fallbackCapture.roomBlocks.some((room) => room.price !== null),
-        locked_price_detected: fallbackCapture.roomBlocks.some((room) => room.price_locked),
-        tracked_urls: fallbackCapture.trackedUrls,
-        spider_error_codes: fallbackCapture.spiderErrorCodes || [],
-        error: fallbackCapture.error || ''
-      }] : []),
+      sources: parsedSources
+        .map((item) => ({
+          source: item.source,
+          url: item.url,
+          room_candidates_count: item.roomBlocks.length,
+          room_price_visible: item.roomBlocks.some((room) => room.price !== null),
+          locked_price_detected: item.roomBlocks.some((room) => room.price_locked)
+        }))
+        .concat(
+          directReplay
+            ? [
+                {
+                  source: 'direct-room-list-replay',
+                  url: desktopUrl,
+                  room_candidates_count: directReplay.roomBlocks.length,
+                  room_price_visible: directReplay.roomBlocks.some((room) => room.price !== null),
+                  locked_price_detected: directReplay.roomBlocks.some((room) => room.price_locked),
+                  tracked_urls: directReplay.trackedUrls,
+                  spider_error_codes: directReplay.spiderErrorCodes || [],
+                  attempts: directReplay.attempts || [],
+                  error: directReplay.error || ''
+                }
+              ]
+            : []
+        )
+        .concat(
+          fallbackCapture
+            ? [
+                {
+                  source: 'edge-cdp',
+                  url: desktopUrl,
+                  room_candidates_count: fallbackCapture.roomBlocks.length,
+                  room_price_visible: fallbackCapture.roomBlocks.some(
+                    (room) => room.price !== null
+                  ),
+                  locked_price_detected: fallbackCapture.roomBlocks.some(
+                    (room) => room.price_locked
+                  ),
+                  tracked_urls: fallbackCapture.trackedUrls,
+                  spider_error_codes: fallbackCapture.spiderErrorCodes || [],
+                  error: fallbackCapture.error || ''
+                }
+              ]
+            : []
+        ),
       selected_room_price_locked: Boolean(selectedRoom && selectedRoom.price_locked),
       performance,
       saved_html_files: snapshotFiles

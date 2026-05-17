@@ -14,21 +14,17 @@ const {
   waitForDebuggerEndpoint,
   waitForSessionCondition
 } = require('./cdp-utils');
-const {
-  findEdgeExecutable,
-  killProcessTree
-} = require('./process-utils');
+const { findEdgeExecutable, killProcessTree } = require('./process-utils');
 
 function shouldAttemptEdgeListFallback(options = {}) {
-  const edgeSession = options.edgeSession && typeof options.edgeSession === 'object'
-    ? options.edgeSession
-    : {};
+  const edgeSession =
+    options.edgeSession && typeof options.edgeSession === 'object' ? options.edgeSession : {};
 
   return Boolean(
-    options.autoEdge
-    || edgeSession.debuggerUrl
-    || edgeSession.debuggingPort
-    || edgeSession.userDataDir
+    options.autoEdge ||
+    edgeSession.debuggerUrl ||
+    edgeSession.debuggingPort ||
+    edgeSession.userDataDir
   );
 }
 
@@ -65,7 +61,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   if (!EdgeWebSocket) {
     return {
       pages: [],
-      error: 'edge-cdp list fallback unavailable: WebSocket is not present and ws package not installed'
+      error:
+        'edge-cdp list fallback unavailable: WebSocket is not present and ws package not installed'
     };
   }
 
@@ -97,7 +94,11 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         if (!edgeExecutable) {
           throw error;
         }
-        const launched = await launchManagedEdgeSession(edgeExecutable, sessionOptions, sessionOptions.debuggingPort);
+        const launched = await launchManagedEdgeSession(
+          edgeExecutable,
+          sessionOptions,
+          sessionOptions.debuggingPort
+        );
         browser = launched.browser;
         userDataDir = launched.userDataDir;
         shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
@@ -114,7 +115,9 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     try {
       const targetsResponse = await connection.send('Target.getTargets');
       const targets = (targetsResponse && targetsResponse.targetInfos) || [];
-      const blankTarget = targets.find((target) => target.type === 'page' && (!target.url || target.url === 'about:blank'));
+      const blankTarget = targets.find(
+        (target) => target.type === 'page' && (!target.url || target.url === 'about:blank')
+      );
       if (blankTarget) {
         targetId = blankTarget.targetId;
       }
@@ -135,7 +138,10 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       };
     }
 
-    const attachedTarget = await connection.send('Target.attachToTarget', { targetId, flatten: true });
+    const attachedTarget = await connection.send('Target.attachToTarget', {
+      targetId,
+      flatten: true
+    });
     sessionId = attachedTarget && attachedTarget.sessionId;
     if (!sessionId) {
       return {
@@ -160,16 +166,22 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       });
 
       await connection.send('Page.navigate', { url }, sessionId);
-      await Promise.race([
-        loadEvent,
-        new Promise((resolve) => setTimeout(resolve, 15000))
-      ]);
-      await waitForSessionCondition(connection, sessionId, `(() => {
+      await Promise.race([loadEvent, new Promise((resolve) => setTimeout(resolve, 15000))]);
+      await waitForSessionCondition(
+        connection,
+        sessionId,
+        `(() => {
         const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
         return document.readyState === 'complete' && /(酒店|宾馆|评分|点评|价格|携程)/.test(bodyText);
-      })()`, 5000, 250);
+      })()`,
+        5000,
+        250
+      );
 
-      const html = await evaluateInSession(connection, sessionId, `(async () => {
+      const html = await evaluateInSession(
+        connection,
+        sessionId,
+        `(async () => {
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const getHeight = () => Math.max(
           document.body ? document.body.scrollHeight : 0,
@@ -216,7 +228,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         window.scrollTo(0, 0);
         await sleep(100);
         return document.documentElement ? document.documentElement.outerHTML : '';
-      })()`);
+      })()`
+      );
 
       const pageRecord = {
         url,
@@ -245,7 +258,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   } catch (error) {
     return {
       pages: [],
-      error: error && error.message ? error.message : 'edge-cdp list fallback failed with unknown error'
+      error:
+        error && error.message ? error.message : 'edge-cdp list fallback failed with unknown error'
     };
   } finally {
     if (connection && sessionId) {
@@ -289,7 +303,7 @@ function pickEdgeFallbackPageUrls(pageUrls = [], htmlPageResults = new Map()) {
     }
   }
 
-  return fallbackUrls.length > 0 ? fallbackUrls : (htmlPageResults.size === 0 ? pageUrls : []);
+  return fallbackUrls.length > 0 ? fallbackUrls : htmlPageResults.size === 0 ? pageUrls : [];
 }
 
 async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}, options = {}) {
@@ -300,9 +314,10 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
   const errors = [];
   const htmlPageResults = new Map();
   const fetchPageHtml = typeof options.fetchHtml === 'function' ? options.fetchHtml : fetchHtml;
-  const capturePagesWithEdge = typeof options.captureListHtmlPagesWithEdge === 'function'
-    ? options.captureListHtmlPagesWithEdge
-    : captureListHtmlPagesWithEdge;
+  const capturePagesWithEdge =
+    typeof options.captureListHtmlPagesWithEdge === 'function'
+      ? options.captureListHtmlPagesWithEdge
+      : captureListHtmlPagesWithEdge;
   const performance = {
     htmlFetchMs: 0,
     edgeFallbackMs: 0,
@@ -358,7 +373,10 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
   }
 
   let edgeCapture = null;
-  if (prefilter.selected.length < filters.desiredHotelCount && shouldAttemptEdgeListFallback(options)) {
+  if (
+    prefilter.selected.length < filters.desiredHotelCount &&
+    shouldAttemptEdgeListFallback(options)
+  ) {
     const edgePageUrls = pickEdgeFallbackPageUrls(pageUrls, htmlPageResults);
     const edgeStartedAt = Date.now();
     const parsedEdgeUrls = new Set();
@@ -381,18 +399,19 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
       parsedEdgeUrls.add(edgePage.url);
       prefilter = filterListPageCandidates(candidates, filters);
     };
-    edgeCapture = edgePageUrls.length > 0
-      ? await capturePagesWithEdge(edgePageUrls, options.edgeSession || {}, {
-        onPage: (edgePage) => {
-          applyEdgePage(edgePage);
-          return prefilter.selected.length < filters.desiredHotelCount;
-        },
-        shouldStop: () => prefilter.selected.length >= filters.desiredHotelCount
-      })
-      : {
-        pages: [],
-        error: ''
-      };
+    edgeCapture =
+      edgePageUrls.length > 0
+        ? await capturePagesWithEdge(edgePageUrls, options.edgeSession || {}, {
+            onPage: (edgePage) => {
+              applyEdgePage(edgePage);
+              return prefilter.selected.length < filters.desiredHotelCount;
+            },
+            shouldStop: () => prefilter.selected.length >= filters.desiredHotelCount
+          })
+        : {
+            pages: [],
+            error: ''
+          };
     performance.edgeFallbackMs = durationSince(edgeStartedAt);
     if (edgeCapture.error) {
       errors.push({
@@ -425,7 +444,9 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     rejected: prefilter.rejected,
     detailUrls: prefilter.detailUrls,
     errors,
-    edgeFallbackUsed: Boolean(edgeCapture && ((edgeCapture.pages || []).length || edgeCapture.error)),
+    edgeFallbackUsed: Boolean(
+      edgeCapture && ((edgeCapture.pages || []).length || edgeCapture.error)
+    ),
     performance
   };
 }

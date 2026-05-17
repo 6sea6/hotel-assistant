@@ -28,9 +28,7 @@ test('collectRoomCandidatesFromPayload keeps priced saleRoomMap entries even whe
         houseTypeInfo: {
           bedCount: 2
         },
-        physicalFacilityList: [
-          { title: 'Wi-Fi免费' }
-        ],
+        physicalFacilityList: [{ title: 'Wi-Fi免费' }],
         wifiInfo: {
           title: 'Wi-Fi免费'
         }
@@ -58,10 +56,7 @@ test('collectRoomCandidatesFromPayload keeps priced saleRoomMap entries even whe
             content: '¥2338.28'
           }
         },
-        tagInfoList: [
-          { tagTitle: '1张双人床 及 1张单人床' },
-          { tagTitle: '3人入住' }
-        ]
+        tagInfoList: [{ tagTitle: '1张双人床 及 1张单人床' }, { tagTitle: '3人入住' }]
       }
     }
   };

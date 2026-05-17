@@ -18,8 +18,10 @@ function areValuesEqual(left, right) {
     const rightKeys = Object.keys(right);
     if (leftKeys.length !== rightKeys.length) return false;
 
-    return leftKeys.every((key) => Object.prototype.hasOwnProperty.call(right, key)
-      && areValuesEqual(left[key], right[key]));
+    return leftKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) && areValuesEqual(left[key], right[key])
+    );
   }
 
   return false;

@@ -34,18 +34,15 @@ function hideProcessWindows(pid) {
     '}, [IntPtr]::Zero) | Out-Null'
   ].join('; ');
 
-  const child = spawn('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-WindowStyle',
-    'Hidden',
-    '-Command',
-    script
-  ], {
-    stdio: 'ignore',
-    detached: true,
-    windowsHide: true
-  });
+  const child = spawn(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+    {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true
+    }
+  );
 
   child.on('error', () => undefined);
   child.unref();
@@ -89,9 +86,21 @@ function killProcessTree(pid) {
 
 function findEdgeExecutable() {
   const candidates = [
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe') : '',
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : '',
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : ''
+    process.env['PROGRAMFILES(X86)']
+      ? path.join(
+          process.env['PROGRAMFILES(X86)'],
+          'Microsoft',
+          'Edge',
+          'Application',
+          'msedge.exe'
+        )
+      : '',
+    process.env.PROGRAMFILES
+      ? path.join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+      : '',
+    process.env.LOCALAPPDATA
+      ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+      : ''
   ].filter(Boolean);
 
   for (const candidate of candidates) {

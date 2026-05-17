@@ -47,10 +47,14 @@ function registerOtherHandlers({ ipcMain }) {
   ipcMain.handle('manual:getContent', () => fs.readFileSync(getPaths().RENDERER_MANUAL, 'utf8'));
 
   // 打开携程
-  ipcMain.handle('open:ctrip', () => openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.CTRIP));
+  ipcMain.handle('open:ctrip', () =>
+    openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.CTRIP)
+  );
 
   // 打开飞猪
-  ipcMain.handle('open:fliggy', () => openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.FLIGGY));
+  ipcMain.handle('open:fliggy', () =>
+    openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.FLIGGY)
+  );
 
   // 打开外部链接
   ipcMain.handle('open:external', (_event, url) => openAllowedExternalUrl(shell, url));
@@ -93,7 +97,9 @@ function registerOtherHandlers({ ipcMain }) {
     const currentWindow = getSenderWindow(event);
     return {
       success: true,
-      isMaximized: Boolean(currentWindow && !currentWindow.isDestroyed() && currentWindow.isMaximized())
+      isMaximized: Boolean(
+        currentWindow && !currentWindow.isDestroyed() && currentWindow.isMaximized()
+      )
     };
   });
 }

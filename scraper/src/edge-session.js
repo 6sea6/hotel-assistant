@@ -43,7 +43,9 @@ function main() {
   }
 
   const userDataDir = resolveEdgeUserDataDir(args.userDataDir || args['user-data-dir']);
-  const profileDirectory = resolveEdgeProfileDirectory(args.profileDirectory || args['profile-directory']);
+  const profileDirectory = resolveEdgeProfileDirectory(
+    args.profileDirectory || args['profile-directory']
+  );
   const port = Number(args.port || 9222);
   const loginMode = Boolean(args.login);
   const headless = loginMode ? false : toBoolean(args.headless, false);

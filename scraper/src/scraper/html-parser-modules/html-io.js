@@ -8,7 +8,8 @@ const DESKTOP_HEADERS = {
   'cache-control': 'no-cache',
   pragma: 'no-cache',
   referer: 'https://hotels.ctrip.com/',
-  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
+  'user-agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
 };
 
 const MOBILE_HEADERS = {
@@ -16,7 +17,8 @@ const MOBILE_HEADERS = {
   'cache-control': 'no-cache',
   pragma: 'no-cache',
   referer: 'https://m.ctrip.com/',
-  'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+  'user-agent':
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
 };
 
 async function fetchHtml(url, headers) {
@@ -38,7 +40,11 @@ async function fetchHtml(url, headers) {
     ? response.headers['set-cookie']
     : [];
   const cookiePairs = setCookieHeaders
-    .map((value) => String(value || '').split(';')[0].trim())
+    .map((value) =>
+      String(value || '')
+        .split(';')[0]
+        .trim()
+    )
     .filter(Boolean);
 
   return {

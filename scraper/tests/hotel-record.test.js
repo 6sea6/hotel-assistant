@@ -5,7 +5,8 @@ const { buildEligibleRoomRecords, buildHotelRecord } = require('../src/hotel-rec
 
 function createTemplate() {
   return {
-    ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=113036836&checkIn=2026-04-30&checkOut=2026-05-04&adult=3&children=0',
+    ctrip_url:
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=113036836&checkIn=2026-04-30&checkOut=2026-05-04&adult=3&children=0',
     check_in_date: '2026-04-30',
     check_out_date: '2026-05-04',
     room_count: 3,
@@ -63,9 +64,7 @@ function createStructuredRoom(overrides = {}) {
             },
             {
               title: '媒体科技',
-              subList: [
-                { id: 310, title: '智能门锁', isNormalShow: 1 }
-              ]
+              subList: [{ id: 310, title: '智能门锁', isNormalShow: 1 }]
             },
             {
               title: '卫浴设施',
@@ -85,27 +84,19 @@ function createStructuredRoom(overrides = {}) {
             },
             {
               title: '室外景观',
-              subList: [
-                { id: 240, title: '城景', isNormalShow: 1 }
-              ]
+              subList: [{ id: 240, title: '城景', isNormalShow: 1 }]
             },
             {
               title: '食品饮品',
-              subList: [
-                { id: 80, title: '电热水壶', isNormalShow: 1 }
-              ]
+              subList: [{ id: 80, title: '电热水壶', isNormalShow: 1 }]
             },
             {
               title: '清洁服务',
-              subList: [
-                { id: 606, title: '每日打扫', isNormalShow: 1 }
-              ]
+              subList: [{ id: 606, title: '每日打扫', isNormalShow: 1 }]
             },
             {
               title: '洗浴用品',
-              subList: [
-                { id: 446, title: '牙刷', isNormalShow: 1 }
-              ]
+              subList: [{ id: 446, title: '牙刷', isNormalShow: 1 }]
             }
           ]
         },

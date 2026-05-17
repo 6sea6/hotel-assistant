@@ -1,11 +1,6 @@
 {
   "all": true,
-  "include": [
-    "src/**/*.js",
-    "scraper/src/**/*.js",
-    "shared/**/*.js",
-    "scripts/**/*.js"
-  ],
+  "include": ["src/**/*.js", "scraper/src/**/*.js", "shared/**/*.js", "scripts/**/*.js"],
   "exclude": [
     "**/node_modules/**",
     "coverage/**",
@@ -14,11 +9,7 @@
     "build/**",
     "scraper-data/**"
   ],
-  "reporter": [
-    "text",
-    "lcov",
-    "html"
-  ],
+  "reporter": ["text", "lcov", "html"],
   "reports-dir": "coverage",
   "check-coverage": false
 }

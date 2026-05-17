@@ -10,13 +10,25 @@ const ROOM_TYPES = {
 
 const BED_SIZE_SEGMENT = '(?:\\d+(?:\\.\\d+)?米)';
 const OPTIONAL_BED_SIZE_SEGMENT = `(?:${BED_SIZE_SEGMENT})?`;
-const SINGLE_BED_REGEX = new RegExp(`(\\d)张${OPTIONAL_BED_SIZE_SEGMENT}(?:单人床|小床|沙发床)${OPTIONAL_BED_SIZE_SEGMENT}`, 'g');
-const DOUBLE_BED_REGEX = new RegExp(`(\\d)张${OPTIONAL_BED_SIZE_SEGMENT}双人床${OPTIONAL_BED_SIZE_SEGMENT}`, 'g');
-const QUEEN_BED_REGEX = new RegExp(`(\\d)张${OPTIONAL_BED_SIZE_SEGMENT}(?:大床|特大床)${OPTIONAL_BED_SIZE_SEGMENT}`, 'g');
+const SINGLE_BED_REGEX = new RegExp(
+  `(\\d)张${OPTIONAL_BED_SIZE_SEGMENT}(?:单人床|小床|沙发床)${OPTIONAL_BED_SIZE_SEGMENT}`,
+  'g'
+);
+const DOUBLE_BED_REGEX = new RegExp(
+  `(\\d)张${OPTIONAL_BED_SIZE_SEGMENT}双人床${OPTIONAL_BED_SIZE_SEGMENT}`,
+  'g'
+);
+const QUEEN_BED_REGEX = new RegExp(
+  `(\\d)张${OPTIONAL_BED_SIZE_SEGMENT}(?:大床|特大床)${OPTIONAL_BED_SIZE_SEGMENT}`,
+  'g'
+);
 const BUNK_BED_REGEX = /(\d)张上下铺/g;
 
 function countMatchedBeds(text, pattern) {
-  return [...String(text || '').matchAll(pattern)].reduce((sum, match) => sum + Number(match[1] || 1), 0);
+  return [...String(text || '').matchAll(pattern)].reduce(
+    (sum, match) => sum + Number(match[1] || 1),
+    0
+  );
 }
 
 function getBedTypeCounts(text) {
@@ -43,13 +55,15 @@ function hasMixedBeds({ singleBedCount, doubleBedCount, queenBedCount }) {
 
 function isAlternativeBetweenSingleBedStyles(text, counts, bedCount = null) {
   const normalizedText = normalizeText(text);
-  return /或/.test(normalizedText)
-    && /(?:大床|特大床)/.test(normalizedText)
-    && /双人床/.test(normalizedText)
-    && !/(?:单人床|小床|双床)/.test(normalizedText)
-    && counts.singleBedCount === 0
-    && counts.doubleBedCount === 1
-    && (bedCount === null || bedCount === 1);
+  return (
+    /或/.test(normalizedText) &&
+    /(?:大床|特大床)/.test(normalizedText) &&
+    /双人床/.test(normalizedText) &&
+    !/(?:单人床|小床|双床)/.test(normalizedText) &&
+    counts.singleBedCount === 0 &&
+    counts.doubleBedCount === 1 &&
+    (bedCount === null || bedCount === 1)
+  );
 }
 
 function deriveSingleDoubleBedRoomType(title, bedCount) {
@@ -69,10 +83,17 @@ function deriveSuiteRoomType(bedText) {
   const normalizedBedText = normalizeText(bedText);
   const counts = getBedTypeCounts(normalizedBedText);
 
-  if (/或/.test(normalizedBedText) && /(?:大床|特大床)/.test(normalizedBedText) && /(?:双床|双人床|单人床|小床)/.test(normalizedBedText)) {
+  if (
+    /或/.test(normalizedBedText) &&
+    /(?:大床|特大床)/.test(normalizedBedText) &&
+    /(?:双床|双人床|单人床|小床)/.test(normalizedBedText)
+  ) {
     return ROOM_TYPES.BIG_BED_OR_TWIN;
   }
-  if (/(?:大床|特大床)/.test(normalizedBedText) && /(?:双床|双人床|单人床|小床|沙发床)/.test(normalizedBedText)) {
+  if (
+    /(?:大床|特大床)/.test(normalizedBedText) &&
+    /(?:双床|双人床|单人床|小床|沙发床)/.test(normalizedBedText)
+  ) {
     return ROOM_TYPES.FAMILY;
   }
   if (counts.queenBedCount >= 2 && counts.singleBedCount === 0 && counts.doubleBedCount === 0) {
@@ -95,13 +116,20 @@ function deriveRoomTypeFromStructuredBed({ title, bedTitle, bedCount }) {
   if (isAlternativeBetweenSingleBedStyles(normalizedBedTitle, counts, bedCount)) {
     return deriveSingleDoubleBedRoomType(normalizedTitle, bedCount);
   }
-  if (/或/.test(normalizedBedTitle) && /大床|特大床/.test(normalizedBedTitle) && /单人床|双人床|小床/.test(normalizedBedTitle)) {
+  if (
+    /或/.test(normalizedBedTitle) &&
+    /大床|特大床/.test(normalizedBedTitle) &&
+    /单人床|双人床|小床/.test(normalizedBedTitle)
+  ) {
     return ROOM_TYPES.BIG_BED_OR_TWIN;
   }
   if (hasMixedBeds(counts)) {
     return ROOM_TYPES.FAMILY;
   }
-  if (/(?:大床|特大床|双人床|双床|单人床|小床)/.test(normalizedBedTitle) && /沙发床/.test(normalizedBedTitle)) {
+  if (
+    /(?:大床|特大床|双人床|双床|单人床|小床)/.test(normalizedBedTitle) &&
+    /沙发床/.test(normalizedBedTitle)
+  ) {
     return ROOM_TYPES.FAMILY;
   }
   if (counts.singleBedCount >= 3 && counts.doubleBedCount === 0 && counts.queenBedCount === 0) {
@@ -133,7 +161,11 @@ function deriveRoomTypeFromFallbackSignals({ title, bedText }) {
   if (isAlternativeBetweenSingleBedStyles(normalizedBedText, counts)) {
     return deriveSingleDoubleBedRoomType(normalizedTitle, null);
   }
-  if (/或/.test(normalizedBedText) && /(?:大床|特大床)/.test(normalizedBedText) && /(?:双床|双人床|单人床|小床)/.test(normalizedBedText)) {
+  if (
+    /或/.test(normalizedBedText) &&
+    /(?:大床|特大床)/.test(normalizedBedText) &&
+    /(?:双床|双人床|单人床|小床)/.test(normalizedBedText)
+  ) {
     return ROOM_TYPES.BIG_BED_OR_TWIN;
   }
   if (hasMixedBeds(counts)) {
@@ -145,13 +177,28 @@ function deriveRoomTypeFromFallbackSignals({ title, bedText }) {
   if (/双人房/.test(normalizedTitle)) {
     return ROOM_TYPES.TWIN;
   }
-  if (counts.singleBedCount >= 3 && counts.doubleBedCount === 0 && counts.queenBedCount === 0 && counts.bunkBedCount === 0) {
+  if (
+    counts.singleBedCount >= 3 &&
+    counts.doubleBedCount === 0 &&
+    counts.queenBedCount === 0 &&
+    counts.bunkBedCount === 0
+  ) {
     return ROOM_TYPES.TRIPLE;
   }
-  if (counts.singleBedCount >= 2 && counts.doubleBedCount === 0 && counts.queenBedCount === 0 && counts.bunkBedCount === 0) {
+  if (
+    counts.singleBedCount >= 2 &&
+    counts.doubleBedCount === 0 &&
+    counts.queenBedCount === 0 &&
+    counts.bunkBedCount === 0
+  ) {
     return ROOM_TYPES.TWIN;
   }
-  if (counts.queenBedCount >= 2 && counts.singleBedCount === 0 && counts.doubleBedCount === 0 && counts.bunkBedCount === 0) {
+  if (
+    counts.queenBedCount >= 2 &&
+    counts.singleBedCount === 0 &&
+    counts.doubleBedCount === 0 &&
+    counts.bunkBedCount === 0
+  ) {
     return ROOM_TYPES.TWIN;
   }
   if (counts.bunkBedCount > 0) {
@@ -160,7 +207,10 @@ function deriveRoomTypeFromFallbackSignals({ title, bedText }) {
   if (/家庭房/.test(normalizedTitle)) {
     return ROOM_TYPES.FAMILY;
   }
-  if (/沙发床/.test(normalizedBedText) && /(?:大床|特大床|双床|双人床|单人床|小床)/.test(normalizedBedText)) {
+  if (
+    /沙发床/.test(normalizedBedText) &&
+    /(?:大床|特大床|双床|双人床|单人床|小床)/.test(normalizedBedText)
+  ) {
     return ROOM_TYPES.FAMILY;
   }
   if (hasExplicitTwinTitle(normalizedTitle)) {
