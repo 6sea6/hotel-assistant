@@ -27,15 +27,29 @@ const SUPPORTED_THEMES = new Set([
   'colorful-mode'
 ]);
 
+let aiConfigLoader = null;
+
+export function setAiConfigLoader(loader) {
+  aiConfigLoader = typeof loader === 'function' ? loader : null;
+}
+
+async function loadAiInterfaceSettings() {
+  if (aiConfigLoader) {
+    await aiConfigLoader();
+    return;
+  }
+  if (typeof window.loadAiConfig === 'function') {
+    await window.loadAiConfig();
+  }
+}
+
 /* ---- 设置弹窗 ---- */
 
 export async function openSettings() {
   setModalActive('settingsModal', true);
   applySettings();
   await loadDataPath();
-  if (typeof window.loadAiConfig === 'function') {
-    await window.loadAiConfig();
-  }
+  await loadAiInterfaceSettings();
 }
 
 export async function openAiInterfaceSettings() {
@@ -85,6 +99,7 @@ export function applySettings() {
     'includeFourPersonRoomsForThreePersonTemplate',
     'includeFourPersonRoomsForThreePersonTemplateText'
   );
+  setValue('amapApiKeyInput', state.settings.amapApiKey || '');
   applyListPrefilterSettings();
 
   const weightMappings = [
@@ -332,6 +347,24 @@ export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
     if (textEl) {
       textEl.textContent = !isEnabled ? '开启' : '关闭';
     }
+  }
+}
+
+export async function saveAmapApiKeySetting() {
+  const input = $('amapApiKeyInput');
+  const nextValue = String(input ? input.value : '').trim();
+  const previousValue = state.settings.amapApiKey || '';
+
+  try {
+    await window.electronAPI.setSetting('amapApiKey', nextValue);
+    state.settings.amapApiKey = nextValue;
+    setValue('amapApiKeyInput', nextValue);
+    showNotification(nextValue ? '高德 API Key 已保存' : '已恢复使用默认高德 Key', 'success');
+  } catch (error) {
+    console.error('保存高德 API Key 失败:', error);
+    state.settings.amapApiKey = previousValue;
+    setValue('amapApiKeyInput', previousValue);
+    showNotification('保存高德 API Key 失败，请重试', 'error');
   }
 }
 

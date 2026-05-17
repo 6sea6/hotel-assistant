@@ -152,10 +152,49 @@ function normalizeTransitRoutes(transits) {
     })[0] || null;
 }
 
+function getCacheMap(cache, bucket) {
+  if (!cache || typeof cache !== 'object') {
+    return null;
+  }
+
+  if (!cache[bucket]) {
+    cache[bucket] = new Map();
+  }
+
+  return cache[bucket] instanceof Map ? cache[bucket] : null;
+}
+
+async function readThroughCache(cache, bucket, key, producer) {
+  const cacheMap = getCacheMap(cache, bucket);
+  if (!cacheMap || !key) {
+    return producer();
+  }
+
+  if (cacheMap.has(key)) {
+    return cacheMap.get(key);
+  }
+
+  const value = await producer();
+  if (value) {
+    cacheMap.set(key, value);
+  }
+  return value;
+}
+
+function buildLocationKey(location) {
+  return normalizeText(location);
+}
+
 async function getTransitInfo(hotelAddress, destination, key = DEFAULT_AMAP_KEY, options = {}) {
   const hotelGeo = normalizeHotelGeoForAmap(options.hotelGeo, hotelAddress);
+  const cache = options.cache || null;
 
-  const origin = hotelGeo || await geocodeAddress(hotelAddress, { key });
+  const origin = hotelGeo || await readThroughCache(
+    cache,
+    'geocode',
+    `${key}|${normalizeText(hotelAddress)}`,
+    () => geocodeAddress(hotelAddress, { key })
+  );
   const embeddedNearestSubway = hotelGeo && hotelGeo.nearestSubway ? hotelGeo.nearestSubway : null;
   const destinationCity = pickFirst(extractCityName(destination), extractCityName(origin && origin.formattedAddress), extractCityName(hotelAddress));
   const normalizedDestination = normalizePlaceName(destination);
@@ -177,7 +216,12 @@ async function getTransitInfo(hotelAddress, destination, key = DEFAULT_AMAP_KEY,
   }
 
   if (!normalizedDestination) {
-    const nearestSubway = embeddedNearestSubway || await searchNearestSubwayDistanceKm(origin.location, key);
+    const nearestSubway = embeddedNearestSubway || await readThroughCache(
+      cache,
+      'nearestSubway',
+      `${key}|${buildLocationKey(origin.location)}`,
+      () => searchNearestSubwayDistanceKm(origin.location, key)
+    );
     return {
       origin,
       target: null,
@@ -196,17 +240,28 @@ async function getTransitInfo(hotelAddress, destination, key = DEFAULT_AMAP_KEY,
     };
   }
 
-  const target = await resolvePlace(normalizedDestination, {
-    key,
-    city: destinationCity || origin?.city || undefined
-  });
+  const targetCity = destinationCity || origin?.city || undefined;
+  const target = await readThroughCache(
+    cache,
+    'places',
+    `${key}|${targetCity || ''}|${normalizedDestination}`,
+    () => resolvePlace(normalizedDestination, {
+      key,
+      city: targetCity
+    })
+  );
 
   if (!target) {
     return {
       origin,
       target,
       route: null,
-      nearestSubway: embeddedNearestSubway || await searchNearestSubwayDistanceKm(origin.location, key),
+      nearestSubway: embeddedNearestSubway || await readThroughCache(
+        cache,
+        'nearestSubway',
+        `${key}|${buildLocationKey(origin.location)}`,
+        () => searchNearestSubwayDistanceKm(origin.location, key)
+      ),
       query: {
         origin: normalizeText(hotelAddress),
         destination: normalizedDestination,
@@ -217,22 +272,49 @@ async function getTransitInfo(hotelAddress, destination, key = DEFAULT_AMAP_KEY,
     };
   }
 
+  const originLocationKey = buildLocationKey(origin.location);
+  const targetLocationKey = buildLocationKey(target.location);
+  const transitDate = options.date || getDefaultTransitDate();
+  const transitTime = options.time || DEFAULT_TRANSIT_TIME;
   const [walkRoute, transitRoutes, nearestSubway] = await Promise.all([
-    fetchWalkingRoute(origin.location, target.location, key),
-    fetchTransitRoute(
-      origin.location,
-      target.location,
-      origin.city || destinationCity || target.city || '',
-      target.city || destinationCity || origin.city || '',
-      key,
-      {
-        date: options.date,
-        time: options.time || DEFAULT_TRANSIT_TIME
-      }
+    readThroughCache(
+      cache,
+      'walkingRoutes',
+      `${key}|${originLocationKey}|${targetLocationKey}`,
+      () => fetchWalkingRoute(origin.location, target.location, key)
+    ),
+    readThroughCache(
+      cache,
+      'transitRoutes',
+      [
+        key,
+        originLocationKey,
+        targetLocationKey,
+        origin.city || destinationCity || target.city || '',
+        target.city || destinationCity || origin.city || '',
+        transitDate,
+        transitTime
+      ].join('|'),
+      () => fetchTransitRoute(
+        origin.location,
+        target.location,
+        origin.city || destinationCity || target.city || '',
+        target.city || destinationCity || origin.city || '',
+        key,
+        {
+          date: options.date,
+          time: transitTime
+        }
+      )
     ),
     embeddedNearestSubway
       ? Promise.resolve(embeddedNearestSubway)
-      : searchNearestSubwayDistanceKm(origin.location, key)
+      : readThroughCache(
+        cache,
+        'nearestSubway',
+        `${key}|${originLocationKey}`,
+        () => searchNearestSubwayDistanceKm(origin.location, key)
+      )
   ]);
 
   const busRoute = normalizeTransitRoutes(transitRoutes || []);
@@ -251,8 +333,8 @@ async function getTransitInfo(hotelAddress, destination, key = DEFAULT_AMAP_KEY,
       destinationCity: destinationCity || '',
       originSource: origin ? origin.source : '',
       destinationSource: target ? target.source : '',
-      transitDate: options.date || getDefaultTransitDate(),
-      transitTime: options.time || DEFAULT_TRANSIT_TIME
+      transitDate,
+      transitTime
     }
   };
 }

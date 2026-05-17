@@ -41,6 +41,7 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     delete normalizedSettings.autoMatchTemplate;
     normalizedSettings.theme = normalizeThemeSetting(normalizedSettings.theme);
     normalizedSettings.ai_provider_config = normalizeAiProviderConfig(normalizedSettings.ai_provider_config);
+    normalizedSettings.amapApiKey = String(normalizedSettings.amapApiKey || '').trim();
 
     const managedReference = appIconManager.toManagedIconReference(normalizedSettings.app_icon_path);
     if (managedReference) {

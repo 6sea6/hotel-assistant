@@ -48,7 +48,7 @@ import {
 
 import {
   openSettings, openAiInterfaceSettings, closeSettingsModal, openPersonalization, closePersonalizationModal, applySettings,
-  changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate, saveAiListPrefilterSetting,
+  setAiConfigLoader, changeTheme, toggleIncludeFourPersonRoomsForThreePersonTemplate, saveAmapApiKeySetting, saveAiListPrefilterSetting,
   openListPrefilterSettings, closeListPrefilterSettings, saveAiListPrefilterSettings,
   resetAiListPrefilterSettings, toggleAiCtripStarLevel,
   loadDataPath, showDataInFolder, changeDataPath,
@@ -84,6 +84,8 @@ import {
   applyAppMetadata, openAbout, closeAbout,
   checkAndShowManual, openManual, closeManual
 } from './modules/about-manual.js';
+
+setAiConfigLoader(loadAiConfig);
 
 /* ============ 全局错误捕获 ============ */
 
@@ -129,6 +131,7 @@ const ACTION_HANDLERS = {
   'close-list-prefilter-settings': () => closeListPrefilterSettings(),
   'show-data-folder': () => showDataInFolder(),
   'change-data-path': (event) => changeDataPath(event),
+  'save-amap-api-key': () => saveAmapApiKeySetting(),
   'open-ctrip': () => openCtripWebsite(),
   'open-fliggy': () => openFliggyWebsite(),
   'save-ai-config': () => saveAiConfig(),

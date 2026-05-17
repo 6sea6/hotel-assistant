@@ -26,6 +26,12 @@ const LOGIN_STEP_DEFINITION = {
   doneTitle: '携程登录态已确认'
 };
 
+const CANCEL_STEP_DEFINITION = {
+  key: 'cancel',
+  title: '任务已取消',
+  doneTitle: '任务已取消'
+};
+
 const REVIEW_PHASES = [
   '正在读取复核数据包',
   '正在检查酒店基础信息',
@@ -183,6 +189,79 @@ export function hasWriteResult(writeResult) {
   return Boolean(writeResult && writeResult.operation !== 'skipped');
 }
 
+function countWriteOperations(writeResult) {
+  if (Array.isArray(writeResult)) {
+    return writeResult.reduce((sum, item) => {
+      if (!item) return sum;
+      if (item.operation) return item.operation === 'skipped' ? sum : sum + 1;
+      return sum + countWriteOperations(item.result || item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult));
+    }, 0);
+  }
+
+  if (writeResult && writeResult.batchMode) {
+    return (Array.isArray(writeResult.items) ? writeResult.items : [])
+      .reduce((sum, item) => {
+        if (!item || item.skipped) return sum;
+        return sum + countWriteOperations(item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult));
+      }, 0);
+  }
+
+  return writeResult && writeResult.operation && writeResult.operation !== 'skipped' ? 1 : 0;
+}
+
+function countEligibleHotels(value = {}) {
+  if (Array.isArray(value.eligibleHotels)) return value.eligibleHotels.length;
+  if (Number.isFinite(Number(value.eligibleCount))) return Math.max(0, Number(value.eligibleCount));
+  if (Array.isArray(value.eligibleRoomTypes)) return value.eligibleRoomTypes.length;
+  return 0;
+}
+
+function getBatchWriteStats(collectResult = {}) {
+  const writeResult = collectResult.writeResult;
+  if (!hasWriteResult(writeResult)) {
+    return {
+      hotelCount: 0,
+      roomTypeCount: 0
+    };
+  }
+
+  if (writeResult && writeResult.batchMode) {
+    const appliedItems = Array.isArray(writeResult.items)
+      ? writeResult.items.filter((item) => item && !item.skipped && hasWriteResult(item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)))
+      : [];
+    const hotelCount = Number.isFinite(Number(writeResult.appliedCount))
+      ? Math.max(0, Number(writeResult.appliedCount))
+      : appliedItems.length;
+    const roomTypeCount = appliedItems.reduce((sum, item) => {
+      const latest = item.latestApplyResult || {};
+      const itemResult = item.item || {};
+      const fromLatest = countEligibleHotels(latest);
+      if (fromLatest > 0) return sum + fromLatest;
+      const fromItem = countEligibleHotels(itemResult);
+      if (fromItem > 0) return sum + fromItem;
+      return sum + countWriteOperations(item.writeResult);
+    }, 0);
+
+    return {
+      hotelCount,
+      roomTypeCount: roomTypeCount || (hotelCount > 0 ? countEligibleHotels(collectResult) : 0)
+    };
+  }
+
+  if (Array.isArray(writeResult)) {
+    const appliedItems = writeResult.filter((item) => item && hasWriteResult(item.result || item.writeResult || item));
+    return {
+      hotelCount: appliedItems.length,
+      roomTypeCount: countWriteOperations(writeResult)
+    };
+  }
+
+  return {
+    hotelCount: 1,
+    roomTypeCount: countEligibleHotels(collectResult) || countWriteOperations(writeResult)
+  };
+}
+
 function formatCurrency(value) {
   if (value === null || value === undefined || value === '') return '';
   const number = Number(value);
@@ -222,7 +301,8 @@ function getEventStepKey(event = {}) {
 
   if (type === 'task:start') return 'received';
   if (type === 'task:done') return 'done';
-  if (type === 'task:error' || type === 'task:cancel') return 'error';
+  if (type === 'task:error') return 'error';
+  if (type === 'task:cancel') return 'cancel';
   if (toolName === 'list_templates' || toolName === 'get_settings') return 'template';
   if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done') return 'login';
   if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
@@ -362,11 +442,17 @@ function buildProgressStats(events = []) {
 
 function getStepDefinitions(normalizedEvents = []) {
   const hasLoginStep = normalizedEvents.some((event) => event.key === 'login');
-  if (!hasLoginStep) return BASE_STEP_DEFINITIONS;
+  const hasCancelStep = normalizedEvents.some((event) => event.key === 'cancel');
+  if (!hasLoginStep && !hasCancelStep) return BASE_STEP_DEFINITIONS;
 
   const definitions = [...BASE_STEP_DEFINITIONS];
-  const scrapeIndex = definitions.findIndex((step) => step.key === 'scrape');
-  definitions.splice(scrapeIndex < 0 ? 3 : scrapeIndex, 0, LOGIN_STEP_DEFINITION);
+  if (hasLoginStep) {
+    const scrapeIndex = definitions.findIndex((step) => step.key === 'scrape');
+    definitions.splice(scrapeIndex < 0 ? 3 : scrapeIndex, 0, LOGIN_STEP_DEFINITION);
+  }
+  if (hasCancelStep) {
+    definitions.push(CANCEL_STEP_DEFINITION);
+  }
   return definitions;
 }
 
@@ -374,7 +460,7 @@ function buildTaskSteps(task, events, status) {
   const normalizedEvents = (events || []).map(normalizeEvent).filter((event) => event.title);
   const stepDefinitions = getStepDefinitions(normalizedEvents);
   const lastProgressEvent = normalizedEvents.slice().reverse()
-    .find((event) => event.key && event.key !== 'done' && event.key !== 'error');
+    .find((event) => event.key && event.key !== 'done' && event.key !== 'error' && event.key !== 'cancel');
   const currentKey = status === 'running' && lastProgressEvent ? lastProgressEvent.key : '';
   const currentIndex = stepDefinitions.findIndex((step) => step.key === currentKey);
   const errorKey = status === 'error' && lastProgressEvent ? lastProgressEvent.key : 'scrape';
@@ -389,6 +475,12 @@ function buildTaskSteps(task, events, status) {
       const errorIndex = stepDefinitions.findIndex((step) => step.key === errorKey);
       if (index < errorIndex) stepStatus = 'success';
       if (index === errorIndex) stepStatus = 'error';
+    } else if (status === 'cancelled') {
+      const cancelIndex = stepDefinitions.findIndex((step) => step.key === 'cancel');
+      if (cancelIndex >= 0) {
+        if (index < cancelIndex) stepStatus = matchedEvent || index === 0 ? 'success' : 'pending';
+        if (index === cancelIndex) stepStatus = 'cancelled';
+      }
     } else if (status === 'running') {
       if (currentIndex < 0) {
         stepStatus = index === 0 ? 'running' : 'pending';
@@ -523,12 +615,10 @@ function buildTaskResult(task = {}) {
         : 0
   );
   const isBatchResult = Boolean(collectResult.batchMode);
-  const batchResultText = batchCount > 0 ? `批量 ${batchCount} 家` : '批量采集完成';
-  const singleResultText = `${collectResult.hotelName || '暂无'}，可用房型 ${Number.isFinite(eligibleCount) ? eligibleCount : 0} 个，价格 ${
-    [formatCurrency(dailyPrice) ? `${formatCurrency(dailyPrice)} / 晚` : '', formatCurrency(totalPrice) ? `${formatCurrency(totalPrice)} 总价` : '']
-      .filter(Boolean)
-      .join('，') || '暂无'
-  }`;
+  const batchWriteStats = getBatchWriteStats(collectResult);
+  const batchWriteText = `本次最终写入 ${batchWriteStats.hotelCount} 家宾馆，${batchWriteStats.roomTypeCount} 种房型`;
+  const batchResultText = batchCount > 0 ? `批量 ${batchCount} 家，${batchWriteText}` : `批量采集完成，${batchWriteText}`;
+  const singleResultText = `${collectResult.hotelName || '暂无'}，可用房型 ${Number.isFinite(eligibleCount) ? eligibleCount : 0} 个`;
 
   if (reasons.length === 0 && eligibleCount <= 0) {
     reasons.push('暂无详细原因，请查看采集详情。');
@@ -565,28 +655,35 @@ function buildTaskResult(task = {}) {
 
 function buildTaskError(task = {}, events = []) {
   const message = getLastTaskError(events, task) || '系统在采集携程酒店页面时发生异常。';
+  const cancelled = /任务已取消|采集任务已取消/.test(message) || events.some((event) => event.type === 'task:cancel');
   return {
     message,
     reason: message,
-    suggestions: [
-      '检查链接是否为携程酒店详情页或列表页。',
-      '确认携程登录态可用，必要时重新登录。',
-      '稍后重新执行任务。'
-    ]
+    suggestions: cancelled
+      ? ['当前采集已中止，本次取消会撤销已经写回的数据。']
+      : [
+          '检查链接是否为携程酒店详情页或列表页。',
+          '确认携程登录态可用，必要时重新登录。',
+          '稍后重新执行任务。'
+        ]
   };
 }
 
 export function normalizeTaskState({ task = {}, events = [], inProgress = false, review = {} } = {}) {
   const submitted = Boolean(task.submitted || task.hotelUrl || task.result || task.error || events.length);
   let status = 'idle';
+  const hasCancelEvent = events.some((event) => event.type === 'task:cancel');
+  const cancellationError = /任务已取消|采集任务已取消/.test(String(task.error || ''));
 
-  if (task.error) {
+  if (task.cancelled || task.status === 'cancelled' || hasCancelEvent || cancellationError) {
+    status = 'cancelled';
+  } else if (task.error) {
     status = 'error';
   } else if (inProgress) {
     status = 'running';
   } else if (submitted && task.result) {
     status = 'success';
-  } else if (submitted && events.some((event) => event.type === 'task:error' || event.type === 'task:cancel')) {
+  } else if (submitted && events.some((event) => event.type === 'task:error')) {
     status = 'error';
   }
 
@@ -1001,7 +1098,8 @@ function renderRunningView(taskState) {
 function renderSummaryCards(taskState, variant) {
   const { taskInfo, result, error } = taskState;
   const isError = variant === 'error';
-  const reasonItems = isError
+  const isCancelled = variant === 'cancelled';
+  const reasonItems = isError || isCancelled
     ? [error.reason || error.message, ...error.suggestions].filter(Boolean)
     : result.reasons;
   const reasonList = reasonItems.length
@@ -1017,8 +1115,8 @@ function renderSummaryCards(taskState, variant) {
         <dl>
           <div><dt>模板</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
           <div><dt>开始时间</dt><dd>${escapeHtml(formatAiTime(taskInfo.startTime) || '暂无')}</dd></div>
-          <div><dt>${isError ? '失败时间' : '完成时间'}</dt><dd>${escapeHtml(formatAiTime(taskInfo.endTime) || '暂无')}</dd></div>
-          <div><dt>执行状态</dt><dd>${escapeHtml(isError ? '执行失败' : '已完成')}</dd></div>
+          <div><dt>${isCancelled ? '取消时间' : (isError ? '失败时间' : '完成时间')}</dt><dd>${escapeHtml(formatAiTime(taskInfo.endTime) || '暂无')}</dd></div>
+          <div><dt>执行状态</dt><dd>${escapeHtml(isCancelled ? '已取消' : (isError ? '执行失败' : '已完成'))}</dd></div>
         </dl>
       </section>
 
@@ -1028,11 +1126,11 @@ function renderSummaryCards(taskState, variant) {
       </section>
 
       <section class="task-result-card">
-        <h3>${isError ? '错误详情' : '结果分析'}</h3>
-        ${isError ? `
+        <h3>${isCancelled ? '取消详情' : (isError ? '错误详情' : '结果分析')}</h3>
+        ${isError || isCancelled ? `
           <dl>
-            <div><dt>错误原因</dt><dd>${escapeHtml(error.message || '暂无详细原因')}</dd></div>
-            <div><dt>建议操作</dt><dd>检查链接、刷新登录态、重新执行任务。</dd></div>
+            <div><dt>${isCancelled ? '取消原因' : '错误原因'}</dt><dd>${escapeHtml(error.message || (isCancelled ? '任务已取消' : '暂无详细原因'))}</dd></div>
+            <div><dt>建议操作</dt><dd>${escapeHtml(isCancelled ? '如需继续，请重新采集。' : '检查链接、刷新登录态、重新执行任务。')}</dd></div>
           </dl>
         ` : `
           <dl>
@@ -1090,6 +1188,25 @@ function renderErrorView(taskState) {
   `;
 }
 
+function renderCancelledView(taskState) {
+  return `
+    <div class="task-finished-view">
+      <div class="task-result-hero task-result-hero-cancelled">
+        <span aria-hidden="true">×</span>
+        <div>
+          <h3>任务已取消</h3>
+          <p>采集任务已中止，本次取消会撤销已经写回的数据。</p>
+        </div>
+      </div>
+      ${renderSummaryCards(taskState, 'cancelled')}
+      <div class="task-panel-actions">
+        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新采集</button>
+        <button class="task-secondary-button" type="button" data-action="focus-ai-task-start-bar">返回编辑</button>
+      </div>
+    </div>
+  `;
+}
+
 function updateStartBar(taskState) {
   const button = $('aiStartTaskBtn');
   const templateSelect = $('aiTemplateSelect');
@@ -1127,7 +1244,8 @@ export function renderAiTaskConsole(state) {
         idle: renderIdleView,
         running: renderRunningView,
         success: renderSuccessView,
-        error: renderErrorView
+        error: renderErrorView,
+        cancelled: renderCancelledView
       }[taskState.status](taskState);
 
   panel.innerHTML = viewHtml;

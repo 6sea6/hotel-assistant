@@ -181,6 +181,7 @@ test('settings normalization still fills defaults and removes deprecated fields'
   const store = createStore({
     settings: {
       theme: 'dark',
+      amapApiKey: '  custom-amap-key  ',
       autoMatchTemplate: true
     }
   });
@@ -194,6 +195,7 @@ test('settings normalization still fills defaults and removes deprecated fields'
 
   assert.equal(settings.theme, 'oak-brown');
   assert.equal(settings.app_icon_file_name, '');
+  assert.equal(settings.amapApiKey, 'custom-amap-key');
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'autoMatchTemplate'), false);
   assert.ok(store.setCalls.some((call) => call.key === 'settings'));
 });

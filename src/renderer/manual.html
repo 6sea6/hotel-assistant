@@ -55,7 +55,23 @@
     <li><strong>数据存储位置：</strong>查看和更改数据存储路径</li>
     <li><strong>快捷链接：</strong>快速访问携程、飞猪官网</li>
     <li><strong>AI接口：</strong>在设置中选择供应商并填写自己的 API Key，用于采集结果复核和失败诊断</li>
+    <li><strong>高德 API Key：</strong>可在设置中填写自己的高德 Key，用于采集时计算公共交通、最近地铁站和路线；留空时使用程序默认 Key</li>
     <li><strong>开发者工具：</strong>按 F12 打开后会优先切到中文界面，便于调试页面结构和脚本</li>
+  </ul>
+</div>
+
+<div class="manual-section">
+  <h3>🤖 携程采集助手</h3>
+  <ul>
+    <li><strong>入口：</strong>点击顶部“采集助手”，选择模板并粘贴携程酒店详情页或酒店列表页链接后加入任务队列</li>
+    <li><strong>详情页采集：</strong>单个酒店详情页会沿用原采集链路，读取酒店、房型、价格、评分、地址、交通与地铁信息，并通过比较助手写入桥接层保存</li>
+    <li><strong>列表页采集：</strong>列表页会先展开候选酒店，再逐家进入详情页采集；列表页解析优先读取 HTML/embedded JSON，候选不足时复用 Edge 登录态做 CDP 兜底</li>
+    <li><strong>前筛设置：</strong>采集助手“前筛设置”中可配置携程 URL 前筛：价格、星级、排序、免费取消、点评数、评分档位；未知携程筛选片段会保留，不会被程序清空</li>
+    <li><strong>本地过滤：</strong>本地只保留目标宾馆数、排除住宿类型和最多扫描页数，用于限制列表页候选；房型、价格、退改、窗户和人数规则仍在详情页采集后复核</li>
+    <li><strong>登录态：</strong>采集会复用应用内 Edge profile；首次使用或登录态失效时会打开可见 Edge 窗口，让你登录携程后继续</li>
+    <li><strong>批量写入：</strong>列表页或批量任务会逐家按旧流程输出和写入，结果区会显示本次最终写入几家宾馆、几种房型</li>
+    <li><strong>取消任务：</strong>取消采集会显示“已取消”，并撤销本次任务已经写回的数据，避免留下半完成结果</li>
+    <li><strong>AI 分析重填：</strong>仅单酒店采集结果支持 AI 分析重填；批量结果不显示该按钮，以免覆盖多家酒店的复核流程</li>
   </ul>
 </div>
 
@@ -84,10 +100,10 @@
 <div class="manual-section">
   <h3>ℹ️ 关于应用</h3>
   <ul>
-    <li><strong>版本：</strong><span id="manualVersionText">v7.8</span></li>
+    <li><strong>版本：</strong><span id="manualVersionText">v8.0</span></li>
     <li><strong>作者：</strong>Sea</li>
     <li><strong>感谢：</strong>Trae、GitHub Copilot、Codex</li>
-    <li><strong>特别感谢：</strong><span class="thanks-name thanks-asagirl">Asagiri</span>、<span class="thanks-name thanks-moli">墨离</span></li>
+    <li><strong>特别感谢：</strong><span class="thanks-name thanks-asagirl">Asagiri</span>、<span class="thanks-name thanks-moli">墨离</span>、<span class="thanks-name thanks-sixpence">六便士</span></li>
     <li><strong>技术栈：</strong>Electron + HTML/CSS/JavaScript</li>
     <li><strong>数据存储：</strong>本地JSON文件</li>
   </ul>

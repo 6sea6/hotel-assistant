@@ -513,6 +513,7 @@ function buildTaskPayload(task) {
     desiredHotelCount: listFilters.desiredHotelCount,
     excludeHotelTypes: listFilters.excludeHotelTypes,
     maxPages: listFilters.maxPages,
+    amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
     priceMin: task.listUrlFilters ? task.listUrlFilters.priceMin : undefined,
     priceMax: task.listUrlFilters ? task.listUrlFilters.priceMax : undefined,
     starLevels: task.listUrlFilters ? task.listUrlFilters.starLevels : undefined,
@@ -626,7 +627,8 @@ function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
     resultSummary: '',
     events: [],
     console: createEmptyTaskConsole(),
-    review: createEmptyReviewState()
+    review: createEmptyReviewState(),
+    cancelNoticeShown: false
   };
 }
 
@@ -662,6 +664,7 @@ function startTaskConsole(template, url, queueTask = null) {
     queueTask.finishedAt = '';
     queueTask.errorMessage = '';
     queueTask.resultSummary = '';
+    queueTask.cancelNoticeShown = false;
     queueTask.events = events;
     queueTask.console = consoleState;
     queueTask.review = createEmptyReviewState();
@@ -729,6 +732,60 @@ function failTaskConsole(error, queueTask = null) {
   }
 }
 
+function isTaskCancellationError(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  return /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message)
+    || (error && error.name === 'AbortError');
+}
+
+function showTaskCancellationNotificationOnce(queueTask = null) {
+  if (queueTask) {
+    if (queueTask.cancelNoticeShown) return;
+    queueTask.cancelNoticeShown = true;
+  }
+  showNotification('采集任务已取消', 'warning');
+}
+
+function cancelTaskConsole(queueTask = null, message = '任务已取消') {
+  const baseConsole = queueTask && queueTask.console ? queueTask.console : state.aiTaskConsole;
+  const endedAt = new Date().toISOString();
+  const consoleState = {
+    ...baseConsole,
+    submitted: true,
+    endedAt,
+    error: message,
+    cancelled: true
+  };
+  const cancelEvent = {
+    type: 'task:cancel',
+    message,
+    taskId: queueTask ? (queueTask.backendTaskId || consoleState.taskId || '') : (consoleState.taskId || ''),
+    at: endedAt
+  };
+
+  if (queueTask) {
+    queueTask.status = 'cancelled';
+    queueTask.finishedAt = endedAt;
+    queueTask.errorMessage = message;
+    queueTask.resultSummary = message;
+    queueTask.events = queueTask.events || [];
+    if (!queueTask.events.some((event) => event.type === 'task:cancel')) {
+      queueTask.events.push(cancelEvent);
+    }
+    queueTask.console = consoleState;
+    if (String(state.aiSelectedQueueTaskId) === String(queueTask.id)) {
+      state.aiTaskConsole = consoleState;
+      state.aiTaskEvents = queueTask.events || [];
+    }
+  } else {
+    state.aiTaskConsole = consoleState;
+    state.aiTaskEvents = state.aiTaskEvents || [];
+    if (!state.aiTaskEvents.some((event) => event.type === 'task:cancel')) {
+      state.aiTaskEvents.push(cancelEvent);
+    }
+  }
+}
+
 function getQueueResultWrote(result) {
   return Boolean(result.collectResult && hasWriteResult(result.collectResult.writeResult))
     || (Array.isArray(result.toolResults)
@@ -775,9 +832,14 @@ async function executeCollectTask(task) {
       showNotification('采集结果已写入，宾馆列表已刷新', 'success');
     }
   } catch (error) {
-    console.error('采集任务执行失败:', error);
-    failTaskConsole(error, task);
-    showNotification(error.message || '采集任务执行失败', 'error');
+    if (isTaskCancellationError(error)) {
+      cancelTaskConsole(task, '任务已取消');
+      showTaskCancellationNotificationOnce(task);
+    } else {
+      console.error('采集任务执行失败:', error);
+      failTaskConsole(error, task);
+      showNotification(error.message || '采集任务执行失败', 'error');
+    }
   } finally {
     state.aiTaskInProgress = false;
     if (String(state.aiSelectedQueueTaskId) === String(task.id)) {
@@ -883,7 +945,16 @@ async function initializeAiAssistant() {
           };
         }
         task.events = task.events || [];
-        task.events.push(event);
+        const existingCancelEvent = event.type === 'task:cancel'
+          ? task.events.find((item) => item.type === 'task:cancel')
+          : null;
+        if (existingCancelEvent) {
+          existingCancelEvent.taskId = event.taskId || existingCancelEvent.taskId;
+          existingCancelEvent.message = event.message || existingCancelEvent.message;
+          existingCancelEvent.at = event.at || existingCancelEvent.at;
+        } else {
+          task.events.push(event);
+        }
         task.currentStep = event.message || task.currentStep || '';
         if (String(state.aiSelectedQueueTaskId) === String(task.id)) {
           state.aiTaskEvents = task.events;
@@ -939,10 +1010,16 @@ export async function enqueueAiCollectTask() {
 }
 
 export async function cancelAiTask() {
+  const runningTask = getRunningQueueTask();
+  if (runningTask) {
+    cancelTaskConsole(runningTask, '任务已取消');
+    renderTaskConsole();
+  }
+
   try {
     const result = await window.electronAPI.ai.cancelTask();
     if (result.success) {
-      showNotification('已请求取消采集任务', 'success');
+      showTaskCancellationNotificationOnce(runningTask);
     } else {
       showNotification(result.error || '当前没有正在运行的任务', 'warning');
     }

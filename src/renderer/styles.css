@@ -1133,6 +1133,12 @@ body.modal-open .modal.active {
 .thanks-name { font-weight: 700; }
 .thanks-asagirl { color: #8A2BE2; }
 .thanks-moli { color: #1677FF; }
+.thanks-sixpence {
+  background: linear-gradient(90deg, #F97316, #EAB308, #22C55E, #06B6D4, #6366F1, #EC4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 .version-section { padding-top: 24px; border-top: 1px solid var(--border-color); }
 .version-item { display: flex; align-items: center; margin-bottom: 12px; }
 .version-item span:first-child { min-width: 80px; color: var(--text-secondary); font-size: 14px; font-weight: 500; }
@@ -2282,6 +2288,23 @@ body.modal-open .modal.active {
   font-weight: 800;
 }
 
+.task-step-cancelled .task-step-marker {
+  border-color: #94A3B8;
+  background: #94A3B8;
+}
+
+.task-step-cancelled .task-step-marker::before {
+  content: "×";
+  position: absolute;
+  inset: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .task-panel-actions {
   display: flex;
   justify-content: flex-end;
@@ -2350,6 +2373,15 @@ body.modal-open .modal.active {
 
 .task-result-hero-error > span {
   background: var(--danger-color);
+}
+
+.task-result-hero-cancelled {
+  background: color-mix(in srgb, #64748B 7%, var(--bg-primary));
+  border-color: color-mix(in srgb, #64748B 24%, var(--border-color));
+}
+
+.task-result-hero-cancelled > span {
+  background: #64748B;
 }
 
 .task-result-grid {

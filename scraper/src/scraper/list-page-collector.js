@@ -49,7 +49,11 @@ function buildListPageUrls(listUrl, maxPages) {
   return Array.from({ length: pageCount }, (_, index) => buildListPageUrl(listUrl, index + 1));
 }
 
-async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = {}) {
+function durationSince(startedAt) {
+  return Math.max(0, Date.now() - startedAt);
+}
+
+async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = {}, options = {}) {
   if (process.platform !== 'win32' || typeof fetch !== 'function') {
     return {
       pages: [],
@@ -145,6 +149,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     const pages = [];
 
     for (const url of pageUrls) {
+      const pageStartedAt = Date.now();
       const loadEvent = new Promise((resolve) => {
         const stopListening = connection.addListener((message) => {
           if (message.sessionId === sessionId && message.method === 'Page.loadEventFired') {
@@ -166,20 +171,71 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
 
       const html = await evaluateInSession(connection, sessionId, `(async () => {
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        for (let index = 0; index < 4; index += 1) {
-          window.scrollTo(0, Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
-          await sleep(350);
+        const getHeight = () => Math.max(
+          document.body ? document.body.scrollHeight : 0,
+          document.documentElement ? document.documentElement.scrollHeight : 0,
+          window.innerHeight || 0
+        );
+        const getCandidateCount = () => {
+          try {
+            return document.querySelectorAll([
+              'a[href*="/hotels/"]',
+              'a[href*="hotelId="]',
+              '[data-hotelid]',
+              '[data-hotel-id]',
+              '[data-offline-hotelid]',
+              '[data-offline-hotelId]',
+              '[class*="hotel"]',
+              '[class*="Hotel"]'
+            ].join(',')).length;
+          } catch (_error) {
+            return 0;
+          }
+        };
+        let previousHeight = 0;
+        let previousCount = -1;
+        let stableRounds = 0;
+        for (let index = 0; index < 8; index += 1) {
+          const height = getHeight();
+          const count = getCandidateCount();
+          window.scrollTo(0, height);
+          await sleep(index === 0 ? 300 : 220);
+          const nextHeight = getHeight();
+          const nextCount = getCandidateCount();
+          if (Math.abs(nextHeight - previousHeight) <= 24 && nextCount === previousCount) {
+            stableRounds += 1;
+          } else {
+            stableRounds = 0;
+          }
+          previousHeight = nextHeight;
+          previousCount = nextCount || count;
+          if (stableRounds >= 2 && nextCount > 0) {
+            break;
+          }
         }
         window.scrollTo(0, 0);
-        await sleep(150);
+        await sleep(100);
         return document.documentElement ? document.documentElement.outerHTML : '';
       })()`);
 
-      pages.push({
+      const pageRecord = {
         url,
         html: String(html || ''),
-        source: 'edge-cdp'
-      });
+        source: 'edge-cdp',
+        durationMs: durationSince(pageStartedAt)
+      };
+      pages.push(pageRecord);
+
+      if (typeof options.onPage === 'function') {
+        const shouldContinue = await options.onPage(pageRecord);
+        if (shouldContinue === false || (shouldContinue && shouldContinue.stop)) {
+          break;
+        }
+      }
+
+      if (typeof options.shouldStop === 'function' && options.shouldStop()) {
+        break;
+      }
     }
 
     return {
@@ -214,43 +270,85 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   }
 }
 
-function appendPageCandidates(target, pageCandidates = []) {
-  const offset = target.length;
+function appendPageCandidates(target, pageCandidates = [], sourceOrderOffset = target.length) {
   for (let index = 0; index < pageCandidates.length; index += 1) {
     target.push({
       ...pageCandidates[index],
-      sourceOrder: offset + index + 1
+      sourceOrder: sourceOrderOffset + index + 1
     });
   }
 }
 
+function pickEdgeFallbackPageUrls(pageUrls = [], htmlPageResults = new Map()) {
+  const fallbackUrls = [];
+
+  for (const pageUrl of pageUrls) {
+    const result = htmlPageResults.get(pageUrl);
+    if (!result || result.failed || Number(result.candidateCount || 0) === 0) {
+      fallbackUrls.push(pageUrl);
+    }
+  }
+
+  return fallbackUrls.length > 0 ? fallbackUrls : (htmlPageResults.size === 0 ? pageUrls : []);
+}
+
 async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}, options = {}) {
+  const totalStartedAt = Date.now();
   const filters = normalizeListPageFilterOptions(rawFilters);
   const pageUrls = buildListPageUrls(listUrl, filters.maxPages);
   const pages = [];
   const errors = [];
+  const htmlPageResults = new Map();
+  const fetchPageHtml = typeof options.fetchHtml === 'function' ? options.fetchHtml : fetchHtml;
+  const capturePagesWithEdge = typeof options.captureListHtmlPagesWithEdge === 'function'
+    ? options.captureListHtmlPagesWithEdge
+    : captureListHtmlPagesWithEdge;
+  const performance = {
+    htmlFetchMs: 0,
+    edgeFallbackMs: 0,
+    totalMs: 0,
+    htmlPages: [],
+    edgePages: []
+  };
   let candidates = [];
   let prefilter = filterListPageCandidates(candidates, filters);
 
-  for (const pageUrl of pageUrls) {
+  for (let pageIndex = 0; pageIndex < pageUrls.length; pageIndex += 1) {
+    const pageUrl = pageUrls[pageIndex];
+    const pageStartedAt = Date.now();
     try {
-      const page = await fetchHtml(pageUrl, DESKTOP_HEADERS);
+      const page = await fetchPageHtml(pageUrl, DESKTOP_HEADERS);
       const pageCandidates = parseListPageCandidatesFromHtml(page.html, pageUrl, {
         template,
         filters,
-        sourceOrderOffset: candidates.length
+        sourceOrderOffset: pageIndex * filters.maxCandidatesPerPage
       });
-      pages.push({
+      const pageRecord = {
         url: pageUrl,
         source: 'html',
-        candidateCount: pageCandidates.length
-      });
-      appendPageCandidates(candidates, pageCandidates);
+        candidateCount: pageCandidates.length,
+        durationMs: durationSince(pageStartedAt)
+      };
+      pages.push(pageRecord);
+      htmlPageResults.set(pageUrl, pageRecord);
+      performance.htmlPages.push(pageRecord);
+      performance.htmlFetchMs += pageRecord.durationMs;
+      appendPageCandidates(candidates, pageCandidates, pageIndex * filters.maxCandidatesPerPage);
       prefilter = filterListPageCandidates(candidates, filters);
       if (prefilter.selected.length >= filters.desiredHotelCount) {
         break;
       }
     } catch (error) {
+      const pageRecord = {
+        url: pageUrl,
+        source: 'html',
+        candidateCount: 0,
+        failed: true,
+        durationMs: durationSince(pageStartedAt)
+      };
+      htmlPageResults.set(pageUrl, pageRecord);
+      performance.htmlPages.push(pageRecord);
+      performance.htmlFetchMs += pageRecord.durationMs;
       errors.push({
         url: pageUrl,
         source: 'html',
@@ -261,7 +359,41 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
 
   let edgeCapture = null;
   if (prefilter.selected.length < filters.desiredHotelCount && shouldAttemptEdgeListFallback(options)) {
-    edgeCapture = await captureListHtmlPagesWithEdge(pageUrls, options.edgeSession || {});
+    const edgePageUrls = pickEdgeFallbackPageUrls(pageUrls, htmlPageResults);
+    const edgeStartedAt = Date.now();
+    const parsedEdgeUrls = new Set();
+    const applyEdgePage = (edgePage) => {
+      const pageIndex = Math.max(0, pageUrls.indexOf(edgePage.url));
+      const pageCandidates = parseListPageCandidatesFromHtml(edgePage.html, edgePage.url, {
+        template,
+        filters,
+        sourceOrderOffset: pageIndex * filters.maxCandidatesPerPage
+      });
+      const pageRecord = {
+        url: edgePage.url,
+        source: edgePage.source || 'edge-cdp',
+        candidateCount: pageCandidates.length,
+        durationMs: edgePage.durationMs
+      };
+      pages.push(pageRecord);
+      performance.edgePages.push(pageRecord);
+      appendPageCandidates(candidates, pageCandidates, pageIndex * filters.maxCandidatesPerPage);
+      parsedEdgeUrls.add(edgePage.url);
+      prefilter = filterListPageCandidates(candidates, filters);
+    };
+    edgeCapture = edgePageUrls.length > 0
+      ? await capturePagesWithEdge(edgePageUrls, options.edgeSession || {}, {
+        onPage: (edgePage) => {
+          applyEdgePage(edgePage);
+          return prefilter.selected.length < filters.desiredHotelCount;
+        },
+        shouldStop: () => prefilter.selected.length >= filters.desiredHotelCount
+      })
+      : {
+        pages: [],
+        error: ''
+      };
+    performance.edgeFallbackMs = durationSince(edgeStartedAt);
     if (edgeCapture.error) {
       errors.push({
         url: listUrl,
@@ -269,24 +401,19 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
         error: edgeCapture.error
       });
     }
-
     for (const edgePage of edgeCapture.pages || []) {
-      const pageCandidates = parseListPageCandidatesFromHtml(edgePage.html, edgePage.url, {
-        template,
-        filters,
-        sourceOrderOffset: candidates.length
-      });
-      pages.push({
-        url: edgePage.url,
-        source: edgePage.source || 'edge-cdp',
-        candidateCount: pageCandidates.length
-      });
-      appendPageCandidates(candidates, pageCandidates);
+      if (!parsedEdgeUrls.has(edgePage.url)) {
+        applyEdgePage(edgePage);
+        if (prefilter.selected.length >= filters.desiredHotelCount) {
+          break;
+        }
+      }
     }
     prefilter = filterListPageCandidates(candidates, filters);
   }
 
   candidates = candidates.sort((left, right) => left.sourceOrder - right.sourceOrder);
+  performance.totalMs = durationSince(totalStartedAt);
   return {
     inputUrl: listUrl,
     pageUrls,
@@ -298,7 +425,8 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     rejected: prefilter.rejected,
     detailUrls: prefilter.detailUrls,
     errors,
-    edgeFallbackUsed: Boolean(edgeCapture)
+    edgeFallbackUsed: Boolean(edgeCapture && ((edgeCapture.pages || []).length || edgeCapture.error)),
+    performance
   };
 }
 

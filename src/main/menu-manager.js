@@ -82,7 +82,7 @@ class MenuManager {
                   type: 'info',
                   title: `关于${APP_CONFIG.NAME}`,
                   message: `${APP_CONFIG.NAME} v${APP_CONFIG.VERSION}`,
-                    detail: `更新时间: ${APP_CONFIG.RELEASE_DATE}\n作者: ${APP_CONFIG.AUTHOR}\n\n感谢: Trae、GitHub Copilot、Codex\n特别感谢: Asagiri、墨离\n\n一个现代化的宾馆比较工具。`
+                    detail: `更新时间: ${APP_CONFIG.RELEASE_DATE}\n作者: ${APP_CONFIG.AUTHOR}\n\n感谢: Trae、GitHub Copilot、Codex\n特别感谢: Asagiri、墨离、六便士\n\n一个现代化的宾馆比较工具。`
                 });
               }
             }

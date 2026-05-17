@@ -205,6 +205,9 @@ function sanitizeSettings(settings = {}) {
   if (sanitized.ai_provider_config) {
     sanitized.ai_provider_config = redactAiProviderConfig(sanitized.ai_provider_config);
   }
+  if (sanitized.amapApiKey) {
+    sanitized.amapApiKey = '[REDACTED]';
+  }
 
   return sanitized;
 }
@@ -226,7 +229,14 @@ async function executeAiTool(name, rawArguments, context) {
     case 'collect_and_write_ctrip_hotel':
       return runTask(async ({ signal, onTaskEvent }) => {
         const { collectAndWriteCtripHotel } = await loadScraperRunner();
-        return collectAndWriteCtripHotel(args, {
+        const settings = store.get('settings') || {};
+        const collectArgs = {
+          ...args
+        };
+        if (!collectArgs.amapKey && settings.amapApiKey) {
+          collectArgs.amapKey = settings.amapApiKey;
+        }
+        return collectAndWriteCtripHotel(collectArgs, {
           dataFolderPath: dataService.getDataFolderPath(),
           signal,
           onEvent: onTaskEvent

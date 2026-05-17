@@ -52,6 +52,10 @@ function normalizeImportedSettings(settings) {
     ...(isPlainObject(settings) ? settings : {})
   };
   normalizedSettings.ai_provider_config = normalizeAiProviderConfig(normalizedSettings.ai_provider_config);
+  normalizedSettings.amapApiKey = String(normalizedSettings.amapApiKey || '').trim();
+  if (normalizedSettings.amapApiKey === '[REDACTED]') {
+    normalizedSettings.amapApiKey = '';
+  }
   return normalizedSettings;
 }
 
@@ -62,6 +66,9 @@ function redactSettingsForExport(settings) {
 
   if (isPlainObject(exportedSettings.ai_provider_config)) {
     exportedSettings.ai_provider_config = redactAiProviderConfig(exportedSettings.ai_provider_config);
+  }
+  if (exportedSettings.amapApiKey) {
+    exportedSettings.amapApiKey = '[REDACTED]';
   }
 
   return exportedSettings;

@@ -37,7 +37,6 @@ const {
   ensureDir,
   normalizePlaceName,
   parseArgs,
-  readJsonFile,
   sanitizeSensitiveData,
   slugify,
   writeJsonFile
@@ -134,6 +133,20 @@ function buildEdgeSessionOptions(effectiveTemplate = {}) {
   };
 }
 
+function durationSince(startedAt) {
+  return Math.max(0, Date.now() - startedAt);
+}
+
+function createTransitCache() {
+  return {
+    geocode: new Map(),
+    places: new Map(),
+    nearestSubway: new Map(),
+    walkingRoutes: new Map(),
+    transitRoutes: new Map()
+  };
+}
+
 function buildBatchItems(childResults = [], failedItems = []) {
   const items = [
     ...childResults.map((result, index) => ({
@@ -189,7 +202,8 @@ function buildBatchOutputPayload({
   failedItems,
   allHotels,
   reviewInput,
-  writeResult
+  writeResult,
+  performance
 }) {
   const firstPayload = resultPayloads[0] || {};
   const firstHotel = allHotels[0] || firstPayload.hotel || null;
@@ -198,7 +212,8 @@ function buildBatchOutputPayload({
     ...(expandedInputs.summary || {}),
     succeededCount: childResults.length,
     failedCount: failedItems.length,
-    eligibleHotelRecordCount: allHotels.length
+    eligibleHotelRecordCount: allHotels.length,
+    performance: performance || null
   };
 
   return sanitizeSensitiveData({
@@ -240,7 +255,8 @@ function buildBatchOutputPayload({
       source_args: {
         targetCount: args.targetCount ?? args['target-count'] ?? null,
         maxPages: args.maxPages ?? args['max-pages'] ?? null
-      }
+      },
+      performance: performance || null
     }
   });
 }
@@ -257,7 +273,8 @@ function buildBatchResult({
   compareAppSettings,
   writeResult,
   cleanupResult,
-  reviewInput
+  reviewInput,
+  performance
 }) {
   const firstHotel = allHotels[0] || {};
   const firstResult = childResults[0] || {};
@@ -267,7 +284,8 @@ function buildBatchResult({
     ...(expandedInputs.summary || {}),
     succeededCount: childResults.length,
     failedCount: failedItems.length,
-    eligibleHotelRecordCount: allHotels.length
+    eligibleHotelRecordCount: allHotels.length,
+    performance: performance || null
   };
 
   return {
@@ -309,7 +327,203 @@ function buildBatchResult({
     writeResult,
     cleanupResult,
     reviewInput,
+    performance,
     failedItems
+  };
+}
+
+async function runPreparedSingleDetailImport(context) {
+  const {
+    args,
+    startedAt,
+    taskId,
+    emit,
+    signal,
+    outputDir,
+    template,
+    matchedTemplate,
+    effectiveTemplate,
+    compareAppSettings,
+    effectiveDestination,
+    hotelInput,
+    outputPath: preferredOutputPath,
+    autoEdge,
+    transitCache,
+    writeAppData = false
+  } = context;
+
+  const totalStartedAt = Date.now();
+  const performance = {
+    totalMs: 0,
+    scrapeMs: 0,
+    transitMs: 0,
+    outputWriteMs: 0,
+    cleanupMs: 0,
+    appWriteMs: 0,
+    scrape: null
+  };
+  const itemTemplate = {
+    ...effectiveTemplate,
+    ctrip_url: hotelInput.url
+  };
+
+  assertNotCancelled(signal);
+  emit('scrape:start', '正在采集携程酒店页面');
+  const scrapeStartedAt = Date.now();
+  const scraped = await scrapeCtripHotel(itemTemplate.ctrip_url, itemTemplate, {
+    htmlPath: args.html,
+    saveHtml: Boolean(args['save-html']),
+    snapshotDir: path.join(outputDir, 'raw-pages'),
+    matchingOptions: {
+      includeFourPersonRoomsForThreePersonTemplate: Boolean(compareAppSettings.includeFourPersonRoomsForThreePersonTemplate)
+    },
+    edgeSession: buildEdgeSessionOptions(itemTemplate),
+    autoEdge
+  });
+  performance.scrapeMs = durationSince(scrapeStartedAt);
+  performance.scrape = scraped.performance || null;
+
+  assertNotCancelled(signal);
+  emit('transit:start', '正在计算交通与地铁信息');
+  const transitStartedAt = Date.now();
+  const transit = await getTransitInfo(scraped.address, effectiveDestination, args.amapKey || DEFAULT_AMAP_KEY, {
+    hotelGeo: scraped.geo,
+    cache: transitCache
+  });
+  performance.transitMs = durationSince(transitStartedAt);
+
+  const eligibleRoomRecords = buildEligibleRoomRecords(itemTemplate, scraped, transit, matchedTemplate);
+  const hotelRecord = eligibleRoomRecords[0] || buildHotelRecord(itemTemplate, scraped, transit, matchedTemplate);
+  const eligibleRoomSummaries = eligibleRoomRecords.map((roomRecord, index) => {
+    const sourceRoom = Array.isArray(scraped.eligible_rooms) ? (scraped.eligible_rooms[index] || {}) : {};
+    return {
+      roomType: roomRecord.room_type,
+      originalRoomType: roomRecord.original_room_type,
+      dailyPrice: roomRecord.daily_price,
+      totalPrice: roomRecord.total_price,
+      occupancy: sourceRoom.occupancy ?? null,
+      cancelPolicy: roomRecord.cancel_policy || '',
+      windowStatus: roomRecord.window_status || ''
+    };
+  });
+
+  const outputPath = path.resolve(preferredOutputPath || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`));
+  const reviewInput = buildReviewInput({
+    taskMeta: {
+      taskId,
+      url: itemTemplate.ctrip_url,
+      templateId: hotelRecord.template_id,
+      templateName: itemTemplate.template_name,
+      checkInDate: itemTemplate.check_in_date,
+      checkOutDate: itemTemplate.check_out_date,
+      roomCount: itemTemplate.room_count,
+      guestCount: itemTemplate.room_count,
+      destination: effectiveDestination
+    },
+    finalHotels: eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord],
+    roomCandidates: scraped.raw_room_candidates || scraped.room_candidates || [],
+    evaluations: scraped.room_selection_diagnostics && Array.isArray(scraped.room_selection_diagnostics.evaluations)
+      ? scraped.room_selection_diagnostics.evaluations
+      : [],
+    pageSnapshot: scraped.page_snapshot,
+    template: itemTemplate
+  });
+
+  const outputPayload = sanitizeSensitiveData({
+    hotels: eligibleRoomRecords,
+    hotel: hotelRecord,
+    review_input: reviewInput,
+    compare_app_store: getCompareAppStorePath(),
+    matched_template: matchedTemplate,
+    effective_template: itemTemplate,
+    compare_app_settings: compareAppSettings,
+    scrape_debug: {
+      requested_url: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
+      resolved_url: itemTemplate.ctrip_url,
+      selected_room: scraped.room,
+      eligible_rooms: scraped.eligible_rooms,
+      room_candidates: scraped.room_candidates,
+      raw_room_candidates: scraped.raw_room_candidates,
+      selection_logs: reviewInput.selectionLogs,
+      rejected_room_types: reviewInput.rejectedRoomTypes,
+      normalize_logs: reviewInput.normalizeLogs,
+      page_snapshot: scraped.page_snapshot,
+      transit,
+      performance
+    }
+  });
+
+  const outputWriteStartedAt = Date.now();
+  writeJsonFile(outputPath, outputPayload);
+  performance.outputWriteMs = durationSince(outputWriteStartedAt);
+  outputPayload.scrape_debug.performance = performance;
+
+  const cleanupStartedAt = Date.now();
+  const cleanupResult = cleanupOutputArtifacts(outputDir, outputPath, scraped.page_snapshot && scraped.page_snapshot.saved_html_files);
+  performance.cleanupMs = durationSince(cleanupStartedAt);
+
+  let writeResult = null;
+  if (writeAppData) {
+    emit('write:start', '正在写入宾馆比较数据');
+    const appWriteStartedAt = Date.now();
+    if (shouldSkipHotelWrite(eligibleRoomRecords)) {
+      writeResult = {
+        storePath: getCompareAppStorePath(),
+        operation: 'skipped',
+        skippedCount: eligibleRoomRecords.length,
+        reason: '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整家跳过，未直写比较助手。'
+      };
+    } else {
+      writeResult = appendHotelsToStore(eligibleRoomRecords, { replaceExistingGroup: true });
+    }
+    performance.appWriteMs = durationSince(appWriteStartedAt);
+  }
+
+  performance.totalMs = durationSince(totalStartedAt);
+  if (outputPayload.scrape_debug) {
+    outputPayload.scrape_debug.performance = performance;
+  }
+  writeJsonFile(outputPath, outputPayload);
+
+  const finishedAt = new Date().toISOString();
+  const result = {
+    success: true,
+    startedAt,
+    finishedAt,
+    outputPath,
+    compareAppStorePath: getCompareAppStorePath(),
+    templateName: itemTemplate.template_name,
+    templateId: hotelRecord.template_id,
+    requestedUrl: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
+    resolvedUrl: itemTemplate.ctrip_url,
+    templateSnapshot: {
+      matchedTemplate: buildTemplateSnapshot(matchedTemplate, matchedTemplate ? 'store.templates' : ''),
+      effectiveTemplate: buildTemplateSnapshot(itemTemplate, 'effective-template')
+    },
+    hotelName: hotelRecord.name,
+    eligibleCount: eligibleRoomRecords.length,
+    eligibleHotels: eligibleRoomRecords,
+    eligibleRoomTypes: eligibleRoomSummaries,
+    roomType: hotelRecord.room_type,
+    roomOccupancy: scraped.room ? (scraped.room.occupancy ?? null) : null,
+    roomPrices: scraped.room && Array.isArray(scraped.room.prices) ? scraped.room.prices : [],
+    totalPrice: hotelRecord.total_price,
+    ctripScore: hotelRecord.ctrip_score,
+    distance: hotelRecord.distance,
+    subwayDistance: hotelRecord.subway_distance,
+    transportTime: hotelRecord.transport_time,
+    busRoute: hotelRecord.bus_route,
+    pageSnapshot: buildPageSnapshotSummary(outputPayload.scrape_debug.page_snapshot),
+    compareAppSettings: sanitizeSensitiveData(compareAppSettings),
+    writeResult,
+    cleanupResult,
+    reviewInput,
+    performance
+  };
+
+  return {
+    result,
+    outputPayload
   };
 }
 
@@ -326,14 +540,27 @@ async function runBatchHotelImportTask(context) {
     matchedTemplate,
     effectiveTemplate,
     compareAppSettings,
-    expandedInputs,
-    options
+    effectiveDestination,
+    expandedInputs
   } = context;
 
   emit('batch:start', '正在批量采集携程酒店页面', {
     summary: describeExpandedInput(expandedInputs)
   });
 
+  const batchStartedAt = Date.now();
+  const batchItemsDir = path.join(outputDir, 'batch-items');
+  ensureDir(batchItemsDir);
+  const performance = {
+    totalMs: 0,
+    itemMs: 0,
+    writeMs: 0,
+    outputWriteMs: 0,
+    cleanupMs: 0,
+    listExpansion: expandedInputs.performance || (expandedInputs.summary && expandedInputs.summary.performance) || null,
+    items: []
+  };
+  const transitCache = createTransitCache();
   const childResults = [];
   const resultPayloads = [];
   const failedItems = [];
@@ -347,56 +574,47 @@ async function runBatchHotelImportTask(context) {
     });
 
     const childOutputPath = path.join(
-      outputDir,
-      `_batch-item-${String(index + 1).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
+      batchItemsDir,
+      `batch-item-${String(index + 1).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
     );
-    const childLatestRunPath = path.join(outputDir, `_batch-item-latest-${String(index + 1).padStart(3, '0')}.json`);
-    const childArgs = {
-      url: hotelInput.url,
-      out: childOutputPath,
-      latestRun: childLatestRunPath,
-      templateId: effectiveTemplate.template_id,
-      templateName: effectiveTemplate.template_name,
-      destination: effectiveTemplate.destination,
-      checkIn: effectiveTemplate.check_in_date,
-      checkOut: effectiveTemplate.check_out_date,
-      roomType: effectiveTemplate.room_type,
-      roomCount: effectiveTemplate.room_count,
-      notes: effectiveTemplate.notes,
-      amapKey: args.amapKey,
-      html: undefined,
-      'save-html': args['save-html'],
-      'edge-user-data-dir': effectiveTemplate.edge_user_data_dir,
-      'edge-profile-directory': effectiveTemplate.edge_profile_directory,
-      'edge-debugger-url': effectiveTemplate.edge_debugger_url,
-      'edge-debugging-port': effectiveTemplate.edge_debugging_port,
-      'edge-headless': effectiveTemplate.edge_headless
-    };
 
     try {
-      const childResult = await runHotelImportTask(childArgs, {
+      const itemStartedAt = Date.now();
+      const preparedResult = await runPreparedSingleDetailImport({
+        args,
         startedAt,
         taskId: `${taskId}-${index + 1}`,
+        emit,
         signal,
-        onEvent: options.onEvent
+        outputDir,
+        template,
+        matchedTemplate,
+        effectiveTemplate,
+        compareAppSettings,
+        effectiveDestination,
+        hotelInput,
+        outputPath: childOutputPath,
+        autoEdge: Boolean(args['auto-edge']),
+        transitCache,
+        writeAppData: false
       });
-      const childPayload = readJsonFile(childResult.outputPath, null);
-      if (childPayload) {
-        const batchItemsDir = path.join(outputDir, 'batch-items');
-        ensureDir(batchItemsDir);
-        const stableOutputPath = path.join(
-          batchItemsDir,
-          `batch-item-${String(index + 1).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
-        );
-        writeJsonFile(stableOutputPath, childPayload);
-        childResult.outputPath = stableOutputPath;
-        resultPayloads.push(childPayload);
-      }
+      const childResult = preparedResult.result;
+      const childPayload = preparedResult.outputPayload;
+      resultPayloads.push(childPayload);
       childResult.inputIndex = index + 1;
       childResult.inputSource = hotelInput.source;
       childResult.hotelId = hotelInput.hotelId;
       childResult.listCandidate = hotelInput.listCandidate || null;
       childResults.push(childResult);
+      const itemDurationMs = durationSince(itemStartedAt);
+      performance.itemMs += itemDurationMs;
+      performance.items.push({
+        index: index + 1,
+        hotelId: hotelInput.hotelId,
+        hotelName: childResult.hotelName,
+        durationMs: itemDurationMs,
+        detail: childResult.performance || null
+      });
       emit('batch:item-done', `第 ${index + 1} 家酒店采集完成`, {
         hotelName: childResult.hotelName,
         eligibleCount: childResult.eligibleCount
@@ -422,6 +640,7 @@ async function runBatchHotelImportTask(context) {
   let writeResult = null;
   if (args['write-app-data']) {
     emit('write:start', '正在批量写入宾馆比较数据');
+    const writeStartedAt = Date.now();
     if (shouldSkipHotelWrite(allHotels)) {
       writeResult = {
         storePath: getCompareAppStorePath(),
@@ -448,12 +667,14 @@ async function runBatchHotelImportTask(context) {
         };
       });
     }
+    performance.writeMs = durationSince(writeStartedAt);
   }
 
   const outputPath = path.resolve(args.out || path.join(
     outputDir,
     `batch-${slugify(effectiveTemplate.template_name || matchedTemplate && matchedTemplate.name || 'ctrip-hotels')}.json`
   ));
+  performance.totalMs = durationSince(batchStartedAt);
   const outputPayload = buildBatchOutputPayload({
     args,
     template,
@@ -466,15 +687,31 @@ async function runBatchHotelImportTask(context) {
     failedItems,
     allHotels,
     reviewInput,
-    writeResult
+    writeResult,
+    performance
   });
+  const outputWriteStartedAt = Date.now();
   writeJsonFile(outputPath, outputPayload);
+  performance.outputWriteMs = durationSince(outputWriteStartedAt);
 
   const snapshotFiles = resultPayloads.flatMap((payload) => {
     const pageSnapshot = payload && payload.scrape_debug && payload.scrape_debug.page_snapshot;
     return pageSnapshot && Array.isArray(pageSnapshot.saved_html_files) ? pageSnapshot.saved_html_files : [];
   });
+  const cleanupStartedAt = Date.now();
   const cleanupResult = cleanupOutputArtifacts(outputDir, outputPath, snapshotFiles);
+  performance.cleanupMs = durationSince(cleanupStartedAt);
+  performance.totalMs = durationSince(batchStartedAt);
+  if (outputPayload.batchStats) {
+    outputPayload.batchStats.performance = performance;
+  }
+  if (outputPayload.batch && outputPayload.batch.stats) {
+    outputPayload.batch.stats.performance = performance;
+  }
+  if (outputPayload.scrape_debug) {
+    outputPayload.scrape_debug.performance = performance;
+  }
+  writeJsonFile(outputPath, outputPayload);
   const result = buildBatchResult({
     startedAt,
     outputPath,
@@ -487,7 +724,8 @@ async function runBatchHotelImportTask(context) {
     compareAppSettings,
     writeResult,
     cleanupResult,
-    reviewInput
+    reviewInput,
+    performance
   });
 
   writeLatestRunFile(latestRunPath, buildRunSummary({
@@ -624,147 +862,34 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         });
       }
 
-      effectiveTemplate.ctrip_url = expandedInputs.hotelInputs[0].url;
-
-      assertNotCancelled(signal);
-      emit('scrape:start', '正在采集携程酒店页面');
-      const scraped = await scrapeCtripHotel(effectiveTemplate.ctrip_url, effectiveTemplate, {
-        htmlPath: args.html,
-        saveHtml: Boolean(args['save-html']),
-        snapshotDir: path.join(outputDir, 'raw-pages'),
-        matchingOptions: {
-          includeFourPersonRoomsForThreePersonTemplate: Boolean(compareAppSettings.includeFourPersonRoomsForThreePersonTemplate)
-        },
-        edgeSession: buildEdgeSessionOptions(effectiveTemplate),
-        autoEdge
-      });
-
-      assertNotCancelled(signal);
-      emit('transit:start', '正在计算交通与地铁信息');
-      const transit = await getTransitInfo(scraped.address, effectiveDestination, args.amapKey || DEFAULT_AMAP_KEY, {
-        hotelGeo: scraped.geo
-      });
-      const eligibleRoomRecords = buildEligibleRoomRecords(effectiveTemplate, scraped, transit, matchedTemplate);
-      const hotelRecord = eligibleRoomRecords[0] || buildHotelRecord(effectiveTemplate, scraped, transit, matchedTemplate);
-      const eligibleRoomSummaries = eligibleRoomRecords.map((roomRecord, index) => {
-        const sourceRoom = Array.isArray(scraped.eligible_rooms) ? (scraped.eligible_rooms[index] || {}) : {};
-        return {
-          roomType: roomRecord.room_type,
-          originalRoomType: roomRecord.original_room_type,
-          dailyPrice: roomRecord.daily_price,
-          totalPrice: roomRecord.total_price,
-          occupancy: sourceRoom.occupancy ?? null,
-          cancelPolicy: roomRecord.cancel_policy || '',
-          windowStatus: roomRecord.window_status || ''
-        };
-      });
-
-      const outputPath = path.resolve(args.out || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`));
-      const reviewInput = buildReviewInput({
-        taskMeta: {
-          taskId,
-          url: effectiveTemplate.ctrip_url,
-          templateId: hotelRecord.template_id,
-          templateName: effectiveTemplate.template_name,
-          checkInDate: effectiveTemplate.check_in_date,
-          checkOutDate: effectiveTemplate.check_out_date,
-          roomCount: effectiveTemplate.room_count,
-          guestCount: effectiveTemplate.room_count,
-          destination: effectiveDestination
-        },
-        finalHotels: eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord],
-        roomCandidates: scraped.raw_room_candidates || scraped.room_candidates || [],
-        evaluations: scraped.room_selection_diagnostics && Array.isArray(scraped.room_selection_diagnostics.evaluations)
-          ? scraped.room_selection_diagnostics.evaluations
-          : [],
-        pageSnapshot: scraped.page_snapshot,
-        template: effectiveTemplate
-      });
-      const outputPayload = sanitizeSensitiveData({
-        hotels: eligibleRoomRecords,
-        hotel: hotelRecord,
-        review_input: reviewInput,
-        compare_app_store: getCompareAppStorePath(),
-        matched_template: matchedTemplate,
-        effective_template: effectiveTemplate,
-        compare_app_settings: compareAppSettings,
-        scrape_debug: {
-          requested_url: template.ctrip_url,
-          resolved_url: effectiveTemplate.ctrip_url,
-          selected_room: scraped.room,
-          eligible_rooms: scraped.eligible_rooms,
-          room_candidates: scraped.room_candidates,
-          raw_room_candidates: scraped.raw_room_candidates,
-          selection_logs: reviewInput.selectionLogs,
-          rejected_room_types: reviewInput.rejectedRoomTypes,
-          normalize_logs: reviewInput.normalizeLogs,
-          page_snapshot: scraped.page_snapshot,
-          transit
-        }
-      });
-
-      writeJsonFile(outputPath, outputPayload);
-
-      const cleanupResult = cleanupOutputArtifacts(outputDir, outputPath, scraped.page_snapshot && scraped.page_snapshot.saved_html_files);
-
-      let writeResult = null;
-      if (args['write-app-data']) {
-        emit('write:start', '正在写入宾馆比较数据');
-        if (shouldSkipHotelWrite(eligibleRoomRecords)) {
-          writeResult = {
-            storePath: getCompareAppStorePath(),
-            operation: 'skipped',
-            skippedCount: eligibleRoomRecords.length,
-            reason: '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整家跳过，未直写比较助手。'
-          };
-        } else {
-          writeResult = appendHotelsToStore(eligibleRoomRecords, { replaceExistingGroup: true });
-        }
-      }
-
-      const finishedAt = new Date().toISOString();
-      const result = {
-        success: true,
+      const preparedResult = await runPreparedSingleDetailImport({
+        args,
         startedAt,
-        finishedAt,
-        outputPath,
-        compareAppStorePath: getCompareAppStorePath(),
-        templateName: effectiveTemplate.template_name,
-        templateId: hotelRecord.template_id,
-        requestedUrl: template.ctrip_url,
-        resolvedUrl: effectiveTemplate.ctrip_url,
-        templateSnapshot: {
-          matchedTemplate: buildTemplateSnapshot(matchedTemplate, matchedTemplate ? 'store.templates' : ''),
-          effectiveTemplate: buildTemplateSnapshot(effectiveTemplate, 'effective-template')
-        },
-        hotelName: hotelRecord.name,
-        eligibleCount: eligibleRoomRecords.length,
-        eligibleHotels: eligibleRoomRecords,
-        eligibleRoomTypes: eligibleRoomSummaries,
-        roomType: hotelRecord.room_type,
-        roomOccupancy: scraped.room ? (scraped.room.occupancy ?? null) : null,
-        roomPrices: scraped.room && Array.isArray(scraped.room.prices) ? scraped.room.prices : [],
-        totalPrice: hotelRecord.total_price,
-        ctripScore: hotelRecord.ctrip_score,
-        distance: hotelRecord.distance,
-        subwayDistance: hotelRecord.subway_distance,
-        transportTime: hotelRecord.transport_time,
-        busRoute: hotelRecord.bus_route,
-        pageSnapshot: buildPageSnapshotSummary(outputPayload.scrape_debug.page_snapshot),
-        compareAppSettings: sanitizeSensitiveData(compareAppSettings),
-        writeResult,
-        cleanupResult,
-        reviewInput
-      };
+        taskId,
+        emit,
+        signal,
+        outputDir,
+        template,
+        matchedTemplate,
+        effectiveTemplate,
+        compareAppSettings,
+        effectiveDestination,
+        hotelInput: expandedInputs.hotelInputs[0],
+        outputPath: args.out,
+        autoEdge,
+        transitCache: null,
+        writeAppData: Boolean(args['write-app-data'])
+      });
+      const result = preparedResult.result;
 
       writeLatestRunFile(latestRunPath, buildRunSummary({
         ...result,
-        eligibleHotels: eligibleRoomRecords
+        eligibleHotels: result.eligibleHotels
       }));
       emit('task:done', '采集任务完成', {
         hotelName: result.hotelName,
         eligibleCount: result.eligibleCount,
-        wrote: Boolean(writeResult)
+        wrote: Boolean(result.writeResult)
       });
       return result;
     } finally {

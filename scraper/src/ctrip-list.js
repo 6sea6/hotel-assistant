@@ -230,6 +230,10 @@ function buildListPageUrls(listUrl, maxPages) {
   return Array.from({ length: pageCount }, (_, index) => buildListPageUrl(listUrl, index + 1));
 }
 
+function durationSince(startedAt) {
+  return Math.max(0, Date.now() - startedAt);
+}
+
 async function collectHotelListCandidates(listUrl, template = {}, rawFilters = {}, options = {}) {
   if (typeof options.collectListPageCandidates === 'function') {
     return options.collectListPageCandidates(listUrl, template, rawFilters, options);
@@ -279,6 +283,7 @@ function pickCtripUrlFilterSettings(rawInput = {}) {
 }
 
 async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters = {}, options = {}) {
+  const startedAt = Date.now();
   const inputUrls = extractCtripUrlsFromInput({
     ...rawInput,
     url: rawInput.url || rawInput.ctrip_url || rawInput['ctrip-url'] || template.ctrip_url
@@ -290,6 +295,11 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
   const seenDetailUrls = new Set();
   const filters = normalizeListPageFilterOptions(rawFilters);
   const ctripUrlFilterSettings = pickCtripUrlFilterSettings(rawInput);
+  const performance = {
+    totalMs: 0,
+    listCollectMs: 0,
+    lists: []
+  };
   let selectedFromLists = 0;
 
   const addDetail = (detail) => {
@@ -319,11 +329,23 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
       ? buildCtripListUrl(url, ctripUrlFilterSettings)
       : url;
     const remainingTarget = Math.max(1, filters.desiredHotelCount - selectedFromLists);
+    const listStartedAt = Date.now();
     const listResult = await collectHotelListCandidates(effectiveListUrl, template, {
       ...filters,
       desiredHotelCount: remainingTarget,
       targetCount: remainingTarget
     }, options);
+    const listDurationMs = durationSince(listStartedAt);
+    performance.listCollectMs += listDurationMs;
+    performance.lists.push({
+      inputUrl: url,
+      effectiveListUrl,
+      durationMs: listDurationMs,
+      selectedCount: Array.isArray(listResult.selected) ? listResult.selected.length : 0,
+      totalCandidates: Number(listResult.totalCandidates || 0),
+      edgeFallbackUsed: Boolean(listResult.edgeFallbackUsed),
+      collector: listResult.performance || null
+    });
     listResults.push(listResult);
     selectedFromLists += listResult.selected.length;
 
@@ -340,13 +362,15 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
       ? 'list'
       : details.length > 1
         ? 'multi-detail'
-        : 'detail';
+      : 'detail';
+  performance.totalMs = durationSince(startedAt);
 
   return {
     inputMode,
     requestedUrls: urls,
     hotelInputs: details,
     listResults,
+    performance,
     skippedUrls: skipped,
     summary: {
       inputMode,
@@ -358,7 +382,8 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
       skippedUrlCount: skipped.length,
       listCandidateCount: listResults.reduce((sum, item) => sum + (Number(item.totalCandidates) || 0), 0),
       listRejectedCount: listResults.reduce((sum, item) => sum + (Array.isArray(item.rejected) ? item.rejected.length : 0), 0),
-      filters
+      filters,
+      performance
     }
   };
 }

@@ -1,9 +1,23 @@
+const http = require('http');
+const https = require('https');
 const axios = require('axios');
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_RETRIES = 1;
 const DEFAULT_RETRY_DELAY_MS = 250;
 const SENSITIVE_KEY_PATTERN = /(authorization|cookie|token|api[-_]?key|apikey|secret|password|key)$/i;
+const KEEP_ALIVE_HTTP_AGENT = new http.Agent({
+  keepAlive: true,
+  maxSockets: 16,
+  maxFreeSockets: 8,
+  timeout: 60000
+});
+const KEEP_ALIVE_HTTPS_AGENT = new https.Agent({
+  keepAlive: true,
+  maxSockets: 16,
+  maxFreeSockets: 8,
+  timeout: 60000
+});
 
 class HttpClientError extends Error {
   constructor(message, details = {}) {
@@ -250,7 +264,9 @@ function buildAxiosConfig(config = {}) {
     data,
     headers,
     timeout: timeoutMs,
-    responseType: toAxiosResponseType(config.responseType || 'json')
+    responseType: toAxiosResponseType(config.responseType || 'json'),
+    httpAgent: config.httpAgent || KEEP_ALIVE_HTTP_AGENT,
+    httpsAgent: config.httpsAgent || KEEP_ALIVE_HTTPS_AGENT
   };
 
   if (typeof config.validateStatus === 'function') {

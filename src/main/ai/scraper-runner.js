@@ -228,6 +228,9 @@ function buildScraperArgs(input, workDir) {
   if (input.excludeAccommodationKeywords) {
     args.excludeAccommodationKeywords = input.excludeAccommodationKeywords;
   }
+  if (input.amapKey !== null && input.amapKey !== undefined && String(input.amapKey).trim() !== '') {
+    args.amapKey = String(input.amapKey).trim();
+  }
   [
     'priceMin',
     'priceMax',

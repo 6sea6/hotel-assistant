@@ -55,7 +55,7 @@ npm install
 node src/cli.js --url "携程链接" --templateName 模板名 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
-`--url` 既可以传详情页，也可以传列表页。多个链接或混合粘贴文本用 `--urls`：
+`--url` 既可以传详情页，也可以传列表页。携程列表页 URL 中已有的城市、日期、人数、搜索词、`listFilters` 等原生筛选参数会被保留。多个链接或混合粘贴文本用 `--urls`：
 
 ```bash
 node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateName 模板名 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
@@ -63,8 +63,16 @@ node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateN
 
 列表页本地前筛参数：
 
+已识别的携程前筛包括价格、星级、排序、免费取消、点评数和评分档位；未识别的 `listFilters` 片段会原样保留，避免破坏携程页面上的品牌、商圈、行政区等筛选。应用内本地过滤只保留目标采集数量、排除住宿类型关键词和最多扫描页数；房型、价格、取消规则、窗户和人数规则仍在详情页阶段复核。
+
 ```bash
 node src/cli.js --url "携程列表页链接" --templateName 模板名 --exclude-accommodation-keywords "民宿,公寓,青旅" --targetCount 5 --maxPages 2 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
+```
+
+携程 URL 原生前筛可以通过用户粘贴的列表页 URL 保留，也可以由应用内“前筛设置”写入。CLI 调试时可用以下参数覆盖或追加携程 `listFilters`：
+
+```bash
+node src/cli.js --url "携程列表页链接" --templateName 模板名 --priceMin 50 --priceMax 200 --starLevels "3,4" --sortMode review_high --freeCancel true --reviewCountMin 500 --ctripScoreMin 4.5 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
 `--auto-edge` 会自动在后台隐藏启动 Edge、等待调试端口就绪、执行采集、采集完成后关闭 Edge，不再把网页弹到前台影响当前电脑使用。首次使用如果还没有可复用的 Edge profile，会先自动打开一次可见 Edge 窗口让你登录携程；登录完成后关闭窗口，当前任务再继续后台采集。默认优先用 hidden/headless 会话；只有排障或主动重登时，才需要单独运行可见的 `edge-session.js --login`。如果某家酒店疑似必须在登录态的可见窗口里手动打开后，目标房型价格才会真正显示出来，不要只在后台盲重试；改为先用可见窗口重试一次并确认目标房型价格已在页面上显示，再继续采集。
@@ -238,6 +246,7 @@ node src/cli.js --url "携程链接" --templateName bw \
 ### 高德交通查询
 
 - 默认 Key：`90d578a0d57c9283aefd4424a7a6f267`
+- 应用内设置页可以填写自定义高德 API Key；采集助手会把它作为 `--amapKey` 传入采集器。CLI 调试时也可以直接追加 `--amapKey "你的高德Key"`。
 - `distance` / `subway_distance`：纯数字字符串，不带单位
 - `subway_station`：最近地铁站名称（来自高德 POI 周边搜索 `types=150500`），独立字段，不要塞进 notes
 - `transport_time`：分钟数，不带单位

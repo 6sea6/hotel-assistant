@@ -15,7 +15,8 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   aiCtripSortMode: '',
   aiCtripFreeCancel: false,
   aiCtripReviewCountMin: '',
-  aiCtripScoreMin: ''
+  aiCtripScoreMin: '',
+  amapApiKey: ''
 });
 
 const DEFAULT_COMPARE_APP_FILES = Object.freeze({

@@ -227,6 +227,15 @@ function compactErrorMessage(error) {
   return error && error.message ? error.message : String(error || '未知错误');
 }
 
+function isCancellationError(error, signal) {
+  if (signal && signal.aborted) {
+    return true;
+  }
+  const message = compactErrorMessage(error);
+  return /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message)
+    || (error && error.name === 'AbortError');
+}
+
 function redactSensitiveText(text) {
   return String(text || '')
     .replace(/(bearer\s+)[a-z0-9._~+/-]+/gi, '$1[REDACTED]')
@@ -583,14 +592,18 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       });
       return result;
     } catch (error) {
-      task.status = controller.signal.aborted ? 'cancelled' : 'failed';
-      task.error = error.message || String(error);
+      const cancelled = isCancellationError(error, controller.signal);
+      task.status = cancelled ? 'cancelled' : 'failed';
+      task.error = cancelled ? '任务已取消' : (error.message || String(error));
       task.finishedAt = new Date().toISOString();
-      emitTaskEvent({
-        type: 'task:error',
-        message: task.error,
-        taskId: task.id
-      });
+      const cancelAlreadyEmitted = cancelled && task.events.some((event) => event.type === 'task:cancel');
+      if (!cancelAlreadyEmitted) {
+        emitTaskEvent({
+          type: cancelled ? 'task:cancel' : 'task:error',
+          message: task.error,
+          taskId: task.id
+        });
+      }
       throw error;
     } finally {
       state.lastTask = task;
@@ -619,6 +632,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         desiredHotelCount: payload.desiredHotelCount,
         maxPages: payload.maxPages,
         maxCandidatesPerPage: payload.maxCandidatesPerPage,
+        amapKey: payload.amapKey,
         listUrlFilters: payload.listUrlFilters,
         priceMin: payload.priceMin,
         priceMax: payload.priceMax,
@@ -892,7 +906,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
     state.currentTask.controller.abort();
     emitTaskEvent({
       type: 'task:cancel',
-      message: '已请求取消采集任务',
+      message: '任务已取消',
       taskId: state.currentTask.id
     });
     return {

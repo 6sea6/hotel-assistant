@@ -16,6 +16,24 @@ const {
   expandCtripHotelInputs,
   normalizeListFiltersFromArgs
 } = require('../src/ctrip-list');
+const {
+  collectListPageCandidates: collectRawListPageCandidates
+} = require('../src/scraper/list-page-collector');
+
+function buildListHtml(cards = []) {
+  return `
+    <html>
+      <body>
+        ${cards.map((card) => `
+          <div class="right-card" data-offline-hotelId="${card.id}">
+            <span class="hotelName">${card.name}</span>
+            <span class="score">${card.score || '4.8'}</span>
+          </div>
+        `).join('')}
+      </body>
+    </html>
+  `;
+}
 
 test('extractCtripUrlsFromInput accepts mixed pasted detail and list URLs', () => {
   const urls = extractCtripUrlsFromInput({
@@ -318,4 +336,116 @@ test('expandCtripHotelInputs merges Ctrip URL filters before collecting list pag
   assert.doesNotMatch(decodedUrl, /17~3\*17\*3/);
   assert.match(decodedUrl, /17~6\*17\*6/);
   assert.match(decodedUrl, /23~10\*23\*10/);
+});
+
+test('collectListPageCandidates skips Edge fallback when HTML prefilter reaches target', async () => {
+  let fetchCount = 0;
+  let edgeCalled = false;
+  const result = await collectRawListPageCandidates(
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {},
+    {
+      desiredHotelCount: 1,
+      maxPages: 3
+    },
+    {
+      autoEdge: true,
+      fetchHtml: async () => {
+        fetchCount += 1;
+        return {
+          html: buildListHtml([{ id: '3001', name: 'HTML 第一家' }])
+        };
+      },
+      captureListHtmlPagesWithEdge: async () => {
+        edgeCalled = true;
+        return { pages: [], error: '' };
+      }
+    }
+  );
+
+  assert.equal(fetchCount, 1);
+  assert.equal(edgeCalled, false);
+  assert.equal(result.edgeFallbackUsed, false);
+  assert.equal(result.selected.length, 1);
+  assert.equal(result.performance.htmlPages.length, 1);
+});
+
+test('collectListPageCandidates Edge fallback parses pages incrementally and stops at target', async () => {
+  const processedEdgeUrls = [];
+  const result = await collectRawListPageCandidates(
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {},
+    {
+      desiredHotelCount: 1,
+      maxPages: 3
+    },
+    {
+      autoEdge: true,
+      fetchHtml: async () => ({ html: buildListHtml([]) }),
+      captureListHtmlPagesWithEdge: async (urls, _edgeSession, options = {}) => {
+        const pages = [];
+        for (const url of urls) {
+          processedEdgeUrls.push(url);
+          const page = {
+            url,
+            html: buildListHtml([{ id: `400${processedEdgeUrls.length}`, name: `Edge 第 ${processedEdgeUrls.length} 家` }]),
+            source: 'edge-cdp',
+            durationMs: 1
+          };
+          pages.push(page);
+          const shouldContinue = await options.onPage(page);
+          if (shouldContinue === false) {
+            break;
+          }
+        }
+        return { pages, error: '' };
+      }
+    }
+  );
+
+  assert.equal(processedEdgeUrls.length, 1);
+  assert.equal(result.edgeFallbackUsed, true);
+  assert.equal(result.selected.length, 1);
+  assert.equal(result.pages.filter((page) => page.source === 'edge-cdp').length, 1);
+  assert.equal(result.performance.edgePages.length, 1);
+});
+
+test('collectListPageCandidates preserves page order when Edge fills an earlier HTML-empty page', async () => {
+  let htmlFetchIndex = 0;
+  const result = await collectRawListPageCandidates(
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {},
+    {
+      desiredHotelCount: 2,
+      maxPages: 2
+    },
+    {
+      autoEdge: true,
+      fetchHtml: async () => {
+        htmlFetchIndex += 1;
+        return {
+          html: htmlFetchIndex === 1
+            ? buildListHtml([])
+            : buildListHtml([{ id: '5002', name: 'HTML 第二页' }])
+        };
+      },
+      captureListHtmlPagesWithEdge: async (urls, _edgeSession, options = {}) => {
+        const pages = [];
+        for (const url of urls) {
+          const page = {
+            url,
+            html: buildListHtml([{ id: '5001', name: 'Edge 第一页' }]),
+            source: 'edge-cdp',
+            durationMs: 1
+          };
+          pages.push(page);
+          await options.onPage(page);
+        }
+        return { pages, error: '' };
+      }
+    }
+  );
+
+  assert.deepEqual(result.selected.map((candidate) => candidate.hotelId), ['5001', '5002']);
+  assert.ok(result.selected[0].sourceOrder < result.selected[1].sourceOrder);
 });

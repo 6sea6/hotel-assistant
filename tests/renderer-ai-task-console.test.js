@@ -86,6 +86,8 @@ function installAiAssistantDom(inputUrl = '') {
   const elements = new Map();
   [
     'aiHotelUrlInput',
+    'aiTemplateSelect',
+    'amapApiKeyInput',
     'aiInputCount',
     'aiCtripPriceMin',
     'aiCtripPriceMax',
@@ -105,6 +107,7 @@ function installAiAssistantDom(inputUrl = '') {
     setAttribute() {}
   }));
   const setCalls = [];
+  const notifications = [];
 
   global.document = {
     getElementById(id) {
@@ -117,12 +120,17 @@ function installAiAssistantDom(inputUrl = '') {
       return createFakeElement();
     },
     body: {
-      appendChild() {}
+      appendChild(element) {
+        notifications.push(element);
+      }
     }
   };
   global.window = {
-    setTimeout,
-    clearTimeout,
+    setTimeout(callback) {
+      queueMicrotask(callback);
+      return 1;
+    },
+    clearTimeout() {},
     electronAPI: {
       setSetting: async (key, value) => {
         setCalls.push([key, value]);
@@ -137,7 +145,8 @@ function installAiAssistantDom(inputUrl = '') {
 
   return {
     elements,
-    setCalls
+    setCalls,
+    notifications
   };
 }
 
@@ -237,8 +246,8 @@ test('normalizeTaskState keeps batch result display compatible with old fields',
   });
 
   assert.equal(taskState.status, 'success');
-  assert.equal(taskState.result.hotelName, '批量 3 家');
-  assert.equal(taskState.result.actualResultText, '批量 3 家');
+  assert.equal(taskState.result.hotelName, '批量 3 家，本次最终写入 2 家宾馆，4 种房型');
+  assert.equal(taskState.result.actualResultText, '批量 3 家，本次最终写入 2 家宾馆，4 种房型');
   assert.equal(taskState.result.isBatchResult, true);
   assert.equal(taskState.canReview, false);
   assert.doesNotMatch(taskState.result.actualResultText, /第一家酒店/);
@@ -297,7 +306,35 @@ test('normalizeTaskState keeps AI review available for single hotel results only
   });
 
   assert.equal(singleTaskState.canReview, true);
+  assert.equal(singleTaskState.result.actualResultText, '测试酒店，可用房型 1 个');
+  assert.doesNotMatch(singleTaskState.result.actualResultText, /价格|总价|¥|300/);
   assert.equal(batchTaskState.canReview, false);
+});
+
+test('normalizeTaskState renders cancelled tasks as cancelled instead of failed', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const taskState = normalizeTaskState({
+    task: {
+      submitted: true,
+      taskId: 'cancel-task-1',
+      templateLabel: '武汉模板',
+      startedAt: '2026-06-01T10:00:00.000Z',
+      endedAt: '2026-06-01T10:00:05.000Z',
+      cancelled: true,
+      error: '任务已取消'
+    },
+    events: [{
+      type: 'task:cancel',
+      message: '任务已取消',
+      at: '2026-06-01T10:00:05.000Z'
+    }],
+    inProgress: false
+  });
+
+  assert.equal(taskState.status, 'cancelled');
+  assert.equal(taskState.error.message, '任务已取消');
+  assert.deepEqual(taskState.error.suggestions, ['当前采集已中止，本次取消会撤销已经写回的数据。']);
+  assert.ok(taskState.steps.some((step) => step.key === 'cancel' && step.title === '任务已取消'));
 });
 
 test('normalizeTaskState derives running batch progress stats from events', async () => {
@@ -435,6 +472,97 @@ test('active-only Ctrip URL sync preserves pasted known filters when app setting
   assert.ok(parsed.listFilterParts.includes('17~6*17*6'));
 });
 
+test('cancelled collection only shows one cancellation notification', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const { elements, notifications } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let rejectStartTask = null;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async () => new Promise((_resolve, reject) => {
+    rejectStartTask = reject;
+  });
+  global.window.electronAPI.ai.cancelTask = async () => ({ success: true });
+
+  await module.enqueueAiCollectTask();
+  await module.cancelAiTask();
+  rejectStartTask(new Error('任务已取消'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const cancelNotifications = notifications.filter((item) => item.textContent === '采集任务已取消');
+  assert.equal(cancelNotifications.length, 1);
+  assert.equal(state.aiTaskQueue[0].status, 'cancelled');
+});
+
+test('AI collect task payload includes saved AMap API key', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {
+    amapApiKey: 'amap-custom-key'
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.amapKey, 'amap-custom-key');
+});
+
 test('list prefilter controls live in a dedicated assistant modal', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const startBarMatch = html.match(/<section class="task-start-card"[\s\S]*?<\/section>/);
@@ -450,6 +578,9 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.doesNotMatch(startBarHtml, /aiListDesiredHotelCount/);
   assert.doesNotMatch(settingsHtml, /列表页前筛/);
   assert.doesNotMatch(settingsHtml, /aiCtripPriceMin/);
+  assert.match(settingsHtml, /amapApiKeyInput/);
+  assert.match(settingsHtml, /高德 API Key/);
+  assert.match(settingsHtml, /save-amap-api-key/);
   assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
   assert.match(currentTaskHeaderHtml, /前筛设置/);
   assert.match(prefilterHtml, /列表页前筛/);
@@ -479,4 +610,14 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.doesNotMatch(prefilterHtml, /URL 预览/);
   assert.doesNotMatch(prefilterHtml, /复制 URL/);
   assert.doesNotMatch(startBarHtml, /可一次粘贴多个/);
+});
+
+test('settings modal loads AI interface config through module wiring', () => {
+  const settingsUiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'modules', 'settings-ui.js'), 'utf8');
+  const appModuleSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'app.module.js'), 'utf8');
+
+  assert.match(settingsUiSource, /export function setAiConfigLoader/);
+  assert.match(settingsUiSource, /await loadAiInterfaceSettings\(\)/);
+  assert.match(appModuleSource, /setAiConfigLoader,\s*changeTheme/);
+  assert.match(appModuleSource, /setAiConfigLoader\(loadAiConfig\)/);
 });

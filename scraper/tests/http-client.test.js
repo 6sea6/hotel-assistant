@@ -90,6 +90,32 @@ test('get preserves axios response headers for cookie-sensitive Ctrip callers', 
   }
 });
 
+test('get reuses keep-alive sockets for sequential calls to the same host', async () => {
+  const remotePorts = [];
+  const server = http.createServer((req, res) => {
+    remotePorts.push(req.socket.remotePort);
+    res.setHeader('Connection', 'keep-alive');
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  });
+
+  const port = await listen(server);
+  try {
+    await get(`http://127.0.0.1:${port}/one`, {
+      timeoutMs: 1000,
+      retries: 0
+    });
+    await get(`http://127.0.0.1:${port}/two`, {
+      timeoutMs: 1000,
+      retries: 0
+    });
+
+    assert.equal(new Set(remotePorts).size, 1);
+  } finally {
+    await close(server);
+  }
+});
+
 test('get reports timeout failures with a unified error object', async () => {
   const server = http.createServer((_req, res) => {
     setTimeout(() => {

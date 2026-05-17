@@ -280,6 +280,7 @@ test('MiMo error messages explain TokenPlan authentication and parameter failure
 test('AI settings sanitizer removes API key from settings-shaped objects', () => {
   const sanitized = sanitizeSettings({
     theme: 'totoro-blue',
+    amapApiKey: 'amap-secret',
     ai_provider_config: {
       provider: 'openai',
       apiKey: 'secret'
@@ -288,6 +289,7 @@ test('AI settings sanitizer removes API key from settings-shaped objects', () =>
 
   assert.equal(sanitized.ai_provider_config.apiKey, '');
   assert.equal(sanitized.ai_provider_config.hasApiKey, true);
+  assert.equal(sanitized.amapApiKey, '[REDACTED]');
 });
 
 test('AI fallback system prompt is compact and ignores legacy guide text', () => {
@@ -550,6 +552,7 @@ test('direct AI task start runs the hotel task runner without provider config', 
     desiredHotelCount: 5,
     excludeHotelTypes: ['民宿'],
     maxPages: 2,
+    amapKey: 'custom-amap-key',
     listUrlFilters: {
       priceMin: 50,
       priceMax: 200,
@@ -566,6 +569,7 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(calls[0].input.desiredHotelCount, 5);
   assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
   assert.equal(calls[0].input.maxPages, 2);
+  assert.equal(calls[0].input.amapKey, 'custom-amap-key');
   assert.deepEqual(calls[0].input.listUrlFilters, {
     priceMin: 50,
     priceMax: 200,
@@ -580,6 +584,60 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(result.collectResult.totalPrice, 300);
   assert.equal(result.toolResults[0].name, 'collect_and_write_ctrip_hotel');
   assert.ok(events.some((event) => event.channel === 'ai:task:event' && event.payload.type === 'task:done'));
+});
+
+test('direct AI task cancellation emits cancel status instead of task error', async () => {
+  const events = [];
+  let capturedContext = null;
+  const service = createAiService({
+    dataService: {
+      getDataFolderPath() {
+        return 'E:/实验/1/宾馆比较助手';
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return {
+          isDestroyed: () => false,
+          webContents: {
+            send(channel, payload) {
+              events.push({ channel, payload });
+            }
+          }
+        };
+      }
+    },
+    hotelTaskRunner: async (_input, context) => {
+      capturedContext = context;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (context.signal.aborted) {
+        throw new Error('任务已取消');
+      }
+      return {
+        success: true,
+        hotelName: '不应完成',
+        eligibleCount: 1,
+        writeResult: { operation: 'inserted' }
+      };
+    }
+  });
+
+  const taskPromise = service.startTask({
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+    templateName: '武汉'
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const cancelResult = service.cancelTask();
+  assert.equal(cancelResult.success, true);
+  assert.equal(capturedContext.signal.aborted, true);
+  await assert.rejects(taskPromise, /任务已取消/);
+
+  const status = service.getTaskStatus();
+  assert.equal(status.status, 'cancelled');
+  assert.equal(status.error, '任务已取消');
+  assert.ok(events.some((event) => event.payload.type === 'task:cancel'));
+  assert.equal(events.some((event) => event.payload.type === 'task:error'), false);
 });
 
 test('AI collect analysis uses task review_input and disables apply on invalid evidence', async (t) => {
