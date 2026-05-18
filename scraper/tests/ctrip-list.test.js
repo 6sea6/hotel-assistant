@@ -14,6 +14,7 @@ const {
 } = require('../src/scraper/list-page-parser');
 const { expandCtripHotelInputs, normalizeListFiltersFromArgs } = require('../src/ctrip-list');
 const {
+  buildListPageUrls,
   collectListPageCandidates: collectRawListPageCandidates
 } = require('../src/scraper/list-page-collector');
 
@@ -213,14 +214,13 @@ test('list page filters support defaults, desired count and max candidates per p
   const filters = normalizeListPageFilterOptions({
     minScore: '4.6',
     desiredHotelCount: '2',
-    maxPages: '3',
     maxCandidatesPerPage: '5'
   });
 
   assert.equal(filters.minScore, undefined);
   assert.equal(filters.desiredHotelCount, 2);
   assert.equal(filters.targetCount, 2);
-  assert.equal(filters.maxPages, 3);
+  assert.equal(filters.maxPages, undefined);
   assert.equal(filters.maxCandidatesPerPage, 5);
   assert.ok(filters.excludeHotelTypes.includes('民宿'));
   assert.ok(filters.excludeHotelTypes.includes('客栈'));
@@ -231,8 +231,7 @@ test('list page filters support defaults, desired count and max candidates per p
 test('normalizeListFiltersFromArgs supports CLI aliases', () => {
   const filters = normalizeListFiltersFromArgs({
     'exclude-accommodation-keywords': '民宿,公寓',
-    'target-count': '3',
-    'max-pages': '2'
+    'target-count': '3'
   });
 
   assert.equal(filters.minScore, undefined);
@@ -240,7 +239,7 @@ test('normalizeListFiltersFromArgs supports CLI aliases', () => {
   assert.equal(filters.excludeNameKeywords, undefined);
   assert.equal(filters.desiredHotelCount, 3);
   assert.equal(filters.targetCount, 3);
-  assert.equal(filters.maxPages, 2);
+  assert.equal(filters.maxPages, undefined);
 });
 
 test('expandCtripHotelInputs expands list URLs to ordered detail URLs', async () => {
@@ -255,8 +254,7 @@ test('expandCtripHotelInputs expands list URLs to ordered detail URLs', async ()
       room_count: 2
     },
     {
-      desiredHotelCount: 2,
-      maxPages: 1
+      desiredHotelCount: 2
     },
     {
       collectListPageCandidates: async (url, template, filters) => {
@@ -335,8 +333,7 @@ test('expandCtripHotelInputs merges Ctrip URL filters before collecting list pag
       room_count: 2
     },
     {
-      desiredHotelCount: 1,
-      maxPages: 1
+      desiredHotelCount: 1
     },
     {
       collectListPageCandidates: async (url, template, filters) => {
@@ -385,8 +382,7 @@ test('collectListPageCandidates skips Edge fallback when HTML prefilter reaches 
     'https://hotels.ctrip.com/hotels/list?city=2',
     {},
     {
-      desiredHotelCount: 1,
-      maxPages: 3
+      desiredHotelCount: 1
     },
     {
       autoEdge: true,
@@ -417,8 +413,7 @@ test('collectListPageCandidates uses Edge fallback when HTML pages stall below t
     'https://hotels.ctrip.com/hotels/list?city=2',
     {},
     {
-      desiredHotelCount: 2,
-      maxPages: 5
+      desiredHotelCount: 2
     },
     {
       autoEdge: true,
@@ -438,7 +433,8 @@ test('collectListPageCandidates uses Edge fallback when HTML pages stall below t
             { id: '6002', name: 'Edge 新增酒店' }
           ]),
           source: 'edge-cdp',
-          durationMs: 1
+          durationMs: 1,
+          scrollRound: 1
         };
         await options.onPage(page);
         return { pages: [page], error: '' };
@@ -447,13 +443,12 @@ test('collectListPageCandidates uses Edge fallback when HTML pages stall below t
   );
 
   assert.equal(edgeCalled, true);
-  assert.ok(fetchCount < 5);
+  assert.equal(fetchCount, 1);
   assert.equal(result.edgeFallbackUsed, true);
   assert.deepEqual(
     result.selected.map((candidate) => candidate.hotelId),
     ['6001', '6002']
   );
-  assert.equal(result.performance.htmlStoppedReason, 'stalled_unique_candidates');
 });
 
 test('collectListPageCandidates Edge fallback parses pages incrementally and stops at target', async () => {
@@ -462,8 +457,7 @@ test('collectListPageCandidates Edge fallback parses pages incrementally and sto
     'https://hotels.ctrip.com/hotels/list?city=2',
     {},
     {
-      desiredHotelCount: 1,
-      maxPages: 3
+      desiredHotelCount: 1
     },
     {
       autoEdge: true,
@@ -481,7 +475,8 @@ test('collectListPageCandidates Edge fallback parses pages incrementally and sto
               }
             ]),
             source: 'edge-cdp',
-            durationMs: 1
+            durationMs: 1,
+            scrollRound: 1
           };
           pages.push(page);
           const shouldContinue = await options.onPage(page);
@@ -501,46 +496,91 @@ test('collectListPageCandidates Edge fallback parses pages incrementally and sto
   assert.equal(result.performance.edgePages.length, 1);
 });
 
-test('collectListPageCandidates preserves page order when Edge fills an earlier HTML-empty page', async () => {
-  let htmlFetchIndex = 0;
+test('collectListPageCandidates Edge fallback accepts multiple scroll snapshots from same URL', async () => {
   const result = await collectRawListPageCandidates(
     'https://hotels.ctrip.com/hotels/list?city=2',
     {},
     {
-      desiredHotelCount: 2,
-      maxPages: 2
+      desiredHotelCount: 3
     },
     {
       autoEdge: true,
-      fetchHtml: async () => {
-        htmlFetchIndex += 1;
-        return {
-          html:
-            htmlFetchIndex === 1
-              ? buildListHtml([])
-              : buildListHtml([{ id: '5002', name: 'HTML 第二页' }])
-        };
-      },
+      fetchHtml: async () => ({ html: buildListHtml([]) }),
       captureListHtmlPagesWithEdge: async (urls, _edgeSession, options = {}) => {
+        assert.deepEqual(urls, ['https://hotels.ctrip.com/hotels/list?city=2']);
+        const snapshots = [
+          { id: '6001', name: 'Edge 滚动第1轮' },
+          { id: '6001', name: 'Edge 滚动第1轮' },
+          { id: '6002', name: 'Edge 滚动第2轮' },
+          { id: '6003', name: 'Edge 滚动第3轮' }
+        ];
         const pages = [];
-        for (const url of urls) {
+        for (let i = 0; i < snapshots.length; i += 1) {
           const page = {
-            url,
-            html: buildListHtml([{ id: '5001', name: 'Edge 第一页' }]),
+            url: urls[0],
+            html: buildListHtml([snapshots[i]]),
             source: 'edge-cdp',
-            durationMs: 1
+            durationMs: 1,
+            scrollRound: i + 1
           };
           pages.push(page);
-          await options.onPage(page);
+          const shouldContinue = await options.onPage(page);
+          if (shouldContinue === false) {
+            break;
+          }
         }
         return { pages, error: '' };
       }
     }
   );
 
+  assert.equal(result.edgeFallbackUsed, true);
   assert.deepEqual(
     result.selected.map((candidate) => candidate.hotelId),
-    ['5001', '5002']
+    ['6001', '6002', '6003']
   );
-  assert.ok(result.selected[0].sourceOrder < result.selected[1].sourceOrder);
+  const edgePages = result.pages.filter((page) => page.source === 'edge-cdp');
+  assert.ok(edgePages.length > 0);
+  for (const page of edgePages) {
+    assert.equal(page.url, 'https://hotels.ctrip.com/hotels/list?city=2');
+    assert.doesNotMatch(page.url, /pageIndex/);
+  }
+});
+
+test('collectListPageCandidates does not fetch pageIndex URLs', async () => {
+  const fetchedUrls = [];
+  const result = await collectRawListPageCandidates(
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {},
+    {
+      desiredHotelCount: 20
+    },
+    {
+      fetchHtml: async (url) => {
+        fetchedUrls.push(url);
+        return {
+          html: buildListHtml([{ id: '1001', name: 'HTML 第一家' }])
+        };
+      }
+    }
+  );
+
+  assert.equal(fetchedUrls.length, 1);
+  assert.equal(fetchedUrls[0], 'https://hotels.ctrip.com/hotels/list?city=2');
+  assert.doesNotMatch(fetchedUrls[0], /pageIndex/);
+  assert.deepEqual(result.pageUrls, ['https://hotels.ctrip.com/hotels/list?city=2']);
+  assert.equal(result.selected.length, 1);
+});
+
+test('buildListPageUrls returns only the original URL', () => {
+  const { buildListPageUrls } = require('../src/scraper/list-page-collector');
+  const urls = buildListPageUrls('https://hotels.ctrip.com/hotels/list?city=2');
+  assert.deepEqual(urls, ['https://hotels.ctrip.com/hotels/list?city=2']);
+});
+
+test('buildListPageUrls returns empty array for falsy input', () => {
+  const { buildListPageUrls } = require('../src/scraper/list-page-collector');
+  assert.deepEqual(buildListPageUrls(''), []);
+  assert.deepEqual(buildListPageUrls(null), []);
+  assert.deepEqual(buildListPageUrls(undefined), []);
 });

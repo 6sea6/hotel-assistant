@@ -85,7 +85,7 @@ test('runHotelImportTask reuses prepared context for batch detail items', async 
           performance: { totalMs: 2, listCollectMs: 0, lists: [] }
         }
       }),
-      normalizeListFiltersFromArgs: () => ({ desiredHotelCount: 2, maxPages: 1 })
+      normalizeListFiltersFromArgs: () => ({ desiredHotelCount: 2 })
     })
   );
   mockedPaths.push(

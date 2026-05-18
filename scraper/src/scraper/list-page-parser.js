@@ -7,7 +7,6 @@ const { parseHotelIdFromUrl } = require('../ctrip-url');
 
 const DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS = Object.freeze(['民宿', '客栈', '青年旅舍', '公寓']);
 const DEFAULT_DESIRED_HOTEL_COUNT = 10;
-const DEFAULT_MAX_PAGES = 3;
 const DEFAULT_MAX_CANDIDATES_PER_PAGE = 80;
 
 function normalizeKeywordList(value) {
@@ -68,10 +67,6 @@ function normalizeListPageFilterOptions(options = {}) {
       options['max-hotels'],
     DEFAULT_DESIRED_HOTEL_COUNT
   );
-  const maxPages = normalizePositiveInteger(
-    options.maxPages ?? options.pageLimit ?? options['max-pages'] ?? options['page-limit'],
-    DEFAULT_MAX_PAGES
-  );
   const maxCandidatesPerPage = normalizePositiveInteger(
     options.maxCandidatesPerPage ?? options['max-candidates-per-page'],
     DEFAULT_MAX_CANDIDATES_PER_PAGE
@@ -103,7 +98,6 @@ function normalizeListPageFilterOptions(options = {}) {
     excludeHotelTypes,
     desiredHotelCount,
     targetCount: desiredHotelCount,
-    maxPages,
     maxCandidatesPerPage,
     excludeAccommodationKeywords: excludeHotelTypes
   };

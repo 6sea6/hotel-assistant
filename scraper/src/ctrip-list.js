@@ -1,6 +1,5 @@
 const {
   buildDesktopUrl,
-  buildListPageUrl,
   buildUrlOverridesFromTemplate,
   classifyCtripHotelUrl,
   extractCtripUrlsFromInput,
@@ -49,7 +48,7 @@ function getEdgeWebSocket() {
   }
 }
 
-async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = {}) {
+async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = {}, options = {}) {
   if (process.platform !== 'win32' || typeof fetch !== 'function') {
     return {
       pages: [],
@@ -153,6 +152,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     await connection.send('Page.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
     const pages = [];
+    const maxScrollRounds = options.maxScrollRounds || 20;
+    const stableRoundLimit = options.stableRoundLimit || 3;
 
     for (const url of pageUrls) {
       const loadEvent = new Promise((resolve) => {
@@ -177,26 +178,92 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         250
       );
 
-      const html = await evaluateInSession(
-        connection,
-        sessionId,
-        `(async () => {
-        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        for (let index = 0; index < 4; index += 1) {
-          window.scrollTo(0, Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
-          await sleep(350);
-        }
-        window.scrollTo(0, 0);
-        await sleep(150);
-        return document.documentElement ? document.documentElement.outerHTML : '';
-      })()`
-      );
+      let previousHeight = 0;
+      let previousCount = -1;
+      let stableRounds = 0;
 
-      pages.push({
-        url,
-        html: String(html || ''),
-        source: 'edge-cdp'
-      });
+      for (let round = 0; round < maxScrollRounds; round += 1) {
+        const scrollResult = await evaluateInSession(
+          connection,
+          sessionId,
+          `(async () => {
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const getHeight = () => Math.max(
+            document.body ? document.body.scrollHeight : 0,
+            document.documentElement ? document.documentElement.scrollHeight : 0,
+            window.innerHeight || 0
+          );
+          const getCandidateCount = () => {
+            try {
+              return document.querySelectorAll([
+                'a[href*="/hotels/"]',
+                'a[href*="hotelId="]',
+                '[data-hotelid]',
+                '[data-hotel-id]',
+                '[data-offline-hotelid]',
+                '[data-offline-hotelId]',
+                '[class*="hotel"]',
+                '[class*="Hotel"]'
+              ].join(',')).length;
+            } catch (_error) {
+              return 0;
+            }
+          };
+          const height = getHeight();
+          window.scrollTo(0, height);
+          await sleep(400);
+          const nextHeight = getHeight();
+          const nextCount = getCandidateCount();
+          const html = document.documentElement ? document.documentElement.outerHTML : '';
+          return JSON.stringify({ scrollHeight: nextHeight, candidateCount: nextCount, html });
+        })()`
+        );
+
+        let parsed;
+        try {
+          parsed = JSON.parse(String(scrollResult || '{}'));
+        } catch (_error) {
+          parsed = { scrollHeight: 0, candidateCount: 0, html: '' };
+        }
+
+        const pageRecord = {
+          url,
+          html: String(parsed.html || ''),
+          source: 'edge-cdp',
+          scrollRound: round + 1,
+          scrollHeight: Number(parsed.scrollHeight) || 0,
+          candidateDomCount: Number(parsed.candidateCount) || 0
+        };
+        pages.push(pageRecord);
+
+        if (typeof options.onPage === 'function') {
+          const shouldContinue = await options.onPage(pageRecord);
+          if (shouldContinue === false || (shouldContinue && shouldContinue.stop)) {
+            break;
+          }
+        }
+
+        if (typeof options.shouldStop === 'function' && options.shouldStop()) {
+          break;
+        }
+
+        const currentHeight = Number(parsed.scrollHeight) || 0;
+        const currentCount = Number(parsed.candidateCount) || 0;
+        if (
+          Math.abs(currentHeight - previousHeight) <= 24 &&
+          currentCount === previousCount &&
+          currentCount > 0
+        ) {
+          stableRounds += 1;
+        } else {
+          stableRounds = 0;
+        }
+        previousHeight = currentHeight;
+        previousCount = currentCount;
+        if (stableRounds >= stableRoundLimit) {
+          break;
+        }
+      }
     }
 
     return {
@@ -232,9 +299,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   }
 }
 
-function buildListPageUrls(listUrl, maxPages) {
-  const pageCount = Math.max(1, Math.trunc(Number(maxPages) || 1));
-  return Array.from({ length: pageCount }, (_, index) => buildListPageUrl(listUrl, index + 1));
+function buildListPageUrls(listUrl) {
+  return [listUrl].filter(Boolean);
 }
 
 function durationSince(startedAt) {
@@ -436,7 +502,6 @@ function normalizeListFiltersFromArgs(args = {}) {
       args.limit ??
       listFilters.desiredHotelCount ??
       listFilters.targetCount,
-    maxPages: args.maxPages ?? args['max-pages'] ?? args.pageLimit ?? listFilters.maxPages,
     maxCandidatesPerPage:
       args.maxCandidatesPerPage ??
       args['max-candidates-per-page'] ??
