@@ -224,9 +224,6 @@ function buildScraperArgs(input, workDir) {
   if (input.targetCount !== null && input.targetCount !== undefined && input.targetCount !== '') {
     args.targetCount = input.targetCount;
   }
-  if (input.maxPages !== null && input.maxPages !== undefined && input.maxPages !== '') {
-    args.maxPages = input.maxPages;
-  }
   if (
     input.maxCandidatesPerPage !== null &&
     input.maxCandidatesPerPage !== undefined &&

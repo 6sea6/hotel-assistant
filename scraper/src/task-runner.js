@@ -259,8 +259,7 @@ function buildBatchOutputPayload({
         results: expandedInputs.listResults
       },
       source_args: {
-        targetCount: args.targetCount ?? args['target-count'] ?? null,
-        maxPages: args.maxPages ?? args['max-pages'] ?? null
+        targetCount: args.targetCount ?? args['target-count'] ?? null
       },
       performance: performance || null
     }
