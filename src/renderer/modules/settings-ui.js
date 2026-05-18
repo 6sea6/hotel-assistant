@@ -197,8 +197,7 @@ const LIST_PREFILTER_SETTING_KEYS = new Set([
   'aiCtripReviewCountMin',
   'aiCtripScoreMin',
   'aiListDesiredHotelCount',
-  'aiListExcludeHotelTypes',
-  'aiListMaxPages'
+  'aiListExcludeHotelTypes'
 ]);
 
 const LIST_PREFILTER_DEFAULT_SETTINGS = Object.freeze({
@@ -210,8 +209,7 @@ const LIST_PREFILTER_DEFAULT_SETTINGS = Object.freeze({
   aiCtripReviewCountMin: '',
   aiCtripScoreMin: '',
   aiListDesiredHotelCount: 10,
-  aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
-  aiListMaxPages: 3
+  aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
 });
 
 function normalizeListPrefilterSettingValue(key, value) {
@@ -264,7 +262,7 @@ function normalizeListPrefilterSettingValue(key, value) {
     return [4, 4.5, 4.7].includes(number) ? number : '';
   }
 
-  if (key === 'aiListDesiredHotelCount' || key === 'aiListMaxPages') {
+  if (key === 'aiListDesiredHotelCount') {
     const number = Number(String(value || '').trim());
     return Number.isFinite(number) && number > 0 ? Math.trunc(number) : '';
   }
@@ -336,8 +334,7 @@ function readListPrefilterFormValues() {
     aiListExcludeHotelTypes: normalizeListPrefilterSettingValue(
       'aiListExcludeHotelTypes',
       $('aiListExcludeHotelTypes')?.value
-    ),
-    aiListMaxPages: normalizeListPrefilterSettingValue('aiListMaxPages', $('aiListMaxPages')?.value)
+    )
   };
 }
 

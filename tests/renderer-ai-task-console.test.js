@@ -448,8 +448,7 @@ test('Ctrip list URL reverse sync does not clear saved filters for unknown nativ
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
     aiListDesiredHotelCount: 10,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
-    aiListMaxPages: 3
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
   };
 
   await module.syncCtripListUrlSettingsFromInput();
@@ -475,8 +474,7 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
     aiListDesiredHotelCount: 10,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
-    aiListMaxPages: 3
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
   };
 
   const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true });
@@ -507,8 +505,7 @@ test('active-only Ctrip URL sync preserves pasted known filters when app setting
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
     aiListDesiredHotelCount: 10,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
-    aiListMaxPages: 3
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
   };
 
   await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
@@ -843,7 +840,7 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.doesNotMatch(prefilterHtml, /本地最低评分/);
   assert.doesNotMatch(prefilterHtml, /本地排除关键词/);
   assert.match(prefilterHtml, /aiListExcludeHotelTypes/);
-  assert.match(prefilterHtml, /aiListMaxPages/);
+  assert.doesNotMatch(prefilterHtml, /aiListMaxPages/);
   assert.doesNotMatch(prefilterHtml, /URL 预览/);
   assert.doesNotMatch(prefilterHtml, /复制 URL/);
   assert.doesNotMatch(startBarHtml, /可一次粘贴多个/);

@@ -329,7 +329,7 @@ test('AI collect tool schema documents list and detail URL inputs', () => {
   assert.equal(properties.minScore, undefined);
   assert.equal(properties.excludeKeywords, undefined);
   assert.ok(properties.excludeHotelTypes);
-  assert.ok(properties.maxPages);
+  assert.equal(properties.maxPages, undefined);
 });
 
 test('AI IPC registers direct task start endpoint', () => {
@@ -578,7 +578,6 @@ test('direct AI task start runs the hotel task runner without provider config', 
     templateName: '武汉',
     desiredHotelCount: 5,
     excludeHotelTypes: ['民宿'],
-    maxPages: 2,
     amapKey: 'custom-amap-key',
     listUrlFilters: {
       priceMin: 50,
@@ -595,7 +594,6 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(calls[0].input.templateName, '武汉');
   assert.equal(calls[0].input.desiredHotelCount, 5);
   assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
-  assert.equal(calls[0].input.maxPages, 2);
   assert.equal(calls[0].input.amapKey, 'custom-amap-key');
   assert.deepEqual(calls[0].input.listUrlFilters, {
     priceMin: 50,

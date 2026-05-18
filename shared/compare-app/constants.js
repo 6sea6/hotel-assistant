@@ -8,7 +8,6 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   includeFourPersonRoomsForThreePersonTemplate: false,
   aiListDesiredHotelCount: 10,
   aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
-  aiListMaxPages: 3,
   aiCtripPriceMin: '',
   aiCtripPriceMax: '',
   aiCtripStarLevels: [],

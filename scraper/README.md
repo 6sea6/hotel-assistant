@@ -11,7 +11,7 @@
 ## 能力范围
 
 - 读取携程酒店详情页链接、酒店列表页链接，或混合粘贴文本中的多个携程 URL
-- 列表页先做前筛，再逐个进入详情页复用原采集链路；携程 URL 前筛支持价格、星级、排序、免费取消、点评数、评分档位；本地前筛支持排除住宿类型关键词、目标采集数量、最多扫描页数
+- 列表页先做前筛，再逐个进入详情页复用原采集链路；携程 URL 前筛支持价格、星级、排序、免费取消、点评数、评分档位；本地前筛支持排除住宿类型关键词、目标采集数量
 - 自动提取酒店名、地址、携程评分、候选房型
 - 输出**所有**符合条件的房型（有价格、人数达标），而非仅最优
 - 调用高德开放平台计算酒店到目的地的公共交通距离、时间、最近地铁站距离和推荐换乘路线；若模板中的 destination 为空，则只查询酒店附近地铁站，不计算到目的地的距离与路线
@@ -63,10 +63,10 @@ node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateN
 
 列表页本地前筛参数：
 
-已识别的携程前筛包括价格、星级、排序、免费取消、点评数和评分档位；未识别的 `listFilters` 片段会原样保留，避免破坏携程页面上的品牌、商圈、行政区等筛选。应用内本地过滤只保留目标采集数量、排除住宿类型关键词和最多扫描页数；房型、价格、取消规则、窗户和人数规则仍在详情页阶段复核。
+已识别的携程前筛包括价格、星级、排序、免费取消、点评数和评分档位；未识别的 `listFilters` 片段会原样保留，避免破坏携程页面上的品牌、商圈、行政区等筛选。应用内本地过滤只保留目标采集数量和排除住宿类型关键词；房型、价格、取消规则、窗户和人数规则仍在详情页阶段复核。
 
 ```bash
-node src/cli.js --url "携程列表页链接" --templateName 模板名 --exclude-accommodation-keywords "民宿,公寓,青旅" --targetCount 5 --maxPages 2 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
+node src/cli.js --url "携程列表页链接" --templateName 模板名 --exclude-accommodation-keywords "民宿,公寓,青旅" --targetCount 5 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
 携程 URL 原生前筛可以通过用户粘贴的列表页 URL 保留，也可以由应用内“前筛设置”写入。CLI 调试时可用以下参数覆盖或追加携程 `listFilters`：
@@ -152,7 +152,6 @@ node src/cli.js --url "携程链接" --templateName bw \
   --auto-edge               # 可选：后台隐藏启动 Edge，采集完成后自动关闭
   --exclude-accommodation-keywords "民宿,公寓"  # 列表页可选：排除住宿类型关键词
   --targetCount 5            # 列表页可选：目标采集数量
-  --maxPages 2               # 列表页可选：最多扫描页数，从当前列表页开始最多读取几页候选酒店
   --write-app-data           # 危险：跳过最终人工复核，直接写入比较助手
   --unsafe-allow-unreviewed-write  # 只有明确接受风险时才与 --write-app-data 配合使用
 ```

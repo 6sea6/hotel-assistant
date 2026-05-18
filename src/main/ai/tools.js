@@ -83,10 +83,6 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
                 type: 'integer',
                 description: '目标采集酒店数量，targetCount 的别名。'
               },
-              maxPages: {
-                type: 'integer',
-                description: '列表页最多扫描页数，从当前列表页开始最多读取几页候选酒店。'
-              },
               maxCandidatesPerPage: {
                 type: 'integer',
                 description: '每个列表页最多解析候选数，用于限制前筛成本。'
@@ -146,10 +142,6 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
             type: 'array',
             items: { type: 'string' },
             description: '可选，列表页排除住宿类型关键词；详情页输入会忽略。'
-          },
-          maxPages: {
-            type: 'integer',
-            description: '可选，列表页最多扫描页数；详情页输入会忽略。'
           }
         },
         additionalProperties: false

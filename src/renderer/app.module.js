@@ -336,8 +336,7 @@ function setupStaticFormListeners() {
     'aiCtripReviewCountMin',
     'aiCtripScoreMin',
     'aiListDesiredHotelCount',
-    'aiListExcludeHotelTypes',
-    'aiListMaxPages'
+    'aiListExcludeHotelTypes'
   ].forEach((id) =>
     addEvent(id, 'change', async (event) => {
       await saveAiListPrefilterSetting(event);

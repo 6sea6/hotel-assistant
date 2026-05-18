@@ -534,16 +534,11 @@ function readListFilterForm() {
     integer: true,
     min: 1
   });
-  const maxPages = parseOptionalNumber(settings.aiListMaxPages, {
-    integer: true,
-    min: 1
-  });
   const excludeHotelTypes = parseKeywordInput(settings.aiListExcludeHotelTypes);
   const listFilters = {};
 
   if (desiredHotelCount !== null) listFilters.desiredHotelCount = desiredHotelCount;
   if (excludeHotelTypes.length) listFilters.excludeHotelTypes = excludeHotelTypes;
-  if (maxPages !== null) listFilters.maxPages = maxPages;
 
   return listFilters;
 }
@@ -559,7 +554,6 @@ function buildTaskPayload(task) {
     listUrlFilters: task.listUrlFilters || readCtripUrlFilterSettings({ activeOnly: true }),
     desiredHotelCount: listFilters.desiredHotelCount,
     excludeHotelTypes: listFilters.excludeHotelTypes,
-    maxPages: listFilters.maxPages,
     amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
     priceMin: task.listUrlFilters ? task.listUrlFilters.priceMin : undefined,
     priceMax: task.listUrlFilters ? task.listUrlFilters.priceMax : undefined,
