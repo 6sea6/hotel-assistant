@@ -410,6 +410,52 @@ test('collectListPageCandidates skips Edge fallback when HTML prefilter reaches 
   assert.equal(result.performance.htmlPages.length, 1);
 });
 
+test('collectListPageCandidates uses Edge fallback when HTML pages stall below target', async () => {
+  let fetchCount = 0;
+  let edgeCalled = false;
+  const result = await collectRawListPageCandidates(
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {},
+    {
+      desiredHotelCount: 2,
+      maxPages: 5
+    },
+    {
+      autoEdge: true,
+      fetchHtml: async () => {
+        fetchCount += 1;
+        return {
+          html: buildListHtml([{ id: '6001', name: 'HTML 重复酒店' }])
+        };
+      },
+      captureListHtmlPagesWithEdge: async (urls, _edgeSession, options = {}) => {
+        edgeCalled = true;
+        assert.deepEqual(urls, ['https://hotels.ctrip.com/hotels/list?city=2']);
+        const page = {
+          url: urls[0],
+          html: buildListHtml([
+            { id: '6001', name: 'HTML 重复酒店' },
+            { id: '6002', name: 'Edge 新增酒店' }
+          ]),
+          source: 'edge-cdp',
+          durationMs: 1
+        };
+        await options.onPage(page);
+        return { pages: [page], error: '' };
+      }
+    }
+  );
+
+  assert.equal(edgeCalled, true);
+  assert.ok(fetchCount < 5);
+  assert.equal(result.edgeFallbackUsed, true);
+  assert.deepEqual(
+    result.selected.map((candidate) => candidate.hotelId),
+    ['6001', '6002']
+  );
+  assert.equal(result.performance.htmlStoppedReason, 'stalled_unique_candidates');
+});
+
 test('collectListPageCandidates Edge fallback parses pages incrementally and stops at target', async () => {
   const processedEdgeUrls = [];
   const result = await collectRawListPageCandidates(

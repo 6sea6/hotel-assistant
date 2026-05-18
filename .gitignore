@@ -26,6 +26,8 @@
 **/raw-pages/
 
 # Logs, temp files, and local verification caches
+logs/
+*.jsonl
 *.log
 *.tmp
 *.bak

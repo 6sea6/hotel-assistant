@@ -46,6 +46,41 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
     path.join('scraper', 'vendor', 'ws', 'package.json'),
     path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
   ]);
+  [
+    path.join('devtools'),
+    path.join('logs'),
+    path.join('scripts', 'analyze_perf.py'),
+    path.join('scraper', 'logs'),
+    path.join('scraper', 'tests'),
+    path.join('scraper', 'devtools'),
+    path.join('scraper', 'scripts', 'analyze_perf.py'),
+    path.join('scraper', 'src', 'devtools'),
+    path.join('scraper', 'src', 'runtime', 'perf_log.py')
+  ].forEach((relativePath) => {
+    assert.ok(manifest.expectations.neverResources.includes(relativePath));
+  });
+  assert.ok(
+    manifest.extraResources[0].filter.some((pattern) => pattern === '!**/*.jsonl'),
+    'full bundle resource filter excludes JSONL logs'
+  );
+});
+
+test('electron-builder config excludes development perf tooling and JSONL logs', () => {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+  );
+  const files = packageJson.build.files || [];
+
+  [
+    '!devtools/**/*',
+    '!logs/**/*',
+    '!scripts/analyze_perf.py',
+    '!**/*.jsonl',
+    '!**/collect_perf.jsonl',
+    '!**/perf_log.py'
+  ].forEach((pattern) => {
+    assert.ok(files.includes(pattern), `missing electron-builder exclude: ${pattern}`);
+  });
 });
 
 test('scraper dependency packages are declared only in the workspace package', () => {

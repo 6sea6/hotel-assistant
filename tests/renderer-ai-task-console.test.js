@@ -94,7 +94,10 @@ function installAiAssistantDom(inputUrl = '') {
     'aiCtripSortMode',
     'aiCtripReviewCountMin',
     'aiCtripScoreMin',
-    'aiCtripFreeCancel'
+    'aiCtripFreeCancel',
+    'aiCurrentTaskPanel',
+    'aiTaskQueuePanel',
+    'aiStartTaskBtn'
   ].forEach((id) => {
     elements.set(id, createFakeElement(id === 'aiHotelUrlInput' ? inputUrl : ''));
   });
@@ -137,6 +140,7 @@ function installAiAssistantDom(inputUrl = '') {
         return { success: true };
       },
       ai: {
+        getTaskStatus: async () => ({ running: false, status: 'idle', events: [] }),
         parseCtripListUrl: async (url) => parseCtripListUrl(url),
         buildCtripListUrl: async ({ baseUrl, settings }) => buildCtripListUrl(baseUrl, settings)
       }
@@ -556,6 +560,193 @@ test('cancelled collection only shows one cancellation notification', async () =
   const cancelNotifications = notifications.filter((item) => item.textContent === '采集任务已取消');
   assert.equal(cancelNotifications.length, 1);
   assert.equal(state.aiTaskQueue[0].status, 'cancelled');
+});
+
+test('clearing records after cancellation leaves the console idle without restarting task', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let startTaskCallCount = 0;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async () => {
+    startTaskCallCount += 1;
+    return new Promise(() => {});
+  };
+  global.window.electronAPI.ai.cancelTask = async () => ({ success: true });
+
+  await module.enqueueAiCollectTask();
+  await module.cancelAiTask();
+  module.clearAiTaskRecords();
+
+  assert.equal(startTaskCallCount, 1);
+  assert.equal(state.aiTaskQueue.length, 0);
+  assert.equal(state.aiSelectedQueueTaskId, '');
+  assert.match(elements.get('aiCurrentTaskPanel').innerHTML, /等待开始任务/);
+  assert.doesNotMatch(elements.get('aiCurrentTaskPanel').innerHTML, /正在采集/);
+});
+
+test('new task waits during backend shutdown and starts after cancelled task settles', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const nextUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=2002&checkIn=2026-06-01';
+  const { elements, notifications } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let startTaskCallCount = 0;
+  let rejectFirstTask = null;
+  let backendClosed = false;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async () => {
+    startTaskCallCount += 1;
+    if (startTaskCallCount === 1) {
+      return new Promise((_resolve, reject) => {
+        rejectFirstTask = reject;
+      });
+    }
+    if (!backendClosed) {
+      throw new Error('已有 AI 采集任务正在运行，请等待完成后再开始新任务。');
+    }
+    return new Promise(() => {});
+  };
+  global.window.electronAPI.ai.cancelTask = async () => ({ success: true });
+
+  await module.enqueueAiCollectTask();
+  await module.cancelAiTask();
+  module.clearAiTaskRecords();
+  elements.get('aiHotelUrlInput').value = nextUrl;
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(state.aiTaskQueue.length, 1);
+  assert.equal(state.aiTaskQueue[0].url, nextUrl);
+  assert.equal(state.aiTaskQueue[0].status, 'waiting');
+  assert.equal(
+    notifications.some((item) => /已有 AI 采集任务正在运行/.test(item.textContent || '')),
+    false
+  );
+  assert.doesNotMatch(elements.get('aiCurrentTaskPanel').innerHTML, /任务执行失败/);
+
+  backendClosed = true;
+  rejectFirstTask(new Error('任务已取消'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.ok(startTaskCallCount >= 3);
+  assert.equal(state.aiTaskQueue[0].status, 'running');
+  assert.match(elements.get('aiCurrentTaskPanel').innerHTML, /正在采集/);
+});
+
+test('waiting task does not flash running view while backend reports previous task running', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const nextUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=2002&checkIn=2026-06-01';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let startTaskCallCount = 0;
+  let rejectFirstTask = null;
+  let backendRunning = false;
+  let sawRunningViewDuringBackendBusyAttempt = false;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.getTaskStatus = async () => ({
+    running: backendRunning,
+    status: backendRunning ? 'running' : 'idle',
+    events: []
+  });
+  global.window.electronAPI.ai.startTask = async () => {
+    startTaskCallCount += 1;
+    if (startTaskCallCount > 1) {
+      sawRunningViewDuringBackendBusyAttempt =
+        sawRunningViewDuringBackendBusyAttempt ||
+        /正在采集/.test(elements.get('aiCurrentTaskPanel').innerHTML);
+    }
+    return new Promise((_resolve, reject) => {
+      if (!rejectFirstTask) rejectFirstTask = reject;
+    });
+  };
+  global.window.electronAPI.ai.cancelTask = async () => ({ success: true });
+
+  await module.enqueueAiCollectTask();
+  backendRunning = true;
+  await module.cancelAiTask();
+  module.clearAiTaskRecords();
+  elements.get('aiHotelUrlInput').value = nextUrl;
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(startTaskCallCount, 1);
+  assert.equal(state.aiTaskQueue.length, 1);
+  assert.equal(state.aiTaskQueue[0].status, 'waiting');
+  assert.equal(sawRunningViewDuringBackendBusyAttempt, false);
+  assert.doesNotMatch(elements.get('aiCurrentTaskPanel').innerHTML, /正在采集/);
+
+  backendRunning = false;
+  rejectFirstTask(new Error('任务已取消'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(startTaskCallCount, 2);
+  assert.equal(state.aiTaskQueue[0].status, 'running');
+  assert.match(elements.get('aiCurrentTaskPanel').innerHTML, /正在采集/);
 });
 
 test('AI collect task payload includes saved AMap API key', async () => {

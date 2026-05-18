@@ -1,7 +1,25 @@
+const { setup_perf_logger, PerfTimer } = require('./runtime/perf');
+
+const CLI_STARTED_AT_MS = Date.now();
+const cliPerfLogger = setup_perf_logger();
+const cliPerf = new PerfTimer(cliPerfLogger, {
+  runId: `cli-${CLI_STARTED_AT_MS}`,
+  taskId: `cli-${process.pid}`
+});
+cliPerf.event('script_start', {
+  phase: 'script_start',
+  status: 'success',
+  elapsed_ms: 0
+});
+
+const importPhase = cliPerf.phase('import_modules');
 const path = require('path');
 const { DEFAULT_LATEST_RUN_PATH } = require('./cli/run-summary');
 const { runHotelImportTask, writeFailureSummary } = require('./task-runner');
 const { parseArgs } = require('./utils');
+importPhase.end('success', {
+  elapsed_ms: Date.now() - CLI_STARTED_AT_MS
+});
 
 const CLI_ARGS = parseArgs(process.argv);
 const RUN_STARTED_AT = new Date().toISOString();
@@ -50,7 +68,10 @@ async function main() {
   }
 
   const result = await runHotelImportTask(CLI_ARGS, {
-    startedAt: RUN_STARTED_AT
+    startedAt: RUN_STARTED_AT,
+    perfLogger: cliPerfLogger,
+    runId: cliPerf.meta && cliPerf.meta.run_id,
+    scriptStartLogged: true
   });
   console.log(JSON.stringify(result, null, 2));
 }

@@ -20,6 +20,10 @@ import {
 } from './ai-task-console.js';
 
 const DEFAULT_AI_TEMPERATURE = 0.2;
+const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
+let activeCollectTaskId = '';
+let backendIdleRetryTimer = 0;
+let queueStartCheckInProgress = false;
 
 function setPageVisible(id, visible) {
   const el = $(id);
@@ -634,6 +638,56 @@ function getRunningQueueTask() {
   return (state.aiTaskQueue || []).find((task) => task.status === 'running') || null;
 }
 
+function markAiTaskInProgress(task) {
+  activeCollectTaskId = task && task.id ? String(task.id) : '';
+  state.aiTaskInProgress = true;
+}
+
+function clearAiTaskInProgressForTask(task) {
+  const taskId = task && task.id ? String(task.id) : '';
+  if (!activeCollectTaskId || activeCollectTaskId === taskId) {
+    activeCollectTaskId = '';
+    state.aiTaskInProgress = false;
+  }
+}
+
+function releaseStaleAiTaskInProgress() {
+  if (getRunningQueueTask()) return;
+  if (!state.aiTaskInProgress) return;
+
+  activeCollectTaskId = '';
+  state.aiTaskInProgress = false;
+}
+
+async function isBackendTaskRunning() {
+  if (!window.electronAPI?.ai?.getTaskStatus) {
+    return false;
+  }
+
+  try {
+    const status = await window.electronAPI.ai.getTaskStatus();
+    return Boolean(status && status.running);
+  } catch (error) {
+    console.warn('读取 AI 采集任务状态失败:', error);
+    return false;
+  }
+}
+
+function scheduleRunNextQueueTask(delayMs = 0) {
+  if (delayMs > 0) {
+    if (backendIdleRetryTimer) return;
+    backendIdleRetryTimer = globalThis.setTimeout(() => {
+      backendIdleRetryTimer = 0;
+      void runNextQueueTask();
+    }, delayMs);
+    return;
+  }
+
+  setTimeout(() => {
+    void runNextQueueTask();
+  }, 0);
+}
+
 function getSelectedQueueTask() {
   const selectedId = String(state.aiSelectedQueueTaskId || '');
   return (state.aiTaskQueue || []).find((task) => String(task.id) === selectedId) || null;
@@ -785,6 +839,29 @@ function isTaskCancellationError(error) {
   );
 }
 
+function isBackendBusyError(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  return /已有 AI 采集任务正在运行|正在运行，请等待完成后再开始新任务/.test(message);
+}
+
+function deferTaskUntilBackendIdle(queueTask = null) {
+  if (!queueTask) return;
+
+  queueTask.status = 'waiting';
+  queueTask.startedAt = '';
+  queueTask.finishedAt = '';
+  queueTask.backendTaskId = '';
+  queueTask.errorMessage = '';
+  queueTask.resultSummary = '等待上一个采集进程关闭';
+  queueTask.currentStep = '等待上一个采集进程关闭';
+  queueTask.events = [];
+  queueTask.console = createEmptyTaskConsole();
+  if (String(state.aiSelectedQueueTaskId) === String(queueTask.id)) {
+    syncDisplayedTask(queueTask);
+  }
+  scheduleRunNextQueueTask(BACKEND_BUSY_RETRY_DELAY_MS);
+}
+
 function showTaskCancellationNotificationOnce(queueTask = null) {
   if (queueTask) {
     if (queueTask.cancelNoticeShown) return;
@@ -873,8 +950,9 @@ function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
 }
 
 async function executeCollectTask(task) {
-  state.aiTaskInProgress = true;
+  markAiTaskInProgress(task);
   startTaskConsole(task.template, task.url, task);
+  let shouldRunNextImmediately = true;
 
   try {
     const result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
@@ -891,31 +969,48 @@ async function executeCollectTask(task) {
     if (isTaskCancellationError(error)) {
       cancelTaskConsole(task, '任务已取消');
       showTaskCancellationNotificationOnce(task);
+    } else if (isBackendBusyError(error)) {
+      deferTaskUntilBackendIdle(task);
+      shouldRunNextImmediately = false;
     } else {
       console.error('采集任务执行失败:', error);
       failTaskConsole(error, task);
       showNotification(error.message || '采集任务执行失败', 'error');
     }
   } finally {
-    state.aiTaskInProgress = false;
+    clearAiTaskInProgressForTask(task);
     if (String(state.aiSelectedQueueTaskId) === String(task.id)) {
       syncDisplayedTask(task);
     }
     renderTaskConsole();
-    setTimeout(() => {
-      runNextQueueTask();
-    }, 0);
+    if (shouldRunNextImmediately) {
+      scheduleRunNextQueueTask();
+    }
   }
 }
 
-function runNextQueueTask() {
-  if (state.aiTaskInProgress || getRunningQueueTask()) return;
-  const nextTask = (state.aiTaskQueue || []).find((task) => task.status === 'waiting');
-  if (!nextTask) {
-    renderTaskConsole();
-    return;
+async function runNextQueueTask() {
+  if (queueStartCheckInProgress) return;
+  if (getRunningQueueTask()) return;
+  queueStartCheckInProgress = true;
+  try {
+    releaseStaleAiTaskInProgress();
+    const nextTask = (state.aiTaskQueue || []).find((task) => task.status === 'waiting');
+    if (!nextTask) {
+      renderTaskConsole();
+      return;
+    }
+    if (await isBackendTaskRunning()) {
+      nextTask.resultSummary = '等待上一个采集进程关闭';
+      nextTask.currentStep = '等待上一个采集进程关闭';
+      renderTaskConsole();
+      scheduleRunNextQueueTask(BACKEND_BUSY_RETRY_DELAY_MS);
+      return;
+    }
+    executeCollectTask(nextTask);
+  } finally {
+    queueStartCheckInProgress = false;
   }
-  executeCollectTask(nextTask);
 }
 
 export function updateAiInputCount() {
@@ -1058,10 +1153,10 @@ export async function enqueueAiCollectTask() {
   setValue('aiHotelUrlInput', '');
   updateAiInputCount();
   showNotification(
-    state.aiTaskInProgress ? '已加入等待任务' : '已加入任务，准备开始采集',
+    getRunningQueueTask() ? '已加入等待任务' : '已加入任务，准备开始采集',
     'success'
   );
-  runNextQueueTask();
+  await runNextQueueTask();
 }
 
 export async function cancelAiTask() {

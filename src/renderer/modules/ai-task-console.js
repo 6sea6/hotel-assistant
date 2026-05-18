@@ -1341,12 +1341,16 @@ export function renderAiTaskConsole(state) {
   const selectedQueueTask = (state.aiTaskQueue || []).find(
     (task) => String(task.id || '') === String(state.aiSelectedQueueTaskId || '')
   );
+  const currentConsole = state.aiTaskConsole || {};
+  const hasDisplayedRunningConsole = Boolean(
+    currentConsole.submitted || currentConsole.hotelUrl || currentConsole.startedAt
+  );
   const selectedTaskInProgress = selectedQueueTask
     ? selectedQueueTask.status === 'running'
-    : Boolean(state.aiTaskInProgress);
+    : Boolean(state.aiTaskInProgress && hasDisplayedRunningConsole);
 
   const taskState = normalizeTaskState({
-    task: state.aiTaskConsole || {},
+    task: currentConsole,
     events: state.aiTaskEvents || [],
     inProgress: selectedTaskInProgress,
     review:

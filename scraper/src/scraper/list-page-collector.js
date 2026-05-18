@@ -293,7 +293,16 @@ function appendPageCandidates(target, pageCandidates = [], sourceOrderOffset = t
   }
 }
 
-function pickEdgeFallbackPageUrls(pageUrls = [], htmlPageResults = new Map()) {
+function pickEdgeFallbackPageUrls(
+  pageUrls = [],
+  htmlPageResults = new Map(),
+  prefilter = null,
+  options = {}
+) {
+  if (options.preferFirstPage) {
+    return pageUrls.slice(0, 1);
+  }
+
   const fallbackUrls = [];
 
   for (const pageUrl of pageUrls) {
@@ -303,7 +312,19 @@ function pickEdgeFallbackPageUrls(pageUrls = [], htmlPageResults = new Map()) {
     }
   }
 
-  return fallbackUrls.length > 0 ? fallbackUrls : htmlPageResults.size === 0 ? pageUrls : [];
+  if (fallbackUrls.length > 0) {
+    return fallbackUrls;
+  }
+
+  const filters = prefilter && prefilter.filters ? prefilter.filters : {};
+  const selectedCount =
+    prefilter && Array.isArray(prefilter.selected) ? prefilter.selected.length : 0;
+  const desiredCount = Number(filters.desiredHotelCount || filters.targetCount || 0);
+  if (htmlPageResults.size > 0 && desiredCount > 0 && selectedCount < desiredCount) {
+    return pageUrls.slice(0, 1);
+  }
+
+  return htmlPageResults.size === 0 ? pageUrls : [];
 }
 
 async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}, options = {}) {
@@ -322,11 +343,14 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     htmlFetchMs: 0,
     edgeFallbackMs: 0,
     totalMs: 0,
+    htmlStoppedReason: '',
     htmlPages: [],
     edgePages: []
   };
   let candidates = [];
   let prefilter = filterListPageCandidates(candidates, filters);
+  let previousSelectedCount = 0;
+  let staleSelectedRounds = 0;
 
   for (let pageIndex = 0; pageIndex < pageUrls.length; pageIndex += 1) {
     const pageUrl = pageUrls[pageIndex];
@@ -353,6 +377,16 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
       if (prefilter.selected.length >= filters.desiredHotelCount) {
         break;
       }
+      if (prefilter.selected.length === previousSelectedCount && prefilter.selected.length > 0) {
+        staleSelectedRounds += 1;
+      } else {
+        staleSelectedRounds = 0;
+      }
+      previousSelectedCount = prefilter.selected.length;
+      if (staleSelectedRounds >= 2 && shouldAttemptEdgeListFallback(options)) {
+        performance.htmlStoppedReason = 'stalled_unique_candidates';
+        break;
+      }
     } catch (error) {
       const pageRecord = {
         url: pageUrl,
@@ -377,7 +411,9 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     prefilter.selected.length < filters.desiredHotelCount &&
     shouldAttemptEdgeListFallback(options)
   ) {
-    const edgePageUrls = pickEdgeFallbackPageUrls(pageUrls, htmlPageResults);
+    const edgePageUrls = pickEdgeFallbackPageUrls(pageUrls, htmlPageResults, prefilter, {
+      preferFirstPage: performance.htmlStoppedReason === 'stalled_unique_candidates'
+    });
     const edgeStartedAt = Date.now();
     const parsedEdgeUrls = new Set();
     const applyEdgePage = (edgePage) => {
