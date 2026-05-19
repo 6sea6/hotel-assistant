@@ -426,3 +426,240 @@ test('buildRunSummary limits eligibleHotels and items count', () => {
   assert.ok(summary.eligibleRoomTypes.length <= 5);
   assert.ok(summary.items.length <= 20);
 });
+
+test('buildRunSummary does not include reviewInput or scrape_debug', () => {
+  const { buildRunSummary } = require('../src/cli/run-summary');
+
+  const result = {
+    success: true,
+    hotelName: 'Test',
+    eligibleCount: 1,
+    reviewInput: { rawRoomCandidates: [1, 2, 3] },
+    review_input: { normalizeLogs: [1, 2, 3] },
+    review_inputs: [{}, {}],
+    scrape_debug: { item_debug: [{}, {}] },
+    performance: { scrapeMs: 1000 }
+  };
+
+  const summary = buildRunSummary(result);
+
+  assert.equal(summary.reviewInput, undefined);
+  assert.equal(summary.review_input, undefined);
+  assert.equal(summary.review_inputs, undefined);
+  assert.equal(summary.scrape_debug, undefined);
+  assert.equal(summary.performance, undefined);
+});
+
+test('normalizeReportLevel explicitly supports normal', () => {
+  const { normalizeReportLevel } = require('../src/utils');
+
+  assert.equal(normalizeReportLevel('normal'), 'normal');
+  assert.equal(normalizeReportLevel('NORMAL'), 'normal');
+  assert.equal(normalizeReportLevel('Normal'), 'normal');
+  assert.equal(normalizeReportLevel('bad'), 'normal');
+  assert.equal(normalizeReportLevel('summary'), 'summary');
+  assert.equal(normalizeReportLevel('full'), 'full');
+});
+
+test('buildReviewInput includes summary counts', () => {
+  const { buildReviewInput } = require('../src/review-input');
+
+  const reviewInput = buildReviewInput({
+    taskMeta: { taskId: 'test-1', url: 'https://example.com' },
+    finalHotels: [{ name: 'Hotel 1' }],
+    roomCandidates: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    evaluations: [
+      { action: 'selected', reason: 'good' },
+      { action: 'rejected', reason: 'bad' },
+      { action: 'selected', reason: 'good' }
+    ],
+    pageSnapshot: {},
+    template: {}
+  });
+
+  assert.ok(reviewInput._summaryCounts);
+  assert.equal(reviewInput._summaryCounts.raw_candidate_count, 3);
+  assert.ok(reviewInput._summaryCounts.normalize_log_count > 0);
+  assert.ok(reviewInput._summaryCounts.selection_log_count > 0);
+  assert.ok(reviewInput._summaryCounts.final_field_log_count >= 0);
+});
+
+test('single hotel normal report includes full review_input', () => {
+  const { buildBatchOutputPayload } = require('../src/task-runner');
+
+  const resultPayloads = [
+    {
+      review_input: {
+        taskMeta: { taskId: '1' },
+        rawRoomCandidates: [{ id: 1 }],
+        normalizeLogs: [{ log: 1 }],
+        selectionLogs: [{ log: 1 }]
+      },
+      scrape_debug: {},
+      hotels: [{ name: 'Hotel 1' }]
+    }
+  ];
+
+  const payload = buildBatchOutputPayload({
+    args: {},
+    template: { ctrip_url: 'https://example.com' },
+    matchedTemplate: null,
+    effectiveTemplate: {},
+    compareAppSettings: {},
+    expandedInputs: {
+      summary: {},
+      hotelInputs: [{ url: 'https://example.com' }],
+      requestedUrls: [],
+      listResults: [],
+      skippedUrls: []
+    },
+    resultPayloads,
+    childResults: [],
+    failedItems: [],
+    allHotels: [],
+    writeResult: null,
+    performance: {},
+    reportLevel: 'normal'
+  });
+
+  assert.equal(payload.reportLevel, 'normal');
+  assert.ok(payload.review_input);
+  assert.equal(payload.review_input_mode, 'full');
+});
+
+test('batch normal report does not include full review_inputs', () => {
+  const { buildBatchOutputPayload } = require('../src/task-runner');
+
+  const resultPayloads = [
+    {
+      review_input: {
+        taskMeta: { taskId: '1' },
+        rawRoomCandidates: [{ id: 1 }],
+        normalizeLogs: [{ log: 1 }],
+        selectionLogs: [{ log: 1 }]
+      },
+      scrape_debug: {},
+      hotels: [{ name: 'Hotel 1' }]
+    },
+    {
+      review_input: {
+        taskMeta: { taskId: '2' },
+        rawRoomCandidates: [{ id: 2 }],
+        normalizeLogs: [{ log: 2 }],
+        selectionLogs: [{ log: 2 }]
+      },
+      scrape_debug: {},
+      hotels: [{ name: 'Hotel 2' }]
+    }
+  ];
+
+  const payload = buildBatchOutputPayload({
+    args: {},
+    template: { ctrip_url: 'https://example.com' },
+    matchedTemplate: null,
+    effectiveTemplate: {},
+    compareAppSettings: {},
+    expandedInputs: {
+      summary: {},
+      hotelInputs: [{ url: 'https://example.com' }, { url: 'https://example.com' }],
+      requestedUrls: [],
+      listResults: [],
+      skippedUrls: []
+    },
+    resultPayloads,
+    childResults: [],
+    failedItems: [],
+    allHotels: [],
+    writeResult: null,
+    performance: {},
+    reportLevel: 'normal'
+  });
+
+  assert.equal(payload.reportLevel, 'normal');
+  assert.equal(payload.review_inputs, undefined);
+  assert.equal(payload.scrape_debug.item_debug, undefined);
+  assert.ok(payload.scrape_debug.item_debug_count > 0);
+});
+
+test('summary report includes review_input_summary only', () => {
+  const { buildBatchOutputPayload } = require('../src/task-runner');
+
+  const resultPayloads = [
+    {
+      review_input: null,
+      review_input_summary: { finalHotelCount: 1, rawCandidateCount: 3 },
+      scrape_debug: {},
+      hotels: [{ name: 'Hotel 1' }]
+    }
+  ];
+
+  const payload = buildBatchOutputPayload({
+    args: {},
+    template: { ctrip_url: 'https://example.com' },
+    matchedTemplate: null,
+    effectiveTemplate: {},
+    compareAppSettings: {},
+    expandedInputs: {
+      summary: {},
+      hotelInputs: [{ url: 'https://example.com' }],
+      requestedUrls: [],
+      listResults: [],
+      skippedUrls: []
+    },
+    resultPayloads,
+    childResults: [],
+    failedItems: [],
+    allHotels: [],
+    writeResult: null,
+    performance: {},
+    reportLevel: 'summary'
+  });
+
+  assert.equal(payload.reportLevel, 'summary');
+  assert.equal(payload.review_inputs, undefined);
+});
+
+test('full report includes review_inputs and item_debug', () => {
+  const { buildBatchOutputPayload } = require('../src/task-runner');
+
+  const resultPayloads = [
+    {
+      review_input: { taskMeta: { taskId: '1' } },
+      scrape_debug: { raw_room_candidates: [{ id: 1 }] },
+      hotels: [{ name: 'Hotel 1' }]
+    },
+    {
+      review_input: { taskMeta: { taskId: '2' } },
+      scrape_debug: { raw_room_candidates: [{ id: 2 }] },
+      hotels: [{ name: 'Hotel 2' }]
+    }
+  ];
+
+  const payload = buildBatchOutputPayload({
+    args: {},
+    template: { ctrip_url: 'https://example.com' },
+    matchedTemplate: null,
+    effectiveTemplate: {},
+    compareAppSettings: {},
+    expandedInputs: {
+      summary: {},
+      hotelInputs: [{ url: 'https://example.com' }, { url: 'https://example.com' }],
+      requestedUrls: [],
+      listResults: [],
+      skippedUrls: []
+    },
+    resultPayloads,
+    childResults: [],
+    failedItems: [],
+    allHotels: [],
+    writeResult: null,
+    performance: {},
+    reportLevel: 'full'
+  });
+
+  assert.equal(payload.reportLevel, 'full');
+  assert.ok(Array.isArray(payload.review_inputs));
+  assert.equal(payload.review_inputs.length, 2);
+  assert.ok(Array.isArray(payload.scrape_debug.item_debug));
+  assert.equal(payload.scrape_debug.item_debug.length, 2);
+});

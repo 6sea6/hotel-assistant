@@ -276,8 +276,10 @@ function buildBatchOutputPayload({
     payload.scrape_debug.item_debug = resultPayloads
       .map((payload) => payload.scrape_debug)
       .filter(Boolean);
+    payload.review_input_mode = 'full';
   } else {
     payload.review_input = reviewInputs[0] || null;
+    payload.review_input_mode = reviewInputs[0] ? 'full' : 'summary';
     payload.scrape_debug.item_debug_count = resultPayloads.length;
   }
 
@@ -386,7 +388,10 @@ async function runPreparedSingleDetailImport(context) {
     writeAppData = false,
     perf = null,
     pageIndex = null,
-    reportLevel = 'normal'
+    reportLevel = 'normal',
+    isBatchItem = false,
+    includeReviewInput = false,
+    forceReviewInput = false
   } = context;
   const itemPerf = perf
     ? perf.child({
@@ -507,7 +512,10 @@ async function runPreparedSingleDetailImport(context) {
     eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord];
 
   const needsFullReviewInput =
-    reportLevel === 'full' || context.includeReviewInput || context.forceReviewInput;
+    reportLevel === 'full' ||
+    includeReviewInput ||
+    forceReviewInput ||
+    (!isBatchItem && reportLevel === 'normal');
   let reviewInput;
   let reviewInputSummary;
 
@@ -572,6 +580,7 @@ async function runPreparedSingleDetailImport(context) {
   performance.totalMs = durationSince(totalStartedAt);
 
   const isFullReport = reportLevel === 'full';
+  const reviewInputMode = reviewInput ? 'full' : reviewInputSummary ? 'summary' : 'omitted';
   const buildReportStartedAt = Date.now();
   const outputPayload = await itemPerf.runPhase(
     'build_report',
@@ -582,6 +591,7 @@ async function runPreparedSingleDetailImport(context) {
         hotel: hotelRecord,
         review_input: reviewInput || null,
         review_input_summary: reviewInputSummary || undefined,
+        review_input_mode: reviewInputMode,
         compare_app_store: getCompareAppStorePath(),
         matched_template: matchedTemplate,
         effective_template: itemTemplate,
@@ -606,16 +616,25 @@ async function runPreparedSingleDetailImport(context) {
   performance.buildReportMs = durationSince(buildReportStartedAt);
 
   const outputWriteStartedAt = Date.now();
-  await itemPerf.runPhase('write_report', { url: itemTemplate.ctrip_url }, async () => {
-    const measure = writeJsonFile(outputPath, outputPayload, {
-      pretty: isFullReport,
-      measure: true
-    });
-    if (measure) {
-      performance.reportBytes = measure.bytes;
-      performance.reportStringifyMs = measure.stringifyMs;
-      performance.reportWriteMs = measure.writeMs;
-    }
+  const writeReportPhase = itemPerf.phase('write_report', {
+    url: itemTemplate.ctrip_url,
+    reportLevel
+  });
+  const measure = writeJsonFile(outputPath, outputPayload, {
+    pretty: isFullReport,
+    measure: true
+  });
+  if (measure) {
+    performance.reportBytes = measure.bytes;
+    performance.reportStringifyMs = measure.stringifyMs;
+    performance.reportWriteMs = measure.writeMs;
+    performance.reportTotalWriteMs = measure.totalMs;
+  }
+  writeReportPhase.end('success', {
+    report_bytes: measure ? measure.bytes : 0,
+    report_stringify_ms: measure ? measure.stringifyMs : 0,
+    report_file_write_ms: measure ? measure.writeMs : 0,
+    report_total_write_ms: measure ? measure.totalMs : 0
   });
   performance.outputWriteMs = durationSince(outputWriteStartedAt);
 
@@ -768,7 +787,8 @@ async function runBatchHotelImportTask(context) {
           writeAppData: false,
           perf: batchPerf,
           pageIndex: index + 1,
-          reportLevel
+          reportLevel,
+          isBatchItem: true
         });
         const childResult = preparedResult.result;
         const childPayload = preparedResult.outputPayload;
@@ -946,17 +966,26 @@ async function runBatchHotelImportTask(context) {
     performance.buildReportMs = durationSince(buildReportStartedAt);
 
     const outputWriteStartedAt = Date.now();
-    await batchPerf.runPhase('write_report', { hotelCount: allHotels.length }, async () => {
-      const isFullReport = reportLevel === 'full';
-      const measure = writeJsonFile(outputPath, outputPayload, {
-        pretty: isFullReport,
-        measure: true
-      });
-      if (measure) {
-        performance.reportBytes = measure.bytes;
-        performance.reportStringifyMs = measure.stringifyMs;
-        performance.reportWriteMs = measure.writeMs;
-      }
+    const writeReportPhase = batchPerf.phase('write_report', {
+      hotelCount: allHotels.length,
+      reportLevel
+    });
+    const isFullReport = reportLevel === 'full';
+    const measure = writeJsonFile(outputPath, outputPayload, {
+      pretty: isFullReport,
+      measure: true
+    });
+    if (measure) {
+      performance.reportBytes = measure.bytes;
+      performance.reportStringifyMs = measure.stringifyMs;
+      performance.reportWriteMs = measure.writeMs;
+      performance.reportTotalWriteMs = measure.totalMs;
+    }
+    writeReportPhase.end('success', {
+      report_bytes: measure ? measure.bytes : 0,
+      report_stringify_ms: measure ? measure.stringifyMs : 0,
+      report_file_write_ms: measure ? measure.writeMs : 0,
+      report_total_write_ms: measure ? measure.totalMs : 0
     });
     performance.outputWriteMs = durationSince(outputWriteStartedAt);
 

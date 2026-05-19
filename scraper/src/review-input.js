@@ -462,6 +462,12 @@ function buildReviewInput({
   });
 
   reviewInput.taskMeta.outputFingerprint = fingerprintReviewInput(reviewInput);
+  reviewInput._summaryCounts = {
+    raw_candidate_count: rawRoomCandidates.length,
+    normalize_log_count: normalizeLogs.length,
+    selection_log_count: selectionLogs.length,
+    final_field_log_count: finalHotelFieldLogs.length
+  };
   return reviewInput;
 }
 
