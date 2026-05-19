@@ -1206,6 +1206,7 @@ function renderRunningView(taskState) {
 
 function renderSummaryCards(taskState, variant) {
   const { taskInfo, result, error } = taskState;
+  const elapsedText = getElapsedText(taskInfo, taskState.status);
   const isError = variant === 'error';
   const isCancelled = variant === 'cancelled';
   const reasonItems =
@@ -1226,6 +1227,7 @@ function renderSummaryCards(taskState, variant) {
           <div><dt>模板</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
           <div><dt>开始时间</dt><dd>${escapeHtml(formatAiTime(taskInfo.startTime) || '暂无')}</dd></div>
           <div><dt>${isCancelled ? '取消时间' : isError ? '失败时间' : '完成时间'}</dt><dd>${escapeHtml(formatAiTime(taskInfo.endTime) || '暂无')}</dd></div>
+          <div><dt>执行时间</dt><dd>${escapeHtml(elapsedText)}</dd></div>
           <div><dt>执行状态</dt><dd>${escapeHtml(isCancelled ? '已取消' : isError ? '执行失败' : '已完成')}</dd></div>
         </dl>
       </section>

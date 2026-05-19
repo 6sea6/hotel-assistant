@@ -62,12 +62,21 @@ async function loadAiAssistantModules() {
 }
 
 function createFakeElement(value = '') {
+  let textContentValue = '';
   return {
     value,
     checked: false,
     maxLength: 4000,
-    innerHTML: '',
-    textContent: '',
+    get innerHTML() {
+      return textContentValue
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    },
+    set innerHTML(v) { textContentValue = v; },
+    get textContent() { return textContentValue; },
+    set textContent(v) { textContentValue = String(v == null ? '' : v); },
     dataset: {},
     options: [],
     selectedOptions: [],
@@ -896,4 +905,52 @@ test('settings modal loads AI interface config through module wiring', () => {
   assert.match(settingsUiSource, /await loadAiInterfaceSettings\(\)/);
   assert.match(appModuleSource, /setAiConfigLoader,\s*changeTheme/);
   assert.match(appModuleSource, /setAiConfigLoader\(loadAiConfig\)/);
+});
+
+test('completed task summary card shows execution elapsed time between end time and status', async () => {
+  installAiAssistantDom();
+  const { renderAiTaskConsole } = await loadTaskConsoleModule();
+
+  const state = {
+    aiTaskQueue: [],
+    aiTaskQueueCounter: 0,
+    aiSelectedQueueTaskId: '',
+    aiQueueSelectionPinned: false,
+    aiTaskInProgress: false,
+    aiTaskEvents: [],
+    aiReview: {},
+    aiTaskConsole: {
+      submitted: true,
+      template: { id: 'tpl-1' },
+      templateLabel: '武汉模板',
+      hotelUrl: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001',
+      startedAt: '2026-06-01T01:24:39.000+08:00',
+      endedAt: '2026-06-01T01:25:39.000+08:00',
+      result: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 1,
+        eligibleRoomTypes: [{ roomType: '大床房', dailyPrice: 300, totalPrice: 300 }],
+        writeResult: { operation: 'inserted' }
+      },
+      error: null,
+      reply: ''
+    }
+  };
+
+  const taskState = renderAiTaskConsole(state);
+  assert.equal(taskState.status, 'success');
+
+  const panel = global.document.getElementById('aiCurrentTaskPanel');
+  const html = panel.innerHTML;
+
+  assert.ok(html.includes('执行时间'), 'should contain elapsed time label');
+  assert.ok(html.includes('00:01:00'), 'should show 1 minute elapsed');
+
+  const endTimeIndex = html.indexOf('完成时间');
+  const elapsedIndex = html.indexOf('执行时间');
+  const statusIndex = html.indexOf('执行状态');
+  assert.ok(endTimeIndex > 0, 'should have end time label');
+  assert.ok(elapsedIndex > endTimeIndex, 'elapsed time should appear after end time');
+  assert.ok(statusIndex > elapsedIndex, 'execution status should appear after elapsed time');
 });
