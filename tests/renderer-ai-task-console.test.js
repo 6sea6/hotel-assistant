@@ -846,6 +846,28 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.doesNotMatch(startBarHtml, /可一次粘贴多个/);
 });
 
+test('list prefilter styles inherit global personalization theme variables', () => {
+  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles.css'), 'utf8');
+  const taskButtonStart = css.indexOf('.task-prefilter-button {');
+  const taskButtonEnd = css.indexOf('.task-prefilter-button svg');
+  const modalStart = css.indexOf('.list-prefilter-modal-content');
+  const modalEnd = css.indexOf('.ai-config-grid');
+  const prefilterCss =
+    css.slice(taskButtonStart, taskButtonEnd) + '\n' + css.slice(modalStart, modalEnd);
+
+  assert.ok(taskButtonStart >= 0, 'task prefilter button styles should exist');
+  assert.ok(taskButtonEnd > taskButtonStart, 'task prefilter button styles should be extracted');
+  assert.ok(modalStart >= 0, 'list prefilter modal styles should exist');
+  assert.ok(modalEnd > modalStart, 'list prefilter modal styles should be extracted');
+  assert.match(prefilterCss, /var\(--primary-color\)/);
+  assert.match(prefilterCss, /var\(--bg-primary\)/);
+  assert.match(prefilterCss, /var\(--text-primary\)/);
+  assert.doesNotMatch(
+    prefilterCss,
+    /#(?:2563eb|1d4ed8|eff6ff|93b4e8|f6f8fb|e5eaf2|d8e1ed|172033|1e293b|334155|64748b|475569|94a3b8|a7b3c3|0891b2|e6fffb|b7eef0|afc0d5|f8fafc)\b|rgba\((?:37,\s*99,\s*235|36,\s*49,\s*64|15,\s*23,\s*42)/
+  );
+});
+
 test('task console section headings do not show English eyebrow labels', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const taskConsoleSource = fs.readFileSync(
