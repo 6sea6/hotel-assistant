@@ -409,7 +409,9 @@ async function runPreparedSingleDetailImport(context) {
     reportLevel = 'normal',
     isBatchItem = false,
     includeReviewInput = false,
-    forceReviewInput = false
+    forceReviewInput = false,
+    captureStrategy: contextCaptureStrategy = null,
+    edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null
   } = context;
   const reportDisabled = isReportDisabled(reportLevel);
   const itemPerf = perf
@@ -449,6 +451,12 @@ async function runPreparedSingleDetailImport(context) {
     },
     edgeSession: buildEdgeSessionOptions(itemTemplate),
     autoEdge,
+    captureStrategy: args.captureStrategy || args['capture-strategy'] || contextCaptureStrategy,
+    edgeParallelCancelPolicy:
+      args.edgeParallelCancelPolicy ||
+      args['edge-parallel-cancel-policy'] ||
+      contextEdgeParallelCancelPolicy ||
+      'none',
     perf: itemPerf.child({ url: itemTemplate.ctrip_url })
   });
   performance.scrapeMs = durationSince(scrapeStartedAt);
@@ -735,7 +743,8 @@ async function runBatchHotelImportTask(context) {
     compareAppSettings,
     effectiveDestination,
     expandedInputs,
-    reportLevel = 'normal'
+    reportLevel = 'normal',
+    options = {}
   } = context;
   const reportDisabled = isReportDisabled(reportLevel);
 
@@ -830,7 +839,9 @@ async function runBatchHotelImportTask(context) {
           perf: batchPerf,
           pageIndex: index + 1,
           reportLevel,
-          isBatchItem: true
+          isBatchItem: true,
+          captureStrategy: options.captureStrategy,
+          edgeParallelCancelPolicy: options.edgeParallelCancelPolicy
         });
         const childResult = preparedResult.result;
         const childPayload = preparedResult.outputPayload;
@@ -1328,7 +1339,9 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           writeAppData: Boolean(args['write-app-data']),
           perf,
           pageIndex: 1,
-          reportLevel
+          reportLevel,
+          captureStrategy: options.captureStrategy,
+          edgeParallelCancelPolicy: options.edgeParallelCancelPolicy
         });
         const result = preparedResult.result;
 

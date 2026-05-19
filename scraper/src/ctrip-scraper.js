@@ -91,6 +91,33 @@ function deriveCaptureMethod(captureSteps = []) {
   return 'html_only';
 }
 
+function normalizeCaptureStrategy(value) {
+  const normalized = String(value || 'auto')
+    .trim()
+    .toLowerCase();
+  return ['auto', 'html_first', 'parallel_edge', 'edge_full'].includes(normalized)
+    ? normalized
+    : 'auto';
+}
+
+function normalizeSettleStats(settleStats = null) {
+  if (!settleStats || typeof settleStats !== 'object') {
+    return {
+      totalMs: 0,
+      clickedCount: 0,
+      scrollCount: 0,
+      containerCount: 0
+    };
+  }
+
+  return {
+    totalMs: Number(settleStats.totalMs ?? settleStats.total_ms ?? 0) || 0,
+    clickedCount: Number(settleStats.clickedCount ?? settleStats.clicked_count ?? 0) || 0,
+    scrollCount: Number(settleStats.scrollCount ?? settleStats.scroll_count ?? 0) || 0,
+    containerCount: Number(settleStats.containerCount ?? settleStats.container_count ?? 0) || 0
+  };
+}
+
 function buildScrapeQualityFields({
   selectedRoom,
   normalizedRoomBlocks,
@@ -100,7 +127,11 @@ function buildScrapeQualityFields({
   directReplay,
   fallbackCapture,
   captureMethod,
-  waitReason
+  waitReason,
+  captureStrategy = 'auto',
+  htmlEdgeParallelUsed = false,
+  edgeStartedBeforeHtmlDone = false,
+  warnings = []
 }) {
   const directTrackedUrls =
     directReplay && Array.isArray(directReplay.trackedUrls) ? directReplay.trackedUrls : [];
@@ -114,6 +145,7 @@ function buildScrapeQualityFields({
       ...((fallbackCapture && fallbackCapture.spiderErrorCodes) || [])
     ])
   ];
+  const settleStats = normalizeSettleStats(fallbackCapture && fallbackCapture.settleStats);
 
   return {
     selected_room_source: selectedRoom ? selectedRoom.source || '' : '',
@@ -130,36 +162,21 @@ function buildScrapeQualityFields({
     mobile_room_count: sumSourceRoomCount(parsedSources, 'mobile'),
     desktop_room_count: sumSourceRoomCount(parsedSources, 'desktop'),
     capture_method: captureMethod,
-    wait_reason: waitReason
+    wait_reason: waitReason,
+    capture_strategy: captureStrategy,
+    html_edge_parallel_used: Boolean(htmlEdgeParallelUsed),
+    edge_started_before_html_done: Boolean(edgeStartedBeforeHtmlDone),
+    edge_waited_for_settle: Boolean(fallbackCapture && fallbackCapture.edgeWaitedForSettle),
+    settle_total_ms: settleStats.totalMs,
+    settle_clicked_count: settleStats.clickedCount,
+    settle_scroll_count: settleStats.scrollCount,
+    settle_container_count: settleStats.containerCount,
+    warnings
   };
 }
 
-async function scrapeCtripHotel(url, template, options = {}) {
-  const perf =
-    options.perf ||
-    new PerfTimer(setup_perf_logger(), {
-      runId: options.runId,
-      taskId: options.taskId,
-      url
-    });
-  const totalStartedAt = Date.now();
-  const performance = {
-    totalMs: 0,
-    htmlMs: 0,
-    directReplayMs: 0,
-    edgeCaptureMs: 0,
-    waitDataMs: 0
-  };
-  const { desktopUrl, mobileUrl } = await perf.runPhase('build_url', { url }, async () => {
-    const urlOverrides = buildUrlOverridesFromTemplate(template);
-    const resolvedDesktopUrl = buildDesktopUrl(url, urlOverrides) || normalizeText(url);
-    return {
-      desktopUrl: resolvedDesktopUrl,
-      mobileUrl: buildMobileUrl(resolvedDesktopUrl, urlOverrides)
-    };
-  });
+async function runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }) {
   const sources = [];
-
   const htmlStartedAt = Date.now();
   await perf.runPhase('page_open', { url: desktopUrl }, async () => {
     if (options.htmlPath) {
@@ -197,7 +214,6 @@ async function scrapeCtripHotel(url, template, options = {}) {
       }
     }
   });
-  performance.htmlMs = durationSince(htmlStartedAt);
 
   const { parsedSources, mergedRoomBlocks } = await perf.runPhase(
     'extract_data',
@@ -235,12 +251,96 @@ async function scrapeCtripHotel(url, template, options = {}) {
   const normalizedRoomBlocks = await perf.runPhase('parse_data', { url: desktopUrl }, async () =>
     mergeRoomCandidates(mergedRoomBlocks)
   );
-  let selectedRoom = selectBestRoom(normalizedRoomBlocks, template);
+
+  return {
+    sources,
+    parsedSources,
+    mergedRoomBlocks,
+    normalizedRoomBlocks,
+    selectedRoom: selectBestRoom(normalizedRoomBlocks, template),
+    htmlMs: durationSince(htmlStartedAt)
+  };
+}
+
+async function runEdgeCapture({
+  desktopUrl,
+  template,
+  options,
+  perf,
+  retryCount,
+  waitReason,
+  captureMethod,
+  captureStrategy
+}) {
+  const edgeStartedAt = Date.now();
+  const result = await perf.runPhase(
+    'wait_data',
+    {
+      url: desktopUrl,
+      retryCount,
+      waitReason,
+      captureMethod,
+      capture_strategy: captureStrategy
+    },
+    async () =>
+      captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {}, {
+        perf: perf.child({
+          url: desktopUrl,
+          waitReason,
+          captureMethod,
+          capture_strategy: captureStrategy
+        }),
+        captureMethod,
+        captureStrategy
+      })
+  );
+
+  return {
+    result,
+    elapsedMs: durationSince(edgeStartedAt)
+  };
+}
+
+async function scrapeCtripHotel(url, template, options = {}) {
+  const perf =
+    options.perf ||
+    new PerfTimer(setup_perf_logger(), {
+      runId: options.runId,
+      taskId: options.taskId,
+      url
+    });
+  const totalStartedAt = Date.now();
+  const performance = {
+    totalMs: 0,
+    htmlMs: 0,
+    directReplayMs: 0,
+    edgeCaptureMs: 0,
+    waitDataMs: 0
+  };
+  const { desktopUrl, mobileUrl } = await perf.runPhase('build_url', { url }, async () => {
+    const urlOverrides = buildUrlOverridesFromTemplate(template);
+    const resolvedDesktopUrl = buildDesktopUrl(url, urlOverrides) || normalizeText(url);
+    return {
+      desktopUrl: resolvedDesktopUrl,
+      mobileUrl: buildMobileUrl(resolvedDesktopUrl, urlOverrides)
+    };
+  });
+  const captureStrategy = normalizeCaptureStrategy(options.captureStrategy);
+  const basePreferEdgeCapture = shouldPreferEdgeCapture(options);
+  const preferEdgeCapture = captureStrategy === 'html_first' ? false : basePreferEdgeCapture;
+  const useParallelEdge =
+    captureStrategy === 'parallel_edge' && basePreferEdgeCapture && !options.htmlPath;
+  const warnings = [];
+  let parsedSources = [];
+  let normalizedRoomBlocks = [];
+  let selectedRoom = null;
   let directReplay = null;
   let fallbackCapture = null;
-  const preferEdgeCapture = shouldPreferEdgeCapture(options);
   const captureSteps = [];
   let waitReason = '';
+  let htmlEdgeParallelUsed = false;
+  let edgeStartedBeforeHtmlDone = false;
+  let htmlDone = false;
 
   const applyCaptureResult = (captureResult) => {
     if (
@@ -256,30 +356,124 @@ async function scrapeCtripHotel(url, template, options = {}) {
     return true;
   };
 
-  if (preferEdgeCapture) {
-    if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
-      waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const edgeStartedAt = Date.now();
-      fallbackCapture = await perf.runPhase(
+  const applyHtmlResult = (htmlResult) => {
+    parsedSources = htmlResult.parsedSources;
+    normalizedRoomBlocks = htmlResult.normalizedRoomBlocks;
+    selectedRoom = htmlResult.selectedRoom;
+    performance.htmlMs = htmlResult.htmlMs;
+  };
+
+  if (useParallelEdge) {
+    htmlEdgeParallelUsed = true;
+    const htmlTask = runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }).then(
+      (htmlResult) => {
+        htmlDone = true;
+        return htmlResult;
+      },
+      (error) => {
+        htmlDone = true;
+        throw error;
+      }
+    );
+    const edgeTask = (async () => {
+      edgeStartedBeforeHtmlDone = !htmlDone;
+      return runEdgeCapture({
+        desktopUrl,
+        template,
+        options,
+        perf,
+        retryCount: 1,
+        waitReason: 'auto_edge_supplement',
+        captureMethod: 'html_then_edge_cdp',
+        captureStrategy
+      });
+    })();
+
+    const [htmlOutcome, edgeOutcome] = await Promise.allSettled([htmlTask, edgeTask]);
+    if (htmlOutcome.status === 'fulfilled') {
+      applyHtmlResult(htmlOutcome.value);
+    } else {
+      warnings.push(
+        `HTML capture failed: ${htmlOutcome.reason && htmlOutcome.reason.message ? htmlOutcome.reason.message : String(htmlOutcome.reason)}`
+      );
+    }
+
+    if (edgeOutcome.status === 'fulfilled') {
+      fallbackCapture = edgeOutcome.value.result;
+      performance.edgeCaptureMs += edgeOutcome.value.elapsedMs;
+      performance.waitDataMs += edgeOutcome.value.elapsedMs;
+      captureSteps.push('edge_cdp');
+      if (fallbackCapture && fallbackCapture.error) {
+        warnings.push(`Edge capture warning: ${fallbackCapture.error}`);
+      }
+      applyCaptureResult(fallbackCapture);
+    } else {
+      warnings.push(
+        `Edge capture failed: ${edgeOutcome.reason && edgeOutcome.reason.message ? edgeOutcome.reason.message : String(edgeOutcome.reason)}`
+      );
+    }
+
+    if (!parsedSources.length && (!selectedRoom || !fallbackCapture)) {
+      throw htmlOutcome.reason || new Error('HTML and Edge capture both failed');
+    }
+
+    if (
+      (!selectedRoom || selectedRoom.price === null) &&
+      shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
+    ) {
+      waitReason = fallbackCapture
+        ? 'retry_after_edge_failed'
+        : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
+      const replayStartedAt = Date.now();
+      directReplay = await perf.runPhase(
         'wait_data',
         {
           url: desktopUrl,
-          retryCount: 1,
+          retryCount: 2,
           waitReason,
-          captureMethod: 'html_then_edge_cdp'
+          captureMethod: 'edge_cdp_then_api_replay',
+          capture_strategy: captureStrategy
         },
         async () =>
-          captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {}, {
+          captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
             perf: perf.child({
               url: desktopUrl,
               waitReason,
-              captureMethod: 'html_then_edge_cdp'
+              captureMethod: 'edge_cdp_then_api_replay',
+              capture_strategy: captureStrategy
             }),
-            captureMethod: 'html_then_edge_cdp'
+            captureMethod: 'edge_cdp_then_api_replay'
           })
       );
-      performance.edgeCaptureMs += durationSince(edgeStartedAt);
-      performance.waitDataMs += durationSince(edgeStartedAt);
+      performance.directReplayMs += durationSince(replayStartedAt);
+      performance.waitDataMs += durationSince(replayStartedAt);
+      captureSteps.push('api_replay');
+      applyCaptureResult(directReplay);
+    }
+  } else {
+    const htmlResult = await runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf });
+    applyHtmlResult(htmlResult);
+  }
+
+  if (!useParallelEdge && preferEdgeCapture) {
+    if (
+      captureStrategy === 'edge_full' ||
+      shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
+    ) {
+      waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
+      const edgeCapture = await runEdgeCapture({
+        desktopUrl,
+        template,
+        options,
+        perf,
+        retryCount: 1,
+        waitReason,
+        captureMethod: 'html_then_edge_cdp',
+        captureStrategy
+      });
+      fallbackCapture = edgeCapture.result;
+      performance.edgeCaptureMs += edgeCapture.elapsedMs;
+      performance.waitDataMs += edgeCapture.elapsedMs;
       captureSteps.push('edge_cdp');
       applyCaptureResult(fallbackCapture);
     }
@@ -298,14 +492,16 @@ async function scrapeCtripHotel(url, template, options = {}) {
           url: desktopUrl,
           retryCount: 2,
           waitReason,
-          captureMethod: 'edge_cdp_then_api_replay'
+          captureMethod: 'edge_cdp_then_api_replay',
+          capture_strategy: captureStrategy
         },
         async () =>
           captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
             perf: perf.child({
               url: desktopUrl,
               waitReason,
-              captureMethod: 'edge_cdp_then_api_replay'
+              captureMethod: 'edge_cdp_then_api_replay',
+              capture_strategy: captureStrategy
             }),
             captureMethod: 'edge_cdp_then_api_replay'
           })
@@ -315,7 +511,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
       captureSteps.push('api_replay');
       applyCaptureResult(directReplay);
     }
-  } else {
+  } else if (!useParallelEdge) {
     if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
       waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
       const replayStartedAt = Date.now();
@@ -325,14 +521,16 @@ async function scrapeCtripHotel(url, template, options = {}) {
           url: desktopUrl,
           retryCount: 1,
           waitReason,
-          captureMethod: 'html_then_api_replay'
+          captureMethod: 'html_then_api_replay',
+          capture_strategy: captureStrategy
         },
         async () =>
           captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
             perf: perf.child({
               url: desktopUrl,
               waitReason,
-              captureMethod: 'html_then_api_replay'
+              captureMethod: 'html_then_api_replay',
+              capture_strategy: captureStrategy
             }),
             captureMethod: 'html_then_api_replay'
           })
@@ -347,27 +545,19 @@ async function scrapeCtripHotel(url, template, options = {}) {
       waitReason = directReplay
         ? 'retry_after_api_failed'
         : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const edgeStartedAt = Date.now();
-      fallbackCapture = await perf.runPhase(
-        'wait_data',
-        {
-          url: desktopUrl,
-          retryCount: 2,
-          waitReason,
-          captureMethod: 'html_then_edge_cdp'
-        },
-        async () =>
-          captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {}, {
-            perf: perf.child({
-              url: desktopUrl,
-              waitReason,
-              captureMethod: 'html_then_edge_cdp'
-            }),
-            captureMethod: 'html_then_edge_cdp'
-          })
-      );
-      performance.edgeCaptureMs += durationSince(edgeStartedAt);
-      performance.waitDataMs += durationSince(edgeStartedAt);
+      const edgeCapture = await runEdgeCapture({
+        desktopUrl,
+        template,
+        options,
+        perf,
+        retryCount: 2,
+        waitReason,
+        captureMethod: 'html_then_edge_cdp',
+        captureStrategy
+      });
+      fallbackCapture = edgeCapture.result;
+      performance.edgeCaptureMs += edgeCapture.elapsedMs;
+      performance.waitDataMs += edgeCapture.elapsedMs;
       captureSteps.push('edge_cdp');
       applyCaptureResult(fallbackCapture);
     }
@@ -411,7 +601,11 @@ async function scrapeCtripHotel(url, template, options = {}) {
     directReplay,
     fallbackCapture,
     captureMethod,
-    waitReason
+    waitReason,
+    captureStrategy,
+    htmlEdgeParallelUsed,
+    edgeStartedBeforeHtmlDone,
+    warnings
   });
   perf.event('detail_quality', {
     phase: 'task_total',
@@ -421,7 +615,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
   });
 
   return {
-    hotel_name: primarySource.meta.hotelName,
+    hotel_name: primarySource.meta.hotelName || '',
     address: pickFirst(
       primarySource.meta.geoInfo && primarySource.meta.geoInfo.address,
       primarySource.meta.address
@@ -434,6 +628,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
     eligible_rooms: eligibleRooms,
     room_selection_diagnostics: selectionDiagnostics,
     quality: qualityFields,
+    warnings,
     performance,
     page_snapshot: {
       source_url: desktopUrl,

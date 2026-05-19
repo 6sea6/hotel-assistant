@@ -62,6 +62,14 @@ function buildPageSnapshotSummary(pageSnapshot) {
     desktop_room_count: pageSnapshot.desktop_room_count ?? 0,
     capture_method: pageSnapshot.capture_method || '',
     wait_reason: pageSnapshot.wait_reason || '',
+    capture_strategy: pageSnapshot.capture_strategy || '',
+    html_edge_parallel_used: Boolean(pageSnapshot.html_edge_parallel_used),
+    edge_started_before_html_done: Boolean(pageSnapshot.edge_started_before_html_done),
+    edge_waited_for_settle: Boolean(pageSnapshot.edge_waited_for_settle),
+    settle_total_ms: pageSnapshot.settle_total_ms ?? 0,
+    settle_clicked_count: pageSnapshot.settle_clicked_count ?? 0,
+    settle_scroll_count: pageSnapshot.settle_scroll_count ?? 0,
+    settle_container_count: pageSnapshot.settle_container_count ?? 0,
     saved_html_file_count: Array.isArray(pageSnapshot.saved_html_files)
       ? pageSnapshot.saved_html_files.length
       : 0,

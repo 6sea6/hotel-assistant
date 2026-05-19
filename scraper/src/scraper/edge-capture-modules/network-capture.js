@@ -165,6 +165,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   let targetMode = 'create';
   let targetInitialUrl = '';
   let shouldCloseTarget = false;
+  let settleStats = null;
   try {
     await perf.runPhase(
       'edge_connect',
@@ -325,9 +326,23 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           250
         )
       );
-      await perf.runPhase('edge_settle_room_list', { url, captureMethod, targetMode }, async () =>
-        settleRoomListInEdgeSession(connection, sessionId)
-      );
+      const settlePhase = perf.phase('edge_settle_room_list', { url, captureMethod, targetMode });
+      try {
+        settleStats = await settleRoomListInEdgeSession(connection, sessionId, {
+          perf,
+          fields: { url, captureMethod, targetMode },
+          getTrackedUrlCount: () => trackedUrls.size
+        });
+        settlePhase.end('success', {
+          settle_total_ms: settleStats.totalMs,
+          settle_clicked_count: settleStats.clickedCount,
+          settle_scroll_count: settleStats.scrollCount,
+          settle_container_count: settleStats.containerCount
+        });
+      } catch (error) {
+        settlePhase.error(error);
+        throw error;
+      }
 
       const trackedBeforeExpand = trackedUrls.size;
 
@@ -442,9 +457,23 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           250
         )
       );
-      await perf.runPhase('edge_settle_room_list', { url, captureMethod, targetMode }, async () =>
-        settleRoomListInEdgeSession(connection, sessionId)
-      );
+      const settlePhase = perf.phase('edge_settle_room_list', { url, captureMethod, targetMode });
+      try {
+        settleStats = await settleRoomListInEdgeSession(connection, sessionId, {
+          perf,
+          fields: { url, captureMethod, targetMode },
+          getTrackedUrlCount: () => trackedUrls.size
+        });
+        settlePhase.end('success', {
+          settle_total_ms: settleStats.totalMs,
+          settle_clicked_count: settleStats.clickedCount,
+          settle_scroll_count: settleStats.scrollCount,
+          settle_container_count: settleStats.containerCount
+        });
+      } catch (error) {
+        settlePhase.error(error);
+        throw error;
+      }
 
       const trackedBeforeExpand = trackedUrls.size;
 
@@ -712,6 +741,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         selectedRoom: null,
         trackedUrls: [...trackedUrls],
         spiderErrorCodes: [...spiderErrorCodes],
+        edgeWaitedForSettle: Boolean(settleStats),
+        settleStats,
         error:
           spiderErrorCodes.size > 0
             ? `edge-cdp fallback blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
@@ -724,6 +755,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       selectedRoom,
       trackedUrls: [...trackedUrls],
       spiderErrorCodes: [...spiderErrorCodes],
+      edgeWaitedForSettle: Boolean(settleStats),
+      settleStats,
       error: ''
     };
   } catch (error) {
@@ -732,6 +765,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       selectedRoom: null,
       trackedUrls: [],
       spiderErrorCodes: [],
+      edgeWaitedForSettle: Boolean(settleStats),
+      settleStats,
       error: error && error.message ? error.message : 'edge-cdp fallback failed with unknown error'
     };
   } finally {
