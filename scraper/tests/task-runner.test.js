@@ -500,3 +500,225 @@ test('runHotelImportTask completes a single detail URL without batch writeResult
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('write_report perf phase includes report_bytes and timing fields for single hotel', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  const perfPath = require.resolve('../src/runtime/perf');
+  const devPerfPath = require.resolve('../../devtools/perf-log');
+  const previousEnv = {
+    HOTEL_COLLECTOR_ENV: process.env.HOTEL_COLLECTOR_ENV,
+    ENABLE_PERF_LOG: process.env.ENABLE_PERF_LOG
+  };
+  process.env.HOTEL_COLLECTOR_ENV = 'dev';
+  process.env.ENABLE_PERF_LOG = '1';
+  delete require.cache[taskRunnerPath];
+  delete require.cache[perfPath];
+  delete require.cache[devPerfPath];
+
+  const mockedPaths = [];
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-perf-'));
+
+  mockedPaths.push(
+    installMock('../src/compare-app-bridge', {
+      appendHotelsToStore: () => ({ operation: 'append', count: 1 }),
+      findTemplateInStore: () => ({
+        template_id: 'tpl-1',
+        template_name: '实验',
+        destination: '武汉站'
+      }),
+      getCompareAppStorePath: () => path.join(tempDir, 'hotel-data.json'),
+      loadCompareAppStore: () => ({
+        settings: {},
+        templates: []
+      })
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/ctrip-list', {
+      buildListResultsSummary: () => [],
+      describeExpandedInput: () => '模式=detail，展开酒店=1',
+      expandCtripHotelInputs: async () => ({
+        inputMode: 'detail',
+        requestedUrls: ['https://hotels.ctrip.com/hotels/detail/?hotelId=1001'],
+        hotelInputs: [
+          {
+            url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001',
+            hotelId: '1001',
+            source: 'detail-input'
+          }
+        ],
+        listResults: [],
+        skippedUrls: [],
+        performance: { totalMs: 1, listCollectMs: 0, lists: [] },
+        summary: {
+          inputMode: 'detail',
+          requestedUrlCount: 1,
+          detailInputCount: 1,
+          listInputCount: 0,
+          expandedHotelCount: 1,
+          filters: {},
+          performance: { totalMs: 1, listCollectMs: 0, lists: [] }
+        }
+      }),
+      normalizeListFiltersFromArgs: () => ({})
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/ctrip-scraper', {
+      scrapeCtripHotel: async () => ({
+        hotel_name: '测试酒店',
+        address: '测试地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [],
+        raw_room_candidates: [],
+        eligible_rooms: [],
+        room_selection_diagnostics: { evaluations: [], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: 'https://example.com',
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0 }
+      })
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/amap', {
+      getTransitInfo: async () => ({
+        route: { durationMinutes: 20 },
+        nearestSubway: { name: '测试站', distanceKm: 0.6 }
+      })
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/hotel-record', {
+      buildHotelRecord: (template, scraped) => ({
+        template_id: template.template_id,
+        name: scraped.hotel_name,
+        room_type: '大床房',
+        total_price: 188,
+        ctrip_score: scraped.ctrip_score,
+        subway_distance: '0.6',
+        transport_time: '20',
+        bus_route: '测试路线'
+      }),
+      buildEligibleRoomRecords: (template, scraped) => [
+        {
+          template_id: template.template_id,
+          name: scraped.hotel_name,
+          room_type: '大床房',
+          original_room_type: '大床房',
+          daily_price: 188,
+          total_price: 188,
+          ctrip_score: scraped.ctrip_score,
+          subway_distance: '0.6',
+          transport_time: '20',
+          bus_route: '测试路线'
+        }
+      ]
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/review-input', {
+      buildReviewInput: () => ({
+        selectionLogs: [],
+        rejectedRoomTypes: [],
+        normalizeLogs: []
+      }),
+      buildReviewInputSummary: () => ({
+        finalHotelCount: 1,
+        rawCandidateCount: 0,
+        eligibleCount: 1,
+        rejectedCount: 0
+      })
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/template-loader', {
+      applyMatchedTemplate: (template, matchedTemplate) => ({
+        ...template,
+        ...matchedTemplate,
+        template_id: 'tpl-1',
+        template_name: '实验',
+        destination: '武汉站',
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-02',
+        room_count: 1
+      }),
+      loadTemplate: () => ({}),
+      mergeTemplateWithArgs: (_templateFromFile, args) => ({
+        template_id: args.templateId || 'tpl-1',
+        template_name: args.templateName || '实验',
+        ctrip_url: args.url,
+        destination: '武汉站',
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-02',
+        room_count: 1
+      }),
+      validateTemplate: () => undefined
+    })
+  );
+
+  try {
+    const records = [];
+    const perfLogger = {
+      enabled: true,
+      write(record) {
+        records.push(record);
+        return record;
+      }
+    };
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01&checkOut=2026-06-02',
+        latestRun: path.join(tempDir, 'latest-run.json')
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger
+      }
+    );
+
+    const writeReportRecords = records.filter(
+      (record) => record.phase === 'write_report' && record.status === 'success'
+    );
+    assert.ok(writeReportRecords.length > 0, 'write_report phase should exist in perf records');
+
+    const writeReport = writeReportRecords[0];
+    assert.ok(
+      typeof writeReport.report_bytes === 'number',
+      'write_report should include report_bytes'
+    );
+    assert.ok(writeReport.report_bytes > 0, 'report_bytes should be greater than 0');
+    assert.ok(
+      typeof writeReport.report_stringify_ms === 'number',
+      'write_report should include report_stringify_ms'
+    );
+    assert.ok(
+      typeof writeReport.report_file_write_ms === 'number',
+      'write_report should include report_file_write_ms'
+    );
+    assert.ok(
+      typeof writeReport.report_total_write_ms === 'number',
+      'write_report should include report_total_write_ms'
+    );
+    assert.equal(writeReport.reportLevel, 'normal');
+  } finally {
+    if (previousEnv.HOTEL_COLLECTOR_ENV === undefined) {
+      delete process.env.HOTEL_COLLECTOR_ENV;
+    } else {
+      process.env.HOTEL_COLLECTOR_ENV = previousEnv.HOTEL_COLLECTOR_ENV;
+    }
+    if (previousEnv.ENABLE_PERF_LOG === undefined) {
+      delete process.env.ENABLE_PERF_LOG;
+    } else {
+      process.env.ENABLE_PERF_LOG = previousEnv.ENABLE_PERF_LOG;
+    }
+    clearModules([taskRunnerPath, perfPath, devPerfPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
