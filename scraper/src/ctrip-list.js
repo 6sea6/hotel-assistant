@@ -242,8 +242,25 @@ function describeExpandedInput(expandedInputs = {}) {
   return parts.map(normalizeText).filter(Boolean).join('，');
 }
 
+function buildListResultsSummary(listResults = []) {
+  return listResults.map((result) => ({
+    inputUrl: result.inputUrl || '',
+    selectedCount: Array.isArray(result.selected) ? result.selected.length : 0,
+    totalCandidates: Number(result.totalCandidates || 0),
+    rejectedCount: Array.isArray(result.rejected) ? result.rejected.length : 0,
+    edgeFallbackUsed: Boolean(result.edgeFallbackUsed),
+    htmlFetchMs: result.performance ? result.performance.htmlFetchMs : 0,
+    edgeFallbackMs: result.performance ? result.performance.edgeFallbackMs : 0,
+    totalMs: result.performance ? result.performance.totalMs : 0,
+    errors: Array.isArray(result.errors)
+      ? result.errors.map((e) => e.error || '').filter(Boolean)
+      : []
+  }));
+}
+
 module.exports = {
   buildDetailInput,
+  buildListResultsSummary,
   captureListHtmlPagesWithEdge,
   collectHotelListCandidates,
   describeExpandedInput,

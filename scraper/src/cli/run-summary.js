@@ -85,21 +85,22 @@ function buildRunSummary(payload) {
     templateId: payload.templateId || null,
     templateSnapshot: payload.templateSnapshot ?? null,
     requestedUrl: payload.requestedUrl || '',
-    requestedUrls: Array.isArray(payload.requestedUrls) ? payload.requestedUrls : [],
+    requestedUrls: Array.isArray(payload.requestedUrls) ? payload.requestedUrls.slice(0, 5) : [],
     resolvedUrl: payload.resolvedUrl || '',
-    resolvedUrls: Array.isArray(payload.resolvedUrls) ? payload.resolvedUrls : [],
+    resolvedUrls: Array.isArray(payload.resolvedUrls) ? payload.resolvedUrls.slice(0, 5) : [],
     inputMode: payload.inputMode || '',
     batchMode: Boolean(payload.batchMode),
-    items: Array.isArray(payload.items) ? payload.items : [],
+    items: Array.isArray(payload.items) ? payload.items.slice(0, 20) : [],
     batchStats: payload.batchStats || null,
     batchSummary: payload.batchSummary || null,
     hotelName: payload.hotelName || '',
     eligibleCount: payload.eligibleCount || 0,
-    eligibleRoomTypes: payload.eligibleRoomTypes || [],
-    eligibleHotels: Array.isArray(payload.eligibleHotels) ? payload.eligibleHotels : [],
+    eligibleRoomTypes: Array.isArray(payload.eligibleRoomTypes)
+      ? payload.eligibleRoomTypes.slice(0, 5)
+      : [],
+    eligibleHotels: Array.isArray(payload.eligibleHotels) ? payload.eligibleHotels.slice(0, 3) : [],
     roomType: payload.roomType || '',
     roomOccupancy: payload.roomOccupancy ?? null,
-    roomPrices: payload.roomPrices || [],
     totalPrice: pickFirst(
       payload.totalPrice,
       firstRoom.totalPrice,
@@ -113,14 +114,13 @@ function buildRunSummary(payload) {
     busRoute: pickFirst(payload.busRoute, firstHotel.bus_route, ''),
     pageSnapshot: buildPageSnapshotSummary(payload.pageSnapshot),
     writeResult: payload.writeResult ?? null,
-    cleanupResult: payload.cleanupResult ?? null,
     error: payload.error || null,
-    stack: payload.stack || null
+    reportLevel: payload.reportLevel || 'normal'
   };
 }
 
 function writeLatestRunFile(latestRunPath, summary) {
-  writeJsonFile(latestRunPath, summary);
+  writeJsonFile(latestRunPath, summary, { pretty: false, measure: true });
 }
 
 module.exports = {

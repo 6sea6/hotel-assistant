@@ -139,6 +139,7 @@ test('runHotelImportTask reuses prepared context for batch detail items', async 
   );
   mockedPaths.push(
     installMock('../src/ctrip-list', {
+      buildListResultsSummary: () => [],
       describeExpandedInput: () => '模式=multi-detail，展开酒店=2',
       expandCtripHotelInputs: async () => ({
         inputMode: 'multi-detail',
@@ -245,6 +246,12 @@ test('runHotelImportTask reuses prepared context for batch detail items', async 
         selectionLogs: [],
         rejectedRoomTypes: [],
         normalizeLogs: []
+      }),
+      buildReviewInputSummary: () => ({
+        finalHotelCount: 1,
+        rawCandidateCount: 0,
+        eligibleCount: 1,
+        rejectedCount: 0
       })
     })
   );
@@ -339,6 +346,7 @@ test('runHotelImportTask completes a single detail URL without batch writeResult
   );
   mockedPaths.push(
     installMock('../src/ctrip-list', {
+      buildListResultsSummary: () => [],
       describeExpandedInput: () => '模式=detail，展开酒店=1',
       expandCtripHotelInputs: async () => ({
         inputMode: 'detail',
@@ -430,6 +438,12 @@ test('runHotelImportTask completes a single detail URL without batch writeResult
         selectionLogs: [],
         rejectedRoomTypes: [],
         normalizeLogs: []
+      }),
+      buildReviewInputSummary: () => ({
+        finalHotelCount: 1,
+        rawCandidateCount: 0,
+        eligibleCount: 1,
+        rejectedCount: 0
       })
     })
   );

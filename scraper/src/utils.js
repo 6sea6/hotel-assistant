@@ -43,7 +43,35 @@ function writeJsonFile(filePath, content, options = {}) {
   ensureDir(path.dirname(filePath));
   const pretty = options.pretty !== false;
   const space = pretty ? 2 : undefined;
+
+  if (options.measure) {
+    const stringifyStart = Date.now();
+    const json = JSON.stringify(content, null, space);
+    const stringifyMs = Date.now() - stringifyStart;
+    const writeStart = Date.now();
+    fs.writeFileSync(filePath, json, 'utf-8');
+    const writeMs = Date.now() - writeStart;
+    const bytes = Buffer.byteLength(json, 'utf-8');
+    if (options.maxBytesWarning && bytes > options.maxBytesWarning) {
+      console.warn(
+        `[writeJsonFile] ${filePath} is ${(bytes / 1024).toFixed(1)}KB, exceeds ${(options.maxBytesWarning / 1024).toFixed(1)}KB warning threshold`
+      );
+    }
+    return { bytes, stringifyMs, writeMs, totalMs: stringifyMs + writeMs };
+  }
+
   fs.writeFileSync(filePath, JSON.stringify(content, null, space), 'utf-8');
+  return null;
+}
+
+function normalizeReportLevel(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (normalized === 'summary' || normalized === 'full') {
+    return normalized;
+  }
+  return 'normal';
 }
 
 const SENSITIVE_KEY_PATTERN =
@@ -286,8 +314,64 @@ function extractFirstMatch(text, regex, groupIndex = 1) {
   return match ? normalizeText(match[groupIndex]) : null;
 }
 
+function compactCliResult(result) {
+  if (!result || typeof result !== 'object') {
+    return result;
+  }
+
+  const compact = {
+    success: result.success,
+    batchMode: result.batchMode || false,
+    inputMode: result.inputMode || '',
+    hotelName: result.hotelName || '',
+    eligibleCount: result.eligibleCount || 0,
+    totalPrice: result.totalPrice ?? null,
+    outputPath: result.outputPath || '',
+    latestRunPath: result.latestRunPath || '',
+    error: result.error || null
+  };
+
+  if (result.batchMode) {
+    compact.batchSummary = result.batchSummary
+      ? {
+          inputMode: result.batchSummary.inputMode,
+          requestedUrlCount: result.batchSummary.requestedUrlCount,
+          expandedHotelCount: result.batchSummary.expandedHotelCount,
+          succeededCount: result.batchSummary.succeededCount,
+          failedCount: result.batchSummary.failedCount,
+          eligibleHotelRecordCount: result.batchSummary.eligibleHotelRecordCount
+        }
+      : null;
+    compact.items = Array.isArray(result.items)
+      ? result.items.slice(0, 20).map((item) => ({
+          index: item.index,
+          hotelName: item.hotelName,
+          eligibleCount: item.eligibleCount,
+          totalPrice: item.totalPrice ?? null,
+          outputPath: item.outputPath || '',
+          error: item.error || ''
+        }))
+      : [];
+  }
+
+  if (result.writeResult) {
+    compact.writeResult = result.writeResult.batchMode
+      ? {
+          batchMode: true,
+          appliedCount: result.writeResult.appliedCount,
+          skippedCount: result.writeResult.skippedCount
+        }
+      : {
+          operation: result.writeResult.operation
+        };
+  }
+
+  return compact;
+}
+
 module.exports = {
   cleanupOutputArtifacts,
+  compactCliResult,
   createTimestampId,
   differenceInDays,
   ensureDir,
@@ -296,6 +380,7 @@ module.exports = {
   includesNormalizedPlace,
   isRestrictedPostConfirmationFreeCancellation,
   normalizePlaceName,
+  normalizeReportLevel,
   normalizeText,
   parseArgs,
   pickFirst,

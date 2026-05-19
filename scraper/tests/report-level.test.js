@@ -240,3 +240,189 @@ test('CLI output is compact (no pretty print)', () => {
   assert.ok(compact.length < pretty.length);
   assert.ok(!compact.includes('\n'));
 });
+
+test('compactCliResult strips large objects from result', () => {
+  const { compactCliResult } = require('../src/utils');
+
+  const result = {
+    success: true,
+    batchMode: true,
+    inputMode: 'list',
+    hotelName: 'Test Hotel',
+    eligibleCount: 5,
+    totalPrice: 1000,
+    outputPath: '/output/test.json',
+    reviewInput: { rawRoomCandidates: new Array(100).fill({ id: 1 }) },
+    eligibleHotels: new Array(50).fill({ name: 'Hotel' }),
+    performance: { scrapeMs: 1000, transitMs: 500 },
+    batchSummary: {
+      inputMode: 'list',
+      requestedUrlCount: 1,
+      expandedHotelCount: 5,
+      succeededCount: 5,
+      failedCount: 0,
+      eligibleHotelRecordCount: 5,
+      extraField: 'should be stripped'
+    },
+    items: Array.from({ length: 30 }, (_, i) => ({
+      index: i + 1,
+      hotelName: `Hotel ${i + 1}`,
+      eligibleCount: 1,
+      totalPrice: 100,
+      outputPath: `/output/hotel-${i + 1}.json`,
+      error: '',
+      extraField: 'should be stripped'
+    })),
+    writeResult: {
+      batchMode: true,
+      appliedCount: 5,
+      skippedCount: 0,
+      extraField: 'should be stripped'
+    }
+  };
+
+  const compact = compactCliResult(result);
+
+  assert.equal(compact.success, true);
+  assert.equal(compact.batchMode, true);
+  assert.equal(compact.eligibleCount, 5);
+  assert.equal(compact.reviewInput, undefined);
+  assert.equal(compact.eligibleHotels, undefined);
+  assert.equal(compact.performance, undefined);
+  assert.ok(compact.items.length <= 20);
+  assert.equal(compact.items[0].extraField, undefined);
+  assert.equal(compact.batchSummary.extraField, undefined);
+  assert.equal(compact.writeResult.extraField, undefined);
+});
+
+test('compactCliResult handles single hotel result', () => {
+  const { compactCliResult } = require('../src/utils');
+
+  const result = {
+    success: true,
+    batchMode: false,
+    hotelName: 'Single Hotel',
+    eligibleCount: 1,
+    totalPrice: 500,
+    outputPath: '/output/single.json',
+    reviewInput: { taskMeta: {} },
+    eligibleHotels: [{ name: 'Hotel' }]
+  };
+
+  const compact = compactCliResult(result);
+
+  assert.equal(compact.success, true);
+  assert.equal(compact.batchMode, false);
+  assert.equal(compact.hotelName, 'Single Hotel');
+  assert.equal(compact.items, undefined);
+});
+
+test('normalizeReportLevel returns only summary/normal/full', () => {
+  const { normalizeReportLevel } = require('../src/utils');
+
+  assert.equal(normalizeReportLevel('summary'), 'summary');
+  assert.equal(normalizeReportLevel('normal'), 'normal');
+  assert.equal(normalizeReportLevel('full'), 'full');
+  assert.equal(normalizeReportLevel('SUMMARY'), 'summary');
+  assert.equal(normalizeReportLevel('FULL'), 'full');
+  assert.equal(normalizeReportLevel('invalid'), 'normal');
+  assert.equal(normalizeReportLevel(''), 'normal');
+  assert.equal(normalizeReportLevel(null), 'normal');
+  assert.equal(normalizeReportLevel(undefined), 'normal');
+});
+
+test('writeJsonFile with measure returns bytes/stringifyMs/writeMs', () => {
+  const { writeJsonFile } = require('../src/utils');
+  const tempDir = createTempDir();
+  const filePath = path.join(tempDir, 'measure-test.json');
+  const content = { key: 'value', data: new Array(100).fill('test') };
+
+  const result = writeJsonFile(filePath, content, { measure: true });
+
+  assert.ok(result.bytes > 0);
+  assert.ok(result.stringifyMs >= 0);
+  assert.ok(result.writeMs >= 0);
+  assert.ok(result.totalMs >= 0);
+  assert.equal(result.totalMs, result.stringifyMs + result.writeMs);
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('buildReviewInputSummary returns lightweight summary without full logs', () => {
+  const { buildReviewInputSummary } = require('../src/review-input');
+
+  const summary = buildReviewInputSummary({
+    taskMeta: { taskId: 'test-1', url: 'https://example.com' },
+    finalHotels: [{ name: 'Hotel 1' }],
+    roomCandidates: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    evaluations: [
+      { action: 'selected', reason: 'good' },
+      { action: 'rejected', reason: 'bad' },
+      { action: 'selected', reason: 'good' }
+    ],
+    pageSnapshot: { capture_method: 'edge-cdp', wait_reason: '' },
+    template: {}
+  });
+
+  assert.equal(summary.taskMeta.taskId, 'test-1');
+  assert.equal(summary.finalHotelCount, 1);
+  assert.equal(summary.rawCandidateCount, 3);
+  assert.equal(summary.eligibleCount, 2);
+  assert.equal(summary.rejectedCount, 1);
+  assert.equal(summary.captureMethod, 'edge-cdp');
+  assert.ok(summary.lightweightFingerprint);
+  assert.equal(summary.normalizeLogs, undefined);
+  assert.equal(summary.selectionLogs, undefined);
+  assert.equal(summary.rawRoomCandidates, undefined);
+  assert.equal(summary.finalHotelFieldLogs, undefined);
+});
+
+test('buildListResultsSummary extracts only summary fields', () => {
+  const { buildListResultsSummary } = require('../src/ctrip-list');
+
+  const listResults = [
+    {
+      inputUrl: 'https://example.com/list',
+      selected: [{ id: 1 }, { id: 2 }],
+      totalCandidates: 10,
+      rejected: [{ id: 3 }],
+      edgeFallbackUsed: true,
+      performance: { htmlFetchMs: 100, edgeFallbackMs: 200, totalMs: 300 },
+      errors: [{ error: 'test error' }]
+    }
+  ];
+
+  const summary = buildListResultsSummary(listResults);
+
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].inputUrl, 'https://example.com/list');
+  assert.equal(summary[0].selectedCount, 2);
+  assert.equal(summary[0].totalCandidates, 10);
+  assert.equal(summary[0].rejectedCount, 1);
+  assert.equal(summary[0].edgeFallbackUsed, true);
+  assert.equal(summary[0].htmlFetchMs, 100);
+  assert.equal(summary[0].edgeFallbackMs, 200);
+  assert.equal(summary[0].totalMs, 300);
+  assert.deepEqual(summary[0].errors, ['test error']);
+  assert.equal(summary[0].selected, undefined);
+  assert.equal(summary[0].rejected, undefined);
+});
+
+test('buildRunSummary limits eligibleHotels and items count', () => {
+  const { buildRunSummary } = require('../src/cli/run-summary');
+
+  const result = {
+    success: true,
+    hotelName: 'Test',
+    eligibleCount: 10,
+    eligibleHotels: Array.from({ length: 50 }, (_, i) => ({ name: `Hotel ${i}` })),
+    eligibleRoomTypes: Array.from({ length: 50 }, (_, i) => ({ roomType: `Room ${i}` })),
+    items: Array.from({ length: 50 }, (_, i) => ({ index: i, hotelName: `Item ${i}` }))
+  };
+
+  const summary = buildRunSummary(result);
+
+  assert.ok(summary.eligibleHotels.length <= 3);
+  assert.ok(summary.eligibleRoomTypes.length <= 5);
+  assert.ok(summary.items.length <= 20);
+});

@@ -20,7 +20,7 @@ const importPhase = cliPerf.phase('import_modules');
 const path = require('path');
 const { DEFAULT_LATEST_RUN_PATH } = require('./cli/run-summary');
 const { runHotelImportTask, writeFailureSummary } = require('./task-runner');
-const { parseArgs } = require('./utils');
+const { compactCliResult, parseArgs } = require('./utils');
 importPhase.end('success', {
   elapsed_ms: Date.now() - CLI_STARTED_AT_MS
 });
@@ -76,7 +76,7 @@ async function main() {
     runId: cliPerf.meta && cliPerf.meta.run_id,
     scriptStartLogged: true
   });
-  console.log(JSON.stringify(result));
+  console.log(JSON.stringify(compactCliResult(result)));
 }
 
 main().catch((error) => {

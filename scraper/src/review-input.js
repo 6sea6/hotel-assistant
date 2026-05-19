@@ -465,7 +465,57 @@ function buildReviewInput({
   return reviewInput;
 }
 
+function buildReviewInputSummary({
+  taskMeta,
+  finalHotels,
+  roomCandidates,
+  evaluations,
+  pageSnapshot,
+  template
+} = {}) {
+  const candidates = Array.isArray(roomCandidates) ? roomCandidates : [];
+  const safeEvaluations = Array.isArray(evaluations) ? evaluations : [];
+  const selectedRooms = safeEvaluations.filter((e) => e.action === 'selected');
+  const rejectedRooms = safeEvaluations.filter((e) => e.action !== 'selected');
+
+  const snapshotSummary = summarizePageSnapshot(
+    pageSnapshot,
+    candidates,
+    selectedRooms,
+    rejectedRooms
+  );
+
+  return {
+    taskMeta: {
+      taskId: (taskMeta && taskMeta.taskId) || '',
+      url: (taskMeta && taskMeta.url) || '',
+      templateId: (taskMeta && taskMeta.templateId) ?? null,
+      templateName: (taskMeta && taskMeta.templateName) || ''
+    },
+    finalHotelCount: Array.isArray(finalHotels) ? finalHotels.length : 0,
+    rawCandidateCount: candidates.length,
+    eligibleCount: selectedRooms.length,
+    rejectedCount: rejectedRooms.length,
+    selectedRoomSource: (pageSnapshot && pageSnapshot.selected_room_source) || '',
+    captureMethod: (pageSnapshot && pageSnapshot.capture_method) || '',
+    waitReason: (pageSnapshot && pageSnapshot.wait_reason) || '',
+    pageSnapshotSummary: snapshotSummary,
+    lightweightFingerprint: crypto
+      .createHash('sha256')
+      .update(
+        JSON.stringify({
+          url: (taskMeta && taskMeta.url) || '',
+          candidateCount: candidates.length,
+          selectedCount: selectedRooms.length,
+          templateId: (taskMeta && taskMeta.templateId) ?? null
+        })
+      )
+      .digest('hex')
+  };
+}
+
 module.exports = {
   buildReviewInput,
+  buildReviewInputSummary,
   fingerprintReviewInput
 };
