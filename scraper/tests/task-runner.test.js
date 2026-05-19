@@ -21,6 +21,190 @@ function clearModules(paths) {
   }
 }
 
+function installFastModeTaskRunnerMocks(tempDir, options = {}) {
+  const hotelInputs = options.hotelInputs || [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=fast1',
+      hotelId: 'fast1',
+      source: 'detail-input'
+    }
+  ];
+  const calls = {
+    appendHotelsToStore: 0,
+    appendedHotels: [],
+    buildReviewInput: 0,
+    buildReviewInputSummary: 0,
+    scrape: 0,
+    transit: 0
+  };
+  const mockedPaths = [];
+
+  mockedPaths.push(
+    installMock('../src/compare-app-bridge', {
+      appendHotelsToStore: (hotels) => {
+        calls.appendHotelsToStore += 1;
+        calls.appendedHotels.push(hotels);
+        return { operation: 'append', count: hotels.length };
+      },
+      findTemplateInStore: () => ({
+        template_id: 'tpl-fast',
+        template_name: '极速模板',
+        destination: '武汉站'
+      }),
+      getCompareAppStorePath: () => path.join(tempDir, 'hotel-data.json'),
+      loadCompareAppStore: () => ({
+        settings: {},
+        templates: []
+      })
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/ctrip-list', {
+      buildListResultsSummary: () => [],
+      describeExpandedInput: () =>
+        hotelInputs.length > 1
+          ? `模式=multi-detail，展开酒店=${hotelInputs.length}`
+          : '模式=detail，展开酒店=1',
+      expandCtripHotelInputs: async () => ({
+        inputMode: hotelInputs.length > 1 ? 'multi-detail' : 'detail',
+        requestedUrls: hotelInputs.map((item) => item.url),
+        hotelInputs,
+        listResults: [],
+        skippedUrls: [],
+        performance: { totalMs: 1, listCollectMs: 0, lists: [] },
+        summary: {
+          inputMode: hotelInputs.length > 1 ? 'multi-detail' : 'detail',
+          requestedUrlCount: hotelInputs.length,
+          detailInputCount: hotelInputs.length,
+          listInputCount: 0,
+          expandedHotelCount: hotelInputs.length,
+          filters: {},
+          performance: { totalMs: 1, listCollectMs: 0, lists: [] }
+        }
+      }),
+      normalizeListFiltersFromArgs: () => ({})
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/ctrip-scraper', {
+      scrapeCtripHotel: async (url) => {
+        calls.scrape += 1;
+        const hotelInput = hotelInputs.find((item) => item.url === url) || hotelInputs[0];
+        return {
+          hotel_name: `极速酒店${hotelInput.hotelId}`,
+          address: `极速地址${hotelInput.hotelId}`,
+          ctrip_score: 4.8,
+          geo: { location: '114.1,30.1' },
+          room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+          room_candidates: [{ title: '大床房', price: 188 }],
+          raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+          eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+          room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+          page_snapshot: {
+            source_url: url,
+            saved_html_files: [],
+            room_candidates_count: 1,
+            room_price_visible: true,
+            capture_method: 'html_only',
+            wait_reason: ''
+          },
+          performance: {
+            totalMs: 3,
+            htmlMs: 1,
+            directReplayMs: 0,
+            edgeCaptureMs: 0,
+            waitDataMs: 1
+          }
+        };
+      }
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/amap', {
+      getTransitInfo: async () => {
+        calls.transit += 1;
+        return {
+          route: { durationMinutes: 20 },
+          nearestSubway: { name: '测试站', distanceKm: 0.6 }
+        };
+      }
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/hotel-record', {
+      buildHotelRecord: (template, scraped) => ({
+        template_id: template.template_id,
+        name: scraped.hotel_name,
+        room_type: '大床房',
+        total_price: 188,
+        ctrip_score: scraped.ctrip_score,
+        subway_distance: '0.6',
+        transport_time: '20',
+        bus_route: '测试路线'
+      }),
+      buildEligibleRoomRecords: (template, scraped) => [
+        {
+          template_id: template.template_id,
+          name: scraped.hotel_name,
+          room_type: '大床房',
+          original_room_type: '大床房',
+          daily_price: 188,
+          total_price: 188,
+          ctrip_score: scraped.ctrip_score,
+          subway_distance: '0.6',
+          transport_time: '20',
+          bus_route: '测试路线'
+        }
+      ]
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/review-input', {
+      buildReviewInput: () => {
+        calls.buildReviewInput += 1;
+        if (options.throwOnReviewInput) {
+          throw new Error('buildReviewInput should not run');
+        }
+        return { taskMeta: {}, rawRoomCandidates: [] };
+      },
+      buildReviewInputSummary: () => {
+        calls.buildReviewInputSummary += 1;
+        if (options.throwOnReviewInputSummary) {
+          throw new Error('buildReviewInputSummary should not run');
+        }
+        return { finalHotelCount: 1, rawCandidateCount: 1 };
+      }
+    })
+  );
+  mockedPaths.push(
+    installMock('../src/template-loader', {
+      applyMatchedTemplate: (template, matchedTemplate) => ({
+        ...template,
+        ...matchedTemplate,
+        template_id: 'tpl-fast',
+        template_name: '极速模板',
+        destination: '武汉站',
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-02',
+        room_count: 1
+      }),
+      loadTemplate: () => ({}),
+      mergeTemplateWithArgs: (_templateFromFile, args) => ({
+        template_id: args.templateId || 'tpl-fast',
+        template_name: args.templateName || '极速模板',
+        ctrip_url: args.url,
+        destination: '武汉站',
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-02',
+        room_count: 1
+      }),
+      validateTemplate: () => undefined
+    })
+  );
+
+  return { calls, mockedPaths };
+}
+
 test('runHotelImportTask marks apply-output perf records as apply_output task kind', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   const perfPath = require.resolve('../src/runtime/perf');
@@ -103,6 +287,169 @@ test('runHotelImportTask marks apply-output perf records as apply_output task ki
       process.env.ENABLE_PERF_LOG = previousEnv.ENABLE_PERF_LOG;
     }
     clearModules([taskRunnerPath, perfPath, devPerfPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('reportLevel off skips review/report output for single hotel', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-fast-single-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    throwOnReviewInput: true,
+    throwOnReviewInputSummary: true
+  });
+
+  try {
+    const records = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=fast1',
+        latestRun: latestRunPath,
+        'skip-report': true
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(calls.buildReviewInput, 0);
+    assert.equal(calls.buildReviewInputSummary, 0);
+    assert.equal(result.success, true);
+    assert.equal(result.hotelName, '极速酒店fast1');
+    assert.equal(result.eligibleCount, 1);
+    assert.equal(result.totalPrice, 188);
+    assert.equal(result.outputPath || '', '');
+    assert.equal(Object.prototype.hasOwnProperty.call(result, 'reviewInput'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(result, 'reviewInputSummary'), false);
+    assert.equal(result.pageSnapshot.room_candidates_count, 1);
+
+    const outputDir = path.join(tempDir, 'output');
+    const outputJsonFiles = fs.existsSync(outputDir)
+      ? fs.readdirSync(outputDir).filter((entry) => entry.endsWith('.json'))
+      : [];
+    assert.deepEqual(outputJsonFiles, []);
+    assert.equal(
+      records.some((record) =>
+        ['build_review_input', 'build_review_summary', 'build_report', 'write_report'].includes(
+          record.phase
+        )
+      ),
+      false
+    );
+
+    const latestRun = JSON.parse(fs.readFileSync(latestRunPath, 'utf8'));
+    assert.equal(latestRun.success, true);
+    assert.equal(latestRun.hotelName, '极速酒店fast1');
+    assert.equal(latestRun.eligibleCount, 1);
+    assert.equal(latestRun.totalPrice, 188);
+    assert.equal(latestRun.outputPath || '', '');
+    assert.equal(latestRun.items, undefined);
+    assert.equal(latestRun.eligibleHotels, undefined);
+    assert.equal(latestRun.reviewInput, undefined);
+    assert.equal(latestRun.performance, undefined);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('reportLevel off batch skips item reports and can still write app data', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-fast-batch-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    throwOnReviewInput: true,
+    throwOnReviewInputSummary: true,
+    hotelInputs: [
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=fast1',
+        hotelId: 'fast1',
+        source: 'detail-input'
+      },
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=fast2',
+        hotelId: 'fast2',
+        source: 'detail-input'
+      }
+    ]
+  });
+
+  try {
+    const records = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: [
+          'https://hotels.ctrip.com/hotels/detail/?hotelId=fast1',
+          'https://hotels.ctrip.com/hotels/detail/?hotelId=fast2'
+        ],
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'write-app-data': true,
+        'unsafe-allow-unreviewed-write': true
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(calls.buildReviewInput, 0);
+    assert.equal(calls.buildReviewInputSummary, 0);
+    assert.equal(calls.appendHotelsToStore, 1);
+    assert.equal(calls.appendedHotels[0].length, 2);
+    assert.equal(result.success, true);
+    assert.equal(result.batchMode, true);
+    assert.equal(result.eligibleCount, 2);
+    assert.equal(result.outputPath || '', '');
+    assert.equal(result.reviewInput, null);
+    assert.equal(result.writeResult.operation, 'append');
+
+    const outputDir = path.join(tempDir, 'output');
+    const batchItemsDir = path.join(outputDir, 'batch-items');
+    assert.equal(fs.existsSync(batchItemsDir), false);
+    const outputJsonFiles = fs.existsSync(outputDir)
+      ? fs.readdirSync(outputDir).filter((entry) => entry.endsWith('.json'))
+      : [];
+    assert.deepEqual(outputJsonFiles, []);
+    assert.equal(
+      records.some((record) =>
+        ['build_review_input', 'build_review_summary', 'build_report', 'write_report'].includes(
+          record.phase
+        )
+      ),
+      false
+    );
+
+    const latestRun = JSON.parse(fs.readFileSync(latestRunPath, 'utf8'));
+    assert.equal(latestRun.success, true);
+    assert.equal(latestRun.batchMode, true);
+    assert.equal(latestRun.eligibleCount, 2);
+    assert.equal(latestRun.outputPath || '', '');
+    assert.equal(latestRun.items, undefined);
+    assert.equal(latestRun.eligibleHotels, undefined);
+    assert.equal(latestRun.performance, undefined);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });

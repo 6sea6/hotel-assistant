@@ -46,6 +46,9 @@ function printHelp() {
   --targetCount <数量>     列表页目标采集酒店数量，默认 10
   --out <路径>              指定输出 JSON 文件路径
   --latestRun <路径>        指定最终运行凭证 JSON 路径，默认 output/latest-run.json
+  --report-level <级别>     输出报告级别：off/summary/normal/full，默认 normal
+  --skip-report             等价于 --report-level off，不生成采集报告和复核输入
+  --no-output-report        等价于 --report-level off，不生成采集报告和复核输入
   --html <路径>             使用本地保存的携程 HTML 文件而不是直接联网抓取
   --apply-output <路径>     复核通过后，将输出 JSON 安全回写到比较助手（通过桥接层处理 grouped/shared+rooms 结构）
   --save-html              联网抓取时额外保存原始 HTML 快照

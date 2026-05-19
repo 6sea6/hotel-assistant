@@ -476,8 +476,7 @@ function buildReviewInputSummary({
   finalHotels,
   roomCandidates,
   evaluations,
-  pageSnapshot,
-  template
+  pageSnapshot
 } = {}) {
   const candidates = Array.isArray(roomCandidates) ? roomCandidates : [];
   const safeEvaluations = Array.isArray(evaluations) ? evaluations : [];

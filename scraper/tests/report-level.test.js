@@ -317,12 +317,14 @@ test('compactCliResult handles single hotel result', () => {
   assert.equal(compact.items, undefined);
 });
 
-test('normalizeReportLevel returns only summary/normal/full', () => {
+test('normalizeReportLevel returns only off/summary/normal/full', () => {
   const { normalizeReportLevel } = require('../src/utils');
 
+  assert.equal(normalizeReportLevel('off'), 'off');
   assert.equal(normalizeReportLevel('summary'), 'summary');
   assert.equal(normalizeReportLevel('normal'), 'normal');
   assert.equal(normalizeReportLevel('full'), 'full');
+  assert.equal(normalizeReportLevel('OFF'), 'off');
   assert.equal(normalizeReportLevel('SUMMARY'), 'summary');
   assert.equal(normalizeReportLevel('FULL'), 'full');
   assert.equal(normalizeReportLevel('invalid'), 'normal');
@@ -457,8 +459,18 @@ test('normalizeReportLevel explicitly supports normal', () => {
   assert.equal(normalizeReportLevel('NORMAL'), 'normal');
   assert.equal(normalizeReportLevel('Normal'), 'normal');
   assert.equal(normalizeReportLevel('bad'), 'normal');
+  assert.equal(normalizeReportLevel('off'), 'off');
   assert.equal(normalizeReportLevel('summary'), 'summary');
   assert.equal(normalizeReportLevel('full'), 'full');
+});
+
+test('parseArgs supports reportLevel off aliases', () => {
+  const { parseArgs } = require('../src/utils');
+
+  assert.equal(parseArgs(['node', 'cli.js', '--reportLevel', 'off']).reportLevel, 'off');
+  assert.equal(parseArgs(['node', 'cli.js', '--report-level', 'off'])['report-level'], 'off');
+  assert.equal(parseArgs(['node', 'cli.js', '--skip-report'])['skip-report'], true);
+  assert.equal(parseArgs(['node', 'cli.js', '--no-output-report'])['no-output-report'], true);
 });
 
 test('buildReviewInput includes summary counts', () => {

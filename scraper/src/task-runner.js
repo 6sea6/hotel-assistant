@@ -145,6 +145,22 @@ function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
 }
 
+function isReportDisabled(reportLevel) {
+  return reportLevel === 'off';
+}
+
+function shouldCleanupOutputArtifactsForRun(reportLevel, args = {}) {
+  if (!isReportDisabled(reportLevel)) {
+    return true;
+  }
+
+  return Boolean(
+    args['save-html'] ||
+    process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR ||
+    process.env.HOTEL_DEBUG_EDGE_CAPTURE === '1'
+  );
+}
+
 function createTransitCache() {
   return {
     geocode: new Map(),
@@ -299,7 +315,8 @@ function buildBatchResult({
   writeResult,
   cleanupResult,
   reviewInput,
-  performance
+  performance,
+  reportLevel = 'normal'
 }) {
   const firstHotel = allHotels[0] || {};
   const firstResult = childResults[0] || {};
@@ -363,6 +380,7 @@ function buildBatchResult({
     writeResult,
     cleanupResult,
     reviewInput,
+    reportLevel,
     performance,
     failedItems
   };
@@ -393,6 +411,7 @@ async function runPreparedSingleDetailImport(context) {
     includeReviewInput = false,
     forceReviewInput = false
   } = context;
+  const reportDisabled = isReportDisabled(reportLevel);
   const itemPerf = perf
     ? perf.child({
         taskId,
@@ -449,28 +468,31 @@ async function runPreparedSingleDetailImport(context) {
   );
   performance.transitMs = durationSince(transitStartedAt);
 
-  const reviewInputParams = {
-    taskMeta: {
-      taskId,
-      url: itemTemplate.ctrip_url,
-      templateId: null,
-      templateName: itemTemplate.template_name,
-      checkInDate: itemTemplate.check_in_date,
-      checkOutDate: itemTemplate.check_out_date,
-      roomCount: itemTemplate.room_count,
-      guestCount: itemTemplate.room_count,
-      destination: effectiveDestination
-    },
-    finalHotels: [],
-    roomCandidates: scraped.raw_room_candidates || scraped.room_candidates || [],
-    evaluations:
-      scraped.room_selection_diagnostics &&
-      Array.isArray(scraped.room_selection_diagnostics.evaluations)
-        ? scraped.room_selection_diagnostics.evaluations
-        : [],
-    pageSnapshot: scraped.page_snapshot,
-    template: itemTemplate
-  };
+  let reviewInputParams = null;
+  if (!reportDisabled) {
+    reviewInputParams = {
+      taskMeta: {
+        taskId,
+        url: itemTemplate.ctrip_url,
+        templateId: null,
+        templateName: itemTemplate.template_name,
+        checkInDate: itemTemplate.check_in_date,
+        checkOutDate: itemTemplate.check_out_date,
+        roomCount: itemTemplate.room_count,
+        guestCount: itemTemplate.room_count,
+        destination: effectiveDestination
+      },
+      finalHotels: [],
+      roomCandidates: scraped.raw_room_candidates || scraped.room_candidates || [],
+      evaluations:
+        scraped.room_selection_diagnostics &&
+        Array.isArray(scraped.room_selection_diagnostics.evaluations)
+          ? scraped.room_selection_diagnostics.evaluations
+          : [],
+      pageSnapshot: scraped.page_snapshot,
+      template: itemTemplate
+    };
+  }
 
   const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries } = await itemPerf.runPhase(
     'parse_data',
@@ -507,15 +529,18 @@ async function runPreparedSingleDetailImport(context) {
     }
   );
 
-  reviewInputParams.taskMeta.templateId = hotelRecord.template_id;
-  reviewInputParams.finalHotels =
-    eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord];
+  if (reviewInputParams) {
+    reviewInputParams.taskMeta.templateId = hotelRecord.template_id;
+    reviewInputParams.finalHotels =
+      eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord];
+  }
 
   const needsFullReviewInput =
-    reportLevel === 'full' ||
-    includeReviewInput ||
-    forceReviewInput ||
-    (!isBatchItem && reportLevel === 'normal');
+    !reportDisabled &&
+    (reportLevel === 'full' ||
+      includeReviewInput ||
+      forceReviewInput ||
+      (!isBatchItem && reportLevel === 'normal'));
   let reviewInput;
   let reviewInputSummary;
 
@@ -527,7 +552,7 @@ async function runPreparedSingleDetailImport(context) {
       async () => buildReviewInput(reviewInputParams)
     );
     performance.reviewInputMs = durationSince(reviewInputStartedAt);
-  } else {
+  } else if (!reportDisabled) {
     const reviewSummaryStartedAt = Date.now();
     reviewInputSummary = await itemPerf.runPhase(
       'build_review_summary',
@@ -537,22 +562,26 @@ async function runPreparedSingleDetailImport(context) {
     performance.reviewInputMs = durationSince(reviewSummaryStartedAt);
   }
 
-  const outputPath = path.resolve(
-    preferredOutputPath || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`)
-  );
+  const outputPath = reportDisabled
+    ? ''
+    : path.resolve(
+        preferredOutputPath || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`)
+      );
+  const savedHtmlFiles =
+    scraped.page_snapshot && Array.isArray(scraped.page_snapshot.saved_html_files)
+      ? scraped.page_snapshot.saved_html_files
+      : [];
 
-  const cleanupStartedAt = Date.now();
-  const cleanupResult = await itemPerf.runPhase(
-    'close_resource',
-    { url: itemTemplate.ctrip_url },
-    async () =>
-      cleanupOutputArtifacts(
-        outputDir,
-        outputPath,
-        scraped.page_snapshot && scraped.page_snapshot.saved_html_files
-      )
-  );
-  performance.cleanupMs = durationSince(cleanupStartedAt);
+  let cleanupResult = { deletedFiles: [], skipped: true };
+  if (shouldCleanupOutputArtifactsForRun(reportLevel, args)) {
+    const cleanupStartedAt = Date.now();
+    cleanupResult = await itemPerf.runPhase(
+      'close_resource',
+      { url: itemTemplate.ctrip_url },
+      async () => cleanupOutputArtifacts(outputDir, outputPath, savedHtmlFiles)
+    );
+    performance.cleanupMs = durationSince(cleanupStartedAt);
+  }
 
   let writeResult = null;
   if (writeAppData) {
@@ -581,62 +610,65 @@ async function runPreparedSingleDetailImport(context) {
 
   const isFullReport = reportLevel === 'full';
   const reviewInputMode = reviewInput ? 'full' : reviewInputSummary ? 'summary' : 'omitted';
-  const buildReportStartedAt = Date.now();
-  const outputPayload = await itemPerf.runPhase(
-    'build_report',
-    { url: itemTemplate.ctrip_url, reportLevel },
-    async () =>
-      sanitizeSensitiveData({
-        hotels: eligibleRoomRecords,
-        hotel: hotelRecord,
-        review_input: reviewInput || null,
-        review_input_summary: reviewInputSummary || undefined,
-        review_input_mode: reviewInputMode,
-        compare_app_store: getCompareAppStorePath(),
-        matched_template: matchedTemplate,
-        effective_template: itemTemplate,
-        compare_app_settings: compareAppSettings,
-        reportLevel,
-        scrape_debug: {
-          requested_url: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
-          resolved_url: itemTemplate.ctrip_url,
-          selected_room: scraped.room,
-          eligible_rooms: scraped.eligible_rooms,
-          room_candidates: scraped.room_candidates,
-          raw_room_candidates: isFullReport ? scraped.raw_room_candidates : undefined,
-          selection_logs: isFullReport && reviewInput ? reviewInput.selectionLogs : undefined,
-          rejected_room_types: reviewInput ? reviewInput.rejectedRoomTypes : undefined,
-          normalize_logs: isFullReport && reviewInput ? reviewInput.normalizeLogs : undefined,
-          page_snapshot: scraped.page_snapshot,
-          transit,
-          performance
-        }
-      })
-  );
-  performance.buildReportMs = durationSince(buildReportStartedAt);
+  let outputPayload = null;
+  if (!reportDisabled) {
+    const buildReportStartedAt = Date.now();
+    outputPayload = await itemPerf.runPhase(
+      'build_report',
+      { url: itemTemplate.ctrip_url, reportLevel },
+      async () =>
+        sanitizeSensitiveData({
+          hotels: eligibleRoomRecords,
+          hotel: hotelRecord,
+          review_input: reviewInput || null,
+          review_input_summary: reviewInputSummary || undefined,
+          review_input_mode: reviewInputMode,
+          compare_app_store: getCompareAppStorePath(),
+          matched_template: matchedTemplate,
+          effective_template: itemTemplate,
+          compare_app_settings: compareAppSettings,
+          reportLevel,
+          scrape_debug: {
+            requested_url: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
+            resolved_url: itemTemplate.ctrip_url,
+            selected_room: scraped.room,
+            eligible_rooms: scraped.eligible_rooms,
+            room_candidates: scraped.room_candidates,
+            raw_room_candidates: isFullReport ? scraped.raw_room_candidates : undefined,
+            selection_logs: isFullReport && reviewInput ? reviewInput.selectionLogs : undefined,
+            rejected_room_types: reviewInput ? reviewInput.rejectedRoomTypes : undefined,
+            normalize_logs: isFullReport && reviewInput ? reviewInput.normalizeLogs : undefined,
+            page_snapshot: scraped.page_snapshot,
+            transit,
+            performance
+          }
+        })
+    );
+    performance.buildReportMs = durationSince(buildReportStartedAt);
 
-  const outputWriteStartedAt = Date.now();
-  const writeReportPhase = itemPerf.phase('write_report', {
-    url: itemTemplate.ctrip_url,
-    reportLevel
-  });
-  const measure = writeJsonFile(outputPath, outputPayload, {
-    pretty: isFullReport,
-    measure: true
-  });
-  if (measure) {
-    performance.reportBytes = measure.bytes;
-    performance.reportStringifyMs = measure.stringifyMs;
-    performance.reportWriteMs = measure.writeMs;
-    performance.reportTotalWriteMs = measure.totalMs;
+    const outputWriteStartedAt = Date.now();
+    const writeReportPhase = itemPerf.phase('write_report', {
+      url: itemTemplate.ctrip_url,
+      reportLevel
+    });
+    const measure = writeJsonFile(outputPath, outputPayload, {
+      pretty: isFullReport,
+      measure: true
+    });
+    if (measure) {
+      performance.reportBytes = measure.bytes;
+      performance.reportStringifyMs = measure.stringifyMs;
+      performance.reportWriteMs = measure.writeMs;
+      performance.reportTotalWriteMs = measure.totalMs;
+    }
+    writeReportPhase.end('success', {
+      report_bytes: measure ? measure.bytes : 0,
+      report_stringify_ms: measure ? measure.stringifyMs : 0,
+      report_file_write_ms: measure ? measure.writeMs : 0,
+      report_total_write_ms: measure ? measure.totalMs : 0
+    });
+    performance.outputWriteMs = durationSince(outputWriteStartedAt);
   }
-  writeReportPhase.end('success', {
-    report_bytes: measure ? measure.bytes : 0,
-    report_stringify_ms: measure ? measure.stringifyMs : 0,
-    report_file_write_ms: measure ? measure.writeMs : 0,
-    report_total_write_ms: measure ? measure.totalMs : 0
-  });
-  performance.outputWriteMs = durationSince(outputWriteStartedAt);
 
   const finishedAt = new Date().toISOString();
   const result = {
@@ -669,18 +701,22 @@ async function runPreparedSingleDetailImport(context) {
     subwayDistance: hotelRecord.subway_distance,
     transportTime: hotelRecord.transport_time,
     busRoute: hotelRecord.bus_route,
-    pageSnapshot: buildPageSnapshotSummary(outputPayload.scrape_debug.page_snapshot),
-    compareAppSettings: sanitizeSensitiveData(compareAppSettings),
+    pageSnapshot: buildPageSnapshotSummary(scraped.page_snapshot),
     writeResult,
-    cleanupResult,
-    reviewInput: reviewInput || null,
-    reviewInputSummary: reviewInputSummary || undefined,
+    reportLevel,
     performance
   };
+  if (!reportDisabled) {
+    result.compareAppSettings = sanitizeSensitiveData(compareAppSettings);
+    result.cleanupResult = cleanupResult;
+    result.reviewInput = reviewInput || null;
+    result.reviewInputSummary = reviewInputSummary || undefined;
+  }
 
   return {
     result,
-    outputPayload
+    outputPayload,
+    savedHtmlFiles
   };
 }
 
@@ -701,6 +737,7 @@ async function runBatchHotelImportTask(context) {
     expandedInputs,
     reportLevel = 'normal'
   } = context;
+  const reportDisabled = isReportDisabled(reportLevel);
 
   const batchPerf = context.perf
     ? context.perf.child({
@@ -731,7 +768,9 @@ async function runBatchHotelImportTask(context) {
 
     const batchStartedAt = Date.now();
     const batchItemsDir = path.join(outputDir, 'batch-items');
-    ensureDir(batchItemsDir);
+    if (!reportDisabled) {
+      ensureDir(batchItemsDir);
+    }
     const performance = {
       totalMs: 0,
       itemMs: 0,
@@ -747,6 +786,7 @@ async function runBatchHotelImportTask(context) {
     const transitCache = createTransitCache();
     const childResults = [];
     const resultPayloads = [];
+    const savedHtmlFiles = [];
     const failedItems = [];
 
     for (let index = 0; index < expandedInputs.hotelInputs.length; index += 1) {
@@ -761,10 +801,12 @@ async function runBatchHotelImportTask(context) {
         }
       );
 
-      const childOutputPath = path.join(
-        batchItemsDir,
-        `batch-item-${String(index + 1).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
-      );
+      const childOutputPath = reportDisabled
+        ? ''
+        : path.join(
+            batchItemsDir,
+            `batch-item-${String(index + 1).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
+          );
 
       try {
         const itemStartedAt = Date.now();
@@ -792,7 +834,12 @@ async function runBatchHotelImportTask(context) {
         });
         const childResult = preparedResult.result;
         const childPayload = preparedResult.outputPayload;
-        resultPayloads.push(childPayload);
+        if (childPayload) {
+          resultPayloads.push(childPayload);
+        }
+        if (Array.isArray(preparedResult.savedHtmlFiles)) {
+          savedHtmlFiles.push(...preparedResult.savedHtmlFiles);
+        }
         childResult.inputIndex = index + 1;
         childResult.inputSource = hotelInput.source;
         childResult.hotelId = hotelInput.hotelId;
@@ -868,9 +915,11 @@ async function runBatchHotelImportTask(context) {
       }
     }
 
-    const allHotels = resultPayloads.flatMap((payload) =>
-      Array.isArray(payload.hotels) ? payload.hotels : []
-    );
+    const allHotels = reportDisabled
+      ? childResults.flatMap((result) =>
+          Array.isArray(result.eligibleHotels) ? result.eligibleHotels : []
+        )
+      : resultPayloads.flatMap((payload) => (Array.isArray(payload.hotels) ? payload.hotels : []));
     const reviewInput =
       resultPayloads.map((payload) => payload && payload.review_input).filter(Boolean)[0] || null;
 
@@ -890,6 +939,10 @@ async function runBatchHotelImportTask(context) {
               reason:
                 '所有候选房型都明确写了不可取消、不支持取消，或仅支持订单确认后短时间内免费取消；按当前规则整批跳过，未直写比较助手。'
             };
+          }
+
+          if (reportDisabled) {
+            return appendHotelsToStore(allHotels, { replaceExistingGroup: true });
           }
 
           return resultPayloads.map((payload, index) => {
@@ -915,79 +968,91 @@ async function runBatchHotelImportTask(context) {
       performance.writeMs = durationSince(writeStartedAt);
     }
 
-    const outputPath = path.resolve(
-      args.out ||
-        path.join(
-          outputDir,
-          `batch-${slugify(effectiveTemplate.template_name || (matchedTemplate && matchedTemplate.name) || 'ctrip-hotels')}.json`
-        )
-    );
+    const outputPath = reportDisabled
+      ? ''
+      : path.resolve(
+          args.out ||
+            path.join(
+              outputDir,
+              `batch-${slugify(effectiveTemplate.template_name || (matchedTemplate && matchedTemplate.name) || 'ctrip-hotels')}.json`
+            )
+        );
 
-    const snapshotFiles = resultPayloads.flatMap((payload) => {
-      const pageSnapshot = payload && payload.scrape_debug && payload.scrape_debug.page_snapshot;
-      return pageSnapshot && Array.isArray(pageSnapshot.saved_html_files)
-        ? pageSnapshot.saved_html_files
-        : [];
-    });
-    const cleanupStartedAt = Date.now();
-    const cleanupResult = await batchPerf.runPhase(
-      'close_resource',
-      { hotelCount: allHotels.length },
-      async () => cleanupOutputArtifacts(outputDir, outputPath, snapshotFiles)
-    );
-    performance.cleanupMs = durationSince(cleanupStartedAt);
+    const snapshotFiles = reportDisabled
+      ? savedHtmlFiles
+      : resultPayloads.flatMap((payload) => {
+          const pageSnapshot =
+            payload && payload.scrape_debug && payload.scrape_debug.page_snapshot;
+          return pageSnapshot && Array.isArray(pageSnapshot.saved_html_files)
+            ? pageSnapshot.saved_html_files
+            : [];
+        });
+    let cleanupResult = { deletedFiles: [], skipped: true };
+    if (shouldCleanupOutputArtifactsForRun(reportLevel, args)) {
+      const cleanupStartedAt = Date.now();
+      cleanupResult = await batchPerf.runPhase(
+        'close_resource',
+        { hotelCount: allHotels.length },
+        async () => cleanupOutputArtifacts(outputDir, outputPath, snapshotFiles)
+      );
+      performance.cleanupMs = durationSince(cleanupStartedAt);
+    }
     performance.totalMs = durationSince(batchStartedAt);
 
-    const listResultsSummary = buildListResultsSummary(expandedInputs.listResults || []);
+    const listResultsSummary = reportDisabled
+      ? null
+      : buildListResultsSummary(expandedInputs.listResults || []);
 
-    const buildReportStartedAt = Date.now();
-    const outputPayload = await batchPerf.runPhase(
-      'build_report',
-      { hotelCount: allHotels.length, reportLevel },
-      async () =>
-        buildBatchOutputPayload({
-          args,
-          template,
-          matchedTemplate,
-          effectiveTemplate,
-          compareAppSettings,
-          expandedInputs,
-          resultPayloads,
-          childResults,
-          failedItems,
-          allHotels,
-          reviewInput,
-          writeResult,
-          performance,
-          reportLevel,
-          listResultsSummary
-        })
-    );
-    performance.buildReportMs = durationSince(buildReportStartedAt);
+    if (!reportDisabled) {
+      const buildReportStartedAt = Date.now();
+      const outputPayload = await batchPerf.runPhase(
+        'build_report',
+        { hotelCount: allHotels.length, reportLevel },
+        async () =>
+          buildBatchOutputPayload({
+            args,
+            template,
+            matchedTemplate,
+            effectiveTemplate,
+            compareAppSettings,
+            expandedInputs,
+            resultPayloads,
+            childResults,
+            failedItems,
+            allHotels,
+            reviewInput,
+            writeResult,
+            performance,
+            reportLevel,
+            listResultsSummary
+          })
+      );
+      performance.buildReportMs = durationSince(buildReportStartedAt);
 
-    const outputWriteStartedAt = Date.now();
-    const writeReportPhase = batchPerf.phase('write_report', {
-      hotelCount: allHotels.length,
-      reportLevel
-    });
-    const isFullReport = reportLevel === 'full';
-    const measure = writeJsonFile(outputPath, outputPayload, {
-      pretty: isFullReport,
-      measure: true
-    });
-    if (measure) {
-      performance.reportBytes = measure.bytes;
-      performance.reportStringifyMs = measure.stringifyMs;
-      performance.reportWriteMs = measure.writeMs;
-      performance.reportTotalWriteMs = measure.totalMs;
+      const outputWriteStartedAt = Date.now();
+      const writeReportPhase = batchPerf.phase('write_report', {
+        hotelCount: allHotels.length,
+        reportLevel
+      });
+      const isFullReport = reportLevel === 'full';
+      const measure = writeJsonFile(outputPath, outputPayload, {
+        pretty: isFullReport,
+        measure: true
+      });
+      if (measure) {
+        performance.reportBytes = measure.bytes;
+        performance.reportStringifyMs = measure.stringifyMs;
+        performance.reportWriteMs = measure.writeMs;
+        performance.reportTotalWriteMs = measure.totalMs;
+      }
+      writeReportPhase.end('success', {
+        report_bytes: measure ? measure.bytes : 0,
+        report_stringify_ms: measure ? measure.stringifyMs : 0,
+        report_file_write_ms: measure ? measure.writeMs : 0,
+        report_total_write_ms: measure ? measure.totalMs : 0
+      });
+      performance.outputWriteMs = durationSince(outputWriteStartedAt);
     }
-    writeReportPhase.end('success', {
-      report_bytes: measure ? measure.bytes : 0,
-      report_stringify_ms: measure ? measure.stringifyMs : 0,
-      report_file_write_ms: measure ? measure.writeMs : 0,
-      report_total_write_ms: measure ? measure.totalMs : 0
-    });
-    performance.outputWriteMs = durationSince(outputWriteStartedAt);
 
     const result = buildBatchResult({
       startedAt,
@@ -1002,7 +1067,8 @@ async function runBatchHotelImportTask(context) {
       writeResult,
       cleanupResult,
       reviewInput,
-      performance
+      performance,
+      reportLevel
     });
 
     await batchPerf.runPhase('write_latest_run', { hotelCount: allHotels.length }, async () => {
@@ -1057,8 +1123,12 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
   const latestRunPathInput = args.latestRun || DEFAULT_LATEST_RUN_PATH;
   const perfLogger = options.perfLogger || setup_perf_logger();
   const taskKind = args['apply-output'] ? 'apply_output' : 'collect';
+  const requestedReportLevel =
+    args['skip-report'] || args['no-output-report']
+      ? 'off'
+      : args.reportLevel || args['report-level'] || options.reportLevel || 'normal';
   const reportLevel = normalizeReportLevel(
-    args.reportLevel || args['report-level'] || options.reportLevel || 'normal'
+    args['apply-output'] && requestedReportLevel === 'off' ? 'normal' : requestedReportLevel
   );
   const perf =
     options.perf ||

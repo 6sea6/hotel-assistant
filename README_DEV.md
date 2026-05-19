@@ -48,6 +48,29 @@ python scripts/analyze_perf.py logs/perf
 python scripts/analyze_perf.py logs/perf/collect_perf_2026-05-18.jsonl
 ```
 
+## 报告输出对照
+
+性能日志和结果报告是两套独立开关。`ENABLE_PERF_LOG=1` 只控制 `logs/perf/*.jsonl`；`--report-level` 控制采集结束后是否构建复核输入和输出 JSON。
+
+轻量采集，不生成采集报告、复核输入、调试输出：
+
+```bash
+HOTEL_COLLECTOR_ENV=dev ENABLE_PERF_LOG=1 node scraper/src/cli.js --url "携程链接" --templateName "模板名" --report-level off
+```
+
+默认报告路径对照：
+
+```bash
+HOTEL_COLLECTOR_ENV=dev ENABLE_PERF_LOG=1 node scraper/src/cli.js --url "携程链接" --templateName "模板名" --report-level normal
+```
+
+对比 `logs/perf/collect_perf_YYYY-MM-DD.jsonl` 时，重点看：
+
+- `task_total`
+- `scrapeMs`、`transitMs`
+- `reportLevel=off` 时不应出现 `build_review_input`、`build_review_summary`、`build_report`、`write_report`
+- `output/batch-items/` 不应产生新的大 JSON
+
 ## 打包排除
 
 正式包使用 electron-builder。根包 `package.json` 和完整版采集器资源清单都会排除：

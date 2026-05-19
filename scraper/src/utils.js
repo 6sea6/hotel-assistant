@@ -68,7 +68,12 @@ function normalizeReportLevel(value) {
   const normalized = String(value || '')
     .trim()
     .toLowerCase();
-  if (normalized === 'summary' || normalized === 'full') {
+  if (
+    normalized === 'off' ||
+    normalized === 'summary' ||
+    normalized === 'normal' ||
+    normalized === 'full'
+  ) {
     return normalized;
   }
   return 'normal';

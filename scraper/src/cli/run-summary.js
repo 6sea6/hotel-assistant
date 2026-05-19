@@ -72,6 +72,30 @@ function buildPageSnapshotSummary(pageSnapshot) {
 }
 
 function buildRunSummary(payload) {
+  if (payload.reportLevel === 'off') {
+    return {
+      success: payload.success,
+      startedAt: payload.startedAt,
+      finishedAt: payload.finishedAt,
+      hotelName: payload.hotelName || '',
+      eligibleCount: payload.eligibleCount || 0,
+      totalPrice: pickFirst(payload.totalPrice, null),
+      batchMode: Boolean(payload.batchMode),
+      batchSummary: payload.batchSummary
+        ? {
+            inputMode: payload.batchSummary.inputMode,
+            requestedUrlCount: payload.batchSummary.requestedUrlCount,
+            expandedHotelCount: payload.batchSummary.expandedHotelCount,
+            succeededCount: payload.batchSummary.succeededCount,
+            failedCount: payload.batchSummary.failedCount,
+            eligibleHotelRecordCount: payload.batchSummary.eligibleHotelRecordCount
+          }
+        : null,
+      outputPath: payload.outputPath || '',
+      error: payload.error || null
+    };
+  }
+
   const firstHotel = getFirstEligibleHotel(payload);
   const firstRoom = getFirstEligibleRoom(payload);
 
