@@ -39,9 +39,11 @@ function readJsonFile(filePath, fallback = null) {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
-function writeJsonFile(filePath, content) {
+function writeJsonFile(filePath, content, options = {}) {
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, JSON.stringify(content, null, 2), 'utf-8');
+  const pretty = options.pretty !== false;
+  const space = pretty ? 2 : undefined;
+  fs.writeFileSync(filePath, JSON.stringify(content, null, space), 'utf-8');
 }
 
 const SENSITIVE_KEY_PATTERN =

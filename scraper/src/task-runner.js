@@ -208,7 +208,8 @@ function buildBatchOutputPayload({
   failedItems,
   allHotels,
   writeResult,
-  performance
+  performance,
+  reportLevel = 'normal'
 }) {
   const firstPayload = resultPayloads[0] || {};
   const firstHotel = allHotels[0] || firstPayload.hotel || null;
@@ -221,16 +222,18 @@ function buildBatchOutputPayload({
     performance: performance || null
   };
 
-  return sanitizeSensitiveData({
+  const isFullReport = reportLevel === 'full';
+  const isSummaryReport = reportLevel === 'summary';
+
+  const payload = {
     hotels: allHotels,
     hotel: firstHotel,
-    review_input: reviewInputs[0] || null,
-    review_inputs: reviewInputs,
     compare_app_store: getCompareAppStorePath(),
     matched_template: matchedTemplate,
     effective_template: effectiveTemplate,
     compare_app_settings: compareAppSettings,
     batchMode: true,
+    reportLevel,
     items: buildBatchItems(childResults, failedItems),
     batchStats,
     batch: {
@@ -238,7 +241,7 @@ function buildBatchOutputPayload({
       requestedUrls: expandedInputs.requestedUrls,
       expandedHotelUrls: expandedInputs.hotelInputs.map((item) => item.url),
       summary: expandedInputs.summary,
-      listResults: expandedInputs.listResults,
+      listResults: isSummaryReport ? undefined : expandedInputs.listResults,
       skippedUrls: expandedInputs.skippedUrls,
       succeededCount: childResults.length,
       failedCount: failedItems.length,
@@ -249,20 +252,32 @@ function buildBatchOutputPayload({
       requested_url: template.ctrip_url,
       requested_urls: expandedInputs.requestedUrls,
       resolved_urls: expandedInputs.hotelInputs.map((item) => item.url),
-      batch_results: childResults,
+      batch_results: isSummaryReport ? undefined : childResults,
       failed_items: failedItems,
-      item_debug: resultPayloads.map((payload) => payload.scrape_debug).filter(Boolean),
       write_result: writeResult || null,
       list_prefilter: {
         summary: expandedInputs.summary,
-        results: expandedInputs.listResults
+        results: isSummaryReport ? undefined : expandedInputs.listResults
       },
       source_args: {
         targetCount: args.targetCount ?? args['target-count'] ?? null
       },
       performance: performance || null
     }
-  });
+  };
+
+  if (isFullReport) {
+    payload.review_input = reviewInputs[0] || null;
+    payload.review_inputs = reviewInputs;
+    payload.scrape_debug.item_debug = resultPayloads
+      .map((payload) => payload.scrape_debug)
+      .filter(Boolean);
+  } else {
+    payload.review_input = reviewInputs[0] || null;
+    payload.scrape_debug.item_debug_count = resultPayloads.length;
+  }
+
+  return sanitizeSensitiveData(payload);
 }
 
 function buildBatchResult({
@@ -366,7 +381,8 @@ async function runPreparedSingleDetailImport(context) {
     transitCache,
     writeAppData = false,
     perf = null,
-    pageIndex = null
+    pageIndex = null,
+    reportLevel = 'normal'
   } = context;
   const itemPerf = perf
     ? perf.child({
@@ -484,37 +500,6 @@ async function runPreparedSingleDetailImport(context) {
     preferredOutputPath || path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`)
   );
 
-  const outputPayload = sanitizeSensitiveData({
-    hotels: eligibleRoomRecords,
-    hotel: hotelRecord,
-    review_input: reviewInput,
-    compare_app_store: getCompareAppStorePath(),
-    matched_template: matchedTemplate,
-    effective_template: itemTemplate,
-    compare_app_settings: compareAppSettings,
-    scrape_debug: {
-      requested_url: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
-      resolved_url: itemTemplate.ctrip_url,
-      selected_room: scraped.room,
-      eligible_rooms: scraped.eligible_rooms,
-      room_candidates: scraped.room_candidates,
-      raw_room_candidates: scraped.raw_room_candidates,
-      selection_logs: reviewInput.selectionLogs,
-      rejected_room_types: reviewInput.rejectedRoomTypes,
-      normalize_logs: reviewInput.normalizeLogs,
-      page_snapshot: scraped.page_snapshot,
-      transit,
-      performance
-    }
-  });
-
-  const outputWriteStartedAt = Date.now();
-  await itemPerf.runPhase('save_data', { url: itemTemplate.ctrip_url }, async () => {
-    writeJsonFile(outputPath, outputPayload);
-  });
-  performance.outputWriteMs = durationSince(outputWriteStartedAt);
-  outputPayload.scrape_debug.performance = performance;
-
   const cleanupStartedAt = Date.now();
   const cleanupResult = await itemPerf.runPhase(
     'close_resource',
@@ -552,12 +537,45 @@ async function runPreparedSingleDetailImport(context) {
   }
 
   performance.totalMs = durationSince(totalStartedAt);
-  if (outputPayload.scrape_debug) {
-    outputPayload.scrape_debug.performance = performance;
-  }
-  await itemPerf.runPhase('save_data', { url: itemTemplate.ctrip_url }, async () => {
-    writeJsonFile(outputPath, outputPayload);
+
+  const isFullReport = reportLevel === 'full';
+  const buildReportStartedAt = Date.now();
+  const outputPayload = await itemPerf.runPhase(
+    'build_report',
+    { url: itemTemplate.ctrip_url, reportLevel },
+    async () =>
+      sanitizeSensitiveData({
+        hotels: eligibleRoomRecords,
+        hotel: hotelRecord,
+        review_input: reviewInput,
+        compare_app_store: getCompareAppStorePath(),
+        matched_template: matchedTemplate,
+        effective_template: itemTemplate,
+        compare_app_settings: compareAppSettings,
+        reportLevel,
+        scrape_debug: {
+          requested_url: hotelInput.requestedUrl || hotelInput.url || template.ctrip_url,
+          resolved_url: itemTemplate.ctrip_url,
+          selected_room: scraped.room,
+          eligible_rooms: scraped.eligible_rooms,
+          room_candidates: scraped.room_candidates,
+          raw_room_candidates: isFullReport ? scraped.raw_room_candidates : undefined,
+          selection_logs: isFullReport ? reviewInput.selectionLogs : undefined,
+          rejected_room_types: reviewInput.rejectedRoomTypes,
+          normalize_logs: isFullReport ? reviewInput.normalizeLogs : undefined,
+          page_snapshot: scraped.page_snapshot,
+          transit,
+          performance
+        }
+      })
+  );
+  performance.buildReportMs = durationSince(buildReportStartedAt);
+
+  const outputWriteStartedAt = Date.now();
+  await itemPerf.runPhase('write_report', { url: itemTemplate.ctrip_url }, async () => {
+    writeJsonFile(outputPath, outputPayload, { pretty: isFullReport });
   });
+  performance.outputWriteMs = durationSince(outputWriteStartedAt);
 
   const finishedAt = new Date().toISOString();
   const result = {
@@ -618,7 +636,8 @@ async function runBatchHotelImportTask(context) {
     effectiveTemplate,
     compareAppSettings,
     effectiveDestination,
-    expandedInputs
+    expandedInputs,
+    reportLevel = 'normal'
   } = context;
 
   const batchPerf = context.perf
@@ -705,7 +724,8 @@ async function runBatchHotelImportTask(context) {
           transitCache,
           writeAppData: false,
           perf: batchPerf,
-          pageIndex: index + 1
+          pageIndex: index + 1,
+          reportLevel
         });
         const childResult = preparedResult.result;
         const childPayload = preparedResult.outputPayload;
@@ -839,27 +859,6 @@ async function runBatchHotelImportTask(context) {
           `batch-${slugify(effectiveTemplate.template_name || (matchedTemplate && matchedTemplate.name) || 'ctrip-hotels')}.json`
         )
     );
-    performance.totalMs = durationSince(batchStartedAt);
-    const outputPayload = buildBatchOutputPayload({
-      args,
-      template,
-      matchedTemplate,
-      effectiveTemplate,
-      compareAppSettings,
-      expandedInputs,
-      resultPayloads,
-      childResults,
-      failedItems,
-      allHotels,
-      reviewInput,
-      writeResult,
-      performance
-    });
-    const outputWriteStartedAt = Date.now();
-    await batchPerf.runPhase('save_data', { hotelCount: allHotels.length }, async () => {
-      writeJsonFile(outputPath, outputPayload);
-    });
-    performance.outputWriteMs = durationSince(outputWriteStartedAt);
 
     const snapshotFiles = resultPayloads.flatMap((payload) => {
       const pageSnapshot = payload && payload.scrape_debug && payload.scrape_debug.page_snapshot;
@@ -875,18 +874,30 @@ async function runBatchHotelImportTask(context) {
     );
     performance.cleanupMs = durationSince(cleanupStartedAt);
     performance.totalMs = durationSince(batchStartedAt);
-    if (outputPayload.batchStats) {
-      outputPayload.batchStats.performance = performance;
-    }
-    if (outputPayload.batch && outputPayload.batch.stats) {
-      outputPayload.batch.stats.performance = performance;
-    }
-    if (outputPayload.scrape_debug) {
-      outputPayload.scrape_debug.performance = performance;
-    }
-    await batchPerf.runPhase('save_data', { hotelCount: allHotels.length }, async () => {
-      writeJsonFile(outputPath, outputPayload);
+
+    const outputPayload = buildBatchOutputPayload({
+      args,
+      template,
+      matchedTemplate,
+      effectiveTemplate,
+      compareAppSettings,
+      expandedInputs,
+      resultPayloads,
+      childResults,
+      failedItems,
+      allHotels,
+      reviewInput,
+      writeResult,
+      performance,
+      reportLevel
     });
+    const outputWriteStartedAt = Date.now();
+    await batchPerf.runPhase('write_report', { hotelCount: allHotels.length }, async () => {
+      const isFullReport = reportLevel === 'full';
+      writeJsonFile(outputPath, outputPayload, { pretty: isFullReport });
+    });
+    performance.outputWriteMs = durationSince(outputWriteStartedAt);
+
     const result = buildBatchResult({
       startedAt,
       outputPath,
@@ -903,13 +914,15 @@ async function runBatchHotelImportTask(context) {
       performance
     });
 
-    writeLatestRunFile(
-      latestRunPath,
-      buildRunSummary({
-        ...result,
-        eligibleHotels: allHotels
-      })
-    );
+    await batchPerf.runPhase('write_latest_run', { hotelCount: allHotels.length }, async () => {
+      writeLatestRunFile(
+        latestRunPath,
+        buildRunSummary({
+          ...result,
+          eligibleHotels: allHotels
+        })
+      );
+    });
     emit('task:done', '批量采集任务完成', {
       inputMode: expandedInputs.inputMode,
       hotelCount: expandedInputs.hotelInputs.length,
@@ -953,6 +966,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
   const latestRunPathInput = args.latestRun || DEFAULT_LATEST_RUN_PATH;
   const perfLogger = options.perfLogger || setup_perf_logger();
   const taskKind = args['apply-output'] ? 'apply_output' : 'collect';
+  const reportLevel = args.reportLevel || options.reportLevel || 'normal';
   const perf =
     options.perf ||
     new PerfTimer(perfLogger, {
@@ -1127,7 +1141,8 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             effectiveDestination,
             expandedInputs,
             options,
-            perf
+            perf,
+            reportLevel
           });
         }
 
@@ -1149,19 +1164,24 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           transitCache: null,
           writeAppData: Boolean(args['write-app-data']),
           perf,
-          pageIndex: 1
+          pageIndex: 1,
+          reportLevel
         });
         const result = preparedResult.result;
 
-        await perf.runPhase('save_data', { taskId, hotelCount: result.eligibleCount }, async () => {
-          writeLatestRunFile(
-            latestRunPath,
-            buildRunSummary({
-              ...result,
-              eligibleHotels: result.eligibleHotels
-            })
-          );
-        });
+        await perf.runPhase(
+          'write_latest_run',
+          { taskId, hotelCount: result.eligibleCount },
+          async () => {
+            writeLatestRunFile(
+              latestRunPath,
+              buildRunSummary({
+                ...result,
+                eligibleHotels: result.eligibleHotels
+              })
+            );
+          }
+        );
         emit('task:done', '采集任务完成', {
           hotelName: result.hotelName,
           eligibleCount: result.eligibleCount,
@@ -1180,6 +1200,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
 }
 
 module.exports = {
+  buildBatchOutputPayload,
   buildFailureResult,
   buildTemplateSnapshot,
   runHotelImportTask,

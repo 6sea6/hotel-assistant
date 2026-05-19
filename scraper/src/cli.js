@@ -76,7 +76,7 @@ async function main() {
     runId: cliPerf.meta && cliPerf.meta.run_id,
     scriptStartLogged: true
   });
-  console.log(JSON.stringify(result, null, 2));
+  console.log(JSON.stringify(result));
 }
 
 main().catch((error) => {
