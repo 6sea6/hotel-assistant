@@ -240,102 +240,196 @@ function buildRoomListRequestVariants(context) {
   );
 }
 
-async function captureRoomCandidatesDirect(url, template, parsedSources) {
-  const context = extractRoomReplayContext(parsedSources, url, template);
-  if (!context.hotelId) {
-    return {
-      roomBlocks: [],
-      selectedRoom: null,
-      trackedUrls: [],
-      error: 'direct room-list replay unavailable: hotelId not found'
-    };
-  }
+function createNoopPerf() {
+  const noopPhase = {
+    end() {},
+    error() {},
+    async run(callback) {
+      return callback();
+    }
+  };
+  return {
+    phase() {
+      return { ...noopPhase };
+    },
+    async runPhase(_phase, fields, callback) {
+      if (typeof fields === 'function') {
+        return fields();
+      }
+      return callback();
+    },
+    event() {}
+  };
+}
 
-  const referer =
-    context.mobileUrl || buildMobileUrl(url, buildUrlOverridesFromTemplate(template)) || url;
+async function captureRoomCandidatesDirect(url, template, parsedSources, options = {}) {
+  const perf = options.perf || createNoopPerf();
+  const captureMethod = options.captureMethod || 'html_then_api_replay';
+  const totalPhase = perf.phase('api_replay_total', {
+    url,
+    captureMethod
+  });
+  let context = null;
+  let variants = [];
   const attempts = [];
-  const variants = buildRoomListRequestVariants(context);
   const spiderErrorCodes = new Set();
-  const blockedVariantGroups = new Set();
 
-  for (const variant of variants) {
-    const variantGroup = variant.endpoint.includes('/h5-json/') ? 'h5-json' : 'plain';
-    if (blockedVariantGroups.has(variantGroup)) {
-      continue;
+  try {
+    context = await perf.runPhase('api_replay_build_context', { url, captureMethod }, async () =>
+      extractRoomReplayContext(parsedSources, url, template)
+    );
+    if (!context.hotelId) {
+      const result = {
+        roomBlocks: [],
+        selectedRoom: null,
+        trackedUrls: [],
+        error: 'direct room-list replay unavailable: hotelId not found'
+      };
+      totalPhase.end('failed', {
+        url,
+        captureMethod,
+        roomCandidatesCount: 0,
+        roomPriceVisible: false,
+        trackedUrlCount: 0,
+        spiderErrorCodes: []
+      });
+      return result;
     }
 
-    try {
-      const response = await post(variant.endpoint, variant.body, {
-        headers: {
-          ...MOBILE_HEADERS,
-          accept: 'application/json, text/plain, */*',
-          'content-type': 'application/json;charset=UTF-8',
-          origin: 'https://m.ctrip.com',
-          referer,
-          ...(context.cookieHeader ? { cookie: context.cookieHeader } : {})
-        },
-        timeoutMs: 30000
-      });
+    const referer =
+      context.mobileUrl || buildMobileUrl(url, buildUrlOverridesFromTemplate(template)) || url;
+    variants = await perf.runPhase('api_replay_build_variants', { url, captureMethod }, async () =>
+      buildRoomListRequestVariants(context)
+    );
+    const blockedVariantGroups = new Set();
 
-      const spiderErrorCode = extractSpiderErrorCode(response.data);
-      if (spiderErrorCode !== null) {
-        spiderErrorCodes.add(spiderErrorCode);
-      }
-
-      const roomBlocks = mergeRoomCandidates([
-        ...collectRoomCandidatesFromPayload(response.data, template),
-        ...findRoomBlocksFromStructuredText(JSON.stringify(response.data)).map((candidate) => ({
-          ...candidate,
-          source: candidate.source || 'api-json-raw'
-        }))
-      ]);
-      const selectedRoom = selectBestRoom(roomBlocks, template);
-      attempts.push({
-        endpoint: variant.endpoint,
-        variant: variant.variantName,
-        spider_error_code: spiderErrorCode,
-        room_candidates_count: roomBlocks.length,
-        room_price_visible: roomBlocks.some((room) => room.price !== null)
-      });
-
-      if (spiderErrorCode === 203 && roomBlocks.length === 0) {
-        blockedVariantGroups.add(variantGroup);
-        if (blockedVariantGroups.size >= 2) {
-          break;
-        }
+    for (const variant of variants) {
+      const variantGroup = variant.endpoint.includes('/h5-json/') ? 'h5-json' : 'plain';
+      if (blockedVariantGroups.has(variantGroup)) {
         continue;
       }
 
-      if (selectedRoom) {
-        return {
-          roomBlocks,
-          selectedRoom,
-          trackedUrls: [variant.endpoint],
-          attempts,
-          spiderErrorCodes: [...spiderErrorCodes],
-          error: ''
-        };
-      }
-    } catch (error) {
-      attempts.push({
+      const requestPhase = perf.phase('api_replay_request', {
+        url,
         endpoint: variant.endpoint,
-        variant: variant.variantName,
-        error: error && error.message ? error.message : 'request failed'
+        variantName: variant.variantName,
+        captureMethod
       });
-    }
-  }
+      try {
+        const response = await post(variant.endpoint, variant.body, {
+          headers: {
+            ...MOBILE_HEADERS,
+            accept: 'application/json, text/plain, */*',
+            'content-type': 'application/json;charset=UTF-8',
+            origin: 'https://m.ctrip.com',
+            referer,
+            ...(context.cookieHeader ? { cookie: context.cookieHeader } : {})
+          },
+          timeoutMs: 30000
+        });
 
-  return {
-    roomBlocks: [],
-    selectedRoom: null,
-    trackedUrls: [],
-    attempts,
-    spiderErrorCodes: [...spiderErrorCodes],
-    error:
-      spiderErrorCodes.size > 0
-        ? `direct room-list replay blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
-        : 'direct room-list replay completed but did not find a matching priced room'
-  };
+        const spiderErrorCode = extractSpiderErrorCode(response.data);
+        if (spiderErrorCode !== null) {
+          spiderErrorCodes.add(spiderErrorCode);
+        }
+
+        const roomBlocks = mergeRoomCandidates([
+          ...collectRoomCandidatesFromPayload(response.data, template),
+          ...findRoomBlocksFromStructuredText(JSON.stringify(response.data)).map((candidate) => ({
+            ...candidate,
+            source: candidate.source || 'api-json-raw'
+          }))
+        ]);
+        const selectedRoom = selectBestRoom(roomBlocks, template);
+        attempts.push({
+          endpoint: variant.endpoint,
+          variant: variant.variantName,
+          spider_error_code: spiderErrorCode,
+          room_candidates_count: roomBlocks.length,
+          room_price_visible: roomBlocks.some((room) => room.price !== null)
+        });
+        requestPhase.end(selectedRoom ? 'hit' : 'miss', {
+          endpoint: variant.endpoint,
+          variantName: variant.variantName,
+          spiderErrorCode,
+          roomCandidatesCount: roomBlocks.length,
+          roomPriceVisible: roomBlocks.some((room) => room.price !== null)
+        });
+
+        if (spiderErrorCode === 203 && roomBlocks.length === 0) {
+          blockedVariantGroups.add(variantGroup);
+          if (blockedVariantGroups.size >= 2) {
+            break;
+          }
+          continue;
+        }
+
+        if (selectedRoom) {
+          const result = {
+            roomBlocks,
+            selectedRoom,
+            trackedUrls: [variant.endpoint],
+            attempts,
+            spiderErrorCodes: [...spiderErrorCodes],
+            error: ''
+          };
+          totalPhase.end('success', {
+            url,
+            captureMethod,
+            roomCandidatesCount: roomBlocks.length,
+            roomPriceVisible: roomBlocks.some((room) => room.price !== null),
+            trackedUrlCount: 1,
+            spiderErrorCodes: [...spiderErrorCodes]
+          });
+          return result;
+        }
+      } catch (error) {
+        attempts.push({
+          endpoint: variant.endpoint,
+          variant: variant.variantName,
+          error: error && error.message ? error.message : 'request failed'
+        });
+        requestPhase.error(error, {
+          endpoint: variant.endpoint,
+          variantName: variant.variantName
+        });
+      }
+    }
+
+    const result = {
+      roomBlocks: [],
+      selectedRoom: null,
+      trackedUrls: [],
+      attempts,
+      spiderErrorCodes: [...spiderErrorCodes],
+      error:
+        spiderErrorCodes.size > 0
+          ? `direct room-list replay blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
+          : 'direct room-list replay completed but did not find a matching priced room'
+    };
+    totalPhase.end('failed', {
+      url,
+      captureMethod,
+      roomCandidatesCount: 0,
+      roomPriceVisible: false,
+      trackedUrlCount: 0,
+      spiderErrorCodes: [...spiderErrorCodes],
+      attemptsCount: attempts.length
+    });
+    return result;
+  } catch (error) {
+    totalPhase.error(error, {
+      url,
+      captureMethod,
+      roomCandidatesCount: 0,
+      roomPriceVisible: false,
+      trackedUrlCount: 0,
+      spiderErrorCodes: [...spiderErrorCodes],
+      attemptsCount: attempts.length,
+      variantCount: variants.length
+    });
+    throw error;
+  }
 }
 
 module.exports = {

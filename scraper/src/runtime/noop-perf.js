@@ -57,10 +57,18 @@ class BatchStats {
     const totalTasks = this.tasks.length;
     const successTasks = this.tasks.filter((task) => task.status === 'success').length;
     const failedTasks = this.tasks.filter((task) => task.status === 'failed').length;
+    const durations = this.tasks
+      .map((task) => Number(task.elapsedMs ?? task.elapsed_ms ?? 0))
+      .filter((value) => Number.isFinite(value));
+    const totalMs = durations.reduce((sum, value) => sum + value, 0);
     return {
       totalTasks,
       successTasks,
       failedTasks,
+      item_count: totalTasks,
+      succeeded_count: successTasks,
+      failed_count: failedTasks,
+      item_total_ms_sum: totalMs,
       ...extra
     };
   }

@@ -624,17 +624,23 @@ async function runBatchHotelImportTask(context) {
   const batchPerf = context.perf
     ? context.perf.child({
         taskId,
-        hotelCount: expandedInputs.hotelInputs.length
+        hotelCount: expandedInputs.hotelInputs.length,
+        taskKind: 'batch_collect',
+        mode: 'batch_collect'
       })
     : new PerfTimer(setup_perf_logger(), {
         taskId,
-        hotelCount: expandedInputs.hotelInputs.length
+        hotelCount: expandedInputs.hotelInputs.length,
+        taskKind: 'batch_collect',
+        mode: 'batch_collect'
       });
   const batchStats = new BatchStats(batchPerf, {
-    hotelCount: expandedInputs.hotelInputs.length
+    hotelCount: expandedInputs.hotelInputs.length,
+    taskKind: 'batch_collect'
   });
   const batchPhase = batchPerf.phase('batch_total', {
-    hotelCount: expandedInputs.hotelInputs.length
+    hotelCount: expandedInputs.hotelInputs.length,
+    taskKind: 'batch_collect'
   });
 
   try {
@@ -722,7 +728,37 @@ async function runBatchHotelImportTask(context) {
           taskId: `${taskId}-${index + 1}`,
           status: 'success',
           elapsedMs: itemDurationMs,
-          url: hotelInput.url
+          index: index + 1,
+          hotelId: hotelInput.hotelId,
+          hotelName: childResult.hotelName,
+          url: hotelInput.url,
+          waitDataMs:
+            (childResult.performance &&
+              childResult.performance.scrape &&
+              childResult.performance.scrape.waitDataMs) ||
+            0,
+          edgeMs:
+            (childResult.performance &&
+              childResult.performance.scrape &&
+              childResult.performance.scrape.edgeCaptureMs) ||
+            0,
+          apiReplayMs:
+            (childResult.performance &&
+              childResult.performance.scrape &&
+              childResult.performance.scrape.directReplayMs) ||
+            0,
+          htmlMs:
+            (childResult.performance &&
+              childResult.performance.scrape &&
+              childResult.performance.scrape.htmlMs) ||
+            0,
+          transitMs: (childResult.performance && childResult.performance.transitMs) || 0,
+          saveMs:
+            ((childResult.performance && childResult.performance.outputWriteMs) || 0) +
+            ((childResult.performance && childResult.performance.appWriteMs) || 0),
+          captureMethod:
+            (childResult.pageSnapshot && childResult.pageSnapshot.capture_method) || '',
+          waitReason: (childResult.pageSnapshot && childResult.pageSnapshot.wait_reason) || ''
         });
         emit('batch:item-done', `第 ${index + 1} 家酒店采集完成`, {
           hotelName: childResult.hotelName,
@@ -741,6 +777,8 @@ async function runBatchHotelImportTask(context) {
           taskId: `${taskId}-${index + 1}`,
           status: 'failed',
           elapsedMs: 0,
+          index: index + 1,
+          hotelId: hotelInput.hotelId,
           url: hotelInput.url
         });
         emit('batch:item-error', `第 ${index + 1} 家酒店采集失败`, failedItem);
@@ -759,7 +797,7 @@ async function runBatchHotelImportTask(context) {
       const writeStartedAt = Date.now();
       writeResult = await batchPerf.runPhase(
         'save_data',
-        { hotelCount: allHotels.length },
+        { hotelCount: allHotels.length, taskKind: 'batch_apply' },
         async () => {
           if (shouldSkipHotelWrite(allHotels)) {
             return {
@@ -882,6 +920,15 @@ async function runBatchHotelImportTask(context) {
     batchStats.flush({
       hotelCount: expandedInputs.hotelInputs.length,
       elapsed_ms: performance.totalMs,
+      list_expand_ms:
+        (performance.listExpansion &&
+          (performance.listExpansion.listCollectMs || performance.listExpansion.totalMs)) ||
+        0,
+      child_phase_sum:
+        performance.itemMs +
+        performance.writeMs +
+        performance.outputWriteMs +
+        performance.cleanupMs,
       status: failedItems.length ? 'partial' : 'success'
     });
     batchPhase.end(failedItems.length ? 'partial' : 'success', {
@@ -905,11 +952,14 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
   const signal = options.signal || null;
   const latestRunPathInput = args.latestRun || DEFAULT_LATEST_RUN_PATH;
   const perfLogger = options.perfLogger || setup_perf_logger();
+  const taskKind = args['apply-output'] ? 'apply_output' : 'collect';
   const perf =
     options.perf ||
     new PerfTimer(perfLogger, {
       runId: options.runId || args.runId || taskId,
       taskId,
+      taskKind,
+      mode: taskKind,
       city: args.city || args.destination || args.templateName || '',
       url: args.url || args.ctrip_url || args['ctrip-url'] || ''
     });
@@ -918,11 +968,12 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       phase: 'script_start',
       status: 'success',
       elapsed_ms: 0,
-      taskId
+      taskId,
+      taskKind
     });
   }
 
-  return perf.runPhase('task_total', { taskId }, async () =>
+  return perf.runPhase('task_total', { taskId, taskKind }, async () =>
     withWorkingDirectory(options.workingDirectory, async () => {
       const latestRunPath = path.resolve(latestRunPathInput);
       assertNotCancelled(signal);
@@ -996,7 +1047,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         assertNotCancelled(signal);
         if (autoEdge) {
           emit('edge:start', '正在准备 Edge 登录态');
-          await perf.runPhase('browser_context', { taskId }, async () => {
+          await perf.runPhase('browser_context', { taskId, taskKind: 'login_prep' }, async () => {
             if (
               !hasReusableEdgeProfile(
                 effectiveTemplate.edge_user_data_dir,

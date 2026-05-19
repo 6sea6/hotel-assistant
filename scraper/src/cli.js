@@ -1,15 +1,19 @@
 const { setup_perf_logger, PerfTimer } = require('./runtime/perf');
 
 const CLI_STARTED_AT_MS = Date.now();
+const CLI_TASK_KIND = process.argv.includes('--apply-output') ? 'apply_output' : 'collect';
 const cliPerfLogger = setup_perf_logger();
 const cliPerf = new PerfTimer(cliPerfLogger, {
   runId: `cli-${CLI_STARTED_AT_MS}`,
-  taskId: `cli-${process.pid}`
+  taskId: `cli-${process.pid}`,
+  taskKind: CLI_TASK_KIND,
+  mode: CLI_TASK_KIND
 });
 cliPerf.event('script_start', {
   phase: 'script_start',
   status: 'success',
-  elapsed_ms: 0
+  elapsed_ms: 0,
+  taskKind: CLI_TASK_KIND
 });
 
 const importPhase = cliPerf.phase('import_modules');

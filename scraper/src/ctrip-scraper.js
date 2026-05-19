@@ -42,6 +42,98 @@ function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
 }
 
+function sumSourceRoomCount(parsedSources = [], sourceName) {
+  return parsedSources
+    .filter((item) => !sourceName || item.source === sourceName)
+    .reduce((sum, item) => sum + (Array.isArray(item.roomBlocks) ? item.roomBlocks.length : 0), 0);
+}
+
+function deriveWaitReason(roomBlocks = [], selectedRoom = null, template = {}, options = {}) {
+  if (!selectedRoom) {
+    const diagnostics = buildRoomSelectionDiagnostics(
+      roomBlocks,
+      template,
+      options.matchingOptions || {}
+    );
+    return diagnostics.eligibleRooms && diagnostics.eligibleRooms.length > 0
+      ? 'missing_selected_room'
+      : 'no_eligible_rooms';
+  }
+
+  if (selectedRoom.price === null || selectedRoom.price === undefined) {
+    return selectedRoom.price_locked ? 'hidden_or_locked_price' : 'missing_price';
+  }
+
+  if (
+    options.autoEdge &&
+    roomBlocks.some((room) => room && (room.price_locked || room.price === null))
+  ) {
+    return 'auto_edge_supplement';
+  }
+
+  return '';
+}
+
+function deriveCaptureMethod(captureSteps = []) {
+  if (!captureSteps.length) {
+    return 'html_only';
+  }
+
+  const hasEdge = captureSteps.includes('edge_cdp');
+  const hasApi = captureSteps.includes('api_replay');
+  if (hasEdge && hasApi) {
+    return captureSteps.indexOf('edge_cdp') < captureSteps.indexOf('api_replay')
+      ? 'edge_cdp_then_api_replay'
+      : 'html_then_api_replay';
+  }
+  if (hasEdge) return 'html_then_edge_cdp';
+  if (hasApi) return 'html_then_api_replay';
+  return 'html_only';
+}
+
+function buildScrapeQualityFields({
+  selectedRoom,
+  normalizedRoomBlocks,
+  persistedRoomBlocks,
+  eligibleRooms,
+  parsedSources,
+  directReplay,
+  fallbackCapture,
+  captureMethod,
+  waitReason
+}) {
+  const directTrackedUrls =
+    directReplay && Array.isArray(directReplay.trackedUrls) ? directReplay.trackedUrls : [];
+  const edgeTrackedUrls =
+    fallbackCapture && Array.isArray(fallbackCapture.trackedUrls)
+      ? fallbackCapture.trackedUrls
+      : [];
+  const spiderErrorCodes = [
+    ...new Set([
+      ...((directReplay && directReplay.spiderErrorCodes) || []),
+      ...((fallbackCapture && fallbackCapture.spiderErrorCodes) || [])
+    ])
+  ];
+
+  return {
+    selected_room_source: selectedRoom ? selectedRoom.source || '' : '',
+    selected_room_price_locked: Boolean(selectedRoom && selectedRoom.price_locked),
+    room_candidates_count: persistedRoomBlocks.length,
+    eligible_room_count: eligibleRooms.length,
+    raw_room_candidates_count: normalizedRoomBlocks.length,
+    room_price_visible: Boolean(selectedRoom && selectedRoom.price !== null),
+    spider_error_codes: spiderErrorCodes,
+    tracked_url_count: new Set([...directTrackedUrls, ...edgeTrackedUrls]).size,
+    edge_fallback_used: Boolean(fallbackCapture),
+    api_replay_used: Boolean(directReplay),
+    html_room_count: sumSourceRoomCount(parsedSources),
+    mobile_room_count: sumSourceRoomCount(parsedSources, 'mobile'),
+    desktop_room_count: sumSourceRoomCount(parsedSources, 'desktop'),
+    capture_method: captureMethod,
+    wait_reason: waitReason
+  };
+}
+
 async function scrapeCtripHotel(url, template, options = {}) {
   const perf =
     options.perf ||
@@ -55,7 +147,8 @@ async function scrapeCtripHotel(url, template, options = {}) {
     totalMs: 0,
     htmlMs: 0,
     directReplayMs: 0,
-    edgeCaptureMs: 0
+    edgeCaptureMs: 0,
+    waitDataMs: 0
   };
   const { desktopUrl, mobileUrl } = await perf.runPhase('build_url', { url }, async () => {
     const urlOverrides = buildUrlOverridesFromTemplate(template);
@@ -146,6 +239,8 @@ async function scrapeCtripHotel(url, template, options = {}) {
   let directReplay = null;
   let fallbackCapture = null;
   const preferEdgeCapture = shouldPreferEdgeCapture(options);
+  const captureSteps = [];
+  let waitReason = '';
 
   const applyCaptureResult = (captureResult) => {
     if (
@@ -163,13 +258,29 @@ async function scrapeCtripHotel(url, template, options = {}) {
 
   if (preferEdgeCapture) {
     if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
+      waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
       const edgeStartedAt = Date.now();
       fallbackCapture = await perf.runPhase(
         'wait_data',
-        { url: desktopUrl, retryCount: 1 },
-        async () => captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {})
+        {
+          url: desktopUrl,
+          retryCount: 1,
+          waitReason,
+          captureMethod: 'html_then_edge_cdp'
+        },
+        async () =>
+          captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {}, {
+            perf: perf.child({
+              url: desktopUrl,
+              waitReason,
+              captureMethod: 'html_then_edge_cdp'
+            }),
+            captureMethod: 'html_then_edge_cdp'
+          })
       );
       performance.edgeCaptureMs += durationSince(edgeStartedAt);
+      performance.waitDataMs += durationSince(edgeStartedAt);
+      captureSteps.push('edge_cdp');
       applyCaptureResult(fallbackCapture);
     }
 
@@ -177,35 +288,87 @@ async function scrapeCtripHotel(url, template, options = {}) {
       (!selectedRoom || selectedRoom.price === null) &&
       shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
     ) {
+      waitReason = fallbackCapture
+        ? 'retry_after_edge_failed'
+        : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
       const replayStartedAt = Date.now();
       directReplay = await perf.runPhase(
         'wait_data',
-        { url: desktopUrl, retryCount: 2 },
-        async () => captureRoomCandidatesDirect(desktopUrl, template, parsedSources)
+        {
+          url: desktopUrl,
+          retryCount: 2,
+          waitReason,
+          captureMethod: 'edge_cdp_then_api_replay'
+        },
+        async () =>
+          captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
+            perf: perf.child({
+              url: desktopUrl,
+              waitReason,
+              captureMethod: 'edge_cdp_then_api_replay'
+            }),
+            captureMethod: 'edge_cdp_then_api_replay'
+          })
       );
       performance.directReplayMs += durationSince(replayStartedAt);
+      performance.waitDataMs += durationSince(replayStartedAt);
+      captureSteps.push('api_replay');
       applyCaptureResult(directReplay);
     }
   } else {
     if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
+      waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
       const replayStartedAt = Date.now();
       directReplay = await perf.runPhase(
         'wait_data',
-        { url: desktopUrl, retryCount: 1 },
-        async () => captureRoomCandidatesDirect(desktopUrl, template, parsedSources)
+        {
+          url: desktopUrl,
+          retryCount: 1,
+          waitReason,
+          captureMethod: 'html_then_api_replay'
+        },
+        async () =>
+          captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
+            perf: perf.child({
+              url: desktopUrl,
+              waitReason,
+              captureMethod: 'html_then_api_replay'
+            }),
+            captureMethod: 'html_then_api_replay'
+          })
       );
       performance.directReplayMs += durationSince(replayStartedAt);
+      performance.waitDataMs += durationSince(replayStartedAt);
+      captureSteps.push('api_replay');
       applyCaptureResult(directReplay);
     }
 
     if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
+      waitReason = directReplay
+        ? 'retry_after_api_failed'
+        : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
       const edgeStartedAt = Date.now();
       fallbackCapture = await perf.runPhase(
         'wait_data',
-        { url: desktopUrl, retryCount: 2 },
-        async () => captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {})
+        {
+          url: desktopUrl,
+          retryCount: 2,
+          waitReason,
+          captureMethod: 'html_then_edge_cdp'
+        },
+        async () =>
+          captureRoomCandidatesWithEdge(desktopUrl, template, options.edgeSession || {}, {
+            perf: perf.child({
+              url: desktopUrl,
+              waitReason,
+              captureMethod: 'html_then_edge_cdp'
+            }),
+            captureMethod: 'html_then_edge_cdp'
+          })
       );
       performance.edgeCaptureMs += durationSince(edgeStartedAt);
+      performance.waitDataMs += durationSince(edgeStartedAt);
+      captureSteps.push('edge_cdp');
       applyCaptureResult(fallbackCapture);
     }
   }
@@ -238,6 +401,24 @@ async function scrapeCtripHotel(url, template, options = {}) {
   );
   const eligibleRooms = selectionDiagnostics.eligibleRooms;
   performance.totalMs = durationSince(totalStartedAt);
+  const captureMethod = deriveCaptureMethod(captureSteps);
+  const qualityFields = buildScrapeQualityFields({
+    selectedRoom,
+    normalizedRoomBlocks,
+    persistedRoomBlocks,
+    eligibleRooms,
+    parsedSources,
+    directReplay,
+    fallbackCapture,
+    captureMethod,
+    waitReason
+  });
+  perf.event('detail_quality', {
+    phase: 'task_total',
+    status: selectedRoom ? 'success' : 'failed',
+    url: desktopUrl,
+    ...qualityFields
+  });
 
   return {
     hotel_name: primarySource.meta.hotelName,
@@ -252,6 +433,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
     raw_room_candidates: normalizedRoomBlocks,
     eligible_rooms: eligibleRooms,
     room_selection_diagnostics: selectionDiagnostics,
+    quality: qualityFields,
     performance,
     page_snapshot: {
       source_url: desktopUrl,
@@ -305,6 +487,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
             : []
         ),
       selected_room_price_locked: Boolean(selectedRoom && selectedRoom.price_locked),
+      ...qualityFields,
       performance,
       saved_html_files: snapshotFiles
     }

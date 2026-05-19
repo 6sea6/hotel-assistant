@@ -21,6 +21,92 @@ function clearModules(paths) {
   }
 }
 
+test('runHotelImportTask marks apply-output perf records as apply_output task kind', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  const perfPath = require.resolve('../src/runtime/perf');
+  const devPerfPath = require.resolve('../../devtools/perf-log');
+  const previousEnv = {
+    HOTEL_COLLECTOR_ENV: process.env.HOTEL_COLLECTOR_ENV,
+    ENABLE_PERF_LOG: process.env.ENABLE_PERF_LOG
+  };
+  process.env.HOTEL_COLLECTOR_ENV = 'dev';
+  process.env.ENABLE_PERF_LOG = '1';
+  delete require.cache[taskRunnerPath];
+  delete require.cache[perfPath];
+  delete require.cache[devPerfPath];
+
+  const mockedPaths = [];
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-apply-'));
+  const outputPath = path.join(tempDir, 'reviewed-output.json');
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  fs.writeFileSync(
+    outputPath,
+    JSON.stringify({
+      hotels: [{ id: '1', name: '已复核酒店' }],
+      hotel: { name: '已复核酒店' }
+    }),
+    'utf8'
+  );
+
+  mockedPaths.push(
+    installMock('../src/cli/reviewed-output', {
+      applyReviewedOutput: (_outputPath, nextLatestRunPath, startedAt) => {
+        fs.writeFileSync(
+          nextLatestRunPath,
+          JSON.stringify({
+            success: true,
+            startedAt,
+            finishedAt: new Date().toISOString(),
+            hotelName: '已复核酒店',
+            eligibleCount: 1
+          }),
+          'utf8'
+        );
+      }
+    })
+  );
+
+  try {
+    const records = [];
+    const perfLogger = {
+      enabled: true,
+      write(record) {
+        records.push(record);
+        return record;
+      }
+    };
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        'apply-output': outputPath,
+        latestRun: latestRunPath
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger
+      }
+    );
+
+    const scriptStart = records.find((record) => record.event === 'script_start');
+    const taskTotal = records.find((record) => record.phase === 'task_total');
+    assert.equal(scriptStart.task_kind, 'apply_output');
+    assert.equal(taskTotal.task_kind, 'apply_output');
+  } finally {
+    if (previousEnv.HOTEL_COLLECTOR_ENV === undefined) {
+      delete process.env.HOTEL_COLLECTOR_ENV;
+    } else {
+      process.env.HOTEL_COLLECTOR_ENV = previousEnv.HOTEL_COLLECTOR_ENV;
+    }
+    if (previousEnv.ENABLE_PERF_LOG === undefined) {
+      delete process.env.ENABLE_PERF_LOG;
+    } else {
+      process.env.ENABLE_PERF_LOG = previousEnv.ENABLE_PERF_LOG;
+    }
+    clearModules([taskRunnerPath, perfPath, devPerfPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('runHotelImportTask reuses prepared context for batch detail items', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];

@@ -4,6 +4,17 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+function installMock(modulePath, exports) {
+  const resolvedPath = require.resolve(modulePath);
+  require.cache[resolvedPath] = {
+    id: resolvedPath,
+    filename: resolvedPath,
+    loaded: true,
+    exports
+  };
+  return resolvedPath;
+}
+
 function clearPerfModules() {
   ['../src/runtime/perf', '../src/runtime/noop-perf', '../../devtools/perf-log'].forEach(
     (modulePath) => {
@@ -63,6 +74,290 @@ test('production perf entry uses noop without creating logs or loading devtools'
     process.chdir(previousCwd);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test('dev perf logger redacts sensitive fields and preserves observability fields', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-perf-redact-'));
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(tempDir);
+    await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
+      const { setup_perf_logger, PerfTimer } = require('../src/runtime/perf');
+      const logger = setup_perf_logger({ date: '2026-05-19' });
+      const perf = new PerfTimer(logger, {
+        runId: 'run-redact',
+        taskId: 'task-redact',
+        taskKind: 'collect'
+      });
+
+      perf.event('phase', {
+        phase: 'api_replay_request',
+        status: 'success',
+        endpoint: 'https://example.test/api?token=secret-token&hotelId=1',
+        variantName: 'plain-1',
+        cookie: 'SESSION=secret-cookie',
+        authorization: 'Bearer secret-auth',
+        apiKey: 'secret-api-key',
+        amapKey: 'secret-amap-key',
+        edgeProfilePath: 'C:\\Users\\Alice\\AppData\\Local\\Microsoft\\Edge\\User Data',
+        wait_reason: 'missing_price',
+        capture_method: 'html_then_api_replay',
+        room_candidates_count: 3,
+        room_price_visible: true
+      });
+
+      const logPath = path.join(tempDir, 'logs', 'perf', 'collect_perf_2026-05-19.jsonl');
+      const record = JSON.parse(fs.readFileSync(logPath, 'utf8').trim());
+      const serialized = JSON.stringify(record);
+
+      assert.equal(record.task_kind, 'collect');
+      assert.equal(record.variant_name, 'plain-1');
+      assert.equal(record.wait_reason, 'missing_price');
+      assert.equal(record.capture_method, 'html_then_api_replay');
+      assert.equal(record.room_candidates_count, 3);
+      assert.equal(record.room_price_visible, true);
+      assert.doesNotMatch(
+        serialized,
+        /secret-token|secret-cookie|secret-auth|secret-api-key|secret-amap-key|Alice/
+      );
+      assert.match(serialized, /\[REDACTED\]/);
+    });
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('dev perf child meta aliases override empty parent defaults', async () => {
+  await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
+    const { PerfTimer } = require('../src/runtime/perf');
+    const records = [];
+    const perf = new PerfTimer(
+      {
+        enabled: true,
+        write(record) {
+          records.push(record);
+          return record;
+        }
+      },
+      {
+        runId: 'run-child',
+        taskId: 'task-child'
+      }
+    );
+
+    perf
+      .child({
+        taskKind: 'collect',
+        waitReason: 'missing_price',
+        captureMethod: 'html_then_edge_cdp'
+      })
+      .event('phase', {
+        phase: 'edge_connect',
+        status: 'success'
+      });
+
+    assert.equal(records[0].task_kind, 'collect');
+    assert.equal(records[0].wait_reason, 'missing_price');
+    assert.equal(records[0].capture_method, 'html_then_edge_cdp');
+  });
+});
+
+test('BatchStats summary exposes item percentiles, phase totals and slowest items', async () => {
+  await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
+    const { PerfTimer, BatchStats } = require('../src/runtime/perf');
+    const records = [];
+    const logger = {
+      enabled: true,
+      write(record) {
+        records.push(record);
+        return record;
+      }
+    };
+    const perf = new PerfTimer(logger, {
+      runId: 'run-batch',
+      taskId: 'task-batch',
+      taskKind: 'batch_collect'
+    });
+    const stats = new BatchStats(perf, { taskKind: 'batch_collect' });
+
+    [
+      {
+        index: 1,
+        hotelId: 'h1',
+        hotelName: '快酒店',
+        url: 'https://example.test/1',
+        status: 'success',
+        elapsedMs: 100,
+        waitDataMs: 20,
+        edgeMs: 10,
+        apiReplayMs: 5,
+        htmlMs: 30,
+        transitMs: 15,
+        saveMs: 8,
+        captureMethod: 'html_only',
+        waitReason: ''
+      },
+      {
+        index: 2,
+        hotelId: 'h2',
+        hotelName: '慢酒店',
+        url: 'https://example.test/2',
+        status: 'success',
+        elapsedMs: 300,
+        waitDataMs: 120,
+        edgeMs: 80,
+        apiReplayMs: 20,
+        htmlMs: 40,
+        transitMs: 25,
+        saveMs: 10,
+        captureMethod: 'html_then_edge_cdp',
+        waitReason: 'missing_price'
+      },
+      {
+        index: 3,
+        hotelId: 'h3',
+        hotelName: '中酒店',
+        url: 'https://example.test/3',
+        status: 'failed',
+        elapsedMs: 200,
+        waitDataMs: 60,
+        edgeMs: 0,
+        apiReplayMs: 50,
+        htmlMs: 35,
+        transitMs: 0,
+        saveMs: 4,
+        captureMethod: 'html_then_api_replay',
+        waitReason: 'retry_after_edge_failed'
+      }
+    ].forEach((item) => stats.recordTask(item));
+
+    const summary = stats.flush({
+      elapsed_ms: 700,
+      list_expand_ms: 55,
+      child_phase_sum: 999
+    });
+    const summaryRecord = records.find((record) => record.event === 'batch_summary');
+
+    assert.equal(summary.item_count, 3);
+    assert.equal(summary.succeeded_count, 2);
+    assert.equal(summary.failed_count, 1);
+    assert.equal(summary.total_elapsed_ms, 700);
+    assert.equal(summary.item_total_ms_sum, 600);
+    assert.equal(summary.average_item_ms, 200);
+    assert.equal(summary.p50_item_ms, 200);
+    assert.equal(summary.p90_item_ms, 300);
+    assert.equal(summary.max_item_ms, 300);
+    assert.equal(summary.wait_data_total_ms, 200);
+    assert.equal(summary.wait_data_average_ms, 200 / 3);
+    assert.equal(summary.edge_total_ms, 90);
+    assert.equal(summary.api_replay_total_ms, 75);
+    assert.equal(summary.html_total_ms, 105);
+    assert.equal(summary.transit_total_ms, 40);
+    assert.equal(summary.save_total_ms, 22);
+    assert.equal(summary.list_expand_ms, 55);
+    assert.equal(summary.wall_time, 700);
+    assert.equal(summary.child_phase_sum, 999);
+    assert.match(summary.nested_phase_note, /nested/i);
+    assert.equal(summary.slowest_items[0].hotelName, '慢酒店');
+    assert.equal(summary.slowest_items[0].waitDataMs, 120);
+    assert.equal(summary.slowest_items[0].captureMethod, 'html_then_edge_cdp');
+    assert.equal(summaryRecord.task_kind, 'batch_collect');
+    assert.equal(summaryRecord.item_count, 3);
+  });
+});
+
+test('direct API replay records internal phases without sensitive request data', async () => {
+  await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
+    const apiReplayPath = require.resolve('../src/scraper/api-replay');
+    const httpClientPath = installMock('../src/http-client', {
+      post: async () => ({
+        data: {
+          data: {
+            htlSpiderActionErrorCode: 203
+          }
+        }
+      })
+    });
+    delete require.cache[apiReplayPath];
+
+    try {
+      const { PerfTimer } = require('../src/runtime/perf');
+      const records = [];
+      const perf = new PerfTimer(
+        {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        },
+        {
+          runId: 'run-api',
+          taskId: 'task-api'
+        }
+      );
+      const { captureRoomCandidatesDirect } = require('../src/scraper/api-replay');
+
+      const result = await captureRoomCandidatesDirect(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=12345',
+        { check_in_date: '2026-06-01', check_out_date: '2026-06-02', room_count: 2 },
+        [
+          {
+            source: 'desktop',
+            html: '<html></html>',
+            url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=12345',
+            cookieHeader: 'SESSION=secret-cookie'
+          }
+        ],
+        { perf }
+      );
+
+      assert.equal(result.selectedRoom, null);
+      assert.deepEqual(result.spiderErrorCodes, [203]);
+      assert.ok(records.some((record) => record.phase === 'api_replay_build_context'));
+      assert.ok(records.some((record) => record.phase === 'api_replay_build_variants'));
+      assert.ok(records.some((record) => record.phase === 'api_replay_request'));
+      assert.ok(records.some((record) => record.phase === 'api_replay_total'));
+      const requestRecord = records.find((record) => record.phase === 'api_replay_request');
+      assert.equal(requestRecord.variant_name, 'plain-1');
+      assert.equal(requestRecord.spider_error_code, 203);
+      assert.equal(requestRecord.room_candidates_count, 0);
+      assert.equal(requestRecord.room_price_visible, false);
+      assert.doesNotMatch(JSON.stringify(records), /secret-cookie|body|cookie|authorization/i);
+    } finally {
+      delete require.cache[apiReplayPath];
+      delete require.cache[httpClientPath];
+    }
+  });
+});
+
+test('phase error records child phase failures', async () => {
+  await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
+    const { PerfTimer } = require('../src/runtime/perf');
+    const records = [];
+    const perf = new PerfTimer({
+      enabled: true,
+      write(record) {
+        records.push(record);
+        return record;
+      }
+    });
+
+    await assert.rejects(
+      () =>
+        perf.runPhase('edge_response_parse', { captureMethod: 'html_then_edge_cdp' }, async () => {
+          throw new SyntaxError('bad json');
+        }),
+      /bad json/
+    );
+
+    const errorRecord = records.find((record) => record.event === 'phase_error');
+    assert.equal(errorRecord.phase, 'edge_response_parse');
+    assert.equal(errorRecord.error_type, 'SyntaxError');
+    assert.equal(errorRecord.capture_method, 'html_then_edge_cdp');
+  });
 });
 
 test('dev perf logger writes JSONL phase success and error records', async () => {

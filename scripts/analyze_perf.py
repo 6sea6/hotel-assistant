@@ -3,7 +3,7 @@ import glob
 import json
 import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 
@@ -38,14 +38,23 @@ def read_records(target):
 
 
 def summarize(records):
-    task_records = [
+    task_kind_counts = Counter(item.get("task_kind") or item.get("mode") or "unknown" for item in records)
+    analysis_records = [
         item
         for item in records
+        if (item.get("task_kind") or item.get("mode") or "collect")
+        not in ("apply_output", "batch_apply", "login_prep")
+    ]
+    task_records = [
+        item
+        for item in analysis_records
         if item.get("phase") in ("task_total", "batch_total") and item.get("elapsed_ms") is not None
     ]
     if not task_records:
         task_records = [
-            item for item in records if item.get("event") in ("phase", "phase_error") and item.get("task_id")
+            item
+            for item in analysis_records
+            if item.get("event") in ("phase", "phase_error") and item.get("task_id")
         ]
 
     task_by_id = {}
@@ -60,7 +69,7 @@ def summarize(records):
     failed_count = sum(1 for item in task_by_id.values() if item.get("status") == "error")
 
     phase_values = defaultdict(list)
-    for item in records:
+    for item in analysis_records:
         phase = item.get("phase") or "<none>"
         if item.get("event") in ("phase", "phase_error"):
             phase_values[phase].append(float(item.get("elapsed_ms") or 0))
@@ -69,7 +78,7 @@ def summarize(records):
         task_by_id.values(), key=lambda item: float(item.get("elapsed_ms") or 0), reverse=True
     )[:10]
     slow_phases = sorted(
-        [item for item in records if item.get("event") in ("phase", "phase_error")],
+        [item for item in analysis_records if item.get("event") in ("phase", "phase_error")],
         key=lambda item: float(item.get("elapsed_ms") or 0),
         reverse=True,
     )[:10]
@@ -92,6 +101,8 @@ def summarize(records):
         },
         "slow_tasks": slow_tasks,
         "slow_phases": slow_phases,
+        "task_kind_counts": dict(task_kind_counts),
+        "filtered_task_kinds": ["apply_output", "batch_apply", "login_prep"],
     }
 
 
@@ -103,6 +114,8 @@ def print_summary(summary):
     print("中位数耗时(ms):", round(summary["median_ms"], 2))
     print("p90 耗时(ms):", round(summary["p90_ms"], 2))
     print("max 耗时(ms):", round(summary["max_ms"], 2))
+    print("日志 task_kind 分布:", summary["task_kind_counts"])
+    print("主统计已过滤 task_kind:", ", ".join(summary["filtered_task_kinds"]))
     print()
     print("各 phase 耗时:")
     for phase, stats in summary["phase_stats"].items():

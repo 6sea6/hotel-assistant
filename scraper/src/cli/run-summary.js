@@ -49,6 +49,19 @@ function buildPageSnapshotSummary(pageSnapshot) {
     room_price_visible: Boolean(pageSnapshot.room_price_visible),
     selected_room_source: pageSnapshot.selected_room_source || '',
     selected_room_price_locked: Boolean(pageSnapshot.selected_room_price_locked),
+    eligible_room_count: pageSnapshot.eligible_room_count ?? 0,
+    raw_room_candidates_count: pageSnapshot.raw_room_candidates_count ?? 0,
+    spider_error_codes: Array.isArray(pageSnapshot.spider_error_codes)
+      ? pageSnapshot.spider_error_codes
+      : [],
+    tracked_url_count: pageSnapshot.tracked_url_count ?? 0,
+    edge_fallback_used: Boolean(pageSnapshot.edge_fallback_used),
+    api_replay_used: Boolean(pageSnapshot.api_replay_used),
+    html_room_count: pageSnapshot.html_room_count ?? 0,
+    mobile_room_count: pageSnapshot.mobile_room_count ?? 0,
+    desktop_room_count: pageSnapshot.desktop_room_count ?? 0,
+    capture_method: pageSnapshot.capture_method || '',
+    wait_reason: pageSnapshot.wait_reason || '',
     saved_html_file_count: Array.isArray(pageSnapshot.saved_html_files)
       ? pageSnapshot.saved_html_files.length
       : 0,
