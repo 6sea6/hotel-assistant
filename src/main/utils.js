@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { getPaths } = require('./config');
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
 const { DEFAULT_COMPARE_APP_FILES } = requireSharedCompareAppModule('constants.js');
 const {

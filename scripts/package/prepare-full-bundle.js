@@ -1,7 +1,6 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { PROMPT_CONTRACT } = require('../../shared/compare-app/prompt-contract');
 const { copyDirSync, copyFileSync } = require('./utils');
 const { getBundleManifest } = require('./bundle-manifest');
 

@@ -2,7 +2,7 @@
  * 排名图片导出 —— Canvas 绘制宾馆排名卡片并保存 PNG。
  */
 
-import { state, rankingCache } from './state.js';
+import { state } from './state.js';
 import { hasDisplayValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { applyFiltersToHotels, rankHotels, formatSubwayDistanceValue } from './hotel-filters.js';

@@ -1321,7 +1321,7 @@ function renderCancelledView(taskState) {
   `;
 }
 
-function updateStartBar(taskState) {
+function updateStartBar() {
   const button = $('aiStartTaskBtn');
   const templateSelect = $('aiTemplateSelect');
   const input = $('aiHotelUrlInput');
@@ -1377,7 +1377,7 @@ export function renderAiTaskConsole(state) {
       selectedId: state.aiSelectedQueueTaskId || ''
     });
   }
-  updateStartBar(taskState);
+  updateStartBar();
   syncElapsedTimer(taskState.status);
   syncReviewElapsedTimer(taskState.review || {});
   return taskState;

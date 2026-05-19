@@ -46,7 +46,7 @@ if (!gotSingleInstanceLock) {
     const services = ipcHandlerManager.getServices();
     const { windowService } = services;
 
-    const mainWindow = windowService.createWindow();
+    windowService.createWindow();
 
     const menuManager = new MenuManager(windowService);
     setImmediate(() => menuManager.createMenu());

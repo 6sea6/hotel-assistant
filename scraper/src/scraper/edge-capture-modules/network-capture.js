@@ -1,5 +1,4 @@
 const fs = require('fs');
-const { normalizeText } = require('../../utils');
 const { parseHotelIdFromUrl } = require('../../ctrip-url');
 const { mergeRoomCandidates, selectBestRoom, selectMatchingRooms } = require('../room-logic');
 const {

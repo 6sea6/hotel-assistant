@@ -207,7 +207,6 @@ function buildBatchOutputPayload({
   childResults,
   failedItems,
   allHotels,
-  reviewInput,
   writeResult,
   performance
 }) {

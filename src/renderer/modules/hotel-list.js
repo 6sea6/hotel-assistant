@@ -35,9 +35,7 @@ import {
   startDeleteConfirmation,
   resetActionButtonConfirmation,
   startActionButtonConfirmation,
-  resetBatchDeleteConfirmation,
-  startBatchDeleteConfirmation,
-  syncBatchDeleteButton
+  resetBatchDeleteConfirmation
 } from './ui-utils.js';
 import {
   applyFiltersToHotels,

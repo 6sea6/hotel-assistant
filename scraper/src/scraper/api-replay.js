@@ -1,5 +1,5 @@
 const { post } = require('../http-client');
-const { normalizeText, pickFirst, toNumber } = require('../utils');
+const { pickFirst, toNumber } = require('../utils');
 const { buildMobileUrl, buildUrlOverridesFromTemplate } = require('../ctrip-url');
 const { mergeRoomCandidates, selectBestRoom } = require('./room-logic');
 const { findRoomBlocksFromStructuredText } = require('./html-parser');

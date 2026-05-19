@@ -14,7 +14,6 @@ const {
 } = require('../src/scraper/list-page-parser');
 const { expandCtripHotelInputs, normalizeListFiltersFromArgs } = require('../src/ctrip-list');
 const {
-  buildListPageUrls,
   collectListPageCandidates: collectRawListPageCandidates
 } = require('../src/scraper/list-page-collector');
 

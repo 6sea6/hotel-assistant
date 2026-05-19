@@ -2,7 +2,7 @@
  * 模态框 & 按钮确认 —— 弹窗显隐控制和二次确认交互。
  */
 
-import { $, getSelectionKey } from './dom-helpers.js';
+import { $ } from './dom-helpers.js';
 import { state } from './state.js';
 import { resumeDeferredHotelRender } from './render-scheduler.js';
 

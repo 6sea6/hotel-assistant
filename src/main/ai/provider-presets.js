@@ -123,7 +123,6 @@ function normalizeProviderModel(provider, model, fallbackModel) {
 function normalizeAiProviderConfig(config = {}, previousConfig = {}) {
   const provider = normalizeProviderId(config.provider || previousConfig.provider);
   const preset = AI_PROVIDER_PRESETS[provider];
-  const base = getDefaultAiProviderConfig(provider);
   const apiKey = Object.prototype.hasOwnProperty.call(config, 'apiKey')
     ? String(config.apiKey || '').trim()
     : String(previousConfig.apiKey || '').trim();

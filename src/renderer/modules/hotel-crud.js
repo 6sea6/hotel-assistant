@@ -15,15 +15,10 @@ import { showNotification } from './notification.js';
 import { perfStart, perfEnd } from './perf.js';
 import {
   setModalActive,
-  getEventButton,
   resetBatchDeleteConfirmation,
   startBatchDeleteConfirmation,
   syncBatchDeleteButton,
-  scheduleHotelModalFocus,
-  resetDeleteConfirmation,
-  startDeleteConfirmation,
-  resetActionButtonConfirmation,
-  startActionButtonConfirmation
+  scheduleHotelModalFocus
 } from './ui-utils.js';
 import { actions } from './actions.js';
 

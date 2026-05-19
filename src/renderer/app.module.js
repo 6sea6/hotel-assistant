@@ -13,27 +13,18 @@
 
 /* ============ 模块导入 ============ */
 
-import { state, rankingCache } from './modules/state.js';
+import { state } from './modules/state.js';
 import { $, addEvent } from './modules/dom-helpers.js';
-import { showNotification } from './modules/notification.js';
-import { perfStart, perfEnd } from './modules/perf.js';
-import { safeExecute, safeAsync } from './modules/safe-exec.js';
 
 import {
   loadHotels,
   loadTemplates,
   loadSettings,
-  reloadAllData,
   openAddHotelModal,
-  editHotel,
   closeHotelModal,
   saveHotel,
-  deleteHotel,
-  toggleFavorite,
   confirmBatchDelete,
   applyTemplateToForm,
-  findTemplateById,
-  calculateDays,
   onCheckInChange,
   onCheckOutChange,
   calculateDailyPrice,
@@ -48,10 +39,8 @@ import {
   handleHotelListClick,
   handleHotelListChange,
   handleHotelDetailsClick,
-  showHotelDetails,
   closeHotelDetails,
   toggleViewMode,
-  toggleHotelSelection,
   openRuleDeleteModal,
   closeRuleDeleteModal,
   updateRuleDeletePreview,
@@ -59,29 +48,22 @@ import {
   applyFilters,
   clearFilters,
   changeRankingMode,
-  updateWeight,
-  syncHotelNameFilterOptions,
-  buildHotelNameFilterOptions
+  updateWeight
 } from './modules/hotel-list.js';
 
 import {
   openTemplateManager,
   closeTemplateModal,
-  renderTemplateList,
   handleTemplateListClick,
   openAddTemplateForm,
-  editTemplate,
   cancelTemplateForm,
   saveTemplate,
-  deleteTemplate,
-  applyTemplate,
   updateTemplateFilter,
   setupTemplateSyncListener
 } from './modules/template-ui.js';
 
 import {
   openSettings,
-  openAiInterfaceSettings,
   closeSettingsModal,
   openPersonalization,
   closePersonalizationModal,
@@ -96,10 +78,8 @@ import {
   saveAiListPrefilterSettings,
   resetAiListPrefilterSettings,
   toggleAiCtripStarLevel,
-  loadDataPath,
   showDataInFolder,
   changeDataPath,
-  loadAppIconState,
   chooseAppIcon,
   resetAppIcon,
   resetSettings,
@@ -109,7 +89,6 @@ import {
   handleImportData,
   openCtripWebsite,
   openFliggyWebsite,
-  openWebsite,
   refreshCurrentPage,
   setupMenuListeners
 } from './modules/settings-ui.js';

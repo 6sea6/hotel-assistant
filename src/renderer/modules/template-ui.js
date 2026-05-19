@@ -10,8 +10,6 @@ import {
   setValue,
   setText,
   setStyle,
-  addEvent,
-  idsEqual,
   normalizeIdValue,
   getRoomCountText
 } from './dom-helpers.js';
