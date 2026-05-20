@@ -142,6 +142,45 @@ function getEdgeNetworkWaitCount(roomRequestMeta, requestMeta) {
   return requestMeta && requestMeta.size ? requestMeta.size : 0;
 }
 
+function getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta) {
+  const hasRoomResponses = Boolean(roomRequestMeta && roomRequestMeta.size > 0);
+  return {
+    stableMs: hasRoomResponses ? 650 : 1200,
+    maxWaitMs: 4500,
+    intervalMs: hasRoomResponses ? 150 : 200,
+    networkWaitCount: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
+    roomResponseSeen: hasRoomResponses
+  };
+}
+
+function getPrioritizedEdgeResponseEntries(requestMeta) {
+  const entries = [
+    ...(requestMeta && typeof requestMeta.entries === 'function' ? requestMeta.entries() : [])
+  ];
+  const roomEntries = entries.filter(([, meta]) => isRoomListNetworkResponse(meta && meta.url));
+  const otherEntries = entries.filter(([, meta]) => !isRoomListNetworkResponse(meta && meta.url));
+  return [...roomEntries, ...otherEntries];
+}
+
+function isClearlyIrrelevantEdgeResponse(url = '') {
+  const normalizedUrl = String(url || '').toLowerCase();
+  if (!normalizedUrl || isRoomListNetworkResponse(normalizedUrl)) {
+    return false;
+  }
+
+  return /\/(?:log|logs|trace|tracing|analytics|ubt|collect|monitor|metrics|sentry|beacon)(?:[./?#]|$)/.test(
+    normalizedUrl
+  );
+}
+
+function shouldSkipEdgeResponseAfterRoomSuccess(meta = {}, state = {}) {
+  if (!state.roomParseSucceeded) {
+    return false;
+  }
+
+  return isClearlyIrrelevantEdgeResponse(meta.url || '');
+}
+
 function detectCtripLoginPromptFromText(text = '') {
   const normalizedText = String(text || '')
     .replace(/\s+/g, ' ')
@@ -248,24 +287,131 @@ async function waitForEdgeNetworkStability({
     roomTrackedUrlCount: roomRequestMeta.size
   });
   try {
+    const waitOptions = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta);
     await waitForStableCount(() => getEdgeNetworkWaitCount(roomRequestMeta, requestMeta), {
-      stableMs: 1200,
-      maxWaitMs: 4500,
-      intervalMs: 200
+      stableMs: waitOptions.stableMs,
+      maxWaitMs: waitOptions.maxWaitMs,
+      intervalMs: waitOptions.intervalMs
     });
     phase.end('success', {
       tracked_url_count_after: trackedUrls.size,
       room_tracked_url_count_after: roomRequestMeta.size,
-      network_wait_count: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta)
+      network_wait_count: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
+      network_wait_stable_ms: waitOptions.stableMs,
+      network_wait_max_ms: waitOptions.maxWaitMs,
+      network_wait_interval_ms: waitOptions.intervalMs,
+      room_response_seen: waitOptions.roomResponseSeen
     });
   } catch (error) {
+    const waitOptions = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta);
     phase.error(error, {
       tracked_url_count_after: trackedUrls.size,
       room_tracked_url_count_after: roomRequestMeta.size,
-      network_wait_count: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta)
+      network_wait_count: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
+      network_wait_stable_ms: waitOptions.stableMs,
+      network_wait_max_ms: waitOptions.maxWaitMs,
+      network_wait_interval_ms: waitOptions.intervalMs,
+      room_response_seen: waitOptions.roomResponseSeen
     });
     throw error;
   }
+}
+
+function hasUsableEdgeRoomSelection(roomBlocks, template) {
+  const mergedBlocks = mergeRoomCandidates(roomBlocks);
+  const selectedRoom = selectBestRoom(mergedBlocks, template);
+  return Boolean(selectedRoom && selectedRoom.price !== null && selectedRoom.price !== undefined);
+}
+
+async function parseEdgeNetworkResponses({
+  connection,
+  sessionId,
+  requestMeta,
+  template,
+  roomBlocks,
+  spiderErrorCodes,
+  debugHotelId,
+  roomApiDebugIndex = 0
+}) {
+  const entries = getPrioritizedEdgeResponseEntries(requestMeta);
+  const roomEntryCount = entries.filter(([, meta]) =>
+    isRoomListNetworkResponse(meta && meta.url)
+  ).length;
+  const stats = {
+    parsedResponseCount: 0,
+    roomResponseCount: 0,
+    skippedResponseCount: 0,
+    fallbackFullParseUsed: roomEntryCount === 0,
+    responseParseCandidateCount: 0,
+    roomApiDebugIndex
+  };
+  const state = {
+    roomParseSucceeded: false
+  };
+
+  for (const [requestId, meta] of entries) {
+    if (shouldSkipEdgeResponseAfterRoomSuccess(meta, state)) {
+      stats.skippedResponseCount += 1;
+      continue;
+    }
+    try {
+      const responseBody = await connection.send(
+        'Network.getResponseBody',
+        { requestId },
+        sessionId
+      );
+      const rawBody = responseBody && responseBody.body ? responseBody.body : '';
+      if (!rawBody) continue;
+      const body = responseBody.base64Encoded
+        ? Buffer.from(rawBody, 'base64').toString('utf8')
+        : rawBody;
+      const parsed = safeJsonParse(body);
+      if (!parsed) continue;
+      stats.parsedResponseCount += 1;
+      const isRoomResponse = isRoomListNetworkResponse(meta.url);
+      if (isRoomResponse) {
+        stats.roomResponseCount += 1;
+      }
+      if (/getHotelRoomList|getHotelRoomPopInfo/i.test(meta.url)) {
+        stats.roomApiDebugIndex += 1;
+        writeEdgeDebugArtifact(
+          `${debugHotelId}-api-${String(stats.roomApiDebugIndex).padStart(2, '0')}.json`,
+          {
+            url: meta.url,
+            mimeType: meta.mimeType || '',
+            body: parsed
+          }
+        );
+      }
+      const spiderErrorCode = extractSpiderErrorCode(parsed);
+      if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
+      const beforeCount = roomBlocks.length;
+      const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
+      const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map((candidate) => ({
+        ...candidate,
+        source: candidate.source || 'edge-cdp-raw'
+      }));
+      roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
+      const extractedCount = roomBlocks.length - beforeCount;
+      stats.responseParseCandidateCount += Math.max(0, extractedCount);
+      if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
+        console.log(
+          `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`
+        );
+      }
+      if (isRoomResponse && hasUsableEdgeRoomSelection(roomBlocks, template)) {
+        state.roomParseSucceeded = true;
+      }
+    } catch (_error) {
+      /* skip */
+    }
+  }
+
+  if (roomEntryCount > 0 && !state.roomParseSucceeded) {
+    stats.fallbackFullParseUsed = true;
+  }
+
+  return stats;
 }
 
 async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions = {}, options = {}) {
@@ -551,58 +697,35 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
 
       removeListener();
 
-      await perf.runPhase(
-        'edge_response_parse',
-        { url, captureMethod, targetMode, trackedUrlCount: trackedUrls.size },
-        async () => {
-          for (const [requestId, meta] of requestMeta.entries()) {
-            try {
-              const responseBody = await connection.send(
-                'Network.getResponseBody',
-                { requestId },
-                sessionId
-              );
-              const rawBody = responseBody && responseBody.body ? responseBody.body : '';
-              if (!rawBody) continue;
-              const body = responseBody.base64Encoded
-                ? Buffer.from(rawBody, 'base64').toString('utf8')
-                : rawBody;
-              const parsed = safeJsonParse(body);
-              if (!parsed) continue;
-              if (/getHotelRoomList|getHotelRoomPopInfo/i.test(meta.url)) {
-                roomApiDebugIndex += 1;
-                writeEdgeDebugArtifact(
-                  `${debugHotelId}-api-${String(roomApiDebugIndex).padStart(2, '0')}.json`,
-                  {
-                    url: meta.url,
-                    mimeType: meta.mimeType || '',
-                    body: parsed
-                  }
-                );
-              }
-              const spiderErrorCode = extractSpiderErrorCode(parsed);
-              if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
-              const beforeCount = roomBlocks.length;
-              const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
-              const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map(
-                (candidate) => ({
-                  ...candidate,
-                  source: candidate.source || 'edge-cdp-raw'
-                })
-              );
-              roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
-              const extractedCount = roomBlocks.length - beforeCount;
-              if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
-                console.log(
-                  `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`
-                );
-              }
-            } catch (_error) {
-              /* skip */
-            }
-          }
-        }
-      );
+      const responseParsePhase = perf.phase('edge_response_parse', {
+        url,
+        captureMethod,
+        targetMode,
+        trackedUrlCount: trackedUrls.size
+      });
+      try {
+        const parseStats = await parseEdgeNetworkResponses({
+          connection,
+          sessionId,
+          requestMeta,
+          template,
+          roomBlocks,
+          spiderErrorCodes,
+          debugHotelId,
+          roomApiDebugIndex
+        });
+        roomApiDebugIndex = parseStats.roomApiDebugIndex;
+        responseParsePhase.end('success', {
+          parsed_response_count: parseStats.parsedResponseCount,
+          room_response_count: parseStats.roomResponseCount,
+          skipped_response_count: parseStats.skippedResponseCount,
+          fallback_full_parse_used: parseStats.fallbackFullParseUsed,
+          response_parse_candidate_count: parseStats.responseParseCandidateCount
+        });
+      } catch (error) {
+        responseParsePhase.error(error);
+        throw error;
+      }
     } else {
       const removeListener = connection.addListener((message) => {
         if (message.sessionId !== sessionId || message.method !== 'Network.responseReceived') {
@@ -688,58 +811,35 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       );
       removeListener();
 
-      await perf.runPhase(
-        'edge_response_parse',
-        { url, captureMethod, targetMode, trackedUrlCount: trackedUrls.size },
-        async () => {
-          for (const [requestId, meta] of requestMeta.entries()) {
-            try {
-              const responseBody = await connection.send(
-                'Network.getResponseBody',
-                { requestId },
-                sessionId
-              );
-              const rawBody = responseBody && responseBody.body ? responseBody.body : '';
-              if (!rawBody) continue;
-              const body = responseBody.base64Encoded
-                ? Buffer.from(rawBody, 'base64').toString('utf8')
-                : rawBody;
-              const parsed = safeJsonParse(body);
-              if (!parsed) continue;
-              if (/getHotelRoomList|getHotelRoomPopInfo/i.test(meta.url)) {
-                roomApiDebugIndex += 1;
-                writeEdgeDebugArtifact(
-                  `${debugHotelId}-api-${String(roomApiDebugIndex).padStart(2, '0')}.json`,
-                  {
-                    url: meta.url,
-                    mimeType: meta.mimeType || '',
-                    body: parsed
-                  }
-                );
-              }
-              const spiderErrorCode = extractSpiderErrorCode(parsed);
-              if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
-              const beforeCount = roomBlocks.length;
-              const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
-              const fallbackTextCandidates = findRoomBlocksFromStructuredText(body).map(
-                (candidate) => ({
-                  ...candidate,
-                  source: candidate.source || 'edge-cdp-raw'
-                })
-              );
-              roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
-              const extractedCount = roomBlocks.length - beforeCount;
-              if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
-                console.log(
-                  `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`
-                );
-              }
-            } catch (_error) {
-              /* skip */
-            }
-          }
-        }
-      );
+      const responseParsePhase = perf.phase('edge_response_parse', {
+        url,
+        captureMethod,
+        targetMode,
+        trackedUrlCount: trackedUrls.size
+      });
+      try {
+        const parseStats = await parseEdgeNetworkResponses({
+          connection,
+          sessionId,
+          requestMeta,
+          template,
+          roomBlocks,
+          spiderErrorCodes,
+          debugHotelId,
+          roomApiDebugIndex
+        });
+        roomApiDebugIndex = parseStats.roomApiDebugIndex;
+        responseParsePhase.end('success', {
+          parsed_response_count: parseStats.parsedResponseCount,
+          room_response_count: parseStats.roomResponseCount,
+          skipped_response_count: parseStats.skippedResponseCount,
+          fallback_full_parse_used: parseStats.fallbackFullParseUsed,
+          response_parse_candidate_count: parseStats.responseParseCandidateCount
+        });
+      } catch (error) {
+        responseParsePhase.error(error);
+        throw error;
+      }
     }
 
     // Always run DOM extraction (works for both reused and new tabs).
@@ -1012,6 +1112,18 @@ Object.defineProperties(exported, {
   },
   getEdgeNetworkWaitCount: {
     value: getEdgeNetworkWaitCount,
+    enumerable: false
+  },
+  getEdgeNetworkWaitOptions: {
+    value: getEdgeNetworkWaitOptions,
+    enumerable: false
+  },
+  getPrioritizedEdgeResponseEntries: {
+    value: getPrioritizedEdgeResponseEntries,
+    enumerable: false
+  },
+  shouldSkipEdgeResponseAfterRoomSuccess: {
+    value: shouldSkipEdgeResponseAfterRoomSuccess,
     enumerable: false
   },
   detectCtripLoginPromptFromText: {

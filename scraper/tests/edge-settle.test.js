@@ -149,8 +149,11 @@ test('edge network wait count prefers room-related responses without dropping pa
   delete require.cache[networkCapturePath];
   const {
     getEdgeNetworkWaitCount,
+    getEdgeNetworkWaitOptions,
     isRoomListNetworkResponse,
-    detectCtripLoginPromptFromText
+    detectCtripLoginPromptFromText,
+    getPrioritizedEdgeResponseEntries,
+    shouldSkipEdgeResponseAfterRoomSuccess
   } = require('../src/scraper/edge-capture-modules/network-capture');
 
   const requestMeta = new Map([
@@ -172,6 +175,35 @@ test('edge network wait count prefers room-related responses without dropping pa
   assert.equal(isRoomListNetworkResponse('https://example.test/log.json'), false);
   assert.equal(getEdgeNetworkWaitCount(roomRequestMeta, requestMeta), 1);
   assert.equal(getEdgeNetworkWaitCount(new Map(), requestMeta), 2);
+  assert.equal(getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta).stableMs < 1200, true);
+  assert.equal(getEdgeNetworkWaitOptions(new Map(), requestMeta).stableMs, 1200);
   assert.equal(detectCtripLoginPromptFromText('扫码登录 手机号登录 登录后查看低价').detected, true);
   assert.equal(detectCtripLoginPromptFromText('武汉酒店 房型 每晚 ¥288').detected, false);
+
+  const prioritizedEntries = getPrioritizedEdgeResponseEntries(requestMeta);
+  assert.deepEqual(
+    prioritizedEntries.map(([requestId]) => requestId),
+    ['room', 'analytics']
+  );
+  assert.equal(
+    shouldSkipEdgeResponseAfterRoomSuccess(
+      { url: 'https://example.test/log.json', mimeType: 'application/json' },
+      { roomParseSucceeded: true }
+    ),
+    true
+  );
+  assert.equal(
+    shouldSkipEdgeResponseAfterRoomSuccess(
+      { url: 'https://example.test/log.json', mimeType: 'application/json' },
+      { roomParseSucceeded: false }
+    ),
+    false
+  );
+  assert.equal(
+    shouldSkipEdgeResponseAfterRoomSuccess(
+      { url: 'https://example.test/hotel/detail.json', mimeType: 'application/json' },
+      { roomParseSucceeded: true }
+    ),
+    false
+  );
 });
