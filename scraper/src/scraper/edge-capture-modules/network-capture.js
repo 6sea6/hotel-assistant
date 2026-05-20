@@ -185,6 +185,10 @@ function getEdgeBlockedResourcePatterns() {
   return [...EDGE_BLOCKED_RESOURCE_PATTERNS];
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function configureEdgeStaticResourceBlocking(connection, sessionId, options = {}) {
   if (!connection || typeof connection.send !== 'function' || !sessionId) {
     return { enabled: false, blockedPatternCount: 0, reason: 'missing_cdp_session' };
@@ -204,6 +208,88 @@ async function configureEdgeStaticResourceBlocking(connection, sessionId, option
       reason: 'cdp_set_blocked_urls_failed',
       errorMessage: error && error.message ? error.message : String(error)
     };
+  }
+}
+
+function buildEdgeNavigateSignalResult(reason, startedAt, roomRequestMeta, trackedUrls) {
+  return {
+    reason,
+    elapsedMs: Date.now() - startedAt,
+    roomResponseSeen: Boolean(roomRequestMeta && roomRequestMeta.size > 0),
+    roomTrackedUrlCount: roomRequestMeta && roomRequestMeta.size ? roomRequestMeta.size : 0,
+    trackedUrlCount: trackedUrls && trackedUrls.size ? trackedUrls.size : 0
+  };
+}
+
+async function waitForEdgeNavigateSignal({
+  connection,
+  sessionId,
+  roomRequestMeta,
+  trackedUrls,
+  timeoutMs = 12000,
+  pollMs = 100,
+  pageCheckIntervalMs = 250
+}) {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  let loadEventFired = false;
+  let removeLoadListener = null;
+  if (connection && typeof connection.addListener === 'function') {
+    removeLoadListener = connection.addListener((message) => {
+      if (message.sessionId === sessionId && message.method === 'Page.loadEventFired') {
+        loadEventFired = true;
+      }
+    });
+  }
+
+  let lastPageCheckAt = 0;
+  try {
+    while (Date.now() < deadline) {
+      if (loadEventFired) {
+        return buildEdgeNavigateSignalResult('load_event', startedAt, roomRequestMeta, trackedUrls);
+      }
+      if (roomRequestMeta && roomRequestMeta.size > 0) {
+        return buildEdgeNavigateSignalResult(
+          'room_response',
+          startedAt,
+          roomRequestMeta,
+          trackedUrls
+        );
+      }
+
+      const now = Date.now();
+      if (connection && sessionId && now - lastPageCheckAt >= pageCheckIntervalMs) {
+        lastPageCheckAt = now;
+        try {
+          const ready = await evaluateInSession(
+            connection,
+            sessionId,
+            `(() => {
+              const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
+              return /^(interactive|complete)$/.test(document.readyState) && /(房型|展示额外|更多房型|登录看低价|¥|每晚)/.test(bodyText);
+            })()`
+          );
+          if (ready === true || ready === 'true') {
+            return buildEdgeNavigateSignalResult(
+              'page_ready_signal',
+              startedAt,
+              roomRequestMeta,
+              trackedUrls
+            );
+          }
+        } catch (_error) {
+          // The page may still be navigating; keep waiting for the next signal.
+        }
+      }
+
+      await sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));
+    }
+
+    return buildEdgeNavigateSignalResult('timeout', startedAt, roomRequestMeta, trackedUrls);
+  } finally {
+    if (typeof removeLoadListener === 'function') {
+      removeLoadListener();
+    }
   }
 }
 
@@ -704,19 +790,30 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
 
       await connection.send('Network.setCacheDisabled', { cacheDisabled: false }, sessionId);
 
-      const loadEvent = new Promise((resolve) => {
-        const stopListening = connection.addListener((message) => {
-          if (message.sessionId === sessionId && message.method === 'Page.loadEventFired') {
-            stopListening();
-            resolve();
-          }
-        });
-      });
-
-      await perf.runPhase('edge_navigate', { url, captureMethod, targetMode }, async () => {
+      const navigatePhase = perf.phase('edge_navigate', { url, captureMethod, targetMode });
+      try {
         await connection.send('Page.navigate', { url }, sessionId);
-        await Promise.race([loadEvent, new Promise((resolve) => setTimeout(resolve, 15000))]);
-      });
+        const navigateSignal = await waitForEdgeNavigateSignal({
+          connection,
+          sessionId,
+          roomRequestMeta,
+          trackedUrls,
+          timeoutMs: 15000
+        });
+        navigatePhase.end('success', {
+          navigate_wait_reason: navigateSignal.reason,
+          navigate_wait_elapsed_ms: navigateSignal.elapsedMs,
+          room_response_seen: navigateSignal.roomResponseSeen,
+          room_tracked_url_count_after: navigateSignal.roomTrackedUrlCount,
+          tracked_url_count_after: navigateSignal.trackedUrlCount
+        });
+      } catch (error) {
+        navigatePhase.error(error, {
+          room_tracked_url_count_after: roomRequestMeta.size,
+          tracked_url_count_after: trackedUrls.size
+        });
+        throw error;
+      }
       await perf.runPhase('edge_page_ready', { url, captureMethod, targetMode }, async () =>
         waitForSessionCondition(
           connection,
@@ -823,19 +920,30 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
 
       await connection.send('Network.setCacheDisabled', { cacheDisabled: true }, sessionId);
 
-      const loadEvent = new Promise((resolve) => {
-        const stopListening = connection.addListener((message) => {
-          if (message.sessionId === sessionId && message.method === 'Page.loadEventFired') {
-            stopListening();
-            resolve();
-          }
-        });
-      });
-
-      await perf.runPhase('edge_navigate', { url, captureMethod, targetMode }, async () => {
+      const navigatePhase = perf.phase('edge_navigate', { url, captureMethod, targetMode });
+      try {
         await connection.send('Page.navigate', { url }, sessionId);
-        await Promise.race([loadEvent, new Promise((resolve) => setTimeout(resolve, 12000))]);
-      });
+        const navigateSignal = await waitForEdgeNavigateSignal({
+          connection,
+          sessionId,
+          roomRequestMeta,
+          trackedUrls,
+          timeoutMs: 12000
+        });
+        navigatePhase.end('success', {
+          navigate_wait_reason: navigateSignal.reason,
+          navigate_wait_elapsed_ms: navigateSignal.elapsedMs,
+          room_response_seen: navigateSignal.roomResponseSeen,
+          room_tracked_url_count_after: navigateSignal.roomTrackedUrlCount,
+          tracked_url_count_after: navigateSignal.trackedUrlCount
+        });
+      } catch (error) {
+        navigatePhase.error(error, {
+          room_tracked_url_count_after: roomRequestMeta.size,
+          tracked_url_count_after: trackedUrls.size
+        });
+        throw error;
+      }
       await perf.runPhase('edge_page_ready', { url, captureMethod, targetMode }, async () =>
         waitForSessionCondition(
           connection,
@@ -1208,6 +1316,10 @@ Object.defineProperties(exported, {
   },
   configureEdgeStaticResourceBlocking: {
     value: configureEdgeStaticResourceBlocking,
+    enumerable: false
+  },
+  waitForEdgeNavigateSignal: {
+    value: waitForEdgeNavigateSignal,
     enumerable: false
   },
   shouldSkipEdgeResponseAfterRoomSuccess: {

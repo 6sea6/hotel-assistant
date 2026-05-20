@@ -368,9 +368,7 @@ function shouldSkipBottomExpandAfterStableSettle(aggregate) {
     containerStats.documentHeightBefore > 0 &&
     Math.abs(containerStats.documentHeightAfter - containerStats.documentHeightBefore) <= 24;
   const noNewExpansion =
-    containerStats.clickedCount === 0 &&
-    containerStats.genericClickCount === 0 &&
-    containerStats.skippedDuplicateClickCount === 0;
+    containerStats.clickedCount === 0 && containerStats.genericClickCount === 0;
   const roomContainerWasTargeted =
     containerStats.likelyContainerCount > 0 && containerStats.fallbackContainerCount === 0;
 

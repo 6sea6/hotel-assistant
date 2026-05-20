@@ -244,6 +244,59 @@ test('settleRoomListInEdgeSession skips bottom expand when room list is already 
   }
 });
 
+test('settleRoomListInEdgeSession treats duplicate skipped clicks as stable for bottom expand', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isInitialExpand =
+        expression.includes('const clickStats = clickExpandButtons') &&
+        !expression.includes('document.body.scrollHeight');
+      const isMainScroll = expression.includes('stableHeightRounds');
+      const isScrollContainersStep = expression.includes('await scrollAllContainers');
+      return JSON.stringify({
+        clickedCount: isInitialExpand || isMainScroll ? 1 : 0,
+        skippedDuplicateClickCount: isScrollContainersStep ? 3 : 0,
+        scrollCount: isScrollContainersStep ? 3 : 1,
+        containerCount: isScrollContainersStep ? 1 : 0,
+        likelyContainerCount: isScrollContainersStep ? 1 : 0,
+        fallbackContainerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 0
+    });
+
+    const bottomRecord = records.find((record) => record.phase === 'edge_settle_bottom_expand');
+    assert.equal(bottomRecord.status, 'skipped');
+    assert.equal(bottomRecord.skipped_bottom_expand_count, 1);
+    assert.equal(stats.skippedBottomExpandCount, 1);
+    assert.equal(
+      expressions.some((expression) =>
+        expression.includes('window.scrollTo({ top: document.body.scrollHeight')
+      ),
+      false
+    );
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('edge network wait count prefers room-related responses without dropping parse metadata', () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
   delete require.cache[networkCapturePath];
@@ -256,7 +309,8 @@ test('edge network wait count prefers room-related responses without dropping pa
     getPrioritizedEdgeResponseEntries,
     shouldSkipEdgeResponseAfterRoomSuccess,
     getEdgeBlockedResourcePatterns,
-    configureEdgeStaticResourceBlocking
+    configureEdgeStaticResourceBlocking,
+    waitForEdgeNavigateSignal
   } = require('../src/scraper/edge-capture-modules/network-capture');
 
   const requestMeta = new Map([
@@ -368,5 +422,24 @@ test('edge network wait count prefers room-related responses without dropping pa
     assert.equal(sent[0].method, 'Network.setBlockedURLs');
     assert.equal(sent[0].sessionId, 'session-1');
     assert.deepEqual(sent[0].params.urls, blockedPatterns);
+    let listenerRemoved = false;
+    return waitForEdgeNavigateSignal({
+      connection: {
+        addListener() {
+          return () => {
+            listenerRemoved = true;
+          };
+        }
+      },
+      sessionId: 'session-1',
+      roomRequestMeta: new Map([['room', requestMeta.get('room')]]),
+      trackedUrls: new Set(),
+      timeoutMs: 1000,
+      pollMs: 10
+    }).then((signal) => {
+      assert.equal(signal.reason, 'room_response');
+      assert.equal(signal.roomResponseSeen, true);
+      assert.equal(listenerRemoved, true);
+    });
   });
 });
