@@ -143,9 +143,10 @@ function installScraperMocks(state = {}) {
           : true,
       shouldPreferEdgeCapture: () =>
         state.shouldPreferEdgeCapture !== undefined ? state.shouldPreferEdgeCapture : true,
-      captureRoomCandidatesWithEdge: async () => {
+      captureRoomCandidatesWithEdge: async (_url, _template, _edgeSession, edgeOptions = {}) => {
         calls.edge += 1;
         if (state.onEdgeStart) state.onEdgeStart();
+        if (state.onEdgeOptions) state.onEdgeOptions(edgeOptions);
         if (state.edgeDelayMs) {
           await new Promise((resolve) => setTimeout(resolve, state.edgeDelayMs));
         }
@@ -367,6 +368,44 @@ test('parallel_edge settleStats are exposed in quality fields and perf events', 
       const detailQuality = records.find((record) => record.event === 'detail_quality');
       assert.equal(detailQuality.capture_strategy, 'parallel_edge');
       assert.equal(detailQuality.settle_total_ms, 321);
+    }
+  );
+});
+
+test('scrapeCtripHotel passes login prompt event callback into Edge capture', async () => {
+  const events = [];
+
+  await withScraper(
+    {
+      onEdgeOptions: (edgeOptions) => {
+        assert.equal(typeof edgeOptions.onEvent, 'function');
+        edgeOptions.onEvent('edge:login-required', '检测到携程登录提示', {
+          reason: '页面出现携程登录弹窗。'
+        });
+      }
+    },
+    async (scrapeCtripHotel) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=7',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'parallel_edge',
+          perf: createPerfRecorder([]),
+          onEvent: (type, message, details) => events.push({ type, message, details })
+        }
+      );
+
+      assert.equal(result.room.title, 'Edge大床房');
+      assert.deepEqual(events, [
+        {
+          type: 'edge:login-required',
+          message: '检测到携程登录提示',
+          details: {
+            reason: '页面出现携程登录弹窗。'
+          }
+        }
+      ]);
     }
   );
 });

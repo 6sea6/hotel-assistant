@@ -35,6 +35,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
     buildReviewInput: 0,
     buildReviewInputSummary: 0,
     scrape: 0,
+    scrapeOptions: [],
     transit: 0
   };
   const mockedPaths = [];
@@ -86,9 +87,21 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
     })
   );
   mockedPaths.push(
+    installMock('../src/cli/auto-edge', {
+      closeAutoEdge: () => undefined,
+      hasReusableEdgeProfile: () => true,
+      launchAndWaitForEdge: async () => ({ pid: 12345, port: 9222 }),
+      runInteractiveEdgeLoginPrep: async () => undefined
+    })
+  );
+  mockedPaths.push(
     installMock('../src/ctrip-scraper', {
-      scrapeCtripHotel: async (url) => {
+      scrapeCtripHotel: async (url, _template, scrapeOptions = {}) => {
         calls.scrape += 1;
+        calls.scrapeOptions.push(scrapeOptions);
+        if (typeof options.onScrapeOptions === 'function') {
+          options.onScrapeOptions(scrapeOptions, url);
+        }
         const hotelInput = hotelInputs.find((item) => item.url === url) || hotelInputs[0];
         return {
           hotel_name: `极速酒店${hotelInput.hotelId}`,
@@ -448,6 +461,153 @@ test('reportLevel off batch skips item reports and can still write app data', as
     assert.equal(latestRun.items, undefined);
     assert.equal(latestRun.eligibleHotels, undefined);
     assert.equal(latestRun.performance, undefined);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch auto-edge defaults detail items to parallel_edge capture strategy', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-parallel-edge-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge1',
+      hotelId: 'edge1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge2',
+      hotelId: 'edge2',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.batchMode, true);
+    assert.equal(calls.scrape, 2);
+    assert.equal(calls.scrapeOptions.length, 2);
+    assert.deepEqual(
+      calls.scrapeOptions.map((item) => item.captureStrategy),
+      ['parallel_edge', 'parallel_edge']
+    );
+    assert.deepEqual(
+      calls.scrapeOptions.map((item) => item.edgeParallelCancelPolicy),
+      ['none', 'none']
+    );
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch explicit captureStrategy is preserved when auto-edge is enabled', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-explicit-strategy-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge-explicit-1',
+      hotelId: 'edge-explicit-1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge-explicit-2',
+      hotelId: 'edge-explicit-2',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'capture-strategy': 'html_first',
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.batchMode, true);
+    assert.equal(calls.scrape, 2);
+    assert.deepEqual(
+      calls.scrapeOptions.map((item) => item.captureStrategy),
+      ['html_first', 'html_first']
+    );
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('task runner forwards scraper login prompt events to task console', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-login-event-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    onScrapeOptions: (scrapeOptions) => {
+      assert.equal(typeof scrapeOptions.onEvent, 'function');
+      scrapeOptions.onEvent('edge:login-required', '检测到携程登录提示', {
+        reason: '页面出现携程登录弹窗。',
+        stage: 'edge_page_ready'
+      });
+    }
+  });
+
+  try {
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=login-event',
+        latestRun: latestRunPath,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent: (event) => events.push(event)
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.ok(
+      events.some(
+        (event) =>
+          event.type === 'edge:login-required' &&
+          event.message === '检测到携程登录提示' &&
+          event.details &&
+          event.details.stage === 'edge_page_ready'
+      )
+    );
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });

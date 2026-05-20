@@ -113,6 +113,20 @@ function createTaskEmitter(onEvent) {
   };
 }
 
+function createScrapeEventForwarder(emit) {
+  const notifiedLoginPrompts = new Set();
+  return (type, message, details = {}) => {
+    if (type === 'edge:login-required') {
+      const key = `${type}:${details.reason || message || ''}`;
+      if (notifiedLoginPrompts.has(key)) {
+        return;
+      }
+      notifiedLoginPrompts.add(key);
+    }
+    emit(type, message, details);
+  };
+}
+
 function buildFailureResult(error, latestRunPath, startedAt) {
   const failedAt = new Date().toISOString();
   return {
@@ -147,6 +161,16 @@ function durationSince(startedAt) {
 
 function isReportDisabled(reportLevel) {
   return reportLevel === 'off';
+}
+
+function resolveBatchCaptureStrategy(args = {}, options = {}, autoEdge = false) {
+  const explicitCaptureStrategy =
+    args.captureStrategy || args['capture-strategy'] || options.captureStrategy || null;
+  if (explicitCaptureStrategy) {
+    return explicitCaptureStrategy;
+  }
+
+  return autoEdge ? 'parallel_edge' : null;
 }
 
 function shouldCleanupOutputArtifactsForRun(reportLevel, args = {}) {
@@ -411,7 +435,8 @@ async function runPreparedSingleDetailImport(context) {
     includeReviewInput = false,
     forceReviewInput = false,
     captureStrategy: contextCaptureStrategy = null,
-    edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null
+    edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null,
+    scrapeEventForwarder = emit
   } = context;
   const reportDisabled = isReportDisabled(reportLevel);
   const itemPerf = perf
@@ -457,6 +482,7 @@ async function runPreparedSingleDetailImport(context) {
       args['edge-parallel-cancel-policy'] ||
       contextEdgeParallelCancelPolicy ||
       'none',
+    onEvent: scrapeEventForwarder,
     perf: itemPerf.child({ url: itemTemplate.ctrip_url })
   });
   performance.scrapeMs = durationSince(scrapeStartedAt);
@@ -744,7 +770,8 @@ async function runBatchHotelImportTask(context) {
     effectiveDestination,
     expandedInputs,
     reportLevel = 'normal',
-    options = {}
+    options = {},
+    scrapeEventForwarder = null
   } = context;
   const reportDisabled = isReportDisabled(reportLevel);
 
@@ -840,8 +867,9 @@ async function runBatchHotelImportTask(context) {
           pageIndex: index + 1,
           reportLevel,
           isBatchItem: true,
-          captureStrategy: options.captureStrategy,
-          edgeParallelCancelPolicy: options.edgeParallelCancelPolicy
+          captureStrategy: resolveBatchCaptureStrategy(args, options, Boolean(args['auto-edge'])),
+          edgeParallelCancelPolicy: options.edgeParallelCancelPolicy,
+          scrapeEventForwarder
         });
         const childResult = preparedResult.result;
         const childPayload = preparedResult.outputPayload;
@@ -1130,6 +1158,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
   const startedAt = options.startedAt || new Date().toISOString();
   const taskId = options.taskId || args.taskId || `task-${Date.now()}`;
   const emit = createTaskEmitter(options.onEvent);
+  const scrapeEventForwarder = createScrapeEventForwarder(emit);
   const signal = options.signal || null;
   const latestRunPathInput = args.latestRun || DEFAULT_LATEST_RUN_PATH;
   const perfLogger = options.perfLogger || setup_perf_logger();
@@ -1316,7 +1345,8 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             expandedInputs,
             options,
             perf,
-            reportLevel
+            reportLevel,
+            scrapeEventForwarder
           });
         }
 
@@ -1341,7 +1371,8 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           pageIndex: 1,
           reportLevel,
           captureStrategy: options.captureStrategy,
-          edgeParallelCancelPolicy: options.edgeParallelCancelPolicy
+          edgeParallelCancelPolicy: options.edgeParallelCancelPolicy,
+          scrapeEventForwarder
         });
         const result = preparedResult.result;
 

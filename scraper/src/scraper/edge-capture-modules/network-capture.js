@@ -118,6 +118,156 @@ function createNoopPerf() {
   };
 }
 
+function isRoomListNetworkResponse(url = '') {
+  const normalizedUrl = String(url || '').toLowerCase();
+  if (!normalizedUrl) {
+    return false;
+  }
+
+  return (
+    /gethotelroomlist|gethotelroompopinfo|hotelroom|roomlist|roomprice|roompriceinfo/.test(
+      normalizedUrl
+    ) ||
+    (normalizedUrl.includes('/restapi/soa2/') &&
+      normalizedUrl.includes('hotel') &&
+      normalizedUrl.includes('room'))
+  );
+}
+
+function getEdgeNetworkWaitCount(roomRequestMeta, requestMeta) {
+  if (roomRequestMeta && roomRequestMeta.size > 0) {
+    return roomRequestMeta.size;
+  }
+
+  return requestMeta && requestMeta.size ? requestMeta.size : 0;
+}
+
+function detectCtripLoginPromptFromText(text = '') {
+  const normalizedText = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalizedText) {
+    return {
+      detected: false,
+      reason: ''
+    };
+  }
+
+  const priceLoginPattern =
+    /登录看低价|解锁优惠|登录后(?:查看|享|可|才)?[^。；，,.]{0,16}(?:低价|价格|优惠|房价)/;
+  if (priceLoginPattern.test(normalizedText)) {
+    return {
+      detected: true,
+      reason: '携程页面提示登录后才能查看价格或优惠。'
+    };
+  }
+
+  const loginDialogPattern =
+    /扫码登录|手机号登录|账号密码登录|验证码登录|携程账号登录|登录携程|会员登录|立即登录|请登录后|登录后继续/;
+  if (loginDialogPattern.test(normalizedText)) {
+    return {
+      detected: true,
+      reason: '携程页面出现登录弹窗或登录入口。'
+    };
+  }
+
+  return {
+    detected: false,
+    reason: ''
+  };
+}
+
+function emitEdgeEvent(options = {}, type, message, details = {}) {
+  if (typeof options.onEvent !== 'function') {
+    return;
+  }
+
+  options.onEvent(type, message, details);
+}
+
+async function detectCtripLoginPromptInSession(connection, sessionId) {
+  const result = await evaluateInSession(
+    connection,
+    sessionId,
+    `(() => {
+      const readText = (element) => element ? String(element.innerText || element.textContent || '') : '';
+      const selectors = [
+        '[role="dialog"]',
+        '[class*="login"]',
+        '[class*="Login"]',
+        '[class*="modal"]',
+        '[class*="Modal"]',
+        '[class*="popup"]',
+        '[class*="Popup"]',
+        '[class*="mask"]',
+        '[class*="Mask"]'
+      ];
+      const snippets = [];
+      for (const selector of selectors) {
+        try {
+          for (const element of Array.from(document.querySelectorAll(selector)).slice(0, 12)) {
+            const text = readText(element).replace(/\\s+/g, ' ').trim();
+            if (text && !snippets.includes(text)) snippets.push(text.slice(0, 600));
+          }
+        } catch (_error) {}
+      }
+      const bodyText = readText(document.body).replace(/\\s+/g, ' ').trim();
+      return JSON.stringify({
+        title: document.title || '',
+        url: location.href || '',
+        modalText: snippets.join('\\n').slice(0, 1800),
+        bodyText: bodyText.slice(0, 2400)
+      });
+    })()`
+  );
+  const payload = typeof result === 'string' ? safeJsonParse(result) : result;
+  const combinedText = [
+    payload && payload.title,
+    payload && payload.modalText,
+    payload && payload.bodyText
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return detectCtripLoginPromptFromText(combinedText);
+}
+
+async function waitForEdgeNetworkStability({
+  perf,
+  url,
+  captureMethod,
+  targetMode,
+  trackedUrls,
+  requestMeta,
+  roomRequestMeta
+}) {
+  const phase = perf.phase('edge_network_wait', {
+    url,
+    captureMethod,
+    targetMode,
+    trackedUrlCount: trackedUrls.size,
+    roomTrackedUrlCount: roomRequestMeta.size
+  });
+  try {
+    await waitForStableCount(() => getEdgeNetworkWaitCount(roomRequestMeta, requestMeta), {
+      stableMs: 1200,
+      maxWaitMs: 4500,
+      intervalMs: 200
+    });
+    phase.end('success', {
+      tracked_url_count_after: trackedUrls.size,
+      room_tracked_url_count_after: roomRequestMeta.size,
+      network_wait_count: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta)
+    });
+  } catch (error) {
+    phase.error(error, {
+      tracked_url_count_after: trackedUrls.size,
+      room_tracked_url_count_after: roomRequestMeta.size,
+      network_wait_count: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta)
+    });
+    throw error;
+  }
+}
+
 async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions = {}, options = {}) {
   const perf = options.perf || createNoopPerf();
   const captureMethod = options.captureMethod || 'html_then_edge_cdp';
@@ -166,6 +316,36 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   let targetInitialUrl = '';
   let shouldCloseTarget = false;
   let settleStats = null;
+  let loginPromptNotified = false;
+  const notifyLoginPromptIfDetected = async (stage) => {
+    if (loginPromptNotified || !connection || !sessionId) {
+      return;
+    }
+    try {
+      const detection = await detectCtripLoginPromptInSession(connection, sessionId);
+      if (!detection.detected) {
+        return;
+      }
+      loginPromptNotified = true;
+      emitEdgeEvent(options, 'edge:login-required', '检测到携程登录提示，采集仍会继续尝试', {
+        reason: detection.reason,
+        stage,
+        url,
+        instruction:
+          '请在已打开的 Edge 携程页面完成登录；本次采集会继续，若仍缺价格可登录后重新采集。'
+      });
+      perf.event('edge_login_prompt_detected', {
+        phase: stage,
+        status: 'warning',
+        url,
+        captureMethod,
+        targetMode,
+        waitReason: 'login_prompt_detected'
+      });
+    } catch (_error) {
+      // Login prompt detection is best-effort and must not affect collection.
+    }
+  };
   try {
     await perf.runPhase(
       'edge_connect',
@@ -271,6 +451,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     }
 
     const requestMeta = new Map();
+    const roomRequestMeta = new Map();
     const trackedUrls = new Set();
     const roomBlocks = [];
     const spiderErrorCodes = new Set();
@@ -295,8 +476,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         const responseUrl = response.url;
         if (!requestId || !responseUrl) return;
         if (!shouldInspectNetworkResponse(responseUrl, response.mimeType)) return;
+        const nextMeta = { url: responseUrl, mimeType: response.mimeType };
         trackedUrls.add(responseUrl);
-        requestMeta.set(requestId, { url: responseUrl, mimeType: response.mimeType });
+        requestMeta.set(requestId, nextMeta);
+        if (isRoomListNetworkResponse(responseUrl)) {
+          roomRequestMeta.set(requestId, nextMeta);
+        }
       });
 
       await connection.send('Network.setCacheDisabled', { cacheDisabled: false }, sessionId);
@@ -326,6 +511,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           250
         )
       );
+      await notifyLoginPromptIfDetected('edge_page_ready');
       const settlePhase = perf.phase('edge_settle_room_list', { url, captureMethod, targetMode });
       try {
         settleStats = await settleRoomListInEdgeSession(connection, sessionId, {
@@ -336,9 +522,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         settlePhase.end('success', {
           settle_total_ms: settleStats.totalMs,
           settle_clicked_count: settleStats.clickedCount,
+          settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount || 0,
+          settle_generic_click_count: settleStats.genericClickCount || 0,
           settle_scroll_count: settleStats.scrollCount,
           settle_container_count: settleStats.containerCount
         });
+        await notifyLoginPromptIfDetected('edge_settle_room_list');
       } catch (error) {
         settlePhase.error(error);
         throw error;
@@ -346,16 +535,15 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
 
       const trackedBeforeExpand = trackedUrls.size;
 
-      await perf.runPhase(
-        'edge_network_wait',
-        { url, captureMethod, targetMode, trackedUrlCount: trackedUrls.size },
-        async () =>
-          waitForStableCount(() => requestMeta.size, {
-            stableMs: 1200,
-            maxWaitMs: 4500,
-            intervalMs: 200
-          })
-      );
+      await waitForEdgeNetworkStability({
+        perf,
+        url,
+        captureMethod,
+        targetMode,
+        trackedUrls,
+        requestMeta,
+        roomRequestMeta
+      });
 
       console.log(
         `[edge-cdp] tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`
@@ -426,8 +614,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         const responseUrl = response.url;
         if (!requestId || !responseUrl) return;
         if (!shouldInspectNetworkResponse(responseUrl, response.mimeType)) return;
+        const nextMeta = { url: responseUrl, mimeType: response.mimeType };
         trackedUrls.add(responseUrl);
-        requestMeta.set(requestId, { url: responseUrl, mimeType: response.mimeType });
+        requestMeta.set(requestId, nextMeta);
+        if (isRoomListNetworkResponse(responseUrl)) {
+          roomRequestMeta.set(requestId, nextMeta);
+        }
       });
 
       await connection.send('Network.setCacheDisabled', { cacheDisabled: true }, sessionId);
@@ -457,6 +649,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           250
         )
       );
+      await notifyLoginPromptIfDetected('edge_page_ready');
       const settlePhase = perf.phase('edge_settle_room_list', { url, captureMethod, targetMode });
       try {
         settleStats = await settleRoomListInEdgeSession(connection, sessionId, {
@@ -467,9 +660,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         settlePhase.end('success', {
           settle_total_ms: settleStats.totalMs,
           settle_clicked_count: settleStats.clickedCount,
+          settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount || 0,
+          settle_generic_click_count: settleStats.genericClickCount || 0,
           settle_scroll_count: settleStats.scrollCount,
           settle_container_count: settleStats.containerCount
         });
+        await notifyLoginPromptIfDetected('edge_settle_room_list');
       } catch (error) {
         settlePhase.error(error);
         throw error;
@@ -477,16 +673,15 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
 
       const trackedBeforeExpand = trackedUrls.size;
 
-      await perf.runPhase(
-        'edge_network_wait',
-        { url, captureMethod, targetMode, trackedUrlCount: trackedUrls.size },
-        async () =>
-          waitForStableCount(() => requestMeta.size, {
-            stableMs: 1200,
-            maxWaitMs: 4500,
-            intervalMs: 200
-          })
-      );
+      await waitForEdgeNetworkStability({
+        perf,
+        url,
+        captureMethod,
+        targetMode,
+        trackedUrls,
+        requestMeta,
+        roomRequestMeta
+      });
 
       console.log(
         `[edge-cdp] new-tab tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`
@@ -804,8 +999,25 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   }
 }
 
-module.exports = {
+const exported = {
   shouldAttemptSupplementalCapture,
   shouldPreferEdgeCapture,
   captureRoomCandidatesWithEdge
 };
+
+Object.defineProperties(exported, {
+  isRoomListNetworkResponse: {
+    value: isRoomListNetworkResponse,
+    enumerable: false
+  },
+  getEdgeNetworkWaitCount: {
+    value: getEdgeNetworkWaitCount,
+    enumerable: false
+  },
+  detectCtripLoginPromptFromText: {
+    value: detectCtripLoginPromptFromText,
+    enumerable: false
+  }
+});
+
+module.exports = exported;

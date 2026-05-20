@@ -105,6 +105,8 @@ function normalizeSettleStats(settleStats = null) {
     return {
       totalMs: 0,
       clickedCount: 0,
+      skippedDuplicateClickCount: 0,
+      genericClickCount: 0,
       scrollCount: 0,
       containerCount: 0
     };
@@ -113,6 +115,12 @@ function normalizeSettleStats(settleStats = null) {
   return {
     totalMs: Number(settleStats.totalMs ?? settleStats.total_ms ?? 0) || 0,
     clickedCount: Number(settleStats.clickedCount ?? settleStats.clicked_count ?? 0) || 0,
+    skippedDuplicateClickCount:
+      Number(
+        settleStats.skippedDuplicateClickCount ?? settleStats.skipped_duplicate_click_count ?? 0
+      ) || 0,
+    genericClickCount:
+      Number(settleStats.genericClickCount ?? settleStats.generic_click_count ?? 0) || 0,
     scrollCount: Number(settleStats.scrollCount ?? settleStats.scroll_count ?? 0) || 0,
     containerCount: Number(settleStats.containerCount ?? settleStats.container_count ?? 0) || 0
   };
@@ -169,6 +177,8 @@ function buildScrapeQualityFields({
     edge_waited_for_settle: Boolean(fallbackCapture && fallbackCapture.edgeWaitedForSettle),
     settle_total_ms: settleStats.totalMs,
     settle_clicked_count: settleStats.clickedCount,
+    settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount,
+    settle_generic_click_count: settleStats.genericClickCount,
     settle_scroll_count: settleStats.scrollCount,
     settle_container_count: settleStats.containerCount,
     warnings
@@ -291,7 +301,8 @@ async function runEdgeCapture({
           capture_strategy: captureStrategy
         }),
         captureMethod,
-        captureStrategy
+        captureStrategy,
+        onEvent: options.onEvent
       })
   );
 

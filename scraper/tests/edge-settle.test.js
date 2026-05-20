@@ -97,3 +97,81 @@ test('settleRoomListInEdgeSession emits split settle phases and aggregate stats'
     clearModules([settlePath, cdpUtilsPath]);
   }
 });
+
+test('settleRoomListInEdgeSession exposes click de-duplication stats', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      return JSON.stringify({
+        clickedCount: 1,
+        skippedDuplicateClickCount: 2,
+        genericClickCount: 1,
+        scrollCount: 2,
+        containerCount: 1,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1200,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 0
+    });
+
+    assert.equal(stats.clickedCount, 6);
+    assert.equal(stats.skippedDuplicateClickCount, 12);
+    assert.equal(stats.genericClickCount, 6);
+    assert.equal(records[0].skipped_duplicate_click_count, 2);
+    assert.equal(records[0].generic_click_count, 1);
+    assert.ok(
+      expressions.some((expression) => expression.includes('__ctripSettleClickedElements'))
+    );
+    assert.ok(expressions.some((expression) => expression.includes('MAX_GENERIC_EXPAND_CLICKS')));
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('edge network wait count prefers room-related responses without dropping parse metadata', () => {
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+  const {
+    getEdgeNetworkWaitCount,
+    isRoomListNetworkResponse,
+    detectCtripLoginPromptFromText
+  } = require('../src/scraper/edge-capture-modules/network-capture');
+
+  const requestMeta = new Map([
+    ['analytics', { url: 'https://example.test/log.json', mimeType: 'application/json' }],
+    [
+      'room',
+      {
+        url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+        mimeType: 'application/json'
+      }
+    ]
+  ]);
+  const roomRequestMeta = new Map([['room', requestMeta.get('room')]]);
+
+  assert.equal(
+    isRoomListNetworkResponse('https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList'),
+    true
+  );
+  assert.equal(isRoomListNetworkResponse('https://example.test/log.json'), false);
+  assert.equal(getEdgeNetworkWaitCount(roomRequestMeta, requestMeta), 1);
+  assert.equal(getEdgeNetworkWaitCount(new Map(), requestMeta), 2);
+  assert.equal(detectCtripLoginPromptFromText('扫码登录 手机号登录 登录后查看低价').detected, true);
+  assert.equal(detectCtripLoginPromptFromText('武汉酒店 房型 每晚 ¥288').detected, false);
+});
