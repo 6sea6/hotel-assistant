@@ -144,6 +144,106 @@ test('settleRoomListInEdgeSession exposes click de-duplication stats', async () 
   }
 });
 
+test('settleRoomListInEdgeSession exposes likely room container selection stats', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isScrollContainersStep = expression.includes('await scrollAllContainers');
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: 1,
+        containerCount: isScrollContainersStep ? 1 : 0,
+        likelyContainerCount: isScrollContainersStep ? 1 : 0,
+        fallbackContainerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 2000,
+        roomKeywordCount: 6
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 0
+    });
+
+    assert.equal(stats.likelyContainerCount, 1);
+    assert.equal(stats.fallbackContainerCount, 0);
+    const containerRecord = records.find(
+      (record) => record.phase === 'edge_settle_scroll_containers'
+    );
+    assert.equal(containerRecord.likely_container_count, 1);
+    assert.equal(containerRecord.fallback_container_count, 0);
+    assert.ok(
+      expressions.some((expression) => expression.includes('selectLikelyRoomScrollContainers'))
+    );
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('settleRoomListInEdgeSession skips bottom expand when room list is already stable', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isInitialExpand =
+        expression.includes('const clickStats = clickExpandButtons') &&
+        !expression.includes('document.body.scrollHeight');
+      const isMainScroll = expression.includes('stableHeightRounds');
+      const isScrollContainersStep = expression.includes('await scrollAllContainers');
+      return JSON.stringify({
+        clickedCount: isInitialExpand || isMainScroll ? 1 : 0,
+        scrollCount: isScrollContainersStep ? 3 : 1,
+        containerCount: isScrollContainersStep ? 1 : 0,
+        likelyContainerCount: isScrollContainersStep ? 1 : 0,
+        fallbackContainerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 0
+    });
+
+    const bottomRecord = records.find((record) => record.phase === 'edge_settle_bottom_expand');
+    assert.equal(bottomRecord.status, 'skipped');
+    assert.equal(bottomRecord.skipped_bottom_expand_count, 1);
+    assert.equal(stats.skippedBottomExpandCount, 1);
+    assert.equal(
+      expressions.some((expression) =>
+        expression.includes('window.scrollTo({ top: document.body.scrollHeight')
+      ),
+      false
+    );
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('edge network wait count prefers room-related responses without dropping parse metadata', () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
   delete require.cache[networkCapturePath];
@@ -152,8 +252,11 @@ test('edge network wait count prefers room-related responses without dropping pa
     getEdgeNetworkWaitOptions,
     isRoomListNetworkResponse,
     detectCtripLoginPromptFromText,
+    isEdgeRoomFastPathComplete,
     getPrioritizedEdgeResponseEntries,
-    shouldSkipEdgeResponseAfterRoomSuccess
+    shouldSkipEdgeResponseAfterRoomSuccess,
+    getEdgeBlockedResourcePatterns,
+    configureEdgeStaticResourceBlocking
   } = require('../src/scraper/edge-capture-modules/network-capture');
 
   const requestMeta = new Map([
@@ -188,22 +291,82 @@ test('edge network wait count prefers room-related responses without dropping pa
   assert.equal(
     shouldSkipEdgeResponseAfterRoomSuccess(
       { url: 'https://example.test/log.json', mimeType: 'application/json' },
-      { roomParseSucceeded: true }
+      { fastPathComplete: true }
     ),
     true
   );
   assert.equal(
     shouldSkipEdgeResponseAfterRoomSuccess(
-      { url: 'https://example.test/log.json', mimeType: 'application/json' },
-      { roomParseSucceeded: false }
+      { url: 'https://example.test/hotel/detail.json', mimeType: 'application/json' },
+      { fastPathComplete: true }
     ),
     false
   );
   assert.equal(
     shouldSkipEdgeResponseAfterRoomSuccess(
-      { url: 'https://example.test/hotel/detail.json', mimeType: 'application/json' },
-      { roomParseSucceeded: true }
+      { url: 'https://example.test/log.json', mimeType: 'application/json' },
+      { fastPathComplete: false }
     ),
     false
   );
+  assert.equal(
+    isEdgeRoomFastPathComplete(
+      [
+        {
+          title: '标准大床房',
+          standard_title: '标准大床房',
+          price: 288,
+          prices: [288],
+          occupancy: 2,
+          cancelPolicy: '免费取消'
+        }
+      ],
+      { room_count: 2, room_type: '大床房' }
+    ),
+    true
+  );
+  assert.equal(
+    isEdgeRoomFastPathComplete(
+      [
+        {
+          title: '标准大床房',
+          standard_title: '标准大床房',
+          price: 288,
+          prices: [288],
+          occupancy: 2,
+          cancelPolicy: '免费取消'
+        }
+      ],
+      { room_count: 3, room_type: '三人房' }
+    ),
+    false
+  );
+
+  const blockedPatterns = getEdgeBlockedResourcePatterns();
+  assert.ok(blockedPatterns.some((pattern) => pattern.includes('*.png')));
+  assert.ok(blockedPatterns.some((pattern) => pattern.includes('*.woff2')));
+  assert.equal(
+    blockedPatterns.some((pattern) => pattern.includes('*.js')),
+    false
+  );
+  assert.equal(
+    blockedPatterns.some((pattern) => pattern.includes('*.css')),
+    false
+  );
+
+  const sent = [];
+  return configureEdgeStaticResourceBlocking(
+    {
+      send: async (method, params, sessionId) => {
+        sent.push({ method, params, sessionId });
+      }
+    },
+    'session-1'
+  ).then((result) => {
+    assert.equal(result.enabled, true);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].method, 'Network.setBlockedURLs');
+    assert.equal(sent[0].sessionId, 'session-1');
+    assert.deepEqual(sent[0].params.urls, blockedPatterns);
+  });
 });

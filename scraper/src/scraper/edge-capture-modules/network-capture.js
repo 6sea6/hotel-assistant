@@ -162,6 +162,51 @@ function getPrioritizedEdgeResponseEntries(requestMeta) {
   return [...roomEntries, ...otherEntries];
 }
 
+const EDGE_BLOCKED_RESOURCE_PATTERNS = [
+  '*://*/*.png*',
+  '*://*/*.jpg*',
+  '*://*/*.jpeg*',
+  '*://*/*.gif*',
+  '*://*/*.webp*',
+  '*://*/*.avif*',
+  '*://*/*.ico*',
+  '*://*/*.woff*',
+  '*://*/*.woff2*',
+  '*://*/*.ttf*',
+  '*://*/*.otf*',
+  '*://*/*.eot*',
+  '*://*/*.mp4*',
+  '*://*/*.webm*',
+  '*://*/*.mov*',
+  '*://*/*.m3u8*'
+];
+
+function getEdgeBlockedResourcePatterns() {
+  return [...EDGE_BLOCKED_RESOURCE_PATTERNS];
+}
+
+async function configureEdgeStaticResourceBlocking(connection, sessionId, options = {}) {
+  if (!connection || typeof connection.send !== 'function' || !sessionId) {
+    return { enabled: false, blockedPatternCount: 0, reason: 'missing_cdp_session' };
+  }
+  if (options.blockStaticResources === false || options.disableStaticResourceBlocking === true) {
+    return { enabled: false, blockedPatternCount: 0, reason: 'disabled_by_option' };
+  }
+
+  const urls = getEdgeBlockedResourcePatterns();
+  try {
+    await connection.send('Network.setBlockedURLs', { urls }, sessionId);
+    return { enabled: true, blockedPatternCount: urls.length, reason: '' };
+  } catch (error) {
+    return {
+      enabled: false,
+      blockedPatternCount: urls.length,
+      reason: 'cdp_set_blocked_urls_failed',
+      errorMessage: error && error.message ? error.message : String(error)
+    };
+  }
+}
+
 function isClearlyIrrelevantEdgeResponse(url = '') {
   const normalizedUrl = String(url || '').toLowerCase();
   if (!normalizedUrl || isRoomListNetworkResponse(normalizedUrl)) {
@@ -174,7 +219,7 @@ function isClearlyIrrelevantEdgeResponse(url = '') {
 }
 
 function shouldSkipEdgeResponseAfterRoomSuccess(meta = {}, state = {}) {
-  if (!state.roomParseSucceeded) {
+  if (!state.fastPathComplete) {
     return false;
   }
 
@@ -317,10 +362,16 @@ async function waitForEdgeNetworkStability({
   }
 }
 
-function hasUsableEdgeRoomSelection(roomBlocks, template) {
+function isEdgeRoomFastPathComplete(roomBlocks, template) {
   const mergedBlocks = mergeRoomCandidates(roomBlocks);
   const selectedRoom = selectBestRoom(mergedBlocks, template);
-  return Boolean(selectedRoom && selectedRoom.price !== null && selectedRoom.price !== undefined);
+  const eligibleRooms = selectMatchingRooms(mergedBlocks, template);
+  return Boolean(
+    selectedRoom &&
+    selectedRoom.price !== null &&
+    selectedRoom.price !== undefined &&
+    eligibleRooms.length > 0
+  );
 }
 
 async function parseEdgeNetworkResponses({
@@ -346,7 +397,7 @@ async function parseEdgeNetworkResponses({
     roomApiDebugIndex
   };
   const state = {
-    roomParseSucceeded: false
+    fastPathComplete: false
   };
 
   for (const [requestId, meta] of entries) {
@@ -399,15 +450,16 @@ async function parseEdgeNetworkResponses({
           `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${body.includes('套房')}, has 开放: ${body.includes('开放')}`
         );
       }
-      if (isRoomResponse && hasUsableEdgeRoomSelection(roomBlocks, template)) {
-        state.roomParseSucceeded = true;
+      if (isRoomResponse && isEdgeRoomFastPathComplete(roomBlocks, template)) {
+        state.fastPathComplete = true;
       }
     } catch (_error) {
       /* skip */
     }
   }
 
-  if (roomEntryCount > 0 && !state.roomParseSucceeded) {
+  stats.fastPathComplete = state.fastPathComplete;
+  if (roomEntryCount > 0 && !state.fastPathComplete) {
     stats.fallbackFullParseUsed = true;
   }
 
@@ -608,6 +660,26 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     await connection.send('Network.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
 
+    const staticResourceBlockPhase = perf.phase('edge_static_resource_block', {
+      url,
+      captureMethod,
+      targetMode
+    });
+    const staticResourceBlockResult = await configureEdgeStaticResourceBlocking(
+      connection,
+      sessionId,
+      {
+        ...edgeSessionOptions,
+        ...options
+      }
+    );
+    staticResourceBlockPhase.end(staticResourceBlockResult.enabled ? 'success' : 'skipped', {
+      static_resource_block_enabled: staticResourceBlockResult.enabled,
+      blocked_resource_pattern_count: staticResourceBlockResult.blockedPatternCount,
+      skip_reason: staticResourceBlockResult.reason || '',
+      error_message: staticResourceBlockResult.errorMessage || ''
+    });
+
     if (targetMode === 'reused-match') {
       console.log(
         `[edge-cdp] reusing matched tab and navigating: ${targetInitialUrl || 'about:blank'} -> ${url}`
@@ -671,7 +743,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount || 0,
           settle_generic_click_count: settleStats.genericClickCount || 0,
           settle_scroll_count: settleStats.scrollCount,
-          settle_container_count: settleStats.containerCount
+          settle_container_count: settleStats.containerCount,
+          settle_likely_container_count: settleStats.likelyContainerCount || 0,
+          settle_fallback_container_count: settleStats.fallbackContainerCount || 0,
+          settle_skipped_bottom_expand_count: settleStats.skippedBottomExpandCount || 0
         });
         await notifyLoginPromptIfDetected('edge_settle_room_list');
       } catch (error) {
@@ -720,6 +795,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           room_response_count: parseStats.roomResponseCount,
           skipped_response_count: parseStats.skippedResponseCount,
           fallback_full_parse_used: parseStats.fallbackFullParseUsed,
+          response_fast_path_complete: parseStats.fastPathComplete,
           response_parse_candidate_count: parseStats.responseParseCandidateCount
         });
       } catch (error) {
@@ -786,7 +862,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount || 0,
           settle_generic_click_count: settleStats.genericClickCount || 0,
           settle_scroll_count: settleStats.scrollCount,
-          settle_container_count: settleStats.containerCount
+          settle_container_count: settleStats.containerCount,
+          settle_likely_container_count: settleStats.likelyContainerCount || 0,
+          settle_fallback_container_count: settleStats.fallbackContainerCount || 0,
+          settle_skipped_bottom_expand_count: settleStats.skippedBottomExpandCount || 0
         });
         await notifyLoginPromptIfDetected('edge_settle_room_list');
       } catch (error) {
@@ -834,6 +913,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           room_response_count: parseStats.roomResponseCount,
           skipped_response_count: parseStats.skippedResponseCount,
           fallback_full_parse_used: parseStats.fallbackFullParseUsed,
+          response_fast_path_complete: parseStats.fastPathComplete,
           response_parse_candidate_count: parseStats.responseParseCandidateCount
         });
       } catch (error) {
@@ -1122,8 +1202,20 @@ Object.defineProperties(exported, {
     value: getPrioritizedEdgeResponseEntries,
     enumerable: false
   },
+  getEdgeBlockedResourcePatterns: {
+    value: getEdgeBlockedResourcePatterns,
+    enumerable: false
+  },
+  configureEdgeStaticResourceBlocking: {
+    value: configureEdgeStaticResourceBlocking,
+    enumerable: false
+  },
   shouldSkipEdgeResponseAfterRoomSuccess: {
     value: shouldSkipEdgeResponseAfterRoomSuccess,
+    enumerable: false
+  },
+  isEdgeRoomFastPathComplete: {
+    value: isEdgeRoomFastPathComplete,
     enumerable: false
   },
   detectCtripLoginPromptFromText: {

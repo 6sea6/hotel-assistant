@@ -98,6 +98,9 @@ const finishStats = (before, extra = {}) => {
     genericClickCount: extra.genericClickCount || 0,
     scrollCount: extra.scrollCount || 0,
     containerCount: extra.containerCount || 0,
+    likelyContainerCount: extra.likelyContainerCount || 0,
+    fallbackContainerCount: extra.fallbackContainerCount || 0,
+    skippedBottomExpandCount: extra.skippedBottomExpandCount || 0,
     documentHeightBefore: before.documentHeight,
     documentHeightAfter: after.documentHeight,
     bodyTextLength: after.bodyTextLength,
@@ -206,12 +209,43 @@ const clickExpandButtons = () => {
   }
   return { clickedCount: clicked, skippedDuplicateClickCount, genericClickCount };
 };
+const getScrollableContainers = () => Array.from(document.querySelectorAll('*')).filter(el => {
+  const style = window.getComputedStyle(el);
+  return (style.overflowY === 'auto' || style.overflowY === 'scroll')
+         && el.scrollHeight > el.clientHeight + 50;
+}).sort((left, right) => right.scrollHeight - left.scrollHeight);
+const isLikelyRoomScrollContainer = (element) => {
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return false;
+  }
+  const text = (element.innerText || element.textContent || '').replace(/\\s+/g, ' ').trim();
+  if (!text || text.length < 20) {
+    return false;
+  }
+  const keywordMatches = text.match(/房型|房间|大床|双床|家庭房|亲子房|三人间|套房|每晚|¥|登录看低价|解锁优惠|免费取消/g);
+  return Boolean(keywordMatches && keywordMatches.length >= 2);
+};
+const selectLikelyRoomScrollContainers = () => {
+  const scrollableContainers = getScrollableContainers();
+  const likelyContainers = scrollableContainers.filter(isLikelyRoomScrollContainer).slice(0, 3);
+  if (likelyContainers.length > 0) {
+    return {
+      containers: likelyContainers,
+      likelyContainerCount: likelyContainers.length,
+      fallbackContainerCount: 0
+    };
+  }
+  const fallbackContainers = scrollableContainers.slice(0, 3);
+  return {
+    containers: fallbackContainers,
+    likelyContainerCount: 0,
+    fallbackContainerCount: fallbackContainers.length
+  };
+};
 const scrollAllContainers = async () => {
-  const scrollableContainers = Array.from(document.querySelectorAll('*')).filter(el => {
-    const style = window.getComputedStyle(el);
-    return (style.overflowY === 'auto' || style.overflowY === 'scroll')
-           && el.scrollHeight > el.clientHeight + 50;
-  }).sort((left, right) => right.scrollHeight - left.scrollHeight).slice(0, 3);
+  const containerSelection = selectLikelyRoomScrollContainers();
+  const scrollableContainers = containerSelection.containers;
   let clickedCount = 0;
   let skippedDuplicateClickCount = 0;
   let genericClickCount = 0;
@@ -239,7 +273,9 @@ const scrollAllContainers = async () => {
     skippedDuplicateClickCount,
     genericClickCount,
     scrollCount,
-    containerCount: scrollableContainers.length
+    containerCount: scrollableContainers.length,
+    likelyContainerCount: containerSelection.likelyContainerCount,
+    fallbackContainerCount: containerSelection.fallbackContainerCount
   };
 };
 `;
@@ -276,6 +312,9 @@ function normalizeStepStats(stats = {}) {
     genericClickCount: Number(stats.genericClickCount || 0),
     scrollCount: Number(stats.scrollCount || 0),
     containerCount: Number(stats.containerCount || 0),
+    likelyContainerCount: Number(stats.likelyContainerCount || 0),
+    fallbackContainerCount: Number(stats.fallbackContainerCount || 0),
+    skippedBottomExpandCount: Number(stats.skippedBottomExpandCount || 0),
     documentHeightBefore: Number(stats.documentHeightBefore || 0),
     documentHeightAfter: Number(stats.documentHeightAfter || 0),
     bodyTextLength: Number(stats.bodyTextLength || 0),
@@ -290,6 +329,9 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
     generic_click_count: stats.genericClickCount,
     scroll_count: stats.scrollCount,
     container_count: stats.containerCount,
+    likely_container_count: stats.likelyContainerCount,
+    fallback_container_count: stats.fallbackContainerCount,
+    skipped_bottom_expand_count: stats.skippedBottomExpandCount,
     document_height_before: stats.documentHeightBefore,
     document_height_after: stats.documentHeightAfter,
     body_text_length: stats.bodyTextLength,
@@ -305,12 +347,55 @@ function mergeStepStats(aggregate, stats) {
   aggregate.genericClickCount += stats.genericClickCount;
   aggregate.scrollCount += stats.scrollCount;
   aggregate.containerCount = Math.max(aggregate.containerCount, stats.containerCount);
+  aggregate.likelyContainerCount += stats.likelyContainerCount;
+  aggregate.fallbackContainerCount += stats.fallbackContainerCount;
+  aggregate.skippedBottomExpandCount += stats.skippedBottomExpandCount;
   if (!aggregate.documentHeightBefore && stats.documentHeightBefore) {
     aggregate.documentHeightBefore = stats.documentHeightBefore;
   }
   aggregate.documentHeightAfter = stats.documentHeightAfter || aggregate.documentHeightAfter;
   aggregate.bodyTextLength = stats.bodyTextLength || aggregate.bodyTextLength;
   aggregate.roomKeywordCount = stats.roomKeywordCount || aggregate.roomKeywordCount;
+}
+
+function shouldSkipBottomExpandAfterStableSettle(aggregate) {
+  const containerStats = aggregate.steps.edge_settle_scroll_containers;
+  if (!containerStats) {
+    return false;
+  }
+
+  const heightStable =
+    containerStats.documentHeightBefore > 0 &&
+    Math.abs(containerStats.documentHeightAfter - containerStats.documentHeightBefore) <= 24;
+  const noNewExpansion =
+    containerStats.clickedCount === 0 &&
+    containerStats.genericClickCount === 0 &&
+    containerStats.skippedDuplicateClickCount === 0;
+  const roomContainerWasTargeted =
+    containerStats.likelyContainerCount > 0 && containerStats.fallbackContainerCount === 0;
+
+  return (
+    heightStable &&
+    noNewExpansion &&
+    roomContainerWasTargeted &&
+    containerStats.roomKeywordCount > 0
+  );
+}
+
+function buildSkippedBottomExpandStats(aggregate) {
+  const containerStats = aggregate.steps.edge_settle_scroll_containers || {};
+  const documentHeight =
+    containerStats.documentHeightAfter ||
+    aggregate.documentHeightAfter ||
+    containerStats.documentHeightBefore ||
+    0;
+  return normalizeStepStats({
+    skippedBottomExpandCount: 1,
+    documentHeightBefore: documentHeight,
+    documentHeightAfter: documentHeight,
+    bodyTextLength: containerStats.bodyTextLength || aggregate.bodyTextLength || 0,
+    roomKeywordCount: containerStats.roomKeywordCount || aggregate.roomKeywordCount || 0
+  });
 }
 
 async function runSettleStep({
@@ -362,6 +447,9 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     genericClickCount: 0,
     scrollCount: 0,
     containerCount: 0,
+    likelyContainerCount: 0,
+    fallbackContainerCount: 0,
+    skippedBottomExpandCount: 0,
     documentHeightBefore: 0,
     documentHeightAfter: 0,
     bodyTextLength: 0,
@@ -472,6 +560,25 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
   ];
 
   for (const step of steps) {
+    if (
+      step.phase === 'edge_settle_bottom_expand' &&
+      shouldSkipBottomExpandAfterStableSettle(aggregate)
+    ) {
+      const trackedUrlCount = getTrackedUrlCount();
+      const phaseTimer = perf.phase(step.phase, {
+        ...baseFields,
+        tracked_url_count_before: trackedUrlCount
+      });
+      const stats = buildSkippedBottomExpandStats(aggregate);
+      aggregate.steps[step.phase] = stats;
+      mergeStepStats(aggregate, stats);
+      phaseTimer.end('skipped', {
+        ...toPerfFields(stats, trackedUrlCount, trackedUrlCount),
+        skip_reason: 'stable_after_room_container_scroll'
+      });
+      continue;
+    }
+
     const stats = await runSettleStep({
       connection,
       sessionId,
