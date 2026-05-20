@@ -65,6 +65,8 @@ node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateN
 
 已识别的携程前筛包括价格、星级、排序、免费取消、点评数和评分档位；未识别的 `listFilters` 片段会原样保留，避免破坏携程页面上的品牌、商圈、行政区等筛选。应用内本地过滤只保留目标采集数量和排除住宿类型关键词；房型、价格、取消规则、窗户和人数规则仍在详情页阶段复核。
 
+携程列表页不是传统分页页面，不要通过拼接 `pageIndex`、`page` 或 `start` 参数来补页。候选不足时，当前链路会在 Edge 登录态页面内复用携程自身的 `initListRequest` 调用 `fetchHotelList`，把懒加载接口返回的酒店补进候选池，然后仍然走原有本地前筛和详情页采集。排查“设置采 N 家但实际少于 N 家”时，优先看列表展开摘要和性能日志中的 `listApiResponseCount`、`listApiPageIndexes`、`listApiError`，不要先改详情页房型筛选规则。
+
 ```bash
 node src/cli.js --url "携程列表页链接" --templateName 模板名 --exclude-accommodation-keywords "民宿,公寓,青旅" --targetCount 5 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
@@ -213,6 +215,8 @@ node src/cli.js --url "携程链接" --templateName bw \
 
 列表页流程先走 `HTML/embedded JSON` 解析，尽量从页面内嵌数据结构中提取酒店候选；如果候选不足且启用了 Edge 登录态，会用 Edge-CDP 打开列表页、滚动等待渲染后取回 HTML 再走同一解析器。列表页解析只负责产出详情页 URL 和前筛诊断，详情页价格、房型、交通、复核和写回仍走原单酒店链路。
 
+列表页 Edge 兜底包括两类数据源：渲染后的 DOM/HTML 快照，以及页面上下文里的携程 `fetchHotelList` 懒加载接口响应。后者必须在 Edge 页面内发起，以复用携程页面当前上下文、cookie 和初始化请求体；不要在 Node 侧裸 POST 这个接口，也不要把列表页补采逻辑改成硬编码 CSS 选择器。
+
 如果 HTML 已经拿到足够的带价合规房型，流程不会继续进入补抓。补抓阶段默认先走 direct replay；但在已经显式启用 Edge 会话的情况下，会优先走带登录态的 Edge-CDP，避免先撞更容易返回 203 的无登录 API。
 
 只有当前结果缺价或明显不完整时才进入下一层。见 `src/ctrip-scraper.js` 的 `scrapeCtripHotel` 函数。
@@ -270,6 +274,16 @@ node src/cli.js --url "携程链接" --templateName bw \
 2. 不能跳过 latest-run.json 直接判断成功
 3. 不能改坏宾馆比较助手的 schema
 4. 不能绕开现有流程另起一套抓取逻辑
+5. 不能把性能日志开关和结果报告开关混为一谈；`ENABLE_PERF_LOG` 只控制 `logs/perf/*.jsonl`，`--report-level off|summary|normal|full` 才控制采集报告和复核输出
+6. 不能手工直接编辑 `hotel-data.json` 回写采集结果；必须通过 `node src/cli.js --apply-output "output/<酒店名>.json"` 走桥接层
+
+### 性能日志与报告排查
+
+- 开启性能日志：在运行采集前设置 `HOTEL_COLLECTOR_ENV=dev` 和 `ENABLE_PERF_LOG=1`
+- 关闭性能日志：不设置上述环境变量，或把 `ENABLE_PERF_LOG` 设为 `0`
+- 不生成采集报告、复核输入和大 JSON 输出：追加 `--report-level off`，这和性能日志是两套独立开关
+- 分析瓶颈：运行 `python ../scripts/analyze_perf.py ../logs/perf`，重点看 `task_kind`、`wait_reason`、`capture_method`、`wait_data`、`edge_*`、`api_replay_*`、`list_expand_ms`
+- 列表页数量不足：看 `listApiResponseCount/listApiPageIndexes/listApiError`；详情页价格慢或缺价：看 `edge_settle_*`、`edge_response_parse`、`room_price_visible`、`spider_error_codes`
 
 ## 排查手册
 
@@ -335,5 +349,5 @@ README.md
 3. 读 `output/latest-run.json` 确认成功
 4. 读 `output/<酒店名>.json` 查看详细房型
 5. 按"房型过滤规则"过滤不合规房型
-6. 将过滤后的数据写入 `E:\实验\1\宾馆比较助手\hotel-data.json`
-7. 如需排查运行方式、抓取链路或价格回补问题，再回看本 README 对应章节
+6. 复核通过后执行 `node src/cli.js --apply-output "output/<酒店名>.json"`，通过桥接层写入比较助手
+7. 如需排查运行方式、抓取链路、列表数量或价格回补问题，再回看本 README 对应章节
