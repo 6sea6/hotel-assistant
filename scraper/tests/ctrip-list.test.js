@@ -36,6 +36,23 @@ function buildListHtml(cards = []) {
   `;
 }
 
+function installMock(modulePath, exports) {
+  const resolvedPath = require.resolve(modulePath);
+  require.cache[resolvedPath] = {
+    id: resolvedPath,
+    filename: resolvedPath,
+    loaded: true,
+    exports
+  };
+  return resolvedPath;
+}
+
+function clearModules(paths) {
+  for (const modulePath of paths) {
+    delete require.cache[modulePath];
+  }
+}
+
 test('extractCtripUrlsFromInput accepts mixed pasted detail and list URLs', () => {
   const urls = extractCtripUrlsFromInput({
     text: [
@@ -207,6 +224,62 @@ test('parseListPageCandidatesFromHtml reads embedded JSON and emits normalized c
     prefilter.detailUrls,
     prefilter.selected.map((candidate) => candidate.detailUrl)
   );
+});
+
+test('parseListPageCandidatesFromHtml reads Ctrip fetchHotelList JSON payloads', () => {
+  const html = `
+    <html>
+      <body>
+        <script type="application/json">
+          {
+            "data": {
+              "hotelList": [
+                {
+                  "hotelInfo": {
+                    "summary": {
+                      "hotelId": "9001",
+                      "masterHotelId": "9001",
+                      "hotelType": "NORMAL"
+                    },
+                    "nameInfo": {
+                      "name": "接口返回酒店"
+                    },
+                    "commentInfo": {
+                      "commentScore": 4.8
+                    },
+                    "positionInfo": {
+                      "address": "武汉市江岸区"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        </script>
+      </body>
+    </html>
+  `;
+
+  const candidates = parseListPageCandidatesFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/list?cityId=477',
+    {
+      template: {
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-02',
+        room_count: 3
+      }
+    }
+  );
+
+  assert.deepEqual(
+    candidates.map((candidate) => candidate.hotelId),
+    ['9001']
+  );
+  assert.equal(candidates[0].hotelName, '接口返回酒店');
+  assert.equal(candidates[0].ctripScore, 4.8);
+  assert.match(candidates[0].detailUrl, /hotelId=9001/);
+  assert.match(candidates[0].detailUrl, /adult=3/);
 });
 
 test('list page filters support defaults, desired count and max candidates per page', () => {
@@ -543,6 +616,351 @@ test('collectListPageCandidates Edge fallback accepts multiple scroll snapshots 
   for (const page of edgePages) {
     assert.equal(page.url, 'https://hotels.ctrip.com/hotels/list?city=2');
     assert.doesNotMatch(page.url, /pageIndex/);
+  }
+});
+
+test('captureListHtmlPagesWithEdge keeps scrolling while unique list candidates grow', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Edge CDP list fallback is Windows-only');
+    return;
+  }
+
+  let evaluateCalls = 0;
+  const listeners = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    connectToDebugger: async () => ({
+      async send(method) {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.createTarget') {
+          return { targetId: 'target-1' };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'session-1' };
+        }
+        if (method === 'Page.navigate') {
+          setImmediate(() => {
+            listeners.forEach((listener) =>
+              listener({ sessionId: 'session-1', method: 'Page.loadEventFired' })
+            );
+          });
+        }
+        return {};
+      },
+      addListener(listener) {
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      async close() {}
+    }),
+    evaluateInSession: async () => {
+      evaluateCalls += 1;
+      return JSON.stringify({
+        scrollHeight: 1200,
+        candidateCount: 12,
+        scrollContainerCount: 1,
+        scrollActions: evaluateCalls,
+        html: buildListHtml([{ id: `700${evaluateCalls}`, name: `Edge 第 ${evaluateCalls} 家` }])
+      });
+    },
+    launchManagedEdgeSession: async () => ({
+      browser: { pid: 123 },
+      userDataDir: '',
+      shouldCleanupUserDataDir: false,
+      debuggerUrl: 'ws://edge.test/devtools/browser'
+    }),
+    normalizeEdgeSessionOptions: () => ({}),
+    waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+    waitForSessionCondition: async () => true
+  });
+  const processUtilsPath = installMock('../src/scraper/process-utils', {
+    findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killProcessTree: () => undefined
+  });
+  const collectorPath = require.resolve('../src/scraper/list-page-collector');
+  delete require.cache[collectorPath];
+
+  try {
+    const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
+    const seen = new Set();
+    const result = await captureListHtmlPagesWithEdge(
+      ['https://hotels.ctrip.com/hotels/list?city=2'],
+      {},
+      {
+        maxScrollRounds: 10,
+        stableRoundLimit: 1,
+        initialSettleMs: 0,
+        onPage: (page) => {
+          const match = String(page.html).match(/data-offline-hotelId="(\d+)"/);
+          if (match) {
+            seen.add(match[1]);
+          }
+          return {
+            continue: seen.size < 3,
+            uniqueCandidateCount: seen.size
+          };
+        }
+      }
+    );
+
+    assert.equal(result.error, '');
+    assert.equal(result.pages.length, 3);
+    assert.equal(evaluateCalls, 3);
+    assert.deepEqual([...seen], ['7001', '7002', '7003']);
+    assert.equal(result.pages[0].scrollContainerCount, 1);
+  } finally {
+    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+  }
+});
+
+test('captureListHtmlPagesWithEdge appends Ctrip list network responses to snapshots', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Edge CDP list fallback is Windows-only');
+    return;
+  }
+
+  const listeners = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    connectToDebugger: async () => ({
+      async send(method) {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.createTarget') {
+          return { targetId: 'target-1' };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'session-1' };
+        }
+        if (method === 'Page.navigate') {
+          setImmediate(() => {
+            listeners.forEach((listener) =>
+              listener({ sessionId: 'session-1', method: 'Page.loadEventFired' })
+            );
+            listeners.forEach((listener) =>
+              listener({
+                sessionId: 'session-1',
+                method: 'Network.responseReceived',
+                params: {
+                  requestId: 'network-1',
+                  response: {
+                    url: 'https://m.ctrip.com/restapi/soa2/34951/fetchHotelList',
+                    status: 200,
+                    mimeType: 'application/json'
+                  }
+                }
+              })
+            );
+          });
+        }
+        if (method === 'Network.getResponseBody') {
+          return {
+            body: JSON.stringify({
+              data: {
+                hotelList: [
+                  {
+                    hotelInfo: {
+                      summary: { hotelId: '9101', masterHotelId: '9101' },
+                      nameInfo: { name: '网络接口酒店' },
+                      commentInfo: { commentScore: 4.9 }
+                    }
+                  }
+                ]
+              }
+            })
+          };
+        }
+        return {};
+      },
+      addListener(listener) {
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      async close() {}
+    }),
+    evaluateInSession: async () =>
+      JSON.stringify({
+        scrollHeight: 1200,
+        candidateCount: 0,
+        scrollContainerCount: 0,
+        scrollActions: 0,
+        html: '<html><body>列表首屏</body></html>'
+      }),
+    launchManagedEdgeSession: async () => ({
+      browser: { pid: 123 },
+      userDataDir: '',
+      shouldCleanupUserDataDir: false,
+      debuggerUrl: 'ws://edge.test/devtools/browser'
+    }),
+    normalizeEdgeSessionOptions: () => ({}),
+    waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+    waitForSessionCondition: async () => true
+  });
+  const processUtilsPath = installMock('../src/scraper/process-utils', {
+    findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killProcessTree: () => undefined
+  });
+  const collectorPath = require.resolve('../src/scraper/list-page-collector');
+  delete require.cache[collectorPath];
+
+  try {
+    const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
+    const result = await captureListHtmlPagesWithEdge(
+      ['https://hotels.ctrip.com/hotels/list?city=2'],
+      {},
+      {
+        maxScrollRounds: 1,
+        stableRoundLimit: 1,
+        initialSettleMs: 0
+      }
+    );
+    const candidates = parseListPageCandidatesFromHtml(
+      result.pages[0].html,
+      'https://hotels.ctrip.com/hotels/list?city=2'
+    );
+
+    assert.equal(result.pages[0].networkResponseCount, 1);
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.hotelId),
+      ['9101']
+    );
+  } finally {
+    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+  }
+});
+
+test('captureListHtmlPagesWithEdge appends Ctrip list API replay responses to snapshots', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Edge CDP list fallback is Windows-only');
+    return;
+  }
+
+  const listeners = [];
+  let apiReplayCalled = false;
+  let scrollCalled = false;
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    connectToDebugger: async () => ({
+      async send(method) {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.createTarget') {
+          return { targetId: 'target-1' };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'session-1' };
+        }
+        if (method === 'Page.navigate') {
+          setImmediate(() => {
+            listeners.forEach((listener) =>
+              listener({ sessionId: 'session-1', method: 'Page.loadEventFired' })
+            );
+          });
+        }
+        return {};
+      },
+      addListener(listener) {
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      async close() {}
+    }),
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      if (String(expression).includes('fetchHotelList')) {
+        apiReplayCalled = true;
+        return JSON.stringify({
+          responses: [
+            {
+              pageIndex: 2,
+              status: 200,
+              data: {
+                data: {
+                  hotelList: [
+                    {
+                      hotelInfo: {
+                        summary: { hotelId: '9201', masterHotelId: '9201' },
+                        nameInfo: { name: '页面接口酒店' },
+                        commentInfo: { commentScore: 4.8 }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          pageIndexes: [2],
+          error: ''
+        });
+      }
+      scrollCalled = true;
+      return JSON.stringify({
+        scrollHeight: 1200,
+        candidateCount: 0,
+        scrollContainerCount: 0,
+        scrollActions: 0,
+        html: '<html><body>列表首屏</body></html>'
+      });
+    },
+    launchManagedEdgeSession: async () => ({
+      browser: { pid: 123 },
+      userDataDir: '',
+      shouldCleanupUserDataDir: false,
+      debuggerUrl: 'ws://edge.test/devtools/browser'
+    }),
+    normalizeEdgeSessionOptions: () => ({}),
+    waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+    waitForSessionCondition: async () => true
+  });
+  const processUtilsPath = installMock('../src/scraper/process-utils', {
+    findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killProcessTree: () => undefined
+  });
+  const collectorPath = require.resolve('../src/scraper/list-page-collector');
+  delete require.cache[collectorPath];
+
+  try {
+    const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
+    const result = await captureListHtmlPagesWithEdge(
+      ['https://hotels.ctrip.com/hotels/list?city=2'],
+      {},
+      {
+        desiredHotelCount: 21,
+        maxScrollRounds: 1,
+        stableRoundLimit: 1,
+        initialSettleMs: 0
+      }
+    );
+    const candidates = parseListPageCandidatesFromHtml(
+      result.pages[0].html,
+      'https://hotels.ctrip.com/hotels/list?city=2'
+    );
+
+    assert.equal(apiReplayCalled, true);
+    assert.equal(scrollCalled, true);
+    assert.equal(result.pages[0].listApiResponseCount, 1);
+    assert.deepEqual(result.pages[0].listApiPageIndexes, [2]);
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.hotelId),
+      ['9201']
+    );
+  } finally {
+    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
   }
 });
 

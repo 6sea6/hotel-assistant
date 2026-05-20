@@ -191,8 +191,8 @@ function readDetailUrlFromObject(object, maxDepth = 3) {
   return '';
 }
 
-function readHotelIdFromObject(object) {
-  if (!object || typeof object !== 'object') {
+function readHotelIdFromObject(object, maxDepth = 3) {
+  if (!object || typeof object !== 'object' || maxDepth < 0) {
     return '';
   }
 
@@ -220,6 +220,16 @@ function readHotelIdFromObject(object) {
   const name = readStringByKey(object, [/hotel.*name/i, /^name$/i, /^title$/i], 1);
   if (/^\d{3,}$/.test(looseId) && HOTEL_NAME_PATTERN.test(name)) {
     return looseId;
+  }
+
+  for (const value of Object.values(object)) {
+    if (!value || typeof value !== 'object') {
+      continue;
+    }
+    const nested = readHotelIdFromObject(value, maxDepth - 1);
+    if (nested) {
+      return nested;
+    }
   }
 
   return '';
