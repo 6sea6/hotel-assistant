@@ -266,10 +266,10 @@ function getBatchWriteStats(collectResult = {}) {
     const roomTypeCount = appliedItems.reduce((sum, item) => {
       const latest = item.latestApplyResult || {};
       const itemResult = item.item || {};
-      const fromLatest = countEligibleHotels(latest);
-      if (fromLatest > 0) return sum + fromLatest;
       const fromItem = countEligibleHotels(itemResult);
       if (fromItem > 0) return sum + fromItem;
+      const fromLatest = countEligibleHotels(latest);
+      if (fromLatest > 0) return sum + fromLatest;
       return sum + countWriteOperations(item.writeResult);
     }, 0);
 

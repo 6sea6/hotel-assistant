@@ -297,6 +297,99 @@ test('normalizeTaskState keeps batch result display compatible with old fields',
   assert.equal(taskState.result.writeBackStatus, '已写入数据');
 });
 
+test('normalizeTaskState counts full batch item room types before apply-output summaries', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const taskState = normalizeTaskState({
+    task: {
+      submitted: true,
+      taskId: 'batch-task-room-count',
+      collectResult: {
+        success: true,
+        batchMode: true,
+        batchStats: {
+          expandedHotelCount: 3
+        },
+        items: [
+          {
+            index: 1,
+            success: true,
+            eligibleCount: 2,
+            eligibleRoomTypes: [{ roomType: 'A' }, { roomType: 'B' }]
+          },
+          {
+            index: 2,
+            success: true,
+            eligibleCount: 3,
+            eligibleRoomTypes: [{ roomType: 'C' }, { roomType: 'D' }, { roomType: 'E' }]
+          },
+          {
+            index: 3,
+            success: true,
+            eligibleCount: 4,
+            eligibleRoomTypes: [
+              { roomType: 'F' },
+              { roomType: 'G' },
+              { roomType: 'H' },
+              { roomType: 'I' }
+            ]
+          }
+        ],
+        writeResult: {
+          batchMode: true,
+          appliedCount: 2,
+          skippedCount: 1,
+          items: [
+            {
+              item: {
+                index: 1,
+                eligibleCount: 2,
+                eligibleRoomTypes: [{ roomType: 'A' }, { roomType: 'B' }]
+              },
+              skipped: false,
+              latestApplyResult: {
+                eligibleCount: 1,
+                eligibleRoomTypes: [{ roomType: 'A' }],
+                writeResult: [{ operation: 'inserted' }]
+              }
+            },
+            {
+              item: {
+                index: 2,
+                eligibleCount: 3,
+                eligibleRoomTypes: [{ roomType: 'C' }, { roomType: 'D' }, { roomType: 'E' }]
+              },
+              skipped: false,
+              latestApplyResult: {
+                eligibleCount: 1,
+                eligibleRoomTypes: [{ roomType: 'C' }],
+                writeResult: [{ operation: 'inserted' }]
+              }
+            },
+            {
+              item: {
+                index: 3,
+                eligibleCount: 4,
+                eligibleRoomTypes: [
+                  { roomType: 'F' },
+                  { roomType: 'G' },
+                  { roomType: 'H' },
+                  { roomType: 'I' }
+                ]
+              },
+              skipped: true,
+              reason: '未写入'
+            }
+          ]
+        }
+      }
+    },
+    events: [],
+    inProgress: false
+  });
+
+  assert.equal(taskState.result.actualResultText, '批量 3 家，本次最终写入 2 家宾馆，5 种房型');
+});
+
 test('normalizeTaskState keeps AI review available for single hotel results only', async () => {
   const { normalizeTaskState } = await loadTaskConsoleModule();
 
