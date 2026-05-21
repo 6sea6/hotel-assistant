@@ -21,7 +21,7 @@ const MOBILE_HEADERS = {
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
 };
 
-async function fetchHtml(url, headers) {
+async function fetchHtml(url, headers, options = {}) {
   if (!url) {
     return {
       html: '',
@@ -34,7 +34,8 @@ async function fetchHtml(url, headers) {
     url,
     headers,
     timeoutMs: 30000,
-    responseType: 'text'
+    responseType: 'text',
+    signal: options.signal || null
   });
   const setCookieHeaders = Array.isArray(response.headers && response.headers['set-cookie'])
     ? response.headers['set-cookie']

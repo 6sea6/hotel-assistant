@@ -42,6 +42,22 @@ function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
 }
 
+function isCancellationError(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  return Boolean(
+    (error && (error.name === 'AbortError' || error.code === 'CDP_ABORTED')) ||
+      /任务已取消|aborted|cancelled|canceled/i.test(message)
+  );
+}
+
+function assertNotCancelled(signal) {
+  if (signal && signal.aborted) {
+    const error = new Error('任务已取消');
+    error.name = 'AbortError';
+    throw error;
+  }
+}
+
 function sumSourceRoomCount(parsedSources = [], sourceName) {
   return parsedSources
     .filter((item) => !sourceName || item.source === sourceName)
@@ -202,8 +218,10 @@ async function runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }
         { url: desktopUrl },
         async () =>
           Promise.all([
-            fetchHtml(desktopUrl, DESKTOP_HEADERS),
-            mobileUrl ? fetchHtml(mobileUrl, MOBILE_HEADERS) : Promise.resolve(null)
+            fetchHtml(desktopUrl, DESKTOP_HEADERS, { signal: options.signal || null }),
+            mobileUrl
+              ? fetchHtml(mobileUrl, MOBILE_HEADERS, { signal: options.signal || null })
+              : Promise.resolve(null)
           ])
       );
 
@@ -302,7 +320,8 @@ async function runEdgeCapture({
         }),
         captureMethod,
         captureStrategy,
-        onEvent: options.onEvent
+        onEvent: options.onEvent,
+        signal: options.signal || null
       })
   );
 
@@ -375,6 +394,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
   };
 
   if (useParallelEdge) {
+    assertNotCancelled(options.signal);
     htmlEdgeParallelUsed = true;
     const htmlTask = runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }).then(
       (htmlResult) => {
@@ -401,6 +421,13 @@ async function scrapeCtripHotel(url, template, options = {}) {
     })();
 
     const [htmlOutcome, edgeOutcome] = await Promise.allSettled([htmlTask, edgeTask]);
+    assertNotCancelled(options.signal);
+    if (htmlOutcome.status === 'rejected' && isCancellationError(htmlOutcome.reason)) {
+      throw htmlOutcome.reason;
+    }
+    if (edgeOutcome.status === 'rejected' && isCancellationError(edgeOutcome.reason)) {
+      throw edgeOutcome.reason;
+    }
     if (htmlOutcome.status === 'fulfilled') {
       applyHtmlResult(htmlOutcome.value);
     } else {
@@ -453,7 +480,8 @@ async function scrapeCtripHotel(url, template, options = {}) {
               captureMethod: 'edge_cdp_then_api_replay',
               capture_strategy: captureStrategy
             }),
-            captureMethod: 'edge_cdp_then_api_replay'
+            captureMethod: 'edge_cdp_then_api_replay',
+            signal: options.signal || null
           })
       );
       performance.directReplayMs += durationSince(replayStartedAt);
@@ -514,7 +542,8 @@ async function scrapeCtripHotel(url, template, options = {}) {
               captureMethod: 'edge_cdp_then_api_replay',
               capture_strategy: captureStrategy
             }),
-            captureMethod: 'edge_cdp_then_api_replay'
+            captureMethod: 'edge_cdp_then_api_replay',
+            signal: options.signal || null
           })
       );
       performance.directReplayMs += durationSince(replayStartedAt);
@@ -543,7 +572,8 @@ async function scrapeCtripHotel(url, template, options = {}) {
               captureMethod: 'html_then_api_replay',
               capture_strategy: captureStrategy
             }),
-            captureMethod: 'html_then_api_replay'
+            captureMethod: 'html_then_api_replay',
+            signal: options.signal || null
           })
       );
       performance.directReplayMs += durationSince(replayStartedAt);

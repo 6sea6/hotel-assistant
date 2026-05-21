@@ -103,6 +103,9 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
           options.onScrapeOptions(scrapeOptions, url);
         }
         const hotelInput = hotelInputs.find((item) => item.url === url) || hotelInputs[0];
+        if (typeof options.scrapeResultForHotelInput === 'function') {
+          return options.scrapeResultForHotelInput(hotelInput, url, scrapeOptions);
+        }
         return {
           hotel_name: `极速酒店${hotelInput.hotelId}`,
           address: `极速地址${hotelInput.hotelId}`,
@@ -148,27 +151,31 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
       buildHotelRecord: (template, scraped) => ({
         template_id: template.template_id,
         name: scraped.hotel_name,
-        room_type: '大床房',
-        total_price: 188,
+        room_type:
+          scraped.room && (scraped.room.standard_title || scraped.room.title)
+            ? scraped.room.standard_title || scraped.room.title
+            : '大床房',
+        total_price: scraped.room && scraped.room.price != null ? scraped.room.price : null,
         ctrip_score: scraped.ctrip_score,
         subway_distance: '0.6',
         transport_time: '20',
         bus_route: '测试路线'
       }),
-      buildEligibleRoomRecords: (template, scraped) => [
-        {
+      buildEligibleRoomRecords: (template, scraped) => {
+        const eligibleRooms = Array.isArray(scraped.eligible_rooms) ? scraped.eligible_rooms : [];
+        return eligibleRooms.map((room) => ({
           template_id: template.template_id,
           name: scraped.hotel_name,
-          room_type: '大床房',
-          original_room_type: '大床房',
-          daily_price: 188,
-          total_price: 188,
+          room_type: room.standard_title || room.title || '大床房',
+          original_room_type: room.title || room.standard_title || '大床房',
+          daily_price: room.price ?? 188,
+          total_price: room.price ?? 188,
           ctrip_score: scraped.ctrip_score,
           subway_distance: '0.6',
           transport_time: '20',
           bus_route: '测试路线'
-        }
-      ]
+        }));
+      }
     })
   );
   mockedPaths.push(
@@ -300,6 +307,157 @@ test('runHotelImportTask marks apply-output perf records as apply_output task ki
       process.env.ENABLE_PERF_LOG = previousEnv.ENABLE_PERF_LOG;
     }
     clearModules([taskRunnerPath, perfPath, devPerfPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch perf logs uncollected hotel urls and reasons', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  const perfPath = require.resolve('../src/runtime/perf');
+  const devPerfPath = require.resolve('../../devtools/perf-log');
+  const previousEnv = {
+    HOTEL_COLLECTOR_ENV: process.env.HOTEL_COLLECTOR_ENV,
+    ENABLE_PERF_LOG: process.env.ENABLE_PERF_LOG
+  };
+  process.env.HOTEL_COLLECTOR_ENV = 'dev';
+  process.env.ENABLE_PERF_LOG = '1';
+  delete require.cache[taskRunnerPath];
+  delete require.cache[perfPath];
+  delete require.cache[devPerfPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-uncollected-'));
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=ok1',
+      hotelId: 'ok1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=miss1',
+      hotelId: 'miss1',
+      source: 'detail-input'
+    }
+  ];
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput, url) => {
+      if (hotelInput.hotelId !== 'miss1') {
+        return {
+          hotel_name: '可写入酒店',
+          address: '地址',
+          ctrip_score: 4.8,
+          geo: { location: '114.1,30.1' },
+          room: { title: '大床房', standard_title: '大床房', price: 188, prices: [188] },
+          room_candidates: [{ title: '大床房', standard_title: '大床房', price: 188 }],
+          raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+          eligible_rooms: [{ title: '大床房', standard_title: '大床房', price: 188 }],
+          room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+          page_snapshot: {
+            source_url: url,
+            room_candidates_count: 1,
+            raw_room_candidates_count: 1,
+            eligible_room_count: 1,
+            room_price_visible: true,
+            selected_room_source: 'api-json',
+            capture_method: 'html_then_edge_cdp',
+            wait_reason: 'auto_edge_supplement',
+            edge_fallback_used: true,
+            api_replay_used: false,
+            sources: []
+          },
+          performance: { totalMs: 3, htmlMs: 1, edgeCaptureMs: 1, waitDataMs: 1 }
+        };
+      }
+
+      return {
+        hotel_name: '未写入酒店',
+        address: '地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '高级双床房', standard_title: '双床房', price: null, prices: [] },
+        room_candidates: [{ title: '高级双床房', standard_title: '双床房', price: null }],
+        raw_room_candidates: [{ title: '高级双床房', price: null, raw: true }],
+        eligible_rooms: [],
+        room_selection_diagnostics: { evaluations: [{ action: 'rejected' }], eligibleRooms: [] },
+        warnings: ['Edge capture warning: Execution context was destroyed.'],
+        page_snapshot: {
+          source_url: url,
+          room_candidates_count: 1,
+          raw_room_candidates_count: 1,
+          eligible_room_count: 0,
+          room_price_visible: false,
+          selected_room_source: 'desktop',
+          capture_method: 'html_then_edge_cdp',
+          wait_reason: 'auto_edge_supplement',
+          edge_fallback_used: true,
+          api_replay_used: true,
+          tracked_url_count: 0,
+          sources: [
+            {
+              source: 'desktop',
+              room_candidates_count: 1,
+              room_price_visible: false,
+              error: ''
+            },
+            {
+              source: 'edge-cdp',
+              room_candidates_count: 0,
+              room_price_visible: false,
+              error: 'Execution context was destroyed.'
+            },
+            {
+              source: 'direct-room-list-replay',
+              room_candidates_count: 0,
+              room_price_visible: false,
+              error: 'HTTP 400'
+            }
+          ]
+        },
+        performance: { totalMs: 3, htmlMs: 1, edgeCaptureMs: 1, directReplayMs: 1, waitDataMs: 1 }
+      };
+    }
+  });
+  const records = [];
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: path.join(tempDir, 'latest-run.json'),
+        reportLevel: 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    const uncollected = records.find((record) => record.event === 'uncollected_hotel');
+    assert.ok(uncollected);
+    assert.equal(uncollected.url, hotelInputs[1].url);
+    assert.equal(uncollected.hotelId, 'miss1');
+    assert.equal(uncollected.hotelName, '未写入酒店');
+    assert.equal(uncollected.uncollected_reason, 'edge_capture_failed');
+    assert.match(uncollected.uncollected_reason_detail, /Execution context was destroyed/);
+    assert.equal(uncollected.eligible_count, 0);
+    assert.equal(uncollected.selected_room_source, 'desktop');
+    assert.equal(uncollected.room_price_visible, false);
+
+    const summary = records.find((record) => record.event === 'batch_summary');
+    assert.equal(summary.uncollected_count, 1);
+    assert.equal(summary.uncollected_items[0].url, hotelInputs[1].url);
+    assert.equal(summary.uncollected_items[0].uncollected_reason, 'edge_capture_failed');
+  } finally {
+    clearModules([taskRunnerPath, perfPath, devPerfPath, ...mockedPaths]);
+    process.env.HOTEL_COLLECTOR_ENV = previousEnv.HOTEL_COLLECTOR_ENV;
+    process.env.ENABLE_PERF_LOG = previousEnv.ENABLE_PERF_LOG;
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });

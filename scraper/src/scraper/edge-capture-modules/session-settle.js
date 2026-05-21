@@ -1,4 +1,12 @@
-const { evaluateInSession } = require('../cdp-utils');
+const {
+  evaluateInSession,
+  createCdpAbortError = (method) => {
+    const error = new Error(`CDP ${method} aborted`);
+    error.name = 'AbortError';
+    error.code = 'CDP_ABORTED';
+    return error;
+  }
+} = require('../cdp-utils');
 
 const SETTLE_HELPERS = `
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -403,7 +411,9 @@ async function runSettleStep({
   phase,
   baseFields,
   getTrackedUrlCount,
-  body
+  body,
+  signal,
+  evaluateTimeoutMs
 }) {
   const trackedUrlCountBefore = getTrackedUrlCount();
   const phaseTimer = perf.phase(phase, {
@@ -417,7 +427,12 @@ async function runSettleStep({
       `(async () => {
         ${SETTLE_HELPERS}
         ${body}
-      })()`
+      })()`,
+      {
+        timeoutMs:
+          Number.isFinite(evaluateTimeoutMs) && evaluateTimeoutMs > 0 ? evaluateTimeoutMs : 6000,
+        signal: signal || null
+      }
     );
     const stats = normalizeStepStats(parseStepResult(result));
     const trackedUrlCountAfter = getTrackedUrlCount();
@@ -437,6 +452,11 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
   const baseFields = options.fields || {};
   const getTrackedUrlCount =
     typeof options.getTrackedUrlCount === 'function' ? options.getTrackedUrlCount : () => 0;
+  const assertNotAborted = () => {
+    if (options.signal && options.signal.aborted) {
+      throw createCdpAbortError('settleRoomListInEdgeSession');
+    }
+  };
   const startedAt = Date.now();
   const aggregate = {
     totalMs: 0,
@@ -558,6 +578,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
   ];
 
   for (const step of steps) {
+    assertNotAborted();
     if (
       step.phase === 'edge_settle_bottom_expand' &&
       shouldSkipBottomExpandAfterStableSettle(aggregate)
@@ -584,7 +605,9 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
       phase: step.phase,
       baseFields,
       getTrackedUrlCount,
-      body: step.body
+      body: step.body,
+      signal: options.signal || null,
+      evaluateTimeoutMs: options.evaluateTimeoutMs
     });
     aggregate.steps[step.phase] = stats;
     mergeStepStats(aggregate, stats);

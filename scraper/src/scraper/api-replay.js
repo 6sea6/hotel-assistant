@@ -262,6 +262,27 @@ function createNoopPerf() {
   };
 }
 
+function createAbortError() {
+  const error = new Error('任务已取消');
+  error.name = 'AbortError';
+  return error;
+}
+
+function assertNotAborted(signal) {
+  if (signal && signal.aborted) {
+    throw createAbortError();
+  }
+}
+
+function isAbortLikeError(error, signal = null) {
+  const message = error && error.message ? error.message : String(error || '');
+  return Boolean(
+    (signal && signal.aborted) ||
+      (error && (error.name === 'AbortError' || error.code === 'ERR_CANCELED')) ||
+      /任务已取消|aborted|cancelled|canceled/i.test(message)
+  );
+}
+
 async function captureRoomCandidatesDirect(url, template, parsedSources, options = {}) {
   const perf = options.perf || createNoopPerf();
   const captureMethod = options.captureMethod || 'html_then_api_replay';
@@ -275,6 +296,7 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
   const spiderErrorCodes = new Set();
 
   try {
+    assertNotAborted(options.signal);
     context = await perf.runPhase('api_replay_build_context', { url, captureMethod }, async () =>
       extractRoomReplayContext(parsedSources, url, template)
     );
@@ -304,6 +326,7 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
     const blockedVariantGroups = new Set();
 
     for (const variant of variants) {
+      assertNotAborted(options.signal);
       const variantGroup = variant.endpoint.includes('/h5-json/') ? 'h5-json' : 'plain';
       if (blockedVariantGroups.has(variantGroup)) {
         continue;
@@ -325,7 +348,8 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
             referer,
             ...(context.cookieHeader ? { cookie: context.cookieHeader } : {})
           },
-          timeoutMs: 30000
+          timeoutMs: 30000,
+          signal: options.signal || null
         });
 
         const spiderErrorCode = extractSpiderErrorCode(response.data);
@@ -384,6 +408,9 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
           return result;
         }
       } catch (error) {
+        if (isAbortLikeError(error, options.signal)) {
+          throw createAbortError();
+        }
         attempts.push({
           endpoint: variant.endpoint,
           variant: variant.variantName,

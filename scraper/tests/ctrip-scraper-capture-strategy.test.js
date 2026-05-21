@@ -409,3 +409,29 @@ test('scrapeCtripHotel passes login prompt event callback into Edge capture', as
     }
   );
 });
+
+test('scrapeCtripHotel passes cancellation signal into Edge capture', async () => {
+  const controller = new AbortController();
+
+  await withScraper(
+    {
+      onEdgeOptions: (edgeOptions) => {
+        assert.equal(edgeOptions.signal, controller.signal);
+      }
+    },
+    async (scrapeCtripHotel) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=8',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'parallel_edge',
+          perf: createPerfRecorder([]),
+          signal: controller.signal
+        }
+      );
+
+      assert.equal(result.room.title, 'Edge大床房');
+    }
+  );
+});

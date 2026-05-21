@@ -127,6 +127,141 @@ function createScrapeEventForwarder(emit) {
   };
 }
 
+function summarizeSnapshotSources(pageSnapshot = {}) {
+  return Array.isArray(pageSnapshot.sources)
+    ? pageSnapshot.sources
+        .filter((source) => source && typeof source === 'object')
+        .map((source) => ({
+          source: source.source || '',
+          room_candidates_count: source.room_candidates_count ?? 0,
+          room_price_visible: Boolean(source.room_price_visible),
+          locked_price_detected: Boolean(source.locked_price_detected),
+          tracked_url_count: source.tracked_url_count ?? 0,
+          attempt_count: source.attempt_count ?? 0,
+          spider_error_codes: Array.isArray(source.spider_error_codes)
+            ? source.spider_error_codes
+            : [],
+          error: source.error || ''
+        }))
+    : [];
+}
+
+function findSnapshotSource(pageSnapshot = {}, sourceName = '') {
+  return summarizeSnapshotSources(pageSnapshot).find((source) => source.source === sourceName);
+}
+
+function deriveUncollectedHotelReason(childResult = {}) {
+  const pageSnapshot = childResult.pageSnapshot || {};
+  const sources = summarizeSnapshotSources(pageSnapshot);
+  const sourceErrors = sources
+    .filter((source) => source.error)
+    .map((source) => `${source.source}: ${source.error}`);
+  const edgeSource = findSnapshotSource(pageSnapshot, 'edge-cdp');
+  const apiSource = findSnapshotSource(pageSnapshot, 'direct-room-list-replay');
+  const roomCandidateCount = Number(pageSnapshot.room_candidates_count || 0);
+  const rawRoomCandidateCount = Number(pageSnapshot.raw_room_candidates_count || 0);
+  const roomPriceVisible = Boolean(pageSnapshot.room_price_visible);
+
+  if (childResult.success === false) {
+    return {
+      reason: 'collection_failed',
+      detail: childResult.error || '详情采集任务失败。'
+    };
+  }
+
+  if (pageSnapshot.edge_fallback_used && edgeSource && edgeSource.error) {
+    return {
+      reason: 'edge_capture_failed',
+      detail: edgeSource.error
+    };
+  }
+
+  if (pageSnapshot.api_replay_used && apiSource && apiSource.error && !roomPriceVisible) {
+    return {
+      reason: 'api_replay_failed',
+      detail: apiSource.error
+    };
+  }
+
+  if (roomCandidateCount > 0 && !roomPriceVisible) {
+    return {
+      reason: 'missing_price',
+      detail: sourceErrors[0] || '已识别房型，但没有采到可见价格。'
+    };
+  }
+
+  if (roomPriceVisible && roomCandidateCount > 0) {
+    return {
+      reason: 'no_eligible_rooms',
+      detail: '已采到有价格房型，但没有房型满足当前模板和写入规则。'
+    };
+  }
+
+  if (rawRoomCandidateCount > 0) {
+    return {
+      reason: 'no_persistable_room_candidates',
+      detail: '采到原始房型候选，但没有可写入的标准化房型。'
+    };
+  }
+
+  return {
+    reason: 'no_room_candidates',
+    detail: sourceErrors[0] || '详情页没有解析到房型候选。'
+  };
+}
+
+function buildUncollectedHotelPerfRecord({ index, hotelInput = {}, childResult = {}, durationMs }) {
+  const eligibleCount = Number(childResult.eligibleCount || 0);
+  if (eligibleCount > 0) {
+    return null;
+  }
+
+  const pageSnapshot = childResult.pageSnapshot || {};
+  const reason = deriveUncollectedHotelReason(childResult);
+  const sources = summarizeSnapshotSources(pageSnapshot);
+
+  return {
+    index,
+    hotelId: childResult.hotelId || hotelInput.hotelId || '',
+    hotelName: childResult.hotelName || '',
+    url: childResult.resolvedUrl || hotelInput.url || '',
+    requested_url: childResult.requestedUrl || hotelInput.requestedUrl || hotelInput.url || '',
+    output_path: childResult.outputPath || '',
+    duration_ms: Number(durationMs || 0),
+    eligible_count: eligibleCount,
+    total_price: childResult.totalPrice ?? null,
+    selected_room_type: childResult.roomType || '',
+    selected_room_source: pageSnapshot.selected_room_source || '',
+    selected_room_price_locked: Boolean(pageSnapshot.selected_room_price_locked),
+    room_price_visible: Boolean(pageSnapshot.room_price_visible),
+    room_candidates_count: pageSnapshot.room_candidates_count ?? 0,
+    raw_room_candidates_count: pageSnapshot.raw_room_candidates_count ?? 0,
+    eligible_room_count: pageSnapshot.eligible_room_count ?? eligibleCount,
+    tracked_url_count: pageSnapshot.tracked_url_count ?? 0,
+    edge_fallback_used: Boolean(pageSnapshot.edge_fallback_used),
+    api_replay_used: Boolean(pageSnapshot.api_replay_used),
+    capture_method: pageSnapshot.capture_method || '',
+    wait_reason: pageSnapshot.wait_reason || '',
+    capture_strategy: pageSnapshot.capture_strategy || '',
+    uncollected_reason: reason.reason,
+    uncollected_reason_detail: reason.detail,
+    source_errors: sources
+      .filter((source) => source.error)
+      .map((source) => ({
+        source: source.source,
+        error: source.error
+      })),
+    source_summary: sources.map((source) => ({
+      source: source.source,
+      room_candidates_count: source.room_candidates_count,
+      room_price_visible: source.room_price_visible,
+      tracked_url_count: source.tracked_url_count,
+      error: source.error
+    })),
+    warnings: Array.isArray(childResult.warnings) ? childResult.warnings : []
+  };
+}
+
 function buildFailureResult(error, latestRunPath, startedAt) {
   const failedAt = new Date().toISOString();
   return {
@@ -483,7 +618,8 @@ async function runPreparedSingleDetailImport(context) {
       contextEdgeParallelCancelPolicy ||
       'none',
     onEvent: scrapeEventForwarder,
-    perf: itemPerf.child({ url: itemTemplate.ctrip_url })
+    perf: itemPerf.child({ url: itemTemplate.ctrip_url }),
+    signal
   });
   performance.scrapeMs = durationSince(scrapeStartedAt);
   performance.scrape = scraped.performance || null;
@@ -824,6 +960,7 @@ async function runBatchHotelImportTask(context) {
     const resultPayloads = [];
     const savedHtmlFiles = [];
     const failedItems = [];
+    const uncollectedItems = [];
 
     for (let index = 0; index < expandedInputs.hotelInputs.length; index += 1) {
       assertNotCancelled(signal);
@@ -929,6 +1066,22 @@ async function runBatchHotelImportTask(context) {
             (childResult.pageSnapshot && childResult.pageSnapshot.capture_method) || '',
           waitReason: (childResult.pageSnapshot && childResult.pageSnapshot.wait_reason) || ''
         });
+        const uncollectedItem = buildUncollectedHotelPerfRecord({
+          index: index + 1,
+          hotelInput,
+          childResult,
+          durationMs: itemDurationMs
+        });
+        if (uncollectedItem) {
+          uncollectedItems.push(uncollectedItem);
+          batchPerf.event('uncollected_hotel', {
+            phase: 'batch_total',
+            status: 'skipped',
+            pageIndex: index + 1,
+            hotelCount: expandedInputs.hotelInputs.length,
+            ...uncollectedItem
+          });
+        }
         emit('batch:item-done', `第 ${index + 1} 家酒店采集完成`, {
           hotelName: childResult.hotelName,
           eligibleCount: childResult.eligibleCount
@@ -1138,6 +1291,8 @@ async function runBatchHotelImportTask(context) {
         performance.writeMs +
         performance.outputWriteMs +
         performance.cleanupMs,
+      uncollected_count: uncollectedItems.length,
+      uncollected_items: uncollectedItems,
       status: failedItems.length ? 'partial' : 'success'
     });
     batchPhase.end(failedItems.length ? 'partial' : 'success', {

@@ -272,6 +272,7 @@ function buildAxiosConfig(config = {}) {
     headers,
     timeout: timeoutMs,
     responseType: toAxiosResponseType(config.responseType || 'json'),
+    signal: config.signal || undefined,
     httpAgent: config.httpAgent || KEEP_ALIVE_HTTP_AGENT,
     httpsAgent: config.httpsAgent || KEEP_ALIVE_HTTPS_AGENT
   };

@@ -36,6 +36,9 @@ function createPerfRecorder(records = []) {
           });
         }
       };
+    },
+    event(event, fields = {}) {
+      records.push({ event, ...fields });
     }
   };
 }
@@ -297,7 +300,238 @@ test('settleRoomListInEdgeSession treats duplicate skipped clicks as stable for 
   }
 });
 
-test('edge network wait count prefers room-related responses without dropping parse metadata', () => {
+test('edge page ready performs a short confirmation after navigate ready signal', async () => {
+  const waitCalls = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    waitForSessionCondition: async (
+      connection,
+      sessionId,
+      expression,
+      timeoutMs,
+      intervalMs
+    ) => {
+      waitCalls.push({ connection, sessionId, expression, timeoutMs, intervalMs });
+      return true;
+    }
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      waitForEdgePageReadyAfterNavigate
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const records = [];
+    const result = await waitForEdgePageReadyAfterNavigate({
+      perf: createPerfRecorder(records),
+      connection: { send() {} },
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'create',
+      navigateSignal: {
+        reason: 'page_ready_signal',
+        elapsedMs: 321,
+        roomResponseSeen: false,
+        roomTrackedUrlCount: 0,
+        trackedUrlCount: 3
+      }
+    });
+
+    assert.equal(result.skipped, false);
+    assert.equal(waitCalls.length, 1);
+    assert.equal(waitCalls[0].sessionId, 'session-1');
+    assert.equal(waitCalls[0].timeoutMs <= 1800, true);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].phase, 'edge_page_ready');
+    assert.equal(records[0].status, 'success');
+    assert.equal(records[0].confirmation_mode, 'short_context_stability_check');
+    assert.equal(records[0].navigate_wait_reason, 'page_ready_signal');
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath]);
+  }
+});
+
+test('edge settle retries once after transient execution context destruction', async () => {
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      isTransientEdgeExecutionContextError,
+      settleRoomListWithEdgeRetry
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const records = [];
+    const waitCalls = [];
+    let settleAttempts = 0;
+    const result = await settleRoomListWithEdgeRetry({
+      perf: createPerfRecorder(records),
+      connection: { send() {} },
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'create',
+      navigateSignal: { reason: 'page_ready_signal' },
+      trackedUrls: new Set(['https://example.test/room-api']),
+      settleRoomList: async () => {
+        settleAttempts += 1;
+        if (settleAttempts === 1) {
+          throw new Error('Execution context was destroyed.');
+        }
+        return {
+          totalMs: 123,
+          clickedCount: 2,
+          scrollCount: 3,
+          containerCount: 1
+        };
+      },
+      waitForPageReady: async (args) => {
+        waitCalls.push(args);
+        return { confirmed: true };
+      }
+    });
+
+    assert.equal(isTransientEdgeExecutionContextError(new Error('Execution context was destroyed.')), true);
+    assert.equal(settleAttempts, 2);
+    assert.equal(waitCalls.length, 1);
+    assert.equal(waitCalls[0].navigateSignal.reason, 'retry_after_settle_context_destroyed');
+    assert.equal(result.retryCount, 1);
+    assert.equal(result.retryReason, 'execution_context_destroyed');
+    assert.equal(result.stats.clickedCount, 2);
+    assert.deepEqual(
+      records.find((record) => record.event === 'edge_settle_retry'),
+      {
+        event: 'edge_settle_retry',
+        phase: 'edge_settle_room_list',
+        status: 'retry',
+        url: 'https://example.test/hotel',
+        captureMethod: 'html_then_edge_cdp',
+        targetMode: 'create',
+        retry_count: 1,
+        retry_reason: 'execution_context_destroyed',
+        tracked_url_count: 1,
+        error_type: 'Error',
+        error_message: 'Execution context was destroyed.'
+      }
+    );
+  } finally {
+    clearModules([networkCapturePath]);
+  }
+});
+
+test('edge response parse retries room response body reads before dropping room API data', async () => {
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.roomName
+        ? [
+            {
+              title: payload.roomName,
+              standard_title: payload.roomName,
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const roomBlocks = [];
+    let bodyReadCount = 0;
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async () => {
+          bodyReadCount += 1;
+          if (bodyReadCount === 1) {
+            throw new Error('No data found for resource with given identifier');
+          }
+          return {
+            body: JSON.stringify({ roomName: '标准大床房' }),
+            base64Encoded: false
+          };
+        }
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'room-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { roomType: '大床房', occupancy: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.equal(bodyReadCount, 2);
+    assert.equal(stats.roomResponseCount, 1);
+    assert.equal(stats.responseBodyRetryCount, 1);
+    assert.equal(stats.roomResponseBodyErrorCount, 0);
+    assert.equal(stats.responseParseCandidateCount, 1);
+    assert.equal(roomBlocks.length, 1);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, debugPath]);
+  }
+});
+
+test('edge response parse times out stuck response body reads instead of hanging task', async () => {
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const stats = await Promise.race([
+      parseEdgeNetworkResponses({
+        connection: {
+          send: async () => new Promise(() => {})
+        },
+        sessionId: 'session-1',
+        requestMeta: new Map([
+          [
+            'room-request',
+            {
+              url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+              mimeType: 'application/json'
+            }
+          ]
+        ]),
+        template: { roomType: '大床房', occupancy: 2 },
+        roomBlocks: [],
+        spiderErrorCodes: new Set(),
+        debugHotelId: '112433891',
+        responseBodyTimeoutMs: 5,
+        roomResponseBodyMaxAttempts: 1
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('parseEdgeNetworkResponses did not finish')), 80)
+      )
+    ]);
+
+    assert.equal(stats.parsedResponseCount, 0);
+    assert.equal(stats.roomResponseBodyErrorCount, 1);
+    assert.equal(stats.roomResponseBodyTimeoutCount, 1);
+  } finally {
+    clearModules([networkCapturePath]);
+  }
+});
+
+test('edge network wait count prefers room-related responses without dropping parse metadata', async () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
   delete require.cache[networkCapturePath];
   const {
@@ -310,7 +544,8 @@ test('edge network wait count prefers room-related responses without dropping pa
     shouldSkipEdgeResponseAfterRoomSuccess,
     getEdgeBlockedResourcePatterns,
     configureEdgeStaticResourceBlocking,
-    waitForEdgeNavigateSignal
+    waitForEdgeNavigateSignal,
+    waitForEdgePageReadyAfterNavigate
   } = require('../src/scraper/edge-capture-modules/network-capture');
 
   const requestMeta = new Map([
@@ -334,6 +569,17 @@ test('edge network wait count prefers room-related responses without dropping pa
   assert.equal(getEdgeNetworkWaitCount(new Map(), requestMeta), 2);
   assert.equal(getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta).stableMs < 1200, true);
   assert.equal(getEdgeNetworkWaitOptions(new Map(), requestMeta).stableMs, 1200);
+  assert.equal(
+    getEdgeNetworkWaitOptions(
+      new Map([
+        ['room-a', requestMeta.get('room')],
+        ['room-b', requestMeta.get('room')]
+      ]),
+      requestMeta
+    ).stableMs,
+    400
+  );
+  assert.equal(typeof waitForEdgePageReadyAfterNavigate, 'function');
   assert.equal(detectCtripLoginPromptFromText('扫码登录 手机号登录 登录后查看低价').detected, true);
   assert.equal(detectCtripLoginPromptFromText('武汉酒店 房型 每晚 ¥288').detected, false);
 
@@ -409,37 +655,36 @@ test('edge network wait count prefers room-related responses without dropping pa
   );
 
   const sent = [];
-  return configureEdgeStaticResourceBlocking(
+  const result = await configureEdgeStaticResourceBlocking(
     {
       send: async (method, params, sessionId) => {
         sent.push({ method, params, sessionId });
       }
     },
     'session-1'
-  ).then((result) => {
-    assert.equal(result.enabled, true);
-    assert.equal(sent.length, 1);
-    assert.equal(sent[0].method, 'Network.setBlockedURLs');
-    assert.equal(sent[0].sessionId, 'session-1');
-    assert.deepEqual(sent[0].params.urls, blockedPatterns);
-    let listenerRemoved = false;
-    return waitForEdgeNavigateSignal({
-      connection: {
-        addListener() {
-          return () => {
-            listenerRemoved = true;
-          };
-        }
-      },
-      sessionId: 'session-1',
-      roomRequestMeta: new Map([['room', requestMeta.get('room')]]),
-      trackedUrls: new Set(),
-      timeoutMs: 1000,
-      pollMs: 10
-    }).then((signal) => {
-      assert.equal(signal.reason, 'room_response');
-      assert.equal(signal.roomResponseSeen, true);
-      assert.equal(listenerRemoved, true);
-    });
+  );
+  assert.equal(result.enabled, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].method, 'Network.setBlockedURLs');
+  assert.equal(sent[0].sessionId, 'session-1');
+  assert.deepEqual(sent[0].params.urls, blockedPatterns);
+
+  let listenerRemoved = false;
+  const signal = await waitForEdgeNavigateSignal({
+    connection: {
+      addListener() {
+        return () => {
+          listenerRemoved = true;
+        };
+      }
+    },
+    sessionId: 'session-1',
+    roomRequestMeta: new Map([['room', requestMeta.get('room')]]),
+    trackedUrls: new Set(),
+    timeoutMs: 1000,
+    pollMs: 10
   });
+  assert.equal(signal.reason, 'room_response');
+  assert.equal(signal.roomResponseSeen, true);
+  assert.equal(listenerRemoved, true);
 });
