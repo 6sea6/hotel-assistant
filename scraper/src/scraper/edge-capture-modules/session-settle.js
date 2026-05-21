@@ -49,13 +49,144 @@ const getDocumentHeight = () => Math.max(
   window.innerHeight || 0
 );
 const readBodyText = () => (document.body && document.body.innerText) ? document.body.innerText : '';
+const ROOM_SECTION_START_RE = /房型|选择房间|可住人数|今日价格|免费取消|登录看低价|每晚|¥|预订/;
+const ROOM_SECTION_END_RE = new RegExp([
+  '住客点评',
+  '用户点评',
+  '点评',
+  ['服务及', '设施'].join(''),
+  ['酒店', '政策'].join(''),
+  ['酒店', '简介'].join(''),
+  ['订房', '必读'].join(''),
+  '位置周边',
+  '附近的酒店',
+  '推荐酒店'
+].join('|'));
+const ROOM_CARD_RE = /房型|房间|大床|双床|家庭房|亲子房|三人间|套房|免费取消|登录看低价|每晚|¥|预订/;
+const getAbsoluteRect = (element) => {
+  const rect = element.getBoundingClientRect();
+  return {
+    top: rect.top + (window.scrollY || window.pageYOffset || 0),
+    bottom: rect.bottom + (window.scrollY || window.pageYOffset || 0),
+    width: rect.width,
+    height: rect.height
+  };
+};
+const isVisibleRect = (rect) => rect.width > 0 && rect.height > 0;
+const getRoomSectionBounds = () => {
+  const documentHeight = getDocumentHeight();
+  const bodyTextLength = readBodyText().length;
+  const cache = window.__ctripSettleRoomSectionBounds;
+  if (
+    cache &&
+    Math.abs((cache.documentHeight || 0) - documentHeight) <= 1200 &&
+    Math.abs((cache.bodyTextLength || 0) - bodyTextLength) <= 5000
+  ) {
+    return cache;
+  }
+
+  const elements = Array.from(document.querySelectorAll(
+    [
+      'section',
+      'article',
+      'div',
+      'ul',
+      'li',
+      'table',
+      'tbody',
+      'tr',
+      '[class*="room"]',
+      '[class*="Room"]',
+      '[id*="room"]',
+      '[id*="Room"]',
+      '[data-testid]'
+    ].join(', ')
+  ));
+  const roomRects = [];
+  const endTops = [];
+  let roomSectionElementCount = 0;
+  let roomExpandButtonCount = 0;
+  for (const element of elements) {
+    const rect = getAbsoluteRect(element);
+    if (!isVisibleRect(rect)) continue;
+    const text = (element.innerText || element.textContent || '').replace(/\\s+/g, ' ').trim();
+    if (!text || text.length < 2) continue;
+    if (ROOM_SECTION_END_RE.test(text) && !ROOM_SECTION_START_RE.test(text)) {
+      endTops.push(rect.top);
+    }
+    if (!ROOM_CARD_RE.test(text)) continue;
+    roomSectionElementCount += 1;
+    if (/展示额外|更多房型价格|展开全部房型|查看全部房型|全部房型/.test(text)) {
+      roomExpandButtonCount += 1;
+    }
+    const hasPriceOrAction = /免费取消|登录看低价|每晚|¥|预订|在线付|到店付/.test(text);
+    const hasRoomName = /房型|房间|大床|双床|家庭房|亲子房|三人间|套房/.test(text);
+    if (hasPriceOrAction && hasRoomName && rect.top > 80) {
+      roomRects.push(rect);
+    }
+  }
+
+  if (roomRects.length === 0) {
+    const fallback = {
+      detected: false,
+      startY: 0,
+      endY: documentHeight,
+      documentHeight,
+      bodyTextLength,
+      roomSectionElementCount,
+      roomCardCount: 0,
+      roomExpandButtonCount,
+      nonRoomSectionReachedCount: 0
+    };
+    window.__ctripSettleRoomSectionBounds = fallback;
+    return fallback;
+  }
+
+  const startY = Math.max(0, Math.min(...roomRects.map((rect) => rect.top)) - 180);
+  const maxRoomBottom = Math.max(...roomRects.map((rect) => rect.bottom));
+  const nextEndY = Math.min(
+    ...endTops.filter((top) => top > startY + 260)
+  );
+  const hasEndMarker = Number.isFinite(nextEndY);
+  const endY = Math.min(
+    documentHeight,
+    hasEndMarker ? nextEndY + 80 : maxRoomBottom + Math.max(600, window.innerHeight || 800)
+  );
+  const bounds = {
+    detected: endY > startY,
+    startY,
+    endY: endY > startY ? endY : documentHeight,
+    documentHeight,
+    bodyTextLength,
+    roomSectionElementCount,
+    roomCardCount: roomRects.length,
+    roomExpandButtonCount,
+    nonRoomSectionReachedCount: hasEndMarker ? 1 : 0
+  };
+  window.__ctripSettleRoomSectionBounds = bounds;
+  return bounds;
+};
+const isElementInRoomSection = (element, bounds = getRoomSectionBounds()) => {
+  if (!bounds || !bounds.detected) return true;
+  const rect = getAbsoluteRect(element);
+  if (!isVisibleRect(rect)) return false;
+  return rect.bottom >= bounds.startY - 120 && rect.top <= bounds.endY + 160;
+};
 const collectStats = () => {
   const bodyText = readBodyText();
   const roomKeywordMatches = bodyText.match(/房型|房间|大床房|双床房|家庭房|三人间|套房|登录看低价|每晚|¥/g);
+  const roomSectionBounds = getRoomSectionBounds();
   return {
     documentHeight: getDocumentHeight(),
     bodyTextLength: bodyText.length,
-    roomKeywordCount: roomKeywordMatches ? roomKeywordMatches.length : 0
+    roomKeywordCount: roomKeywordMatches ? roomKeywordMatches.length : 0,
+    roomSectionDetectedCount: roomSectionBounds.detected ? 1 : 0,
+    roomSectionElementCount: roomSectionBounds.roomSectionElementCount || 0,
+    roomCardCount: roomSectionBounds.roomCardCount || 0,
+    roomExpandButtonCount: roomSectionBounds.roomExpandButtonCount || 0,
+    nonRoomSectionReachedCount: roomSectionBounds.nonRoomSectionReachedCount || 0,
+    roomSectionStartY: Math.round(roomSectionBounds.startY || 0),
+    roomSectionEndY: Math.round(roomSectionBounds.endY || 0)
   };
 };
 const MAX_GENERIC_EXPAND_CLICKS = 6;
@@ -98,9 +229,15 @@ const FALLBACK_EXPAND_SCAN_SELECTORS = [
   'div',
   'span'
 ];
-const getExpandScanElements = (includeGenericText = true) => Array.from(document.querySelectorAll(
-  (includeGenericText ? FALLBACK_EXPAND_SCAN_SELECTORS : EXPLICIT_EXPAND_SCAN_SELECTORS).join(', ')
-));
+const getExpandScanElements = (includeGenericText = true, options = {}) => {
+  const bounds = options.roomSectionBounds || getRoomSectionBounds();
+  const elements = Array.from(document.querySelectorAll(
+    (includeGenericText ? FALLBACK_EXPAND_SCAN_SELECTORS : EXPLICIT_EXPAND_SCAN_SELECTORS).join(', ')
+  ));
+  return bounds && bounds.detected
+    ? elements.filter((element) => isElementInRoomSection(element, bounds))
+    : elements;
+};
 const isActionableExplicitExpandElement = (element, text, rect) => {
   const tagName = element.tagName || '';
   const role = element.getAttribute('role') || '';
@@ -148,6 +285,15 @@ const finishStats = (before, extra = {}) => {
     fallbackScanCandidateCount: extra.fallbackScanCandidateCount || 0,
     genericFallbackScanCount: extra.genericFallbackScanCount || 0,
     genericFallbackSuppressedCount: extra.genericFallbackSuppressedCount || 0,
+    roomSectionDetectedCount: extra.roomSectionDetectedCount || after.roomSectionDetectedCount || 0,
+    roomSectionScanOnlyCount: extra.roomSectionScanOnlyCount || 0,
+    nonRoomSectionReachedCount:
+      extra.nonRoomSectionReachedCount || after.nonRoomSectionReachedCount || 0,
+    roomSectionElementCount: extra.roomSectionElementCount || after.roomSectionElementCount || 0,
+    roomCardCount: extra.roomCardCount || after.roomCardCount || 0,
+    roomExpandButtonCount: extra.roomExpandButtonCount || after.roomExpandButtonCount || 0,
+    roomSectionStartY: extra.roomSectionStartY || after.roomSectionStartY || 0,
+    roomSectionEndY: extra.roomSectionEndY || after.roomSectionEndY || 0,
     skippedDuplicateClickCount: extra.skippedDuplicateClickCount || 0,
     genericClickCount: extra.genericClickCount || 0,
     scrollCount: extra.scrollCount || 0,
@@ -274,6 +420,7 @@ const mergeClickStats = (target, next) => {
 };
 const clickExpandButtons = (options = {}) => {
   const allowGenericFallback = options.allowGenericFallback !== false;
+  const roomSectionBounds = options.roomSectionBounds || getRoomSectionBounds();
   const scanStartedAt = performance.now();
   const processedElements = new Set();
   const result = {
@@ -287,7 +434,15 @@ const clickExpandButtons = (options = {}) => {
     explicitScanCandidateCount: 0,
     fallbackScanCandidateCount: 0,
     genericFallbackScanCount: 0,
-    genericFallbackSuppressedCount: 0
+    genericFallbackSuppressedCount: 0,
+    roomSectionDetectedCount: roomSectionBounds.detected ? 1 : 0,
+    roomSectionScanOnlyCount: roomSectionBounds.detected ? 1 : 0,
+    nonRoomSectionReachedCount: roomSectionBounds.nonRoomSectionReachedCount || 0,
+    roomSectionElementCount: roomSectionBounds.roomSectionElementCount || 0,
+    roomCardCount: roomSectionBounds.roomCardCount || 0,
+    roomExpandButtonCount: roomSectionBounds.roomExpandButtonCount || 0,
+    roomSectionStartY: Math.round(roomSectionBounds.startY || 0),
+    roomSectionEndY: Math.round(roomSectionBounds.endY || 0)
   };
   const explicitStats = scanExpandElements(getExpandScanElements(false), {
     allowGeneric: false,
@@ -315,11 +470,17 @@ const isCollapseOnlyRoomToggle = (text) => (
   /隐藏房型|收起房型|收起全部|折叠房型/.test(text) &&
   !/展示额外|更多房型价格|展开全部房型|查看全部房型|全部房型/.test(text)
 );
-const getScrollableContainers = () => Array.from(document.querySelectorAll('*')).filter(el => {
+const getScrollableContainers = () => {
+  const roomSectionBounds = getRoomSectionBounds();
+  return Array.from(document.querySelectorAll('*')).filter(el => {
+  if (roomSectionBounds.detected && !isElementInRoomSection(el, roomSectionBounds)) {
+    return false;
+  }
   const style = window.getComputedStyle(el);
   return (style.overflowY === 'auto' || style.overflowY === 'scroll')
          && el.scrollHeight > el.clientHeight + 50;
 }).sort((left, right) => right.scrollHeight - left.scrollHeight);
+};
 const isLikelyRoomScrollContainer = (element) => {
   const rect = element.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) {
@@ -363,6 +524,14 @@ const scrollAllContainers = async () => {
   let fallbackScanCandidateCount = 0;
   let genericFallbackScanCount = 0;
   let genericFallbackSuppressedCount = 0;
+  let roomSectionDetectedCount = 0;
+  let roomSectionScanOnlyCount = 0;
+  let nonRoomSectionReachedCount = 0;
+  let roomSectionElementCount = 0;
+  let roomCardCount = 0;
+  let roomExpandButtonCount = 0;
+  let roomSectionStartY = 0;
+  let roomSectionEndY = 0;
   let scrollCount = 0;
   for (const container of scrollableContainers) {
     for (const ratio of [0, 0.5, 1]) {
@@ -382,6 +551,14 @@ const scrollAllContainers = async () => {
       fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
       genericFallbackScanCount += clicked.genericFallbackScanCount;
       genericFallbackSuppressedCount += clicked.genericFallbackSuppressedCount;
+      roomSectionDetectedCount += clicked.roomSectionDetectedCount;
+      roomSectionScanOnlyCount += clicked.roomSectionScanOnlyCount;
+      nonRoomSectionReachedCount += clicked.nonRoomSectionReachedCount;
+      roomSectionElementCount = Math.max(roomSectionElementCount, clicked.roomSectionElementCount);
+      roomCardCount = Math.max(roomCardCount, clicked.roomCardCount);
+      roomExpandButtonCount = Math.max(roomExpandButtonCount, clicked.roomExpandButtonCount);
+      roomSectionStartY = clicked.roomSectionStartY || roomSectionStartY;
+      roomSectionEndY = clicked.roomSectionEndY || roomSectionEndY;
       if (clicked.clickedCount > 0) {
         await waitForDomIdle(180, 700);
       } else {
@@ -402,6 +579,14 @@ const scrollAllContainers = async () => {
     fallbackScanCandidateCount,
     genericFallbackScanCount,
     genericFallbackSuppressedCount,
+    roomSectionDetectedCount,
+    roomSectionScanOnlyCount,
+    nonRoomSectionReachedCount,
+    roomSectionElementCount,
+    roomCardCount,
+    roomExpandButtonCount,
+    roomSectionStartY,
+    roomSectionEndY,
     scrollCount,
     containerCount: scrollableContainers.length,
     likelyContainerCount: containerSelection.likelyContainerCount,
@@ -449,6 +634,14 @@ function normalizeStepStats(stats = {}) {
     fallbackScanCandidateCount: Number(stats.fallbackScanCandidateCount || 0),
     genericFallbackScanCount: Number(stats.genericFallbackScanCount || 0),
     genericFallbackSuppressedCount: Number(stats.genericFallbackSuppressedCount || 0),
+    roomSectionDetectedCount: Number(stats.roomSectionDetectedCount || 0),
+    roomSectionScanOnlyCount: Number(stats.roomSectionScanOnlyCount || 0),
+    nonRoomSectionReachedCount: Number(stats.nonRoomSectionReachedCount || 0),
+    roomSectionElementCount: Number(stats.roomSectionElementCount || 0),
+    roomCardCount: Number(stats.roomCardCount || 0),
+    roomExpandButtonCount: Number(stats.roomExpandButtonCount || 0),
+    roomSectionStartY: Number(stats.roomSectionStartY || 0),
+    roomSectionEndY: Number(stats.roomSectionEndY || 0),
     skippedDuplicateClickCount: Number(stats.skippedDuplicateClickCount || 0),
     genericClickCount: Number(stats.genericClickCount || 0),
     scrollCount: Number(stats.scrollCount || 0),
@@ -477,6 +670,14 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
     fallback_scan_candidate_count: stats.fallbackScanCandidateCount,
     generic_fallback_scan_count: stats.genericFallbackScanCount,
     generic_fallback_suppressed_count: stats.genericFallbackSuppressedCount,
+    room_section_detected_count: stats.roomSectionDetectedCount,
+    room_section_scan_only_count: stats.roomSectionScanOnlyCount,
+    non_room_section_reached_count: stats.nonRoomSectionReachedCount,
+    room_section_element_count: stats.roomSectionElementCount,
+    room_card_count: stats.roomCardCount,
+    room_expand_button_count: stats.roomExpandButtonCount,
+    room_section_start_y: stats.roomSectionStartY,
+    room_section_end_y: stats.roomSectionEndY,
     skipped_duplicate_click_count: stats.skippedDuplicateClickCount,
     generic_click_count: stats.genericClickCount,
     scroll_count: stats.scrollCount,
@@ -506,6 +707,20 @@ function mergeStepStats(aggregate, stats) {
   aggregate.fallbackScanCandidateCount += stats.fallbackScanCandidateCount;
   aggregate.genericFallbackScanCount += stats.genericFallbackScanCount;
   aggregate.genericFallbackSuppressedCount += stats.genericFallbackSuppressedCount;
+  aggregate.roomSectionDetectedCount += stats.roomSectionDetectedCount;
+  aggregate.roomSectionScanOnlyCount += stats.roomSectionScanOnlyCount;
+  aggregate.nonRoomSectionReachedCount += stats.nonRoomSectionReachedCount;
+  aggregate.roomSectionElementCount = Math.max(
+    aggregate.roomSectionElementCount,
+    stats.roomSectionElementCount
+  );
+  aggregate.roomCardCount = Math.max(aggregate.roomCardCount, stats.roomCardCount);
+  aggregate.roomExpandButtonCount = Math.max(
+    aggregate.roomExpandButtonCount,
+    stats.roomExpandButtonCount
+  );
+  aggregate.roomSectionStartY = stats.roomSectionStartY || aggregate.roomSectionStartY;
+  aggregate.roomSectionEndY = stats.roomSectionEndY || aggregate.roomSectionEndY;
   aggregate.skippedDuplicateClickCount += stats.skippedDuplicateClickCount;
   aggregate.genericClickCount += stats.genericClickCount;
   aggregate.scrollCount += stats.scrollCount;
@@ -661,6 +876,14 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     fallbackScanCandidateCount: 0,
     genericFallbackScanCount: 0,
     genericFallbackSuppressedCount: 0,
+    roomSectionDetectedCount: 0,
+    roomSectionScanOnlyCount: 0,
+    nonRoomSectionReachedCount: 0,
+    roomSectionElementCount: 0,
+    roomCardCount: 0,
+    roomExpandButtonCount: 0,
+    roomSectionStartY: 0,
+    roomSectionEndY: 0,
     skippedDuplicateClickCount: 0,
     genericClickCount: 0,
     scrollCount: 0,
@@ -730,6 +953,14 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         let fallbackScanCandidateCount = 0;
         let genericFallbackScanCount = 0;
         let genericFallbackSuppressedCount = 0;
+        let roomSectionDetectedCount = 0;
+        let roomSectionScanOnlyCount = 0;
+        let nonRoomSectionReachedCount = 0;
+        let roomSectionElementCount = 0;
+        let roomCardCount = 0;
+        let roomExpandButtonCount = 0;
+        let roomSectionStartY = 0;
+        let roomSectionEndY = 0;
         let scrollCount = 0;
         let previousRoomKeywordCount = before.roomKeywordCount;
         let stableRoomSignalRounds = 0;
@@ -756,6 +987,14 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
           genericFallbackScanCount += clicked.genericFallbackScanCount;
           genericFallbackSuppressedCount += clicked.genericFallbackSuppressedCount;
+          roomSectionDetectedCount += clicked.roomSectionDetectedCount;
+          roomSectionScanOnlyCount += clicked.roomSectionScanOnlyCount;
+          nonRoomSectionReachedCount += clicked.nonRoomSectionReachedCount;
+          roomSectionElementCount = Math.max(roomSectionElementCount, clicked.roomSectionElementCount);
+          roomCardCount = Math.max(roomCardCount, clicked.roomCardCount);
+          roomExpandButtonCount = Math.max(roomExpandButtonCount, clicked.roomExpandButtonCount);
+          roomSectionStartY = clicked.roomSectionStartY || roomSectionStartY;
+          roomSectionEndY = clicked.roomSectionEndY || roomSectionEndY;
           if (clicked.clickedCount > 0) {
             await waitForDomIdle(180, 750);
           } else {
@@ -806,6 +1045,14 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           fallbackScanCandidateCount,
           genericFallbackScanCount,
           genericFallbackSuppressedCount,
+          roomSectionDetectedCount,
+          roomSectionScanOnlyCount,
+          nonRoomSectionReachedCount,
+          roomSectionElementCount,
+          roomCardCount,
+          roomExpandButtonCount,
+          roomSectionStartY,
+          roomSectionEndY,
           scrollCount
         }));
       `

@@ -717,6 +717,67 @@ test('settle main scroll suppresses generic fallback until room signal is stable
   }
 });
 
+test('settle scan is scoped to detected room section and records section diagnostics', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const hasRoomSectionScope =
+        expression.includes('getRoomSectionBounds') &&
+        expression.includes('isElementInRoomSection') &&
+        expression.includes('roomSectionScanOnlyCount') &&
+        expression.includes('nonRoomSectionReachedCount');
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: 1,
+        scanCandidateCount: hasRoomSectionScope ? 20 : 0,
+        explicitCandidateCount: 0,
+        genericCandidateCount: 0,
+        clickScanElapsedMs: hasRoomSectionScope ? 3 : 0,
+        roomSectionDetectedCount: hasRoomSectionScope ? 1 : 0,
+        roomSectionScanOnlyCount: hasRoomSectionScope ? 1 : 0,
+        nonRoomSectionReachedCount: hasRoomSectionScope ? 1 : 0,
+        roomSectionElementCount: hasRoomSectionScope ? 120 : 0,
+        roomCardCount: hasRoomSectionScope ? 12 : 0,
+        roomExpandButtonCount: hasRoomSectionScope ? 4 : 0,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      getTrackedUrlCount: () => 0
+    });
+
+    const expression = expressions.join('\n');
+    assert.ok(expression.includes('getRoomSectionBounds'));
+    assert.ok(expression.includes('isElementInRoomSection'));
+    assert.equal(stats.roomSectionDetectedCount >= 6, true);
+    assert.equal(stats.roomSectionScanOnlyCount >= 6, true);
+    assert.equal(stats.nonRoomSectionReachedCount >= 6, true);
+    assert.equal(stats.roomCardCount, 12);
+    const mainRecord = records.find((record) => record.phase === 'edge_settle_main_scroll');
+    assert.equal(mainRecord.room_section_detected_count, 1);
+    assert.equal(mainRecord.room_section_scan_only_count, 1);
+    assert.equal(mainRecord.non_room_section_reached_count, 1);
+    assert.equal(mainRecord.room_card_count, 12);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settle close panels records empty fast path when no panel was closed', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
