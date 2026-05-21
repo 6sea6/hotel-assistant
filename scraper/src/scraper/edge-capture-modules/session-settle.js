@@ -102,6 +102,7 @@ const finishStats = (before, extra = {}) => {
   const after = collectStats();
   return {
     clickedCount: extra.clickedCount || 0,
+    earlyStopCount: extra.earlyStopCount || 0,
     skippedDuplicateClickCount: extra.skippedDuplicateClickCount || 0,
     genericClickCount: extra.genericClickCount || 0,
     scrollCount: extra.scrollCount || 0,
@@ -316,6 +317,7 @@ function parseStepResult(result) {
 function normalizeStepStats(stats = {}) {
   return {
     clickedCount: Number(stats.clickedCount || 0),
+    earlyStopCount: Number(stats.earlyStopCount || 0),
     skippedDuplicateClickCount: Number(stats.skippedDuplicateClickCount || 0),
     genericClickCount: Number(stats.genericClickCount || 0),
     scrollCount: Number(stats.scrollCount || 0),
@@ -333,6 +335,7 @@ function normalizeStepStats(stats = {}) {
 function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
   return {
     clicked_count: stats.clickedCount,
+    early_stop_count: stats.earlyStopCount,
     skipped_duplicate_click_count: stats.skippedDuplicateClickCount,
     generic_click_count: stats.genericClickCount,
     scroll_count: stats.scrollCount,
@@ -351,6 +354,7 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
 
 function mergeStepStats(aggregate, stats) {
   aggregate.clickedCount += stats.clickedCount;
+  aggregate.earlyStopCount += stats.earlyStopCount;
   aggregate.skippedDuplicateClickCount += stats.skippedDuplicateClickCount;
   aggregate.genericClickCount += stats.genericClickCount;
   aggregate.scrollCount += stats.scrollCount;
@@ -461,6 +465,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
   const aggregate = {
     totalMs: 0,
     clickedCount: 0,
+    earlyStopCount: 0,
     skippedDuplicateClickCount: 0,
     genericClickCount: 0,
     scrollCount: 0,
@@ -511,9 +516,12 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         let previousHeight = maxScroll;
         let stableHeightRounds = 0;
         let clickedCount = 0;
+        let earlyStopCount = 0;
         let skippedDuplicateClickCount = 0;
         let genericClickCount = 0;
         let scrollCount = 0;
+        let previousRoomKeywordCount = before.roomKeywordCount;
+        let stableRoomSignalRounds = 0;
         for (let index = 0; index <= steps; index += 1) {
           const currentMaxScroll = getDocumentHeight();
           const y = Math.round((currentMaxScroll * index) / steps);
@@ -529,18 +537,39 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           } else {
             await sleep(70);
           }
-          const currentHeight = getDocumentHeight();
+          const currentStats = collectStats();
+          const currentHeight = currentStats.documentHeight;
           if (Math.abs(currentHeight - previousHeight) <= 24) {
             stableHeightRounds += 1;
           } else {
             stableHeightRounds = 0;
           }
           previousHeight = currentHeight;
-          if (stableHeightRounds >= 2 && clicked.clickedCount === 0 && index >= Math.floor(steps / 2)) {
+          if (
+            currentStats.roomKeywordCount >= 4 &&
+            Math.abs(currentStats.roomKeywordCount - previousRoomKeywordCount) <= 2
+          ) {
+            stableRoomSignalRounds += 1;
+          } else {
+            stableRoomSignalRounds = 0;
+          }
+          previousRoomKeywordCount = currentStats.roomKeywordCount;
+          const noNewExpansion = clicked.clickedCount === 0 && clicked.genericClickCount === 0;
+          if (
+            stableHeightRounds >= 1 &&
+            stableRoomSignalRounds >= 1 &&
+            noNewExpansion &&
+            index >= 2
+          ) {
+            earlyStopCount = 1;
+            break;
+          }
+          if (stableHeightRounds >= 2 && noNewExpansion && index >= Math.floor(steps / 2)) {
+            earlyStopCount = 1;
             break;
           }
         }
-        return JSON.stringify(finishStats(before, { clickedCount, skippedDuplicateClickCount, genericClickCount, scrollCount }));
+        return JSON.stringify(finishStats(before, { clickedCount, earlyStopCount, skippedDuplicateClickCount, genericClickCount, scrollCount }));
       `
     },
     {

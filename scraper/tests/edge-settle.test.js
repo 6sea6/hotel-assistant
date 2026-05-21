@@ -419,6 +419,46 @@ test('edge settle retries once after transient execution context destruction', a
   }
 });
 
+test('edge settle waits for execution context stability before settling', async () => {
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      settleRoomListWithEdgeRetry
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const sequence = [];
+    const result = await settleRoomListWithEdgeRetry({
+      perf: createPerfRecorder([]),
+      connection: { send() {} },
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'create',
+      navigateSignal: { reason: 'page_ready_signal' },
+      trackedUrls: new Set(),
+      waitForContextStable: async () => {
+        sequence.push('context_stable');
+        return { confirmed: true };
+      },
+      settleRoomList: async () => {
+        sequence.push('settle');
+        return {
+          totalMs: 100,
+          clickedCount: 0,
+          scrollCount: 1,
+          containerCount: 0
+        };
+      }
+    });
+
+    assert.deepEqual(sequence, ['context_stable', 'settle']);
+    assert.equal(result.stats.totalMs, 100);
+  } finally {
+    clearModules([networkCapturePath]);
+  }
+});
+
 test('edge response parse retries room response body reads before dropping room API data', async () => {
   const extractorPath = installMock('../src/scraper/structured-extractor', {
     collectRoomCandidatesFromPayload: (payload) =>
@@ -471,7 +511,7 @@ test('edge response parse retries room response body reads before dropping room 
           }
         ]
       ]),
-      template: { roomType: '大床房', occupancy: 2 },
+      template: { room_type: '大床房', room_count: 2 },
       roomBlocks,
       spiderErrorCodes: new Set(),
       debugHotelId: '112433891'
@@ -482,6 +522,84 @@ test('edge response parse retries room response body reads before dropping room 
     assert.equal(stats.responseBodyRetryCount, 1);
     assert.equal(stats.roomResponseBodyErrorCount, 0);
     assert.equal(stats.responseParseCandidateCount, 1);
+    assert.equal(roomBlocks.length, 1);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, debugPath]);
+  }
+});
+
+test('edge response parse stops reading non-room responses after room API fast path is complete', async () => {
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.roomName
+        ? [
+            {
+              title: payload.roomName,
+              standard_title: payload.roomName,
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const readRequestIds = [];
+    const roomBlocks = [];
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async (_method, params) => {
+          readRequestIds.push(params.requestId);
+          if (params.requestId === 'room-request') {
+            return {
+              body: JSON.stringify({ roomName: '标准大床房' }),
+              base64Encoded: false
+            };
+          }
+          return {
+            body: JSON.stringify({ roomName: '不应读取的补充房型' }),
+            base64Encoded: false
+          };
+        }
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'room-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+            mimeType: 'application/json'
+          }
+        ],
+        [
+          'detail-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/99999/getHotelDetail',
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.deepEqual(readRequestIds, ['room-request']);
+    assert.equal(stats.fastPathComplete, true);
+    assert.equal(stats.skippedResponseCount, 1);
+    assert.equal(stats.responseParseStoppedReason, 'room_fast_path_complete');
     assert.equal(roomBlocks.length, 1);
   } finally {
     clearModules([networkCapturePath, extractorPath, debugPath]);
@@ -600,7 +718,7 @@ test('edge network wait count prefers room-related responses without dropping pa
       { url: 'https://example.test/hotel/detail.json', mimeType: 'application/json' },
       { fastPathComplete: true }
     ),
-    false
+    true
   );
   assert.equal(
     shouldSkipEdgeResponseAfterRoomSuccess(

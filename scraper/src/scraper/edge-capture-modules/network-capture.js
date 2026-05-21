@@ -378,23 +378,12 @@ async function waitForEdgeNavigateSignal({
   }
 }
 
-function isClearlyIrrelevantEdgeResponse(url = '') {
-  const normalizedUrl = String(url || '').toLowerCase();
-  if (!normalizedUrl || isRoomListNetworkResponse(normalizedUrl)) {
-    return false;
-  }
-
-  return /\/(?:log|logs|trace|tracing|analytics|ubt|collect|monitor|metrics|sentry|beacon)(?:[./?#]|$)/.test(
-    normalizedUrl
-  );
-}
-
 function shouldSkipEdgeResponseAfterRoomSuccess(meta = {}, state = {}) {
   if (!state.fastPathComplete) {
     return false;
   }
 
-  return isClearlyIrrelevantEdgeResponse(meta.url || '');
+  return !isRoomListNetworkResponse(meta.url || '');
 }
 
 function detectCtripLoginPromptFromText(text = '') {
@@ -515,6 +504,73 @@ function isTransientEdgeExecutionContextError(error) {
   );
 }
 
+async function waitForEdgeExecutionContextStable({
+  perf,
+  connection,
+  sessionId,
+  url,
+  captureMethod,
+  targetMode,
+  signal = null,
+  requiredSuccessCount = 2,
+  timeoutMs = 1200,
+  intervalMs = 80
+}) {
+  const phase = perf.phase('edge_context_stable', {
+    url,
+    captureMethod,
+    targetMode
+  });
+  const deadline = Date.now() + timeoutMs;
+  let attemptCount = 0;
+  let successCount = 0;
+  try {
+    while (Date.now() < deadline) {
+      assertEdgeNotAborted(signal, 'edge_context_stable');
+      attemptCount += 1;
+      try {
+        await evaluateInSession(connection, sessionId, '(() => true)()', {
+          timeoutMs: 500,
+          signal
+        });
+        successCount += 1;
+        if (successCount >= requiredSuccessCount) {
+          phase.end('success', {
+            attempt_count: attemptCount,
+            stable_check_success_count: successCount
+          });
+          return {
+            confirmed: true,
+            attemptCount,
+            successCount
+          };
+        }
+      } catch (error) {
+        if (isAbortLikeError(error)) {
+          throw error;
+        }
+        successCount = 0;
+      }
+      await sleep(successCount > 0 ? Math.min(30, intervalMs) : intervalMs);
+    }
+    phase.end('timeout', {
+      attempt_count: attemptCount,
+      stable_check_success_count: successCount
+    });
+    return {
+      confirmed: false,
+      attemptCount,
+      successCount
+    };
+  } catch (error) {
+    phase.error(error, {
+      attempt_count: attemptCount,
+      stable_check_success_count: successCount
+    });
+    throw error;
+  }
+}
+
 async function settleRoomListWithEdgeRetry({
   perf,
   connection,
@@ -527,17 +583,28 @@ async function settleRoomListWithEdgeRetry({
   getTrackedUrlCount,
   settleRoomList = settleRoomListInEdgeSession,
   waitForPageReady = waitForEdgePageReadyAfterNavigate,
+  waitForContextStable = waitForEdgeExecutionContextStable,
   signal = null
 }) {
   const fields = { url, captureMethod, targetMode };
-  const runSettle = () =>
-    settleRoomList(connection, sessionId, {
+  const runSettle = async () => {
+    await waitForContextStable({
+      perf,
+      connection,
+      sessionId,
+      url,
+      captureMethod,
+      targetMode,
+      signal
+    });
+    return settleRoomList(connection, sessionId, {
       perf,
       fields,
       getTrackedUrlCount,
       signal,
       evaluateTimeoutMs: EDGE_SETTLE_EVALUATE_TIMEOUT_MS
     });
+  };
 
   try {
     return {
@@ -844,15 +911,17 @@ async function parseEdgeNetworkResponses({
     fastPathComplete: false
   };
 
-  for (const [requestId, meta] of entries) {
+  for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
+    const [requestId, meta] = entries[entryIndex];
     assertEdgeNotAborted(signal, 'edge_response_parse');
     if (Date.now() - startedAt >= maxElapsedMs && stats.roomResponseCount > 0) {
       stats.responseParseStoppedReason = 'max_elapsed_after_room_response';
       break;
     }
     if (shouldSkipEdgeResponseAfterRoomSuccess(meta, state)) {
-      stats.skippedResponseCount += 1;
-      continue;
+      stats.skippedResponseCount += entries.length - entryIndex;
+      stats.responseParseStoppedReason = 'room_fast_path_complete';
+      break;
     }
     try {
       const isRoomResponse = isRoomListNetworkResponse(meta.url);
@@ -1815,6 +1884,10 @@ Object.defineProperties(exported, {
   },
   isTransientEdgeExecutionContextError: {
     value: isTransientEdgeExecutionContextError,
+    enumerable: false
+  },
+  waitForEdgeExecutionContextStable: {
+    value: waitForEdgeExecutionContextStable,
     enumerable: false
   },
   settleRoomListWithEdgeRetry: {
