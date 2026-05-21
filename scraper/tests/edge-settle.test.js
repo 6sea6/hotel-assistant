@@ -662,6 +662,61 @@ test('settle main scroll records staged fallback scan diagnostics', async () => 
   }
 });
 
+test('settle main scroll suppresses generic fallback until room signal is stable', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isMainScroll = expression.includes('stableHeightRounds');
+      const gatesGenericFallback =
+        expression.includes('allowGenericFallback') &&
+        expression.includes('roomSignalStableBeforeClick') &&
+        expression.includes('genericFallbackSuppressedCount');
+      return JSON.stringify({
+        clickedCount: isMainScroll ? 1 : 0,
+        scrollCount: isMainScroll ? 3 : 1,
+        scanCandidateCount: isMainScroll && gatesGenericFallback ? 18 : 0,
+        explicitCandidateCount: isMainScroll && gatesGenericFallback ? 3 : 0,
+        genericCandidateCount: isMainScroll && gatesGenericFallback ? 1 : 0,
+        clickScanElapsedMs: isMainScroll && gatesGenericFallback ? 5 : 0,
+        explicitScanCandidateCount: isMainScroll && gatesGenericFallback ? 12 : 0,
+        fallbackScanCandidateCount: isMainScroll && gatesGenericFallback ? 6 : 0,
+        genericFallbackScanCount: isMainScroll && gatesGenericFallback ? 1 : 0,
+        genericFallbackSuppressedCount: isMainScroll && gatesGenericFallback ? 2 : 0,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      getTrackedUrlCount: () => 0
+    });
+
+    const mainExpression = expressions.find((expression) =>
+      expression.includes('stableHeightRounds')
+    );
+    assert.ok(mainExpression.includes('allowGenericFallback'));
+    assert.ok(mainExpression.includes('roomSignalStableBeforeClick'));
+    assert.equal(stats.genericFallbackSuppressedCount, 2);
+    const mainRecord = records.find((record) => record.phase === 'edge_settle_main_scroll');
+    assert.equal(mainRecord.generic_fallback_suppressed_count, 2);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settle close panels records empty fast path when no panel was closed', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {

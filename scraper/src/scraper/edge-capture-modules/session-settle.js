@@ -147,6 +147,7 @@ const finishStats = (before, extra = {}) => {
     explicitScanCandidateCount: extra.explicitScanCandidateCount || 0,
     fallbackScanCandidateCount: extra.fallbackScanCandidateCount || 0,
     genericFallbackScanCount: extra.genericFallbackScanCount || 0,
+    genericFallbackSuppressedCount: extra.genericFallbackSuppressedCount || 0,
     skippedDuplicateClickCount: extra.skippedDuplicateClickCount || 0,
     genericClickCount: extra.genericClickCount || 0,
     scrollCount: extra.scrollCount || 0,
@@ -271,7 +272,8 @@ const mergeClickStats = (target, next) => {
   target.explicitCandidateCount += next.explicitCandidateCount || 0;
   target.genericCandidateCount += next.genericCandidateCount || 0;
 };
-const clickExpandButtons = () => {
+const clickExpandButtons = (options = {}) => {
+  const allowGenericFallback = options.allowGenericFallback !== false;
   const scanStartedAt = performance.now();
   const processedElements = new Set();
   const result = {
@@ -284,7 +286,8 @@ const clickExpandButtons = () => {
     clickScanElapsedMs: 0,
     explicitScanCandidateCount: 0,
     fallbackScanCandidateCount: 0,
-    genericFallbackScanCount: 0
+    genericFallbackScanCount: 0,
+    genericFallbackSuppressedCount: 0
   };
   const explicitStats = scanExpandElements(getExpandScanElements(false), {
     allowGeneric: false,
@@ -293,7 +296,7 @@ const clickExpandButtons = () => {
   mergeClickStats(result, explicitStats);
   result.explicitScanCandidateCount = explicitStats.scanCandidateCount;
 
-  if (explicitStats.clickedCount === 0) {
+  if (explicitStats.clickedCount === 0 && allowGenericFallback) {
     result.genericFallbackScanCount = 1;
     const fallbackStats = scanExpandElements(getExpandScanElements(true), {
       allowGeneric: true,
@@ -301,6 +304,8 @@ const clickExpandButtons = () => {
     });
     mergeClickStats(result, fallbackStats);
     result.fallbackScanCandidateCount = fallbackStats.scanCandidateCount;
+  } else if (explicitStats.clickedCount === 0 && !allowGenericFallback) {
+    result.genericFallbackSuppressedCount = 1;
   }
 
   result.clickScanElapsedMs = performance.now() - scanStartedAt;
@@ -357,6 +362,7 @@ const scrollAllContainers = async () => {
   let explicitScanCandidateCount = 0;
   let fallbackScanCandidateCount = 0;
   let genericFallbackScanCount = 0;
+  let genericFallbackSuppressedCount = 0;
   let scrollCount = 0;
   for (const container of scrollableContainers) {
     for (const ratio of [0, 0.5, 1]) {
@@ -375,6 +381,7 @@ const scrollAllContainers = async () => {
       explicitScanCandidateCount += clicked.explicitScanCandidateCount;
       fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
       genericFallbackScanCount += clicked.genericFallbackScanCount;
+      genericFallbackSuppressedCount += clicked.genericFallbackSuppressedCount;
       if (clicked.clickedCount > 0) {
         await waitForDomIdle(180, 700);
       } else {
@@ -394,6 +401,7 @@ const scrollAllContainers = async () => {
     explicitScanCandidateCount,
     fallbackScanCandidateCount,
     genericFallbackScanCount,
+    genericFallbackSuppressedCount,
     scrollCount,
     containerCount: scrollableContainers.length,
     likelyContainerCount: containerSelection.likelyContainerCount,
@@ -440,6 +448,7 @@ function normalizeStepStats(stats = {}) {
     explicitScanCandidateCount: Number(stats.explicitScanCandidateCount || 0),
     fallbackScanCandidateCount: Number(stats.fallbackScanCandidateCount || 0),
     genericFallbackScanCount: Number(stats.genericFallbackScanCount || 0),
+    genericFallbackSuppressedCount: Number(stats.genericFallbackSuppressedCount || 0),
     skippedDuplicateClickCount: Number(stats.skippedDuplicateClickCount || 0),
     genericClickCount: Number(stats.genericClickCount || 0),
     scrollCount: Number(stats.scrollCount || 0),
@@ -467,6 +476,7 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
     explicit_scan_candidate_count: stats.explicitScanCandidateCount,
     fallback_scan_candidate_count: stats.fallbackScanCandidateCount,
     generic_fallback_scan_count: stats.genericFallbackScanCount,
+    generic_fallback_suppressed_count: stats.genericFallbackSuppressedCount,
     skipped_duplicate_click_count: stats.skippedDuplicateClickCount,
     generic_click_count: stats.genericClickCount,
     scroll_count: stats.scrollCount,
@@ -495,6 +505,7 @@ function mergeStepStats(aggregate, stats) {
   aggregate.explicitScanCandidateCount += stats.explicitScanCandidateCount;
   aggregate.fallbackScanCandidateCount += stats.fallbackScanCandidateCount;
   aggregate.genericFallbackScanCount += stats.genericFallbackScanCount;
+  aggregate.genericFallbackSuppressedCount += stats.genericFallbackSuppressedCount;
   aggregate.skippedDuplicateClickCount += stats.skippedDuplicateClickCount;
   aggregate.genericClickCount += stats.genericClickCount;
   aggregate.scrollCount += stats.scrollCount;
@@ -649,6 +660,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     explicitScanCandidateCount: 0,
     fallbackScanCandidateCount: 0,
     genericFallbackScanCount: 0,
+    genericFallbackSuppressedCount: 0,
     skippedDuplicateClickCount: 0,
     genericClickCount: 0,
     scrollCount: 0,
@@ -717,6 +729,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         let explicitScanCandidateCount = 0;
         let fallbackScanCandidateCount = 0;
         let genericFallbackScanCount = 0;
+        let genericFallbackSuppressedCount = 0;
         let scrollCount = 0;
         let previousRoomKeywordCount = before.roomKeywordCount;
         let stableRoomSignalRounds = 0;
@@ -726,7 +739,12 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           window.scrollTo({ top: y, behavior: 'instant' });
           scrollCount += 1;
           await sleep(150);
-          const clicked = clickExpandButtons();
+          const preClickStats = collectStats();
+          const roomSignalStableBeforeClick =
+            preClickStats.roomKeywordCount >= 4 &&
+            Math.abs(preClickStats.roomKeywordCount - previousRoomKeywordCount) <= 2;
+          const allowGenericFallback = index >= 2 && roomSignalStableBeforeClick;
+          const clicked = clickExpandButtons({ allowGenericFallback });
           clickedCount += clicked.clickedCount;
           skippedDuplicateClickCount += clicked.skippedDuplicateClickCount;
           genericClickCount += clicked.genericClickCount;
@@ -737,6 +755,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           explicitScanCandidateCount += clicked.explicitScanCandidateCount;
           fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
           genericFallbackScanCount += clicked.genericFallbackScanCount;
+          genericFallbackSuppressedCount += clicked.genericFallbackSuppressedCount;
           if (clicked.clickedCount > 0) {
             await waitForDomIdle(180, 750);
           } else {
@@ -786,6 +805,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           explicitScanCandidateCount,
           fallbackScanCandidateCount,
           genericFallbackScanCount,
+          genericFallbackSuppressedCount,
           scrollCount
         }));
       `
