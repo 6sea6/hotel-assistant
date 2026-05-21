@@ -8,6 +8,8 @@ const {
   }
 } = require('../cdp-utils');
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const SETTLE_HELPERS = `
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const waitForDomIdle = async (idleMs = 220, timeoutMs = 1000) => {
@@ -155,22 +157,6 @@ const closeReviewPanels = () => {
         }
       }
     } catch(_e) {}
-  }
-
-  const tabTexts = ['服务及设施', '政策', '地点', '酒店简介', '订房必读'];
-  const allElements = Array.from(document.querySelectorAll(
-    '[role="tab"], [class*="tab"], [class*="Tab"], nav a, .nav-item, [class*="nav"] [class*="item"]'
-  ));
-  for (const tabText of tabTexts) {
-    for (const el of allElements) {
-      const text = (el.innerText || el.textContent || '').trim();
-      if (text === tabText || text.includes(tabText)) {
-        const rect = el.getBoundingClientRect();
-        dispatchClick(el, rect);
-        clicked += 1;
-        return clicked;
-      }
-    }
   }
 
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -408,6 +394,14 @@ function buildSkippedBottomExpandStats(aggregate) {
   });
 }
 
+function getTransientSettleRetryReason(error) {
+  const message = error && error.message ? String(error.message) : String(error || '');
+  if (/Execution context was destroyed|Cannot find context with specified id/i.test(message)) {
+    return 'execution_context_destroyed';
+  }
+  return '';
+}
+
 async function runSettleStep({
   connection,
   sessionId,
@@ -424,31 +418,57 @@ async function runSettleStep({
     ...baseFields,
     tracked_url_count_before: trackedUrlCountBefore
   });
-  try {
-    const result = await evaluateInSession(
-      connection,
-      sessionId,
-      `(async () => {
-        ${SETTLE_HELPERS}
-        ${body}
-      })()`,
-      {
-        timeoutMs:
-          Number.isFinite(evaluateTimeoutMs) && evaluateTimeoutMs > 0 ? evaluateTimeoutMs : 6000,
-        signal: signal || null
+  let retryCount = 0;
+  let retryReason = '';
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await evaluateInSession(
+        connection,
+        sessionId,
+        `(async () => {
+          ${SETTLE_HELPERS}
+          ${body}
+        })()`,
+        {
+          timeoutMs:
+            Number.isFinite(evaluateTimeoutMs) && evaluateTimeoutMs > 0 ? evaluateTimeoutMs : 6000,
+          signal: signal || null
+        }
+      );
+      const stats = normalizeStepStats(parseStepResult(result));
+      const trackedUrlCountAfter = getTrackedUrlCount();
+      phaseTimer.end('success', {
+        ...toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter),
+        retry_count: retryCount,
+        retry_reason: retryReason
+      });
+      return stats;
+    } catch (error) {
+      retryReason = getTransientSettleRetryReason(error);
+      if (retryReason && attempt === 0 && !(signal && signal.aborted)) {
+        retryCount += 1;
+        if (perf && typeof perf.event === 'function') {
+          perf.event('edge_settle_step_retry', {
+            ...baseFields,
+            phase,
+            retry_count: retryCount,
+            retry_reason: retryReason
+          });
+        }
+        await sleep(120);
+        continue;
       }
-    );
-    const stats = normalizeStepStats(parseStepResult(result));
-    const trackedUrlCountAfter = getTrackedUrlCount();
-    phaseTimer.end('success', toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter));
-    return stats;
-  } catch (error) {
-    phaseTimer.error(error, {
-      tracked_url_count_before: trackedUrlCountBefore,
-      tracked_url_count_after: getTrackedUrlCount()
-    });
-    throw error;
+      phaseTimer.error(error, {
+        tracked_url_count_before: trackedUrlCountBefore,
+        tracked_url_count_after: getTrackedUrlCount(),
+        retry_count: retryCount,
+        retry_reason: retryReason
+      });
+      throw error;
+    }
   }
+
+  throw new Error(`Failed to run settle step ${phase}`);
 }
 
 async function settleRoomListInEdgeSession(connection, sessionId, options = {}) {

@@ -148,7 +148,7 @@ function getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta) {
   const hasRoomResponses = roomResponseCount > 0;
   const hasMultipleRoomResponses = roomResponseCount >= 2;
   return {
-    stableMs: hasMultipleRoomResponses ? 400 : hasRoomResponses ? 650 : 1200,
+    stableMs: hasMultipleRoomResponses ? 300 : hasRoomResponses ? 650 : 1200,
     maxWaitMs: 4500,
     intervalMs: hasMultipleRoomResponses ? 100 : hasRoomResponses ? 150 : 200,
     networkWaitCount: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
@@ -384,6 +384,25 @@ function shouldSkipEdgeResponseAfterRoomSuccess(meta = {}, state = {}) {
   }
 
   return !isRoomListNetworkResponse(meta.url || '');
+}
+
+function shouldUseEdgeRawTextFallback({
+  isRoomResponse,
+  roomBlocks,
+  structuredCandidates,
+  template
+}) {
+  if (!isRoomResponse) {
+    return true;
+  }
+  if (!Array.isArray(structuredCandidates) || structuredCandidates.length === 0) {
+    return true;
+  }
+  if (!template || !template.room_type) {
+    return true;
+  }
+
+  return !isEdgeRoomFastPathComplete([...roomBlocks, ...structuredCandidates], template);
 }
 
 function detectCtripLoginPromptFromText(text = '') {
@@ -903,6 +922,10 @@ async function parseEdgeNetworkResponses({
     roomResponseBodyEmptyCount: 0,
     roomResponseBodyParseErrorCount: 0,
     nonRoomResponseBodyTimeoutCount: 0,
+    rawFallbackUsedCount: 0,
+    rawFallbackSkippedCount: 0,
+    rawFallbackCandidateCount: 0,
+    structuredCandidateCount: 0,
     responseParseElapsedMs: 0,
     responseParseStoppedReason: '',
     roomApiDebugIndex
@@ -992,12 +1015,25 @@ async function parseEdgeNetworkResponses({
       if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
       const beforeCount = roomBlocks.length;
       const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
-      const fallbackTextCandidates = findRoomBlocksFromStructuredText(bodyResult.body).map(
-        (candidate) => ({
-          ...candidate,
-          source: candidate.source || 'edge-cdp-raw'
-        })
-      );
+      stats.structuredCandidateCount += structuredCandidates.length;
+      const shouldUseRawFallback = shouldUseEdgeRawTextFallback({
+        isRoomResponse,
+        roomBlocks,
+        structuredCandidates,
+        template
+      });
+      const fallbackTextCandidates = shouldUseRawFallback
+        ? findRoomBlocksFromStructuredText(bodyResult.body).map((candidate) => ({
+            ...candidate,
+            source: candidate.source || 'edge-cdp-raw'
+          }))
+        : [];
+      if (shouldUseRawFallback) {
+        stats.rawFallbackUsedCount += 1;
+        stats.rawFallbackCandidateCount += fallbackTextCandidates.length;
+      } else {
+        stats.rawFallbackSkippedCount += 1;
+      }
       roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
       const extractedCount = roomBlocks.length - beforeCount;
       stats.responseParseCandidateCount += Math.max(0, extractedCount);
@@ -1398,6 +1434,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           fallback_full_parse_used: parseStats.fallbackFullParseUsed,
           response_fast_path_complete: parseStats.fastPathComplete,
           response_parse_candidate_count: parseStats.responseParseCandidateCount,
+          structured_candidate_count: parseStats.structuredCandidateCount,
+          raw_fallback_used_count: parseStats.rawFallbackUsedCount,
+          raw_fallback_skipped_count: parseStats.rawFallbackSkippedCount,
+          raw_fallback_candidate_count: parseStats.rawFallbackCandidateCount,
           response_body_retry_count: parseStats.responseBodyRetryCount,
           response_body_timeout_count: parseStats.responseBodyTimeoutCount,
           room_response_body_error_count: parseStats.roomResponseBodyErrorCount,
@@ -1546,6 +1586,10 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           fallback_full_parse_used: parseStats.fallbackFullParseUsed,
           response_fast_path_complete: parseStats.fastPathComplete,
           response_parse_candidate_count: parseStats.responseParseCandidateCount,
+          structured_candidate_count: parseStats.structuredCandidateCount,
+          raw_fallback_used_count: parseStats.rawFallbackUsedCount,
+          raw_fallback_skipped_count: parseStats.rawFallbackSkippedCount,
+          raw_fallback_candidate_count: parseStats.rawFallbackCandidateCount,
           response_body_retry_count: parseStats.responseBodyRetryCount,
           response_body_timeout_count: parseStats.responseBodyTimeoutCount,
           room_response_body_error_count: parseStats.roomResponseBodyErrorCount,
