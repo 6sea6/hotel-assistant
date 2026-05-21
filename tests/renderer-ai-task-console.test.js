@@ -897,6 +897,68 @@ test('AI collect task payload includes saved AMap API key', async () => {
   assert.equal(capturedPayload.amapKey, 'amap-custom-key');
 });
 
+test('AI collect enqueue uses saved list prefilter settings instead of stale list URL filters', async () => {
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=16~5*16*5&locale=zh-CN';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {
+    aiCtripPriceMin: '',
+    aiCtripPriceMax: '',
+    aiCtripStarLevels: [3],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 5,
+    aiListExcludeHotelTypes: ''
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(capturedPayload.listUrlFilters.starLevels, [3]);
+  assert.equal(capturedPayload.desiredHotelCount, 5);
+  const parsedUrl = parseCtripListUrl(capturedPayload.url);
+  assert.ok(parsedUrl.listFilterParts.includes('16~3*16*3'));
+  assert.equal(parsedUrl.listFilterParts.includes('16~5*16*5'), false);
+});
+
 test('list prefilter controls live in a dedicated assistant modal', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const startBarMatch = html.match(/<section class="task-start-card"[\s\S]*?<\/section>/);

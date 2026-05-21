@@ -202,6 +202,7 @@ const EDGE_CDP_COMMAND_TIMEOUT_MS = 8000;
 const EDGE_CDP_SHORT_TIMEOUT_MS = 3000;
 const EDGE_CDP_CLEANUP_TIMEOUT_MS = 1200;
 const EDGE_DOM_EXTRACT_TIMEOUT_MS = 6000;
+const EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS = 1800;
 const EDGE_SETTLE_EVALUATE_TIMEOUT_MS = 6000;
 const EDGE_RESPONSE_PARSE_MAX_MS = 12000;
 const EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET = 8;
@@ -398,11 +399,25 @@ function shouldUseEdgeRawTextFallback({
   if (!Array.isArray(structuredCandidates) || structuredCandidates.length === 0) {
     return true;
   }
-  if (!template || !template.room_type) {
+  const hasTemplateSignal = Boolean(
+    template &&
+      (template.room_type ||
+        template.roomType ||
+        template.room_count ||
+        template.roomCount ||
+        template.occupancy)
+  );
+  if (!hasTemplateSignal) {
     return true;
   }
 
-  return !isEdgeRoomFastPathComplete([...roomBlocks, ...structuredCandidates], template);
+  const normalizedTemplate = {
+    ...template,
+    room_type: template.room_type || template.roomType || '',
+    room_count: template.room_count || template.roomCount || template.occupancy
+  };
+
+  return !isEdgeRoomFastPathComplete([...roomBlocks, ...structuredCandidates], normalizedTemplate);
 }
 
 function detectCtripLoginPromptFromText(text = '') {
@@ -1062,6 +1077,244 @@ async function parseEdgeNetworkResponses({
   return stats;
 }
 
+function getEdgeDomExtractTimeoutMs(roomBlocks) {
+  return Array.isArray(roomBlocks) && roomBlocks.length > 0
+    ? EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS
+    : EDGE_DOM_EXTRACT_TIMEOUT_MS;
+}
+
+function isEdgeDomExtractTimeoutError(error) {
+  const message = error && error.message ? String(error.message) : String(error || '');
+  return /Runtime\.evaluate timed out|timed out after \d+ms/i.test(message);
+}
+
+function buildEdgeDomExtractExpression() {
+  return `(async () => {
+        const roomPattern = /(家庭房|家庭间|双床房|双床间|大床房|大床间|三人间|三人房|三床房|套房|单人间|标准间|高级房|高级间|豪华房|豪华间|商务房|商务间|景观房|景观间|亲子房|亲子间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间)/;
+        const pricePattern = /(¥|登录看低价|解锁优惠|券后|每晚|起)/;
+        const titlePattern = /[\\u4e00-\\u9fa5A-Za-z0-9（）()·\\-]{2,40}(?:大床房|大床间|双床房|双床间|家庭房|家庭间|三床房|三人房|三人间|景观房|景观间|商务房|商务间|豪华房|豪华间|特惠房|特惠间|标准房|标准间|高级房|高级间|精品房|精品间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间|亲子房|亲子间|套房)/g;
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const isVisible = (element) => {
+          if (!element || !(element instanceof Element)) return false;
+          const style = window.getComputedStyle(element);
+          if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+          const rect = element.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const clickElement = (element) => {
+          if (!element || !isVisible(element)) return false;
+          try { element.click(); } catch(_e) {}
+          try {
+            const rect = element.getBoundingClientRect();
+            ['mousedown', 'mouseup', 'click'].forEach((eventType) => {
+              element.dispatchEvent(new MouseEvent(eventType, {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2
+              }));
+            });
+          } catch(_e) {}
+          return true;
+        };
+        const readBodyText = () => (document.body && document.body.innerText) ? document.body.innerText : '';
+        const toNormalizedText = (text) => String(text || '')
+          .replace(/\u00a0/g, ' ')
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        const extractRoomSection = (text) => {
+          const normalized = toNormalizedText(text);
+          if (!normalized) {
+            return '';
+          }
+          const startMarkers = ['选择房间', '房型摘要', '可住人数 今日价格', '立即确认', '登录看低价'];
+          const endMarkers = ['地点', '服务及设施', '酒店政策', '酒店简介', '订房必读', '附近的酒店', '住客点评', '位置周边'];
+          let startIndex = -1;
+          for (const marker of startMarkers) {
+            const markerIndex = normalized.indexOf(marker);
+            if (markerIndex !== -1 && (startIndex === -1 || markerIndex < startIndex)) {
+              startIndex = markerIndex;
+            }
+          }
+          if (startIndex === -1) {
+            return normalized.slice(0, 18000);
+          }
+          let endIndex = normalized.length;
+          for (const marker of endMarkers) {
+            const markerIndex = normalized.indexOf(marker, startIndex + 1);
+            if (markerIndex !== -1 && markerIndex < endIndex) {
+              endIndex = markerIndex;
+            }
+          }
+          return normalized.slice(startIndex, Math.min(endIndex, startIndex + 18000));
+        };
+        const extractTitleWindows = (text) => {
+          const normalized = toNormalizedText(text);
+          const windows = [];
+          const seenWindows = new Set();
+          const matches = [...normalized.matchAll(titlePattern)];
+          for (let index = 0; index < matches.length; index += 1) {
+            const current = matches[index];
+            const next = matches[index + 1];
+            const start = Math.max(0, (current.index || 0) - 80);
+            const end = next
+              ? Math.min(normalized.length, (next.index || 0) + 120)
+              : Math.min(normalized.length, start + 900);
+            const snippet = normalized.slice(start, end).trim();
+            if (!snippet || seenWindows.has(snippet)) {
+              continue;
+            }
+            seenWindows.add(snippet);
+            windows.push(snippet);
+            if (windows.length >= 40) {
+              break;
+            }
+          }
+          return windows;
+        };
+        const texts = [];
+        const seen = new Set();
+        const snapshots = [];
+        const addSnapshot = (text) => {
+          const normalized = extractRoomSection(text);
+          if (!normalized || snapshots.includes(normalized)) return;
+          snapshots.push(normalized);
+        };
+        addSnapshot(readBodyText());
+
+        const triggerTexts = ['展示额外', '更多房型', '房间详情', '房型详情'];
+        const triggerElements = Array.from(document.querySelectorAll('button, a, div, span'));
+        const clickedTriggers = new Set();
+        for (const element of triggerElements) {
+          if (!isVisible(element)) continue;
+          const text = (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!text || !triggerTexts.some((item) => text.includes(item))) continue;
+          const dedupeKey = text.slice(0, 40);
+          if (clickedTriggers.has(dedupeKey)) continue;
+          clickedTriggers.add(dedupeKey);
+          if (!clickElement(element)) continue;
+          await sleep(280);
+          addSnapshot(readBodyText());
+          try {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          } catch(_e) {}
+          await sleep(120);
+        }
+
+        const nodes = document.querySelectorAll('div, li, section, article');
+        for (const node of nodes) {
+          if (!isVisible(node)) continue;
+          const text = toNormalizedText(node.innerText || '');
+          if (!text || text.length < 4) continue;
+          if (!roomPattern.test(text) || !pricePattern.test(text)) continue;
+          const normalized = text.length > 1800 ? extractRoomSection(text) : text;
+          if (seen.has(normalized)) continue;
+          seen.add(normalized);
+          texts.push(normalized);
+          if (texts.length >= 80) break;
+        }
+        const bodyText = readBodyText();
+        for (const snippet of extractTitleWindows(bodyText)) {
+          if (seen.has(snippet)) continue;
+          seen.add(snippet);
+          texts.push(snippet);
+          if (texts.length >= 120) break;
+        }
+        const relevantBodyText = extractRoomSection(bodyText);
+        return JSON.stringify({
+          bodyText: relevantBodyText,
+          bodyHtml: '',
+          snippets: texts,
+          snapshots
+        });
+        })()`;
+}
+
+async function extractEdgeDomRoomCandidates({
+  connection,
+  sessionId,
+  url,
+  captureMethod,
+  targetMode,
+  trackedUrls,
+  debugHotelId,
+  roomBlocks,
+  perf,
+  signal
+}) {
+  const safePerf = perf || createNoopPerf();
+  const candidateList = Array.isArray(roomBlocks) ? roomBlocks : [];
+  const timeoutMs = getEdgeDomExtractTimeoutMs(candidateList);
+  const beforeDomCount = candidateList.length;
+  const trackedUrlCount = trackedUrls && trackedUrls.size ? trackedUrls.size : 0;
+  const domPhase = safePerf.phase('edge_dom_extract', {
+    url,
+    captureMethod,
+    targetMode,
+    trackedUrlCount,
+    dom_extract_timeout_ms: timeoutMs,
+    room_candidates_before: beforeDomCount
+  });
+
+  try {
+    const domPayloadResult = await evaluateInSession(
+      connection,
+      sessionId,
+      buildEdgeDomExtractExpression(),
+      {
+        timeoutMs,
+        signal
+      }
+    );
+    const domPayload =
+      typeof domPayloadResult === 'string' ? safeJsonParse(domPayloadResult) : domPayloadResult;
+    writeEdgeDebugArtifact(`${debugHotelId}-dom-payload.json`, domPayload);
+    const candidates = collectRoomCandidatesFromDomPayload(domPayload);
+    candidateList.push(...candidates);
+    domPhase.end('success', {
+      roomCandidatesCount: candidateList.length - beforeDomCount,
+      dom_extract_timeout_ms: timeoutMs,
+      room_candidates_before: beforeDomCount,
+      room_candidates_after: candidateList.length,
+      dom_extract_timed_out: false
+    });
+    return {
+      roomCandidatesCount: candidateList.length - beforeDomCount,
+      roomCandidatesBefore: beforeDomCount,
+      roomCandidatesAfter: candidateList.length,
+      timeoutMs,
+      timedOut: false
+    };
+  } catch (error) {
+    const timedOut = isEdgeDomExtractTimeoutError(error);
+    domPhase.error(error, {
+      dom_extract_timeout_ms: timeoutMs,
+      room_candidates_before: beforeDomCount,
+      room_candidates_after: candidateList.length,
+      dom_extract_timed_out: timedOut
+    });
+    if (isAbortLikeError(error)) {
+      throw error;
+    }
+    writeEdgeDebugArtifact(`${debugHotelId}-dom-error.json`, {
+      message: error && error.message ? error.message : String(error || ''),
+      stack: error && error.stack ? error.stack : '',
+      timeoutMs,
+      timedOut
+    });
+    return {
+      roomCandidatesCount: 0,
+      roomCandidatesBefore: beforeDomCount,
+      roomCandidatesAfter: candidateList.length,
+      timeoutMs,
+      timedOut,
+      error: error && error.message ? error.message : String(error || '')
+    };
+  }
+}
+
 async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions = {}, options = {}) {
   const perf = options.perf || createNoopPerf();
   const captureMethod = options.captureMethod || 'html_then_edge_cdp';
@@ -1606,182 +1859,20 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       }
     }
 
-    // Always run DOM extraction (works for both reused and new tabs).
-    const domPhase = perf.phase('edge_dom_extract', {
+    // Always run DOM extraction (works for both reused and new tabs), but keep it best-effort
+    // once room API data has already produced candidates.
+    await extractEdgeDomRoomCandidates({
+      connection,
+      sessionId,
       url,
       captureMethod,
       targetMode,
-      trackedUrlCount: trackedUrls.size
+      trackedUrls,
+      debugHotelId,
+      roomBlocks,
+      perf,
+      signal
     });
-    try {
-      const domPayloadResult = await evaluateInSession(
-        connection,
-        sessionId,
-        `(async () => {
-        const roomPattern = /(家庭房|家庭间|双床房|双床间|大床房|大床间|三人间|三人房|三床房|套房|单人间|标准间|高级房|高级间|豪华房|豪华间|商务房|商务间|景观房|景观间|亲子房|亲子间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间)/;
-        const pricePattern = /(¥|登录看低价|解锁优惠|券后|每晚|起)/;
-        const titlePattern = /[\\u4e00-\\u9fa5A-Za-z0-9（）()·\\-]{2,40}(?:大床房|大床间|双床房|双床间|家庭房|家庭间|三床房|三人房|三人间|景观房|景观间|商务房|商务间|豪华房|豪华间|特惠房|特惠间|标准房|标准间|高级房|高级间|精品房|精品间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间|亲子房|亲子间|套房)/g;
-        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        const isVisible = (element) => {
-          if (!element || !(element instanceof Element)) return false;
-          const style = window.getComputedStyle(element);
-          if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        };
-        const clickElement = (element) => {
-          if (!element || !isVisible(element)) return false;
-          try { element.click(); } catch(_e) {}
-          try {
-            const rect = element.getBoundingClientRect();
-            ['mousedown', 'mouseup', 'click'].forEach((eventType) => {
-              element.dispatchEvent(new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: rect.left + rect.width / 2,
-                clientY: rect.top + rect.height / 2
-              }));
-            });
-          } catch(_e) {}
-          return true;
-        };
-        const readBodyText = () => (document.body && document.body.innerText) ? document.body.innerText : '';
-        const toNormalizedText = (text) => String(text || '')
-          .replace(/\u00a0/g, ' ')
-          .replace(/[ \t]+/g, ' ')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-        const extractRoomSection = (text) => {
-          const normalized = toNormalizedText(text);
-          if (!normalized) {
-            return '';
-          }
-          const startMarkers = ['选择房间', '房型摘要', '可住人数 今日价格', '立即确认', '登录看低价'];
-          const endMarkers = ['地点', '服务及设施', '酒店政策', '酒店简介', '订房必读', '附近的酒店', '住客点评', '位置周边'];
-          let startIndex = -1;
-          for (const marker of startMarkers) {
-            const markerIndex = normalized.indexOf(marker);
-            if (markerIndex !== -1 && (startIndex === -1 || markerIndex < startIndex)) {
-              startIndex = markerIndex;
-            }
-          }
-          if (startIndex === -1) {
-            return normalized.slice(0, 18000);
-          }
-          let endIndex = normalized.length;
-          for (const marker of endMarkers) {
-            const markerIndex = normalized.indexOf(marker, startIndex + 1);
-            if (markerIndex !== -1 && markerIndex < endIndex) {
-              endIndex = markerIndex;
-            }
-          }
-          return normalized.slice(startIndex, Math.min(endIndex, startIndex + 18000));
-        };
-        const extractTitleWindows = (text) => {
-          const normalized = toNormalizedText(text);
-          const windows = [];
-          const seenWindows = new Set();
-          const matches = [...normalized.matchAll(titlePattern)];
-          for (let index = 0; index < matches.length; index += 1) {
-            const current = matches[index];
-            const next = matches[index + 1];
-            const start = Math.max(0, (current.index || 0) - 80);
-            const end = next
-              ? Math.min(normalized.length, (next.index || 0) + 120)
-              : Math.min(normalized.length, start + 900);
-            const snippet = normalized.slice(start, end).trim();
-            if (!snippet || seenWindows.has(snippet)) {
-              continue;
-            }
-            seenWindows.add(snippet);
-            windows.push(snippet);
-            if (windows.length >= 40) {
-              break;
-            }
-          }
-          return windows;
-        };
-        const texts = [];
-        const seen = new Set();
-        const snapshots = [];
-        const addSnapshot = (text) => {
-          const normalized = extractRoomSection(text);
-          if (!normalized || snapshots.includes(normalized)) return;
-          snapshots.push(normalized);
-        };
-        addSnapshot(readBodyText());
-
-        const triggerTexts = ['展示额外', '更多房型', '房间详情', '房型详情'];
-        const triggerElements = Array.from(document.querySelectorAll('button, a, div, span'));
-        const clickedTriggers = new Set();
-        for (const element of triggerElements) {
-          if (!isVisible(element)) continue;
-          const text = (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
-          if (!text || !triggerTexts.some((item) => text.includes(item))) continue;
-          const dedupeKey = text.slice(0, 40);
-          if (clickedTriggers.has(dedupeKey)) continue;
-          clickedTriggers.add(dedupeKey);
-          if (!clickElement(element)) continue;
-          await sleep(280);
-          addSnapshot(readBodyText());
-          try {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-          } catch(_e) {}
-          await sleep(120);
-        }
-
-        const nodes = document.querySelectorAll('div, li, section, article');
-        for (const node of nodes) {
-          if (!isVisible(node)) continue;
-          const text = toNormalizedText(node.innerText || '');
-          if (!text || text.length < 4) continue;
-          if (!roomPattern.test(text) || !pricePattern.test(text)) continue;
-          const normalized = text.length > 1800 ? extractRoomSection(text) : text;
-          if (seen.has(normalized)) continue;
-          seen.add(normalized);
-          texts.push(normalized);
-          if (texts.length >= 80) break;
-        }
-        const bodyText = readBodyText();
-        for (const snippet of extractTitleWindows(bodyText)) {
-          if (seen.has(snippet)) continue;
-          seen.add(snippet);
-          texts.push(snippet);
-          if (texts.length >= 120) break;
-        }
-        const relevantBodyText = extractRoomSection(bodyText);
-        return JSON.stringify({
-          bodyText: relevantBodyText,
-          bodyHtml: '',
-          snippets: texts,
-          snapshots
-        });
-        })()`,
-        {
-          timeoutMs: EDGE_DOM_EXTRACT_TIMEOUT_MS,
-          signal
-        }
-      );
-      const domPayload =
-        typeof domPayloadResult === 'string' ? safeJsonParse(domPayloadResult) : domPayloadResult;
-      writeEdgeDebugArtifact(`${debugHotelId}-dom-payload.json`, domPayload);
-      const beforeDomCount = roomBlocks.length;
-      roomBlocks.push(...collectRoomCandidatesFromDomPayload(domPayload));
-      domPhase.end('success', {
-        roomCandidatesCount: roomBlocks.length - beforeDomCount
-      });
-    } catch (error) {
-      domPhase.error(error);
-      if (isAbortLikeError(error)) {
-        throw error;
-      }
-      writeEdgeDebugArtifact(`${debugHotelId}-dom-error.json`, {
-        message: error && error.message ? error.message : String(error || ''),
-        stack: error && error.stack ? error.stack : ''
-      });
-      // DOM extraction is best-effort; keep network-derived results when evaluation fails.
-    }
 
     const { mergedBlocks, selectedRoom } = await perf.runPhase(
       'edge_merge_select',
@@ -1940,6 +2031,14 @@ Object.defineProperties(exported, {
   },
   parseEdgeNetworkResponses: {
     value: parseEdgeNetworkResponses,
+    enumerable: false
+  },
+  extractEdgeDomRoomCandidates: {
+    value: extractEdgeDomRoomCandidates,
+    enumerable: false
+  },
+  getEdgeDomExtractTimeoutMs: {
+    value: getEdgeDomExtractTimeoutMs,
     enumerable: false
   },
   shouldSkipEdgeResponseAfterRoomSuccess: {

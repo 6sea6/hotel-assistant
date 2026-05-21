@@ -1132,7 +1132,6 @@ export async function enqueueAiCollectTask() {
     showNotification('请先选择模板', 'warning');
     return;
   }
-  await syncCtripListUrlSettingsFromInput();
   await syncAiCtripListUrlFromSettings({ activeOnly: true });
   const url = getSubmittedUrl();
   if (!url) {

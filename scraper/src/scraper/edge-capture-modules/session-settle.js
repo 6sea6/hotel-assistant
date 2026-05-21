@@ -304,6 +304,7 @@ function normalizeStepStats(stats = {}) {
   return {
     clickedCount: Number(stats.clickedCount || 0),
     earlyStopCount: Number(stats.earlyStopCount || 0),
+    emptyCloseFastPathCount: Number(stats.emptyCloseFastPathCount || 0),
     skippedDuplicateClickCount: Number(stats.skippedDuplicateClickCount || 0),
     genericClickCount: Number(stats.genericClickCount || 0),
     scrollCount: Number(stats.scrollCount || 0),
@@ -322,6 +323,7 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
   return {
     clicked_count: stats.clickedCount,
     early_stop_count: stats.earlyStopCount,
+    empty_close_fast_path_count: stats.emptyCloseFastPathCount,
     skipped_duplicate_click_count: stats.skippedDuplicateClickCount,
     generic_click_count: stats.genericClickCount,
     scroll_count: stats.scrollCount,
@@ -341,6 +343,7 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
 function mergeStepStats(aggregate, stats) {
   aggregate.clickedCount += stats.clickedCount;
   aggregate.earlyStopCount += stats.earlyStopCount;
+  aggregate.emptyCloseFastPathCount += stats.emptyCloseFastPathCount;
   aggregate.skippedDuplicateClickCount += stats.skippedDuplicateClickCount;
   aggregate.genericClickCount += stats.genericClickCount;
   aggregate.scrollCount += stats.scrollCount;
@@ -486,6 +489,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     totalMs: 0,
     clickedCount: 0,
     earlyStopCount: 0,
+    emptyCloseFastPathCount: 0,
     skippedDuplicateClickCount: 0,
     genericClickCount: 0,
     scrollCount: 0,
@@ -506,10 +510,16 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
       body: `
         const before = collectStats();
         const clickedCount = closeReviewPanels();
-        await waitForDomIdle(180, 700);
+        let emptyCloseFastPathCount = 0;
+        if (clickedCount > 0) {
+          await waitForDomIdle(180, 700);
+        } else {
+          emptyCloseFastPathCount = 1;
+          await sleep(35);
+        }
         window.scrollTo({ top: 0, behavior: 'instant' });
-        await sleep(120);
-        return JSON.stringify(finishStats(before, { clickedCount, scrollCount: 1 }));
+        await sleep(clickedCount > 0 ? 120 : 35);
+        return JSON.stringify(finishStats(before, { clickedCount, emptyCloseFastPathCount, scrollCount: 1 }));
       `
     },
     {
