@@ -456,6 +456,212 @@ test('settle close panels avoids hotel navigation tabs that recreate execution c
   }
 });
 
+test('settle expand helper does not click collapse-only hidden room labels', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: 1,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder([]),
+      getTrackedUrlCount: () => 0
+    });
+
+    const browserExpression = expressions.join('\n');
+    assert.equal(
+      browserExpression.includes("const expandTexts = ['展示额外', '隐藏房型'"),
+      false
+    );
+    assert.ok(browserExpression.includes('isCollapseOnlyRoomToggle'));
+    assert.ok(browserExpression.includes('if (isCollapseOnlyRoomToggle(text)) continue;'));
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('settle expand helper uses bounded scan selector and records scan diagnostics', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const hasScanDiagnostics =
+        expression.includes('scanCandidateCount') &&
+        expression.includes('explicitCandidateCount') &&
+        expression.includes('genericCandidateCount') &&
+        expression.includes('clickScanElapsedMs');
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: 1,
+        scanCandidateCount: hasScanDiagnostics ? 12 : 0,
+        explicitCandidateCount: hasScanDiagnostics ? 3 : 0,
+        genericCandidateCount: hasScanDiagnostics ? 1 : 0,
+        clickScanElapsedMs: hasScanDiagnostics ? 4 : 0,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      getTrackedUrlCount: () => 0
+    });
+
+    const browserExpression = expressions.join('\n');
+    assert.ok(browserExpression.includes('getExpandScanElements'));
+    assert.equal(browserExpression.includes('section, article'), false);
+    assert.equal(stats.scanCandidateCount, 72);
+    assert.equal(stats.explicitCandidateCount, 18);
+    assert.equal(stats.genericCandidateCount, 6);
+    assert.equal(stats.clickScanElapsedMs, 24);
+    assert.equal(records[0].scan_candidate_count, 12);
+    assert.equal(records[0].explicit_candidate_count, 3);
+    assert.equal(records[0].generic_candidate_count, 1);
+    assert.equal(records[0].click_scan_elapsed_ms, 4);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('settle main scroll accumulates click scan diagnostics', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isMainScroll = expression.includes('stableHeightRounds');
+      const accumulatesMainScan =
+        expression.includes('scanCandidateCount += clicked.scanCandidateCount') &&
+        expression.includes('explicitCandidateCount += clicked.explicitCandidateCount') &&
+        expression.includes('genericCandidateCount += clicked.genericCandidateCount') &&
+        expression.includes('clickScanElapsedMs += clicked.clickScanElapsedMs');
+      return JSON.stringify({
+        clickedCount: isMainScroll ? 2 : 0,
+        scrollCount: isMainScroll ? 3 : 1,
+        scanCandidateCount: isMainScroll && accumulatesMainScan ? 36 : 0,
+        explicitCandidateCount: isMainScroll && accumulatesMainScan ? 9 : 0,
+        genericCandidateCount: isMainScroll && accumulatesMainScan ? 3 : 0,
+        clickScanElapsedMs: isMainScroll && accumulatesMainScan ? 15 : 0,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      getTrackedUrlCount: () => 0
+    });
+
+    assert.ok(expressions.some((expression) => expression.includes('stableHeightRounds')));
+    assert.equal(stats.scanCandidateCount, 36);
+    assert.equal(stats.explicitCandidateCount, 9);
+    assert.equal(stats.genericCandidateCount, 3);
+    assert.equal(stats.clickScanElapsedMs, 15);
+    const mainRecord = records.find((record) => record.phase === 'edge_settle_main_scroll');
+    assert.equal(mainRecord.scan_candidate_count, 36);
+    assert.equal(mainRecord.explicit_candidate_count, 9);
+    assert.equal(mainRecord.generic_candidate_count, 3);
+    assert.equal(mainRecord.click_scan_elapsed_ms, 15);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('settle main scroll records staged fallback scan diagnostics', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isMainScroll = expression.includes('stableHeightRounds');
+      const usesStagedFallback =
+        expression.includes('getExpandScanElements(false)') &&
+        expression.includes('getExpandScanElements(true)') &&
+        expression.includes('genericFallbackScanCount');
+      return JSON.stringify({
+        clickedCount: isMainScroll ? 1 : 0,
+        scrollCount: isMainScroll ? 2 : 1,
+        scanCandidateCount: isMainScroll && usesStagedFallback ? 24 : 0,
+        explicitCandidateCount: isMainScroll && usesStagedFallback ? 3 : 0,
+        genericCandidateCount: isMainScroll && usesStagedFallback ? 1 : 0,
+        clickScanElapsedMs: isMainScroll && usesStagedFallback ? 7 : 0,
+        explicitScanCandidateCount: isMainScroll && usesStagedFallback ? 18 : 0,
+        fallbackScanCandidateCount: isMainScroll && usesStagedFallback ? 6 : 0,
+        genericFallbackScanCount: isMainScroll && usesStagedFallback ? 1 : 0,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      getTrackedUrlCount: () => 0
+    });
+
+    const mainExpression = expressions.find((expression) =>
+      expression.includes('stableHeightRounds')
+    );
+    assert.ok(mainExpression.includes('getExpandScanElements(false)'));
+    assert.ok(mainExpression.includes('getExpandScanElements(true)'));
+    assert.equal(stats.explicitScanCandidateCount, 18);
+    assert.equal(stats.fallbackScanCandidateCount, 6);
+    assert.equal(stats.genericFallbackScanCount, 1);
+    const mainRecord = records.find((record) => record.phase === 'edge_settle_main_scroll');
+    assert.equal(mainRecord.explicit_scan_candidate_count, 18);
+    assert.equal(mainRecord.fallback_scan_candidate_count, 6);
+    assert.equal(mainRecord.generic_fallback_scan_count, 1);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settle close panels records empty fast path when no panel was closed', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
@@ -497,6 +703,54 @@ test('settle close panels records empty fast path when no panel was closed', asy
     assert.equal(
       records.find((record) => record.phase === 'edge_settle_close_panels')
         .empty_close_fast_path_count,
+      1
+    );
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('settle initial expand records fast path when no expand button was clicked', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isInitialExpand = expression.includes('let initialExpandFastPathCount');
+      return JSON.stringify({
+        clickedCount: 0,
+        initialExpandFastPathCount:
+          isInitialExpand &&
+          expression.includes('initialExpandFastPathCount') &&
+          expression.includes('await sleep(55)')
+            ? 1
+            : 0,
+        scrollCount: 1,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      getTrackedUrlCount: () => 0
+    });
+
+    assert.ok(expressions.some((expression) => expression.includes('initialExpandFastPathCount')));
+    assert.equal(stats.initialExpandFastPathCount, 1);
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_initial_expand')
+        .initial_expand_fast_path_count,
       1
     );
   } finally {
@@ -739,6 +993,91 @@ test('edge response parse stops reading non-room responses after room API fast p
     assert.equal(stats.skippedResponseCount, 1);
     assert.equal(stats.responseParseStoppedReason, 'room_fast_path_complete');
     assert.equal(roomBlocks.length, 1);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, debugPath]);
+  }
+});
+
+test('edge response parse reports response entry, duplicate URL, and body byte diagnostics', async () => {
+  const roomUrl = 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList';
+  const detailUrl = 'https://m.ctrip.com/restapi/soa2/99999/getHotelDetail';
+  const roomBody = JSON.stringify({ roomName: '标准大床房' });
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.roomName
+        ? [
+            {
+              title: payload.roomName,
+              standard_title: payload.roomName,
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const readRequestIds = [];
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async (_method, params) => {
+          readRequestIds.push(params.requestId);
+          return {
+            body: roomBody,
+            base64Encoded: false
+          };
+        }
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'room-request-1',
+          {
+            url: roomUrl,
+            mimeType: 'application/json'
+          }
+        ],
+        [
+          'room-request-2',
+          {
+            url: roomUrl,
+            mimeType: 'application/json'
+          }
+        ],
+        [
+          'detail-request',
+          {
+            url: detailUrl,
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks: [],
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.equal(readRequestIds.includes('room-request-1'), true);
+    assert.equal(stats.responseParseEntryCount, 3);
+    assert.equal(stats.uniqueResponseUrlCount, 2);
+    assert.equal(stats.duplicateResponseUrlCount, 1);
+    assert.equal(stats.roomResponseEntryCount, 2);
+    assert.equal(stats.nonRoomResponseEntryCount, 1);
+    assert.equal(stats.responseBodyReadCount, readRequestIds.length);
+    assert.equal(stats.responseBodyTotalBytes, Buffer.byteLength(roomBody) * readRequestIds.length);
+    assert.equal(stats.responseBodyMaxBytes, Buffer.byteLength(roomBody));
   } finally {
     clearModules([networkCapturePath, extractorPath, debugPath]);
   }

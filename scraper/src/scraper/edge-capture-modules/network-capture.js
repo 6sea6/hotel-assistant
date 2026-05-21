@@ -835,6 +835,32 @@ function decodeEdgeResponseBody(responseBody) {
   return responseBody.base64Encoded ? Buffer.from(rawBody, 'base64').toString('utf8') : rawBody;
 }
 
+function buildResponseEntryDiagnostics(entries) {
+  const seenUrls = new Set();
+  let duplicateResponseUrlCount = 0;
+  let roomResponseEntryCount = 0;
+  for (const [, meta] of entries) {
+    const url = meta && meta.url ? String(meta.url) : '';
+    if (url) {
+      if (seenUrls.has(url)) {
+        duplicateResponseUrlCount += 1;
+      } else {
+        seenUrls.add(url);
+      }
+    }
+    if (isRoomListNetworkResponse(url)) {
+      roomResponseEntryCount += 1;
+    }
+  }
+  return {
+    responseParseEntryCount: entries.length,
+    roomResponseEntryCount,
+    nonRoomResponseEntryCount: Math.max(0, entries.length - roomResponseEntryCount),
+    uniqueResponseUrlCount: seenUrls.size,
+    duplicateResponseUrlCount
+  };
+}
+
 async function readEdgeResponseBodyWithRetry({
   connection,
   sessionId,
@@ -921,10 +947,10 @@ async function parseEdgeNetworkResponses({
       ? nonRoomResponseBodyTimeoutBudget
       : EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET;
   const entries = getPrioritizedEdgeResponseEntries(requestMeta);
-  const roomEntryCount = entries.filter(([, meta]) =>
-    isRoomListNetworkResponse(meta && meta.url)
-  ).length;
+  const entryDiagnostics = buildResponseEntryDiagnostics(entries);
+  const roomEntryCount = entryDiagnostics.roomResponseEntryCount;
   const stats = {
+    ...entryDiagnostics,
     parsedResponseCount: 0,
     roomResponseCount: 0,
     skippedResponseCount: 0,
@@ -932,6 +958,11 @@ async function parseEdgeNetworkResponses({
     responseParseCandidateCount: 0,
     responseBodyRetryCount: 0,
     responseBodyTimeoutCount: 0,
+    responseBodyReadCount: 0,
+    responseBodyTotalBytes: 0,
+    responseBodyMaxBytes: 0,
+    roomResponseBodyReadCount: 0,
+    nonRoomResponseBodyReadCount: 0,
     roomResponseBodyErrorCount: 0,
     roomResponseBodyTimeoutCount: 0,
     roomResponseBodyEmptyCount: 0,
@@ -1003,6 +1034,15 @@ async function parseEdgeNetworkResponses({
           stats.roomResponseBodyEmptyCount += 1;
         }
         continue;
+      }
+      const responseBodyBytes = Buffer.byteLength(bodyResult.body, 'utf8');
+      stats.responseBodyReadCount += 1;
+      stats.responseBodyTotalBytes += responseBodyBytes;
+      stats.responseBodyMaxBytes = Math.max(stats.responseBodyMaxBytes, responseBodyBytes);
+      if (isRoomResponse) {
+        stats.roomResponseBodyReadCount += 1;
+      } else {
+        stats.nonRoomResponseBodyReadCount += 1;
       }
       const parsed = safeJsonParse(bodyResult.body);
       if (!parsed) {
@@ -1681,6 +1721,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         });
         roomApiDebugIndex = parseStats.roomApiDebugIndex;
         responseParsePhase.end('success', {
+          response_parse_entry_count: parseStats.responseParseEntryCount,
+          room_response_entry_count: parseStats.roomResponseEntryCount,
+          non_room_response_entry_count: parseStats.nonRoomResponseEntryCount,
+          unique_response_url_count: parseStats.uniqueResponseUrlCount,
+          duplicate_response_url_count: parseStats.duplicateResponseUrlCount,
           parsed_response_count: parseStats.parsedResponseCount,
           room_response_count: parseStats.roomResponseCount,
           skipped_response_count: parseStats.skippedResponseCount,
@@ -1693,6 +1738,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           raw_fallback_candidate_count: parseStats.rawFallbackCandidateCount,
           response_body_retry_count: parseStats.responseBodyRetryCount,
           response_body_timeout_count: parseStats.responseBodyTimeoutCount,
+          response_body_read_count: parseStats.responseBodyReadCount,
+          response_body_total_bytes: parseStats.responseBodyTotalBytes,
+          response_body_max_bytes: parseStats.responseBodyMaxBytes,
+          room_response_body_read_count: parseStats.roomResponseBodyReadCount,
+          non_room_response_body_read_count: parseStats.nonRoomResponseBodyReadCount,
           room_response_body_error_count: parseStats.roomResponseBodyErrorCount,
           room_response_body_timeout_count: parseStats.roomResponseBodyTimeoutCount,
           room_response_body_empty_count: parseStats.roomResponseBodyEmptyCount,
@@ -1833,6 +1883,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         });
         roomApiDebugIndex = parseStats.roomApiDebugIndex;
         responseParsePhase.end('success', {
+          response_parse_entry_count: parseStats.responseParseEntryCount,
+          room_response_entry_count: parseStats.roomResponseEntryCount,
+          non_room_response_entry_count: parseStats.nonRoomResponseEntryCount,
+          unique_response_url_count: parseStats.uniqueResponseUrlCount,
+          duplicate_response_url_count: parseStats.duplicateResponseUrlCount,
           parsed_response_count: parseStats.parsedResponseCount,
           room_response_count: parseStats.roomResponseCount,
           skipped_response_count: parseStats.skippedResponseCount,
@@ -1845,6 +1900,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           raw_fallback_candidate_count: parseStats.rawFallbackCandidateCount,
           response_body_retry_count: parseStats.responseBodyRetryCount,
           response_body_timeout_count: parseStats.responseBodyTimeoutCount,
+          response_body_read_count: parseStats.responseBodyReadCount,
+          response_body_total_bytes: parseStats.responseBodyTotalBytes,
+          response_body_max_bytes: parseStats.responseBodyMaxBytes,
+          room_response_body_read_count: parseStats.roomResponseBodyReadCount,
+          non_room_response_body_read_count: parseStats.nonRoomResponseBodyReadCount,
           room_response_body_error_count: parseStats.roomResponseBodyErrorCount,
           room_response_body_timeout_count: parseStats.roomResponseBodyTimeoutCount,
           room_response_body_empty_count: parseStats.roomResponseBodyEmptyCount,

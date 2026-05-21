@@ -82,6 +82,39 @@ const buildGenericClickKey = (element, text, rect) => {
     className.slice(0, 40)
   ].join('|');
 };
+const EXPLICIT_EXPAND_SCAN_SELECTORS = [
+  'button',
+  'a',
+  'li',
+  'label',
+  '[role="button"]',
+  '[role="link"]',
+  '[aria-expanded]',
+  '[data-testid]',
+  '[data-click]'
+];
+const FALLBACK_EXPAND_SCAN_SELECTORS = [
+  ...EXPLICIT_EXPAND_SCAN_SELECTORS,
+  'div',
+  'span'
+];
+const getExpandScanElements = (includeGenericText = true) => Array.from(document.querySelectorAll(
+  (includeGenericText ? FALLBACK_EXPAND_SCAN_SELECTORS : EXPLICIT_EXPAND_SCAN_SELECTORS).join(', ')
+));
+const isActionableExplicitExpandElement = (element, text, rect) => {
+  const tagName = element.tagName || '';
+  const role = element.getAttribute('role') || '';
+  const isActionableTag = ['BUTTON', 'A', 'LI'].includes(tagName);
+  const isActionableRole = /button|link|tab/i.test(role);
+  const hasClickHint = Boolean(
+    element.onclick ||
+      element.getAttribute('aria-expanded') ||
+      element.getAttribute('data-testid') ||
+      element.getAttribute('data-click')
+  );
+  const compactEnough = text.length <= 80 && rect.height <= 120 && rect.width <= window.innerWidth * 0.98;
+  return isActionableTag || isActionableRole || hasClickHint || compactEnough;
+};
 const isActionableGenericRoomElement = (element, text, rect) => {
   const tagName = element.tagName || '';
   const role = element.getAttribute('role') || '';
@@ -105,6 +138,15 @@ const finishStats = (before, extra = {}) => {
   return {
     clickedCount: extra.clickedCount || 0,
     earlyStopCount: extra.earlyStopCount || 0,
+    emptyCloseFastPathCount: extra.emptyCloseFastPathCount || 0,
+    initialExpandFastPathCount: extra.initialExpandFastPathCount || 0,
+    scanCandidateCount: extra.scanCandidateCount || 0,
+    explicitCandidateCount: extra.explicitCandidateCount || 0,
+    genericCandidateCount: extra.genericCandidateCount || 0,
+    clickScanElapsedMs: Math.round(extra.clickScanElapsedMs || 0),
+    explicitScanCandidateCount: extra.explicitScanCandidateCount || 0,
+    fallbackScanCandidateCount: extra.fallbackScanCandidateCount || 0,
+    genericFallbackScanCount: extra.genericFallbackScanCount || 0,
     skippedDuplicateClickCount: extra.skippedDuplicateClickCount || 0,
     genericClickCount: extra.genericClickCount || 0,
     scrollCount: extra.scrollCount || 0,
@@ -162,26 +204,36 @@ const closeReviewPanels = () => {
   window.scrollTo({ top: 0, behavior: 'instant' });
   return clicked;
 };
-const clickExpandButtons = () => {
-  const expandTexts = ['展示额外', '隐藏房型', '更多房型价格', '展开全部房型',
+const scanExpandElements = (elements, options = {}) => {
+  const allowGeneric = options.allowGeneric !== false;
+  const processedElements = options.processedElements || new Set();
+  const expandTexts = ['展示额外', '更多房型价格', '展开全部房型',
                        '查看全部房型', '全部房型'];
   const genericTexts = ['房型'];
   let clicked = 0;
   let skippedDuplicateClickCount = 0;
   let genericClickCount = 0;
-  const elements = Array.from(document.querySelectorAll(
-    'button, a, div, span, li, p, h1, h2, h3, h4, h5, h6, section, article, label'
-  ));
+  let explicitCandidateCount = 0;
+  let genericCandidateCount = 0;
+  let scanCandidateCount = 0;
   const { clickedElements, clickedGenericKeys } = getSettleClickState();
   for (const element of elements) {
+    if (processedElements.has(element)) continue;
+    processedElements.add(element);
+    scanCandidateCount += 1;
     const text = (element.innerText || element.textContent || '').replace(/\\s+/g, ' ').trim();
     if (!text) continue;
+    if (isCollapseOnlyRoomToggle(text)) continue;
     const rect = element.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) continue;
-    const isExpand = expandTexts.some((item) => text.includes(item));
-    const isGeneric = !isExpand && genericTexts.some((item) => text.includes(item))
+    const isExpand =
+      expandTexts.some((item) => text.includes(item)) &&
+      isActionableExplicitExpandElement(element, text, rect);
+    const isGeneric = allowGeneric && !isExpand && genericTexts.some((item) => text.includes(item))
                       && isActionableGenericRoomElement(element, text, rect);
     if (!isExpand && !isGeneric) continue;
+    if (isExpand) explicitCandidateCount += 1;
+    if (isGeneric) genericCandidateCount += 1;
     if (clickedElements.has(element)) {
       skippedDuplicateClickCount += 1;
       continue;
@@ -202,8 +254,62 @@ const clickExpandButtons = () => {
     dispatchClick(element, rect);
     clicked += 1;
   }
-  return { clickedCount: clicked, skippedDuplicateClickCount, genericClickCount };
+  return {
+    clickedCount: clicked,
+    skippedDuplicateClickCount,
+    genericClickCount,
+    scanCandidateCount,
+    explicitCandidateCount,
+    genericCandidateCount
+  };
 };
+const mergeClickStats = (target, next) => {
+  target.clickedCount += next.clickedCount || 0;
+  target.skippedDuplicateClickCount += next.skippedDuplicateClickCount || 0;
+  target.genericClickCount += next.genericClickCount || 0;
+  target.scanCandidateCount += next.scanCandidateCount || 0;
+  target.explicitCandidateCount += next.explicitCandidateCount || 0;
+  target.genericCandidateCount += next.genericCandidateCount || 0;
+};
+const clickExpandButtons = () => {
+  const scanStartedAt = performance.now();
+  const processedElements = new Set();
+  const result = {
+    clickedCount: 0,
+    skippedDuplicateClickCount: 0,
+    genericClickCount: 0,
+    scanCandidateCount: 0,
+    explicitCandidateCount: 0,
+    genericCandidateCount: 0,
+    clickScanElapsedMs: 0,
+    explicitScanCandidateCount: 0,
+    fallbackScanCandidateCount: 0,
+    genericFallbackScanCount: 0
+  };
+  const explicitStats = scanExpandElements(getExpandScanElements(false), {
+    allowGeneric: false,
+    processedElements
+  });
+  mergeClickStats(result, explicitStats);
+  result.explicitScanCandidateCount = explicitStats.scanCandidateCount;
+
+  if (explicitStats.clickedCount === 0) {
+    result.genericFallbackScanCount = 1;
+    const fallbackStats = scanExpandElements(getExpandScanElements(true), {
+      allowGeneric: true,
+      processedElements
+    });
+    mergeClickStats(result, fallbackStats);
+    result.fallbackScanCandidateCount = fallbackStats.scanCandidateCount;
+  }
+
+  result.clickScanElapsedMs = performance.now() - scanStartedAt;
+  return result;
+};
+const isCollapseOnlyRoomToggle = (text) => (
+  /隐藏房型|收起房型|收起全部|折叠房型/.test(text) &&
+  !/展示额外|更多房型价格|展开全部房型|查看全部房型|全部房型/.test(text)
+);
 const getScrollableContainers = () => Array.from(document.querySelectorAll('*')).filter(el => {
   const style = window.getComputedStyle(el);
   return (style.overflowY === 'auto' || style.overflowY === 'scroll')
@@ -244,6 +350,13 @@ const scrollAllContainers = async () => {
   let clickedCount = 0;
   let skippedDuplicateClickCount = 0;
   let genericClickCount = 0;
+  let scanCandidateCount = 0;
+  let explicitCandidateCount = 0;
+  let genericCandidateCount = 0;
+  let clickScanElapsedMs = 0;
+  let explicitScanCandidateCount = 0;
+  let fallbackScanCandidateCount = 0;
+  let genericFallbackScanCount = 0;
   let scrollCount = 0;
   for (const container of scrollableContainers) {
     for (const ratio of [0, 0.5, 1]) {
@@ -255,6 +368,13 @@ const scrollAllContainers = async () => {
       clickedCount += clicked.clickedCount;
       skippedDuplicateClickCount += clicked.skippedDuplicateClickCount;
       genericClickCount += clicked.genericClickCount;
+      scanCandidateCount += clicked.scanCandidateCount;
+      explicitCandidateCount += clicked.explicitCandidateCount;
+      genericCandidateCount += clicked.genericCandidateCount;
+      clickScanElapsedMs += clicked.clickScanElapsedMs;
+      explicitScanCandidateCount += clicked.explicitScanCandidateCount;
+      fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
+      genericFallbackScanCount += clicked.genericFallbackScanCount;
       if (clicked.clickedCount > 0) {
         await waitForDomIdle(180, 700);
       } else {
@@ -267,6 +387,13 @@ const scrollAllContainers = async () => {
     clickedCount,
     skippedDuplicateClickCount,
     genericClickCount,
+    scanCandidateCount,
+    explicitCandidateCount,
+    genericCandidateCount,
+    clickScanElapsedMs,
+    explicitScanCandidateCount,
+    fallbackScanCandidateCount,
+    genericFallbackScanCount,
     scrollCount,
     containerCount: scrollableContainers.length,
     likelyContainerCount: containerSelection.likelyContainerCount,
@@ -305,6 +432,14 @@ function normalizeStepStats(stats = {}) {
     clickedCount: Number(stats.clickedCount || 0),
     earlyStopCount: Number(stats.earlyStopCount || 0),
     emptyCloseFastPathCount: Number(stats.emptyCloseFastPathCount || 0),
+    initialExpandFastPathCount: Number(stats.initialExpandFastPathCount || 0),
+    scanCandidateCount: Number(stats.scanCandidateCount || 0),
+    explicitCandidateCount: Number(stats.explicitCandidateCount || 0),
+    genericCandidateCount: Number(stats.genericCandidateCount || 0),
+    clickScanElapsedMs: Number(stats.clickScanElapsedMs || 0),
+    explicitScanCandidateCount: Number(stats.explicitScanCandidateCount || 0),
+    fallbackScanCandidateCount: Number(stats.fallbackScanCandidateCount || 0),
+    genericFallbackScanCount: Number(stats.genericFallbackScanCount || 0),
     skippedDuplicateClickCount: Number(stats.skippedDuplicateClickCount || 0),
     genericClickCount: Number(stats.genericClickCount || 0),
     scrollCount: Number(stats.scrollCount || 0),
@@ -324,6 +459,14 @@ function toPerfFields(stats, trackedUrlCountBefore, trackedUrlCountAfter) {
     clicked_count: stats.clickedCount,
     early_stop_count: stats.earlyStopCount,
     empty_close_fast_path_count: stats.emptyCloseFastPathCount,
+    initial_expand_fast_path_count: stats.initialExpandFastPathCount,
+    scan_candidate_count: stats.scanCandidateCount,
+    explicit_candidate_count: stats.explicitCandidateCount,
+    generic_candidate_count: stats.genericCandidateCount,
+    click_scan_elapsed_ms: stats.clickScanElapsedMs,
+    explicit_scan_candidate_count: stats.explicitScanCandidateCount,
+    fallback_scan_candidate_count: stats.fallbackScanCandidateCount,
+    generic_fallback_scan_count: stats.genericFallbackScanCount,
     skipped_duplicate_click_count: stats.skippedDuplicateClickCount,
     generic_click_count: stats.genericClickCount,
     scroll_count: stats.scrollCount,
@@ -344,6 +487,14 @@ function mergeStepStats(aggregate, stats) {
   aggregate.clickedCount += stats.clickedCount;
   aggregate.earlyStopCount += stats.earlyStopCount;
   aggregate.emptyCloseFastPathCount += stats.emptyCloseFastPathCount;
+  aggregate.initialExpandFastPathCount += stats.initialExpandFastPathCount;
+  aggregate.scanCandidateCount += stats.scanCandidateCount;
+  aggregate.explicitCandidateCount += stats.explicitCandidateCount;
+  aggregate.genericCandidateCount += stats.genericCandidateCount;
+  aggregate.clickScanElapsedMs += stats.clickScanElapsedMs;
+  aggregate.explicitScanCandidateCount += stats.explicitScanCandidateCount;
+  aggregate.fallbackScanCandidateCount += stats.fallbackScanCandidateCount;
+  aggregate.genericFallbackScanCount += stats.genericFallbackScanCount;
   aggregate.skippedDuplicateClickCount += stats.skippedDuplicateClickCount;
   aggregate.genericClickCount += stats.genericClickCount;
   aggregate.scrollCount += stats.scrollCount;
@@ -490,6 +641,14 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     clickedCount: 0,
     earlyStopCount: 0,
     emptyCloseFastPathCount: 0,
+    initialExpandFastPathCount: 0,
+    scanCandidateCount: 0,
+    explicitCandidateCount: 0,
+    genericCandidateCount: 0,
+    clickScanElapsedMs: 0,
+    explicitScanCandidateCount: 0,
+    fallbackScanCandidateCount: 0,
+    genericFallbackScanCount: 0,
     skippedDuplicateClickCount: 0,
     genericClickCount: 0,
     scrollCount: 0,
@@ -527,14 +686,16 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
       body: `
         const before = collectStats();
         window.scrollTo({ top: 0, behavior: 'instant' });
-        await sleep(140);
+        await sleep(90);
         const clickStats = clickExpandButtons();
+        let initialExpandFastPathCount = 0;
         if (clickStats.clickedCount > 0) {
-          await waitForDomIdle(220, 900);
+          await waitForDomIdle(200, 800);
         } else {
-          await sleep(180);
+          initialExpandFastPathCount = 1;
+          await sleep(55);
         }
-        return JSON.stringify(finishStats(before, { ...clickStats, scrollCount: 1 }));
+        return JSON.stringify(finishStats(before, { ...clickStats, initialExpandFastPathCount, scrollCount: 1 }));
       `
     },
     {
@@ -549,6 +710,13 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         let earlyStopCount = 0;
         let skippedDuplicateClickCount = 0;
         let genericClickCount = 0;
+        let scanCandidateCount = 0;
+        let explicitCandidateCount = 0;
+        let genericCandidateCount = 0;
+        let clickScanElapsedMs = 0;
+        let explicitScanCandidateCount = 0;
+        let fallbackScanCandidateCount = 0;
+        let genericFallbackScanCount = 0;
         let scrollCount = 0;
         let previousRoomKeywordCount = before.roomKeywordCount;
         let stableRoomSignalRounds = 0;
@@ -557,15 +725,22 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           const y = Math.round((currentMaxScroll * index) / steps);
           window.scrollTo({ top: y, behavior: 'instant' });
           scrollCount += 1;
-          await sleep(180);
+          await sleep(150);
           const clicked = clickExpandButtons();
           clickedCount += clicked.clickedCount;
           skippedDuplicateClickCount += clicked.skippedDuplicateClickCount;
           genericClickCount += clicked.genericClickCount;
+          scanCandidateCount += clicked.scanCandidateCount;
+          explicitCandidateCount += clicked.explicitCandidateCount;
+          genericCandidateCount += clicked.genericCandidateCount;
+          clickScanElapsedMs += clicked.clickScanElapsedMs;
+          explicitScanCandidateCount += clicked.explicitScanCandidateCount;
+          fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
+          genericFallbackScanCount += clicked.genericFallbackScanCount;
           if (clicked.clickedCount > 0) {
-            await waitForDomIdle(220, 900);
+            await waitForDomIdle(180, 750);
           } else {
-            await sleep(70);
+            await sleep(45);
           }
           const currentStats = collectStats();
           const currentHeight = currentStats.documentHeight;
@@ -599,7 +774,20 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
             break;
           }
         }
-        return JSON.stringify(finishStats(before, { clickedCount, earlyStopCount, skippedDuplicateClickCount, genericClickCount, scrollCount }));
+        return JSON.stringify(finishStats(before, {
+          clickedCount,
+          earlyStopCount,
+          skippedDuplicateClickCount,
+          genericClickCount,
+          scanCandidateCount,
+          explicitCandidateCount,
+          genericCandidateCount,
+          clickScanElapsedMs,
+          explicitScanCandidateCount,
+          fallbackScanCandidateCount,
+          genericFallbackScanCount,
+          scrollCount
+        }));
       `
     },
     {
