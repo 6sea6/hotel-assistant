@@ -17,6 +17,7 @@ import { showNotification } from './notification.js';
 import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from './ui-utils.js';
 import { isHotelInputPriorityActive } from './render-scheduler.js';
 import { actions } from './actions.js';
+import { refreshCustomSelects } from './custom-select.js';
 
 /* ---- 打开/关闭模板弹窗 ---- */
 
@@ -309,6 +310,7 @@ export function setupTemplateSyncListener() {
     try {
       await actions.reloadAllData();
       updateTemplateFilter();
+      refreshCustomSelects();
       renderTemplateList();
       actions.renderHotelList();
       console.log('[事件监听] 模板同步完成:', data);

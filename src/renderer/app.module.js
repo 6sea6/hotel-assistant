@@ -117,6 +117,7 @@ import {
 } from './modules/ai-assistant.js';
 
 import { exportRankingImage } from './modules/ranking-image.js';
+import { setupCustomSelects, refreshCustomSelects } from './modules/custom-select.js';
 
 import {
   applyAppMetadata,
@@ -391,6 +392,8 @@ async function initializeApp() {
       setupEventListeners();
       setupMenuListeners();
       setupTemplateSyncListener();
+      setupCustomSelects();
+      refreshCustomSelects();
       checkAndShowManual();
       console.log('[初始化] 界面渲染完成');
     });

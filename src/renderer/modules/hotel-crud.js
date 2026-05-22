@@ -21,6 +21,7 @@ import {
   scheduleHotelModalFocus
 } from './ui-utils.js';
 import { actions } from './actions.js';
+import { refreshCustomSelects } from './custom-select.js';
 
 /* ---- 公共数据加载 ---- */
 
@@ -137,6 +138,7 @@ export function openAddHotelModal(templateId = null) {
     selectedValue: templateId || '',
     applyTemplateOnReady: Boolean(templateId)
   });
+  refreshCustomSelects();
 }
 
 export function editHotel(id) {
@@ -185,6 +187,7 @@ export function editHotel(id) {
   setModalActive('hotelModal', true);
   scheduleHotelModalFocus();
   updateHotelTemplateSelect({ selectedValue: hotel.template_id || '' });
+  refreshCustomSelects();
 }
 
 export function closeHotelModal() {
@@ -235,6 +238,8 @@ function updateHotelTemplateSelect(options = {}) {
     if (applyTemplateOnReady && select.value) {
       applyTemplateToForm();
     }
+
+    refreshCustomSelects();
   };
 
   requestAnimationFrame(() => renderBatch());

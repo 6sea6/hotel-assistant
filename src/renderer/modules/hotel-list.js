@@ -48,6 +48,7 @@ import {
   extractTimeNumber
 } from './hotel-filters.js';
 import { actions } from './actions.js';
+import { refreshCustomSelects } from './custom-select.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
@@ -117,6 +118,8 @@ export function syncHotelNameFilterOptions(options = {}) {
       select.value = '';
     }
   }
+
+  refreshCustomSelects();
 
   return select.value;
 }

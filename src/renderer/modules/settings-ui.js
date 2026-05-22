@@ -12,6 +12,7 @@ import {
   startActionButtonConfirmation
 } from './ui-utils.js';
 import { actions } from './actions.js';
+import { refreshCustomSelects } from './custom-select.js';
 
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
@@ -57,6 +58,7 @@ export function closePersonalizationModal() {
 export function openListPrefilterSettings() {
   setModalActive('listPrefilterModal', true);
   applyListPrefilterSettings();
+  refreshCustomSelects();
 }
 
 export function closeListPrefilterSettings() {
