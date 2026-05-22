@@ -171,6 +171,35 @@ function getPrioritizedEdgeResponseEntries(requestMeta) {
   return [...roomEntries, ...otherEntries];
 }
 
+function buildEdgeResponseReadPlan(entries) {
+  const roomGroups = new Map();
+  const roomGroupOrder = [];
+  const otherEntries = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const [, meta] = entry;
+    if (!isRoomListNetworkResponse(meta && meta.url)) {
+      otherEntries.push(entry);
+      continue;
+    }
+    const urlKey = String((meta && meta.url) || '');
+    if (!roomGroups.has(urlKey)) {
+      roomGroups.set(urlKey, []);
+      roomGroupOrder.push(urlKey);
+    }
+    roomGroups.get(urlKey).push(entry);
+  }
+
+  const roomEntries = [];
+  for (const urlKey of roomGroupOrder) {
+    const group = roomGroups.get(urlKey) || [];
+    for (let index = group.length - 1; index >= 0; index -= 1) {
+      roomEntries.push(group[index]);
+    }
+  }
+
+  return [...roomEntries, ...otherEntries];
+}
+
 const EDGE_BLOCKED_RESOURCE_PATTERNS = [
   '*://*/*.png*',
   '*://*/*.jpg*',
@@ -952,6 +981,7 @@ async function parseEdgeNetworkResponses({
       ? nonRoomResponseBodyTimeoutBudget
       : EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET;
   const entries = getPrioritizedEdgeResponseEntries(requestMeta);
+  const readPlan = buildEdgeResponseReadPlan(entries);
   const entryDiagnostics = buildResponseEntryDiagnostics(entries);
   const roomEntryCount = entryDiagnostics.roomResponseEntryCount;
   const stats = {
@@ -959,6 +989,8 @@ async function parseEdgeNetworkResponses({
     parsedResponseCount: 0,
     roomResponseCount: 0,
     skippedResponseCount: 0,
+    duplicateRoomResponseSkippedCount: 0,
+    roomResponseUrlFallbackCount: 0,
     fallbackFullParseUsed: roomEntryCount === 0,
     responseParseCandidateCount: 0,
     responseBodyRetryCount: 0,
@@ -991,21 +1023,35 @@ async function parseEdgeNetworkResponses({
   const state = {
     fastPathComplete: false
   };
+  const attemptedRoomResponseUrls = new Set();
+  const successfulRoomResponseUrls = new Set();
 
-  for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
-    const [requestId, meta] = entries[entryIndex];
+  for (let entryIndex = 0; entryIndex < readPlan.length; entryIndex += 1) {
+    const [requestId, meta] = readPlan[entryIndex];
     assertEdgeNotAborted(signal, 'edge_response_parse');
     if (Date.now() - startedAt >= maxElapsedMs && stats.roomResponseCount > 0) {
       stats.responseParseStoppedReason = 'max_elapsed_after_room_response';
       break;
     }
     if (shouldSkipEdgeResponseAfterRoomSuccess(meta, state)) {
-      stats.skippedResponseCount += entries.length - entryIndex;
+      stats.skippedResponseCount += readPlan.length - entryIndex;
       stats.responseParseStoppedReason = 'room_fast_path_complete';
       break;
     }
     try {
       const isRoomResponse = isRoomListNetworkResponse(meta.url);
+      const roomResponseUrl = isRoomResponse ? String(meta.url || '') : '';
+      if (isRoomResponse && successfulRoomResponseUrls.has(roomResponseUrl)) {
+        stats.duplicateRoomResponseSkippedCount += 1;
+        stats.skippedResponseCount += 1;
+        continue;
+      }
+      if (isRoomResponse && attemptedRoomResponseUrls.has(roomResponseUrl)) {
+        stats.roomResponseUrlFallbackCount += 1;
+      }
+      if (isRoomResponse) {
+        attemptedRoomResponseUrls.add(roomResponseUrl);
+      }
       if (
         !isRoomResponse &&
         stats.roomResponseCount > 0 &&
@@ -1078,6 +1124,7 @@ async function parseEdgeNetworkResponses({
       stats.parsedResponseCount += 1;
       if (isRoomResponse) {
         stats.roomResponseCount += 1;
+        successfulRoomResponseUrls.add(roomResponseUrl);
       }
       if (/getHotelRoomList|getHotelRoomPopInfo/i.test(meta.url)) {
         stats.roomApiDebugIndex += 1;
@@ -1829,6 +1876,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           parsed_response_count: parseStats.parsedResponseCount,
           room_response_count: parseStats.roomResponseCount,
           skipped_response_count: parseStats.skippedResponseCount,
+          duplicate_room_response_skipped_count: parseStats.duplicateRoomResponseSkippedCount,
+          room_response_url_fallback_count: parseStats.roomResponseUrlFallbackCount,
           fallback_full_parse_used: parseStats.fallbackFullParseUsed,
           response_fast_path_complete: parseStats.fastPathComplete,
           response_parse_candidate_count: parseStats.responseParseCandidateCount,
@@ -1999,6 +2048,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           parsed_response_count: parseStats.parsedResponseCount,
           room_response_count: parseStats.roomResponseCount,
           skipped_response_count: parseStats.skippedResponseCount,
+          duplicate_room_response_skipped_count: parseStats.duplicateRoomResponseSkippedCount,
+          room_response_url_fallback_count: parseStats.roomResponseUrlFallbackCount,
           fallback_full_parse_used: parseStats.fallbackFullParseUsed,
           response_fast_path_complete: parseStats.fastPathComplete,
           response_parse_candidate_count: parseStats.responseParseCandidateCount,
@@ -2181,6 +2232,10 @@ Object.defineProperties(exported, {
   },
   getPrioritizedEdgeResponseEntries: {
     value: getPrioritizedEdgeResponseEntries,
+    enumerable: false
+  },
+  buildEdgeResponseReadPlan: {
+    value: buildEdgeResponseReadPlan,
     enumerable: false
   },
   getEdgeBlockedResourcePatterns: {

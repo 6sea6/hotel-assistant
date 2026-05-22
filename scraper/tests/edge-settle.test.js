@@ -1114,6 +1114,164 @@ test('edge response parse stops reading non-room responses after room API fast p
   }
 });
 
+test('edge response parse reads latest duplicate room response first and skips stale duplicate after success', async () => {
+  const roomUrl = 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList';
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.roomName
+        ? [
+            {
+              title: payload.roomName,
+              standard_title: payload.roomName,
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const readRequestIds = [];
+    const roomBlocks = [];
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async (_method, params) => {
+          readRequestIds.push(params.requestId);
+          if (params.requestId === 'stale-room-request') {
+            throw new Error('No data found for resource with given identifier');
+          }
+          return {
+            body: JSON.stringify({ roomName: '标准大床房' }),
+            base64Encoded: false
+          };
+        }
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'stale-room-request',
+          {
+            url: roomUrl,
+            mimeType: 'application/json'
+          }
+        ],
+        [
+          'fresh-room-request',
+          {
+            url: roomUrl,
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.deepEqual(readRequestIds, ['fresh-room-request']);
+    assert.equal(stats.responseParseEntryCount, 2);
+    assert.equal(stats.duplicateResponseUrlCount, 1);
+    assert.equal(stats.roomResponseEntryCount, 2);
+    assert.equal(stats.roomResponseCount, 1);
+    assert.equal(stats.duplicateRoomResponseSkippedCount, 1);
+    assert.equal(stats.roomResponseUrlFallbackCount, 0);
+    assert.equal(stats.roomResponseBodyErrorCount, 0);
+    assert.equal(roomBlocks.length, 1);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, debugPath]);
+  }
+});
+
+test('edge response parse falls back to older duplicate room response when latest request body is unavailable', async () => {
+  const roomUrl = 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList';
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.roomName
+        ? [
+            {
+              title: payload.roomName,
+              standard_title: payload.roomName,
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const readRequestIds = [];
+    const roomBlocks = [];
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async (_method, params) => {
+          readRequestIds.push(params.requestId);
+          if (params.requestId === 'fresh-room-request') {
+            throw new Error('No data found for resource with given identifier');
+          }
+          return {
+            body: JSON.stringify({ roomName: '标准大床房' }),
+            base64Encoded: false
+          };
+        }
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'stale-room-request',
+          {
+            url: roomUrl,
+            mimeType: 'application/json'
+          }
+        ],
+        [
+          'fresh-room-request',
+          {
+            url: roomUrl,
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891',
+      roomResponseBodyMaxAttempts: 1
+    });
+
+    assert.deepEqual(readRequestIds, ['fresh-room-request', 'stale-room-request']);
+    assert.equal(stats.roomResponseCount, 1);
+    assert.equal(stats.duplicateRoomResponseSkippedCount, 0);
+    assert.equal(stats.roomResponseUrlFallbackCount, 1);
+    assert.equal(stats.roomResponseBodyErrorCount, 1);
+    assert.equal(roomBlocks.length, 1);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, debugPath]);
+  }
+});
+
 test('edge response parse reports response entry, duplicate URL, and body byte diagnostics', async () => {
   const roomUrl = 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList';
   const detailUrl = 'https://m.ctrip.com/restapi/soa2/99999/getHotelDetail';
@@ -1185,12 +1343,13 @@ test('edge response parse reports response entry, duplicate URL, and body byte d
       debugHotelId: '112433891'
     });
 
-    assert.equal(readRequestIds.includes('room-request-1'), true);
+    assert.deepEqual(readRequestIds, ['room-request-2']);
     assert.equal(stats.responseParseEntryCount, 3);
     assert.equal(stats.uniqueResponseUrlCount, 2);
     assert.equal(stats.duplicateResponseUrlCount, 1);
     assert.equal(stats.roomResponseEntryCount, 2);
     assert.equal(stats.nonRoomResponseEntryCount, 1);
+    assert.equal(stats.duplicateRoomResponseSkippedCount, 1);
     assert.equal(stats.responseBodyReadCount, readRequestIds.length);
     assert.equal(stats.responseBodyTotalBytes, Buffer.byteLength(roomBody) * readRequestIds.length);
     assert.equal(stats.responseBodyMaxBytes, Buffer.byteLength(roomBody));
