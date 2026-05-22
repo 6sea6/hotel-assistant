@@ -32,42 +32,12 @@ const SUPPORTED_THEMES = new Set([
   'colorful-mode'
 ]);
 
-let aiConfigLoader = null;
-
-export function setAiConfigLoader(loader) {
-  aiConfigLoader = typeof loader === 'function' ? loader : null;
-}
-
-async function loadAiInterfaceSettings() {
-  if (aiConfigLoader) {
-    await aiConfigLoader();
-    return;
-  }
-  if (typeof window.loadAiConfig === 'function') {
-    await window.loadAiConfig();
-  }
-}
-
 /* ---- 设置弹窗 ---- */
 
 export async function openSettings() {
   setModalActive('settingsModal', true);
   applySettings();
   await loadDataPath();
-  await loadAiInterfaceSettings();
-}
-
-export async function openAiInterfaceSettings() {
-  await openSettings();
-  const section = $('aiInterfaceSettings');
-  if (section) {
-    section.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-
-  const providerSelect = $('aiProviderSelect');
-  if (providerSelect) {
-    window.setTimeout(() => providerSelect.focus(), 180);
-  }
 }
 
 export function closeSettingsModal() {

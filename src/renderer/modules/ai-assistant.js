@@ -2,10 +2,8 @@ import { state } from './state.js';
 import {
   $,
   escapeHtml,
-  getChecked,
   getValue,
   setChecked,
-  setText,
   setValue
 } from './dom-helpers.js';
 import { showNotification } from './notification.js';
@@ -19,7 +17,6 @@ import {
   updateAiInputCount as updateTaskInputCount
 } from './ai-task-console.js';
 
-const DEFAULT_AI_TEMPERATURE = 0.2;
 const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
 let activeCollectTaskId = '';
 let backendIdleRetryTimer = 0;
@@ -51,19 +48,6 @@ function createEmptyTaskConsole() {
 function renderTaskConsole() {
   renderAiTaskConsole(state);
   updateTaskInputCount();
-}
-
-function renderProviderOptions() {
-  const select = $('aiProviderSelect');
-  if (!select || !state.aiProviderPresets.length) return;
-
-  select.innerHTML = state.aiProviderPresets
-    .map(
-      (preset) => `
-    <option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>
-  `
-    )
-    .join('');
 }
 
 function renderAiTemplateOptions() {
@@ -228,49 +212,6 @@ function findSelectedAiTemplate() {
   return (
     (state.templates || []).find((template) => String(template.id) === String(templateId)) || null
   );
-}
-
-function applyAiConfigToForm(config) {
-  const normalized = config || {};
-  setChecked('aiEnabledInput', Boolean(normalized.enabled));
-  setValue('aiProviderSelect', normalized.provider || 'deepseek');
-  setValue('aiBaseUrlInput', normalized.baseUrl || '');
-  setValue('aiModelInput', normalized.model || '');
-  renderModelOptions(normalized.provider || 'deepseek');
-  setValue('aiApiKeyInput', '');
-  setText(
-    'aiApiKeyHint',
-    normalized.hasApiKey ? '已保存 API Key；留空保存会继续使用旧 Key' : '尚未保存 API Key'
-  );
-}
-
-function getPresetById(providerId) {
-  return state.aiProviderPresets.find((preset) => preset.id === providerId) || null;
-}
-
-function renderModelOptions(providerId) {
-  const datalist = $('aiModelOptions');
-  const preset = getPresetById(providerId);
-  if (!datalist || !preset) return;
-
-  datalist.innerHTML = (preset.modelOptions || [preset.model])
-    .map(
-      (model) => `
-    <option value="${escapeHtml(model)}"></option>
-  `
-    )
-    .join('');
-}
-
-function readAiConfigForm() {
-  return {
-    enabled: getChecked('aiEnabledInput'),
-    provider: getValue('aiProviderSelect'),
-    baseUrl: getValue('aiBaseUrlInput'),
-    model: getValue('aiModelInput'),
-    apiKey: getValue('aiApiKeyInput'),
-    temperature: DEFAULT_AI_TEMPERATURE
-  };
 }
 
 function getSubmittedUrls() {
@@ -926,58 +867,6 @@ export function updateAiInputCount() {
   updateTaskInputCount();
 }
 
-export async function loadAiConfig() {
-  if (!window.electronAPI?.ai) return null;
-
-  const [presets, config] = await Promise.all([
-    window.electronAPI.ai.getPresets(),
-    window.electronAPI.ai.getConfig()
-  ]);
-  state.aiProviderPresets = presets || [];
-  state.aiProviderConfig = config || null;
-  renderProviderOptions();
-  applyAiConfigToForm(state.aiProviderConfig);
-  return state.aiProviderConfig;
-}
-
-export function onAiProviderChange() {
-  const preset = getPresetById(getValue('aiProviderSelect'));
-  if (!preset) return;
-
-  setValue('aiBaseUrlInput', preset.baseUrl);
-  setValue('aiModelInput', preset.model);
-  renderModelOptions(preset.id);
-  setValue('aiApiKeyInput', '');
-  setText('aiApiKeyHint', '切换供应商后请填写对应 API Key');
-}
-
-export async function saveAiConfig() {
-  try {
-    const saved = await window.electronAPI.ai.saveConfig(readAiConfigForm());
-    state.aiProviderConfig = saved;
-    applyAiConfigToForm(saved);
-    showNotification('AI 接口设置已保存', 'success');
-  } catch (error) {
-    console.error('保存 AI 设置失败:', error);
-    showNotification(error.message || '保存 AI 设置失败', 'error');
-  }
-}
-
-export async function testAiConnection() {
-  const button = $('aiTestBtn');
-  if (button) button.disabled = true;
-
-  try {
-    const result = await window.electronAPI.ai.testConnection(readAiConfigForm());
-    showNotification(`AI 连接成功：${result.message || 'OK'}`, 'success');
-  } catch (error) {
-    console.error('AI 连接测试失败:', error);
-    showNotification(error.message || 'AI 连接测试失败', 'error');
-  } finally {
-    if (button) button.disabled = false;
-  }
-}
-
 export async function openAiAssistant() {
   setPageVisible('hotelMain', false);
   setPageVisible('aiAssistantPage', true);
@@ -1028,7 +917,6 @@ async function initializeAiAssistant() {
     state.aiAssistantInitialized = true;
   }
 
-  await loadAiConfig();
   if (!state.templates || state.templates.length === 0) {
     try {
       state.templates = await window.electronAPI.getAllTemplates();

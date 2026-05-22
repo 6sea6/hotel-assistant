@@ -68,7 +68,6 @@ import {
   openPersonalization,
   closePersonalizationModal,
   applySettings,
-  setAiConfigLoader,
   changeTheme,
   toggleIncludeFourPersonRoomsForThreePersonTemplate,
   saveAmapApiKeySetting,
@@ -114,11 +113,7 @@ import {
   showAiTaskDetails,
   focusAiTaskStartBar,
   handleAiTaskInputChange,
-  syncAiCtripListUrlFromSettings,
-  loadAiConfig,
-  onAiProviderChange,
-  saveAiConfig,
-  testAiConnection
+  syncAiCtripListUrlFromSettings
 } from './modules/ai-assistant.js';
 
 import { exportRankingImage } from './modules/ranking-image.js';
@@ -131,8 +126,6 @@ import {
   openManual,
   closeManual
 } from './modules/about-manual.js';
-
-setAiConfigLoader(loadAiConfig);
 
 /* ============ 全局错误捕获 ============ */
 
@@ -181,8 +174,6 @@ const ACTION_HANDLERS = {
   'save-amap-api-key': () => saveAmapApiKeySetting(),
   'open-ctrip': () => openCtripWebsite(),
   'open-fliggy': () => openFliggyWebsite(),
-  'save-ai-config': () => saveAiConfig(),
-  'test-ai-connection': () => testAiConnection(),
   'open-manual': () => openManual(),
   'reset-settings': (event) => resetSettings(event),
   'save-list-prefilter-settings': async () => {
@@ -316,7 +307,6 @@ function setupStaticFormListeners() {
       }
     })
   );
-  addEvent('aiProviderSelect', 'change', onAiProviderChange);
 
   state.staticFormEventsBound = true;
 }

@@ -1073,7 +1073,7 @@ test('task console section headings do not show English eyebrow labels', () => {
   assert.match(taskConsoleSource, /任务队列/);
 });
 
-test('settings modal loads AI interface config through module wiring', () => {
+test('settings modal does not expose AI interface config wiring', () => {
   const settingsUiSource = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'settings-ui.js'),
     'utf8'
@@ -1083,10 +1083,11 @@ test('settings modal loads AI interface config through module wiring', () => {
     'utf8'
   );
 
-  assert.match(settingsUiSource, /export function setAiConfigLoader/);
-  assert.match(settingsUiSource, /await loadAiInterfaceSettings\(\)/);
-  assert.match(appModuleSource, /setAiConfigLoader,\s*changeTheme/);
-  assert.match(appModuleSource, /setAiConfigLoader\(loadAiConfig\)/);
+  assert.doesNotMatch(settingsUiSource, /setAiConfigLoader/);
+  assert.doesNotMatch(settingsUiSource, /loadAiInterfaceSettings/);
+  assert.doesNotMatch(appModuleSource, /setAiConfigLoader/);
+  assert.doesNotMatch(appModuleSource, /save-ai-config/);
+  assert.doesNotMatch(appModuleSource, /test-ai-connection/);
 });
 
 test('completed task summary card shows execution elapsed time between end time and status', async () => {

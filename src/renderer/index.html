@@ -691,28 +691,6 @@
               <span>🌐</span> 访问飞猪官网
             </button>
           </div>
-          <div class="form-group" id="aiInterfaceSettings">
-            <label>AI接口</label>
-            <div class="ai-config-grid">
-              <label class="setting-switch-container ai-config-enabled">
-                <span>启用 AI</span>
-                <label class="switch-label">
-                  <input type="checkbox" id="aiEnabledInput">
-                  <span class="switch-slider"></span>
-                </label>
-              </label>
-              <select id="aiProviderSelect" class="input"></select>
-              <input type="text" id="aiBaseUrlInput" class="input" placeholder="Base URL">
-              <input type="text" id="aiModelInput" class="input" list="aiModelOptions" placeholder="模型名称">
-              <datalist id="aiModelOptions"></datalist>
-              <input type="password" id="aiApiKeyInput" class="input" placeholder="API Key">
-            </div>
-            <small class="help-text" id="aiApiKeyHint">尚未加载 AI 接口设置</small>
-            <div class="data-path-actions">
-              <button class="btn btn-secondary btn-sm" data-action="save-ai-config">保存接口</button>
-              <button id="aiTestBtn" class="btn btn-secondary btn-sm" data-action="test-ai-connection">测试连接</button>
-            </div>
-          </div>
           <div class="form-group">
             <label>应用说明书</label>
             <button class="btn btn-primary btn-full" data-action="open-manual">
