@@ -1300,37 +1300,10 @@ function renderAiReviewResult() {
 }
 
 export function openAiReviewPanel() {
-  const reviewTask = getSelectedQueueTask();
-  const collectResult = state.aiTaskConsole && state.aiTaskConsole.collectResult;
-  if (!getCurrentReviewTaskId() || !collectResult || !collectResult.reviewInputAvailable) {
-    showNotification('当前任务没有生成可复核的数据包。', 'warning');
-    return;
-  }
-  if (collectResult.batchMode) {
-    showNotification('批量采集结果暂不支持 AI 分析重填，请采集单家酒店后使用。', 'warning');
-    return;
-  }
-
-  setReviewStateForTask(reviewTask, {
-    isOpen: true,
-    inProgress: false,
-    applyInProgress: false,
-    result: null,
-    reviewId: '',
-    userConcern: '',
-    error: '',
-    startedAt: '',
-    endedAt: ''
-  });
-  renderAiReviewResult();
-  setTimeout(() => {
-    const input = $('aiReviewConcernInput');
-    if (input) input.focus();
-  }, 0);
+  showNotification('AI分析重填功能已关闭。', 'info');
 }
 
 export function closeAiReviewPanel() {
-  syncReviewConcernFromInput();
   const reviewTask = getSelectedQueueTask();
   setReviewStateForTask(reviewTask, {
     ...getSelectedTaskReviewState(),
@@ -1340,100 +1313,11 @@ export function closeAiReviewPanel() {
 }
 
 export async function analyzeAiCollection() {
-  if (state.aiReview.inProgress) return;
-  const reviewTask = getSelectedQueueTask();
-  const taskId = getCurrentReviewTaskId();
-  const userConcern = getValue('aiReviewConcernInput');
-  if (!taskId) {
-    showNotification('缺少任务 ID，无法分析。', 'error');
-    return;
-  }
-  if (!userConcern.trim()) {
-    showNotification('请先简单说明你认为哪里不对。', 'warning');
-    return;
-  }
-
-  const startedAt = new Date().toISOString();
-  setReviewStateForTask(reviewTask, {
-    ...getSelectedTaskReviewState(),
-    inProgress: true,
-    applyInProgress: false,
-    result: null,
-    reviewId: '',
-    userConcern,
-    error: '',
-    startedAt,
-    endedAt: ''
-  });
-  renderAiReviewResult();
-
-  try {
-    const result = await window.electronAPI.ai.analyzeCollection({
-      taskId,
-      userConcern
-    });
-    setReviewStateForTask(reviewTask, {
-      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
-      result,
-      reviewId: result.reviewId || '',
-      userConcern,
-      error: ''
-    });
-    showNotification(
-      result.canApply ? '已生成重填预览，请确认后写入' : '分析完成，但证据不足，不能覆盖写入',
-      result.canApply ? 'success' : 'warning'
-    );
-  } catch (error) {
-    console.error('AI 分析重填失败:', error);
-    const errorMessage = error.message || '分析失败，请稍后重试。';
-    setReviewStateForTask(reviewTask, {
-      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
-      error: errorMessage
-    });
-    showNotification(errorMessage, 'error');
-  } finally {
-    setReviewStateForTask(reviewTask, {
-      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
-      inProgress: false,
-      endedAt: new Date().toISOString()
-    });
-    renderAiReviewResult();
-  }
+  showNotification('AI分析重填功能已关闭。', 'info');
 }
 
 export async function applyAiCollectionReview() {
-  if (state.aiReview.applyInProgress || !state.aiReview.reviewId) return;
-  const reviewTask = getSelectedQueueTask();
-  setReviewStateForTask(reviewTask, {
-    ...getSelectedTaskReviewState(),
-    applyInProgress: true,
-    userConcern: getValue('aiReviewConcernInput', state.aiReview.userConcern || '')
-  });
-  renderAiReviewResult();
-
-  try {
-    await window.electronAPI.ai.applyCollectionReview({
-      reviewId:
-        (reviewTask && reviewTask.review && reviewTask.review.reviewId) || state.aiReview.reviewId
-    });
-    await actions.reloadAllData({ includeSettings: true, invalidateCache: true, verbose: false });
-    actions.updateTemplateFilter({ interactionFirst: true });
-    actions.renderHotelList({ interactionFirst: true });
-    showNotification('AI 复核结果已覆盖写入，宾馆列表已刷新', 'success');
-    setReviewStateForTask(reviewTask, {
-      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
-      isOpen: false
-    });
-  } catch (error) {
-    console.error('AI 覆盖写入失败:', error);
-    showNotification(error.message || 'AI 覆盖写入失败', 'error');
-  } finally {
-    setReviewStateForTask(reviewTask, {
-      ...normalizeReviewState(reviewTask ? reviewTask.review : state.aiReview),
-      applyInProgress: false
-    });
-    renderAiReviewResult();
-  }
+  showNotification('AI覆盖写入功能已关闭。', 'info');
 }
 
 export function showAiTaskDetails() {

@@ -11,12 +11,12 @@ function registerAiHandlers({ ipcMain, services }) {
   ipcMain.handle('ai:config:test', async (event, config) => getAiService().testConnection(config));
   ipcMain.handle('ai:chat:send', async (event, payload) => getAiService().sendChat(payload));
   ipcMain.handle('ai:task:start', async (event, payload) => getAiService().startTask(payload));
-  ipcMain.handle('ai:collect:analyze', async (event, payload) =>
-    getAiService().analyzeCollection(payload)
-  );
-  ipcMain.handle('ai:collect:apply-review', async (event, payload) =>
-    getAiService().applyCollectionReview(payload)
-  );
+  ipcMain.handle('ai:collect:analyze', async () => {
+    throw new Error('AI分析重填功能已关闭。');
+  });
+  ipcMain.handle('ai:collect:apply-review', async () => {
+    throw new Error('AI覆盖写入功能已关闭。');
+  });
   ipcMain.handle('ai:task:cancel', () => getAiService().cancelTask());
   ipcMain.handle('ai:task:status', () => getAiService().getTaskStatus());
   ipcMain.handle('ai:ctrip-list-url:parse', (event, url) =>

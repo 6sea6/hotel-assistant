@@ -216,8 +216,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     testConnection: (config) => ipcRenderer.invoke('ai:config:test', config),
     sendChat: (payload) => ipcRenderer.invoke('ai:chat:send', payload),
     startTask: (payload) => ipcRenderer.invoke('ai:task:start', payload),
-    analyzeCollection: (payload) => ipcRenderer.invoke('ai:collect:analyze', payload),
-    applyCollectionReview: (payload) => ipcRenderer.invoke('ai:collect:apply-review', payload),
+    analyzeCollection: async () => {
+      throw new Error('AI分析重填功能已关闭。');
+    },
+    applyCollectionReview: async () => {
+      throw new Error('AI覆盖写入功能已关闭。');
+    },
     cancelTask: () => ipcRenderer.invoke('ai:task:cancel'),
     getTaskStatus: () => ipcRenderer.invoke('ai:task:status'),
     parseCtripListUrl: (url) => ipcRenderer.invoke('ai:ctrip-list-url:parse', url),

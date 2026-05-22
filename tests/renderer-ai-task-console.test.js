@@ -440,7 +440,7 @@ test('normalizeTaskState keeps AI review available for single hotel results only
     inProgress: false
   });
 
-  assert.equal(singleTaskState.canReview, true);
+  assert.equal(singleTaskState.canReview, false);
   assert.equal(singleTaskState.result.actualResultText, '测试酒店，可用房型 1 个');
   assert.doesNotMatch(singleTaskState.result.actualResultText, /价格|总价|¥|300/);
   assert.equal(batchTaskState.canReview, false);

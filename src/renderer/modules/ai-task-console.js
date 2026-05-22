@@ -799,7 +799,7 @@ export function normalizeTaskState({
     result: buildTaskResult(task),
     error: buildTaskError(task, events),
     review,
-    canReview: Boolean(taskInfo.taskId && reviewInputAvailable && !collectResult.batchMode)
+    canReview: false
   };
 }
 
