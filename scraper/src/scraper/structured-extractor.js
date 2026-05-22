@@ -270,6 +270,22 @@ function isFoldedRoomRecord(record) {
   );
 }
 
+function isFullRoomSaleRecord(record) {
+  if (!record || typeof record !== 'object') {
+    return false;
+  }
+
+  const bookingStatusInfo = record.bookingStatusInfo || {};
+  const reserveInfo = record.reserveInfo || {};
+  const remainRoomQuantity = toNumber(bookingStatusInfo.remainRoomQuantity);
+
+  return (
+    bookingStatusInfo.isFullRoom === true ||
+    reserveInfo.isFullRoom === true ||
+    remainRoomQuantity === 0
+  );
+}
+
 function hasFallbackVisibilityEvidence(physicalRoom, saleRoom, visiblePhysicalRoomIds) {
   const physicalRoomId = normalizeText(
     String(
@@ -305,7 +321,10 @@ function hasFallbackVisibilityEvidence(physicalRoom, saleRoom, visiblePhysicalRo
 }
 
 function buildCandidateFromRoomMapping(physicalRoom, saleRoom, subRoom, source) {
-  if (isFoldedRoomRecord(saleRoom) || isFoldedRoomRecord(subRoom)) {
+  if (isFoldedRoomRecord(subRoom)) {
+    return null;
+  }
+  if (isFullRoomSaleRecord(saleRoom)) {
     return null;
   }
 

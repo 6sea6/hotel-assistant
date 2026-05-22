@@ -382,6 +382,10 @@ function compactActiveCtripUrlFilters(filters = {}) {
   return active;
 }
 
+function hasActiveCtripUrlFilterSettings() {
+  return Object.keys(readCtripUrlFilterSettings({ activeOnly: true })).length > 0;
+}
+
 export function readCtripUrlFilterSettings(options = {}) {
   const settings = state.settings || {};
   const starLevels = Array.isArray(settings.aiCtripStarLevels)
@@ -434,6 +438,10 @@ async function persistCtripUrlFilterSettingsFromParsed(parsed) {
     Array.isArray(parsed && parsed.detectedKnownFilterKeys) ? parsed.detectedKnownFilterKeys : []
   );
   if (!detected.size) {
+    applyCtripUrlFilterSettingsToDom();
+    return;
+  }
+  if (hasActiveCtripUrlFilterSettings()) {
     applyCtripUrlFilterSettingsToDom();
     return;
   }

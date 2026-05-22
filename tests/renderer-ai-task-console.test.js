@@ -562,6 +562,33 @@ test('Ctrip list URL reverse sync does not clear saved filters for unknown nativ
   assert.equal(elements.get('aiCtripPriceMin').value, 50);
 });
 
+test('Ctrip list URL reverse sync does not overwrite saved filters with pasted URL filters', async () => {
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=15~Range*15*900~max,16~5*16*5&locale=zh-CN';
+  const { elements, setCalls } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMin: 600,
+    aiCtripPriceMax: 'max',
+    aiCtripStarLevels: [4],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 20,
+    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
+  };
+
+  await module.syncCtripListUrlSettingsFromInput();
+
+  assert.equal(state.settings.aiCtripPriceMin, 600);
+  assert.equal(state.settings.aiCtripPriceMax, 'max');
+  assert.deepEqual(state.settings.aiCtripStarLevels, [4]);
+  assert.deepEqual(setCalls, []);
+  assert.equal(elements.get('aiCtripPriceMin').value, 600);
+  assert.equal(elements.get('aiCtripPriceMax').value, 'max');
+});
+
 test('active Ctrip URL filters are merged into list URL without dropping unknown filters', async () => {
   const inputUrl =
     'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
