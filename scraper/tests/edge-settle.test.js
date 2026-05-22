@@ -1497,6 +1497,79 @@ test('edge DOM extract keeps API rooms and uses short timeout after room API suc
   }
 });
 
+test('edge DOM extract uses lightweight mode when room API capture is complete', async () => {
+  let evaluateTimeoutMs = null;
+  let evaluatedExpression = '';
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression, options = {}) => {
+      evaluateTimeoutMs = options.timeoutMs;
+      evaluatedExpression = expression;
+      return JSON.stringify({
+        bodyText: '选择房间 标准大床房 每晚 ¥288 订房必读',
+        bodyHtml: '',
+        snippets: ['标准大床房 每晚 ¥288'],
+        snapshots: []
+      });
+    },
+    createCdpAbortError: (method) => {
+      const error = new Error(`CDP ${method} aborted`);
+      error.name = 'AbortError';
+      return error;
+    }
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  delete require.cache[networkCapturePath];
+
+  try {
+    const {
+      extractEdgeDomRoomCandidates,
+      getEdgeDomExtractTimeoutMs
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const records = [];
+    const roomBlocks = [
+      {
+        title: '标准大床房',
+        standard_title: '大床房',
+        price: 288,
+        prices: [288],
+        occupancy: 2,
+        cancelPolicy: '免费取消',
+        source: 'edge-api'
+      }
+    ];
+
+    const stats = await extractEdgeDomRoomCandidates({
+      connection: {},
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'reuse',
+      trackedUrls: new Set(['https://example.test/api/room']),
+      debugHotelId: '112433891',
+      roomBlocks,
+      perf: createPerfRecorder(records),
+      apiCaptureComplete: true
+    });
+
+    assert.equal(evaluateTimeoutMs, getEdgeDomExtractTimeoutMs(roomBlocks, { apiCaptureComplete: true }));
+    assert.equal(evaluateTimeoutMs, 900);
+    assert.equal(evaluatedExpression.includes("querySelectorAll('div, li, section, article')"), false);
+    assert.equal(evaluatedExpression.includes('snapshots: []'), true);
+    assert.equal(roomBlocks.some((room) => room.source === 'edge-api'), true);
+    assert.equal(stats.timedOut, false);
+    const phaseRecord = records.find((record) => record.phase === 'edge_dom_extract');
+    assert.equal(phaseRecord.event, 'phase');
+    assert.equal(phaseRecord.dom_extract_mode, 'api_complete_lightweight');
+    assert.equal(phaseRecord.dom_extract_api_complete, true);
+    assert.equal(phaseRecord.dom_extract_timeout_ms, 900);
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
+  }
+});
+
 test('edge DOM extract keeps full timeout when API produced no room candidates', async () => {
   let evaluateTimeoutMs = null;
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {

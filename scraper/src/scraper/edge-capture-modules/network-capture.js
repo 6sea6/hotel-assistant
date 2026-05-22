@@ -201,8 +201,10 @@ function sleep(ms) {
 const EDGE_CDP_COMMAND_TIMEOUT_MS = 8000;
 const EDGE_CDP_SHORT_TIMEOUT_MS = 3000;
 const EDGE_CDP_CLEANUP_TIMEOUT_MS = 1200;
+const EDGE_CDP_CONNECTION_CLOSE_TIMEOUT_MS = 250;
 const EDGE_DOM_EXTRACT_TIMEOUT_MS = 6000;
 const EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS = 1800;
+const EDGE_DOM_EXTRACT_API_COMPLETE_TIMEOUT_MS = 900;
 const EDGE_SETTLE_EVALUATE_TIMEOUT_MS = 6000;
 const EDGE_RESPONSE_PARSE_MAX_MS = 12000;
 const EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET = 8;
@@ -870,6 +872,7 @@ async function readEdgeResponseBodyWithRetry({
   maxAttempts,
   signal = null
 }) {
+  const startedAt = Date.now();
   const attemptLimit = Math.max(1, Number(maxAttempts) || (isRoomResponse ? 2 : 1));
   const attemptTimeoutMs =
     Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : isRoomResponse ? 1200 : 700;
@@ -894,6 +897,7 @@ async function readEdgeResponseBodyWithRetry({
           body,
           retryCount,
           timeoutCount,
+          elapsedMs: Date.now() - startedAt,
           error: null
         };
       }
@@ -918,6 +922,7 @@ async function readEdgeResponseBodyWithRetry({
     body: '',
     retryCount,
     timeoutCount,
+    elapsedMs: Date.now() - startedAt,
     error: lastError
   };
 }
@@ -959,8 +964,15 @@ async function parseEdgeNetworkResponses({
     responseBodyRetryCount: 0,
     responseBodyTimeoutCount: 0,
     responseBodyReadCount: 0,
+    responseBodyReadElapsedMs: 0,
+    responseBodyReadMaxMs: 0,
     responseBodyTotalBytes: 0,
     responseBodyMaxBytes: 0,
+    responseBodyParseElapsedMs: 0,
+    responseBodyParseMaxMs: 0,
+    slowestResponseBodyMs: 0,
+    slowestResponseBodyKind: '',
+    slowestResponseBodyBytes: 0,
     roomResponseBodyReadCount: 0,
     nonRoomResponseBodyReadCount: 0,
     roomResponseBodyErrorCount: 0,
@@ -1016,6 +1028,9 @@ async function parseEdgeNetworkResponses({
         maxAttempts: isRoomResponse ? roomResponseBodyMaxAttempts : 1,
         signal
       });
+      const bodyReadElapsedMs = Number(bodyResult.elapsedMs) || 0;
+      stats.responseBodyReadElapsedMs += bodyReadElapsedMs;
+      stats.responseBodyReadMaxMs = Math.max(stats.responseBodyReadMaxMs, bodyReadElapsedMs);
       stats.responseBodyRetryCount += bodyResult.retryCount;
       stats.responseBodyTimeoutCount += bodyResult.timeoutCount;
       if (isRoomResponse) {
@@ -1036,6 +1051,11 @@ async function parseEdgeNetworkResponses({
         continue;
       }
       const responseBodyBytes = Buffer.byteLength(bodyResult.body, 'utf8');
+      if (bodyReadElapsedMs > stats.slowestResponseBodyMs) {
+        stats.slowestResponseBodyMs = bodyReadElapsedMs;
+        stats.slowestResponseBodyKind = isRoomResponse ? 'room' : 'non_room';
+        stats.slowestResponseBodyBytes = responseBodyBytes;
+      }
       stats.responseBodyReadCount += 1;
       stats.responseBodyTotalBytes += responseBodyBytes;
       stats.responseBodyMaxBytes = Math.max(stats.responseBodyMaxBytes, responseBodyBytes);
@@ -1044,7 +1064,11 @@ async function parseEdgeNetworkResponses({
       } else {
         stats.nonRoomResponseBodyReadCount += 1;
       }
+      const parseStartedAt = Date.now();
       const parsed = safeJsonParse(bodyResult.body);
+      const parseElapsedMs = Date.now() - parseStartedAt;
+      stats.responseBodyParseElapsedMs += parseElapsedMs;
+      stats.responseBodyParseMaxMs = Math.max(stats.responseBodyParseMaxMs, parseElapsedMs);
       if (!parsed) {
         if (isRoomResponse) {
           stats.roomResponseBodyParseErrorCount += 1;
@@ -1117,7 +1141,10 @@ async function parseEdgeNetworkResponses({
   return stats;
 }
 
-function getEdgeDomExtractTimeoutMs(roomBlocks) {
+function getEdgeDomExtractTimeoutMs(roomBlocks, options = {}) {
+  if (options && options.apiCaptureComplete) {
+    return EDGE_DOM_EXTRACT_API_COMPLETE_TIMEOUT_MS;
+  }
   return Array.isArray(roomBlocks) && roomBlocks.length > 0
     ? EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS
     : EDGE_DOM_EXTRACT_TIMEOUT_MS;
@@ -1272,6 +1299,63 @@ function buildEdgeDomExtractExpression() {
         })()`;
 }
 
+function buildLightweightEdgeDomExtractExpression() {
+  return `(async () => {
+        const titlePattern = /[\\u4e00-\\u9fa5A-Za-z0-9（）()·\\-]{2,40}(?:大床房|大床间|双床房|双床间|家庭房|家庭间|三床房|三人房|三人间|景观房|景观间|商务房|商务间|豪华房|豪华间|特惠房|特惠间|标准房|标准间|高级房|高级间|精品房|精品间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间|亲子房|亲子间|套房)/g;
+        const toNormalizedText = (text) => String(text || '')
+          .replace(/\u00a0/g, ' ')
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        const extractRoomSection = (text) => {
+          const normalized = toNormalizedText(text);
+          if (!normalized) return '';
+          const startMarkers = ['选择房间', '房型摘要', '可住人数 今日价格', '立即确认', '登录看低价'];
+          const endMarkers = ['地点', '服务及设施', '酒店政策', '酒店简介', '订房必读', '附近的酒店', '住客点评', '位置周边'];
+          let startIndex = -1;
+          for (const marker of startMarkers) {
+            const markerIndex = normalized.indexOf(marker);
+            if (markerIndex !== -1 && (startIndex === -1 || markerIndex < startIndex)) {
+              startIndex = markerIndex;
+            }
+          }
+          if (startIndex === -1) return normalized.slice(0, 12000);
+          let endIndex = normalized.length;
+          for (const marker of endMarkers) {
+            const markerIndex = normalized.indexOf(marker, startIndex + 1);
+            if (markerIndex !== -1 && markerIndex < endIndex) {
+              endIndex = markerIndex;
+            }
+          }
+          return normalized.slice(startIndex, Math.min(endIndex, startIndex + 12000));
+        };
+        const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
+        const relevantBodyText = extractRoomSection(bodyText);
+        const snippets = [];
+        const seen = new Set();
+        const matches = [...relevantBodyText.matchAll(titlePattern)];
+        for (let index = 0; index < matches.length && snippets.length < 40; index += 1) {
+          const match = matches[index];
+          const next = matches[index + 1];
+          const start = Math.max(0, match.index - 80);
+          const end = next && next.index > match.index
+            ? Math.min(relevantBodyText.length, next.index + 80)
+            : Math.min(relevantBodyText.length, match.index + 420);
+          const snippet = toNormalizedText(relevantBodyText.slice(start, end));
+          if (snippet && !seen.has(snippet)) {
+            seen.add(snippet);
+            snippets.push(snippet);
+          }
+        }
+        return JSON.stringify({
+          bodyText: relevantBodyText,
+          bodyHtml: '',
+          snippets,
+          snapshots: []
+        });
+      })()`;
+}
+
 async function extractEdgeDomRoomCandidates({
   connection,
   sessionId,
@@ -1282,18 +1366,26 @@ async function extractEdgeDomRoomCandidates({
   debugHotelId,
   roomBlocks,
   perf,
-  signal
+  signal,
+  apiCaptureComplete = false
 }) {
   const safePerf = perf || createNoopPerf();
   const candidateList = Array.isArray(roomBlocks) ? roomBlocks : [];
-  const timeoutMs = getEdgeDomExtractTimeoutMs(candidateList);
+  const timeoutMs = getEdgeDomExtractTimeoutMs(candidateList, { apiCaptureComplete });
   const beforeDomCount = candidateList.length;
   const trackedUrlCount = trackedUrls && trackedUrls.size ? trackedUrls.size : 0;
+  const domExtractMode = apiCaptureComplete
+    ? 'api_complete_lightweight'
+    : beforeDomCount > 0
+      ? 'api_partial_full'
+      : 'dom_full';
   const domPhase = safePerf.phase('edge_dom_extract', {
     url,
     captureMethod,
     targetMode,
     trackedUrlCount,
+    dom_extract_mode: domExtractMode,
+    dom_extract_api_complete: Boolean(apiCaptureComplete),
     dom_extract_timeout_ms: timeoutMs,
     room_candidates_before: beforeDomCount
   });
@@ -1302,7 +1394,9 @@ async function extractEdgeDomRoomCandidates({
     const domPayloadResult = await evaluateInSession(
       connection,
       sessionId,
-      buildEdgeDomExtractExpression(),
+      apiCaptureComplete
+        ? buildLightweightEdgeDomExtractExpression()
+        : buildEdgeDomExtractExpression(),
       {
         timeoutMs,
         signal
@@ -1315,6 +1409,8 @@ async function extractEdgeDomRoomCandidates({
     candidateList.push(...candidates);
     domPhase.end('success', {
       roomCandidatesCount: candidateList.length - beforeDomCount,
+      dom_extract_mode: domExtractMode,
+      dom_extract_api_complete: Boolean(apiCaptureComplete),
       dom_extract_timeout_ms: timeoutMs,
       room_candidates_before: beforeDomCount,
       room_candidates_after: candidateList.length,
@@ -1330,6 +1426,8 @@ async function extractEdgeDomRoomCandidates({
   } catch (error) {
     const timedOut = isEdgeDomExtractTimeoutError(error);
     domPhase.error(error, {
+      dom_extract_mode: domExtractMode,
+      dom_extract_api_complete: Boolean(apiCaptureComplete),
       dom_extract_timeout_ms: timeoutMs,
       room_candidates_before: beforeDomCount,
       room_candidates_after: candidateList.length,
@@ -1403,6 +1501,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   let targetInitialUrl = '';
   let shouldCloseTarget = false;
   let settleStats = null;
+  let edgeParseStats = null;
   let loginPromptNotified = false;
   const signal = options.signal || null;
   const notifyLoginPromptIfDetected = async (stage) => {
@@ -1719,6 +1818,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           roomApiDebugIndex,
           signal
         });
+        edgeParseStats = parseStats;
         roomApiDebugIndex = parseStats.roomApiDebugIndex;
         responseParsePhase.end('success', {
           response_parse_entry_count: parseStats.responseParseEntryCount,
@@ -1739,8 +1839,15 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           response_body_retry_count: parseStats.responseBodyRetryCount,
           response_body_timeout_count: parseStats.responseBodyTimeoutCount,
           response_body_read_count: parseStats.responseBodyReadCount,
+          response_body_read_elapsed_ms: parseStats.responseBodyReadElapsedMs,
+          response_body_read_max_ms: parseStats.responseBodyReadMaxMs,
           response_body_total_bytes: parseStats.responseBodyTotalBytes,
           response_body_max_bytes: parseStats.responseBodyMaxBytes,
+          response_body_parse_elapsed_ms: parseStats.responseBodyParseElapsedMs,
+          response_body_parse_max_ms: parseStats.responseBodyParseMaxMs,
+          slowest_response_body_ms: parseStats.slowestResponseBodyMs,
+          slowest_response_body_kind: parseStats.slowestResponseBodyKind,
+          slowest_response_body_bytes: parseStats.slowestResponseBodyBytes,
           room_response_body_read_count: parseStats.roomResponseBodyReadCount,
           non_room_response_body_read_count: parseStats.nonRoomResponseBodyReadCount,
           room_response_body_error_count: parseStats.roomResponseBodyErrorCount,
@@ -1881,6 +1988,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           roomApiDebugIndex,
           signal
         });
+        edgeParseStats = parseStats;
         roomApiDebugIndex = parseStats.roomApiDebugIndex;
         responseParsePhase.end('success', {
           response_parse_entry_count: parseStats.responseParseEntryCount,
@@ -1901,8 +2009,15 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           response_body_retry_count: parseStats.responseBodyRetryCount,
           response_body_timeout_count: parseStats.responseBodyTimeoutCount,
           response_body_read_count: parseStats.responseBodyReadCount,
+          response_body_read_elapsed_ms: parseStats.responseBodyReadElapsedMs,
+          response_body_read_max_ms: parseStats.responseBodyReadMaxMs,
           response_body_total_bytes: parseStats.responseBodyTotalBytes,
           response_body_max_bytes: parseStats.responseBodyMaxBytes,
+          response_body_parse_elapsed_ms: parseStats.responseBodyParseElapsedMs,
+          response_body_parse_max_ms: parseStats.responseBodyParseMaxMs,
+          slowest_response_body_ms: parseStats.slowestResponseBodyMs,
+          slowest_response_body_kind: parseStats.slowestResponseBodyKind,
+          slowest_response_body_bytes: parseStats.slowestResponseBodyBytes,
           room_response_body_read_count: parseStats.roomResponseBodyReadCount,
           non_room_response_body_read_count: parseStats.nonRoomResponseBodyReadCount,
           room_response_body_error_count: parseStats.roomResponseBodyErrorCount,
@@ -1921,6 +2036,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
 
     // Always run DOM extraction (works for both reused and new tabs), but keep it best-effort
     // once room API data has already produced candidates.
+    const apiCaptureComplete = Boolean(
+      edgeParseStats &&
+        edgeParseStats.roomResponseCount > 0 &&
+        edgeParseStats.fastPathComplete &&
+        isEdgeRoomFastPathComplete(roomBlocks, template)
+    );
     await extractEdgeDomRoomCandidates({
       connection,
       sessionId,
@@ -1931,7 +2052,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       debugHotelId,
       roomBlocks,
       perf,
-      signal
+      signal,
+      apiCaptureComplete
     });
 
     const { mergedBlocks, selectedRoom } = await perf.runPhase(
@@ -2019,7 +2141,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           .catch(() => undefined);
       }
       if (connection) {
-        await connection.close(EDGE_CDP_CLEANUP_TIMEOUT_MS).catch(() => undefined);
+        await connection.close(EDGE_CDP_CONNECTION_CLOSE_TIMEOUT_MS).catch(() => undefined);
       }
       if (browser && browser.pid) {
         killProcessTree(browser.pid);
