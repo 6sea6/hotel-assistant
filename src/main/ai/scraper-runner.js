@@ -514,46 +514,6 @@ async function applyBatchItemOutputs(scraperPath, collectResult, workDir, contex
   };
 }
 
-async function applyReviewedHotels(hotels, context = {}) {
-  const dataFolderPath = context.dataFolderPath;
-  if (!dataFolderPath) {
-    throw new Error('缺少比较助手数据目录，无法写入 AI 复核结果。');
-  }
-  if (!Array.isArray(hotels) || hotels.length === 0) {
-    throw new Error('AI 复核结果中没有可写入的酒店数据。');
-  }
-
-  const scraperPath = resolveScraperPath();
-  const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
-  ensureScraperRuntimeDirs(workDir);
-
-  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
-    const fileName = `ai-review-${String(context.taskId || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}.json`;
-    const outputPath = path.join(workDir, 'output', fileName);
-    fs.writeFileSync(
-      outputPath,
-      JSON.stringify(
-        {
-          hotels,
-          hotel: hotels[0] || null,
-          review: {
-            taskId: context.taskId || '',
-            outputFingerprint: context.outputFingerprint || '',
-            createdAt: new Date().toISOString()
-          }
-        },
-        null,
-        2
-      ),
-      'utf8'
-    );
-
-    return runApplyTask(scraperPath, outputPath, workDir, context, {
-      overwriteExistingGroup: true
-    });
-  });
-}
-
 async function collectAndWriteCtripHotel(input, context = {}) {
   const dataFolderPath = context.dataFolderPath;
   if (!dataFolderPath) {
@@ -701,7 +661,6 @@ async function openVisibleEdgeLogin(input, context = {}) {
 }
 
 module.exports = {
-  applyReviewedHotels,
   assertSafeWriteResult,
   createWriteRollbackSnapshot,
   collectAndWriteCtripHotel,

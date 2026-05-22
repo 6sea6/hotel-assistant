@@ -289,7 +289,6 @@ test('normalizeTaskState keeps batch result display compatible with old fields',
   assert.equal(taskState.result.hotelName, '批量 3 家，本次最终写入 2 家宾馆，4 种房型');
   assert.equal(taskState.result.actualResultText, '批量 3 家，本次最终写入 2 家宾馆，4 种房型');
   assert.equal(taskState.result.isBatchResult, true);
-  assert.equal(taskState.canReview, false);
   assert.doesNotMatch(taskState.result.actualResultText, /第一家酒店/);
   assert.doesNotMatch(taskState.result.actualResultText, /可用房型/);
   assert.doesNotMatch(taskState.result.actualResultText, /价格/);
@@ -390,7 +389,7 @@ test('normalizeTaskState counts full batch item room types before apply-output s
   assert.equal(taskState.result.actualResultText, '批量 3 家，本次最终写入 2 家宾馆，5 种房型');
 });
 
-test('normalizeTaskState keeps AI review available for single hotel results only', async () => {
+test('normalizeTaskState does not expose AI review for collection results', async () => {
   const { normalizeTaskState } = await loadTaskConsoleModule();
 
   const singleTaskState = normalizeTaskState({
@@ -440,10 +439,11 @@ test('normalizeTaskState keeps AI review available for single hotel results only
     inProgress: false
   });
 
-  assert.equal(singleTaskState.canReview, false);
+  assert.equal('canReview' in singleTaskState, false);
+  assert.equal('review' in singleTaskState, false);
   assert.equal(singleTaskState.result.actualResultText, '测试酒店，可用房型 1 个');
   assert.doesNotMatch(singleTaskState.result.actualResultText, /价格|总价|¥|300/);
-  assert.equal(batchTaskState.canReview, false);
+  assert.equal('canReview' in batchTaskState, false);
 });
 
 test('normalizeTaskState renders cancelled tasks as cancelled instead of failed', async () => {
@@ -1100,7 +1100,6 @@ test('completed task summary card shows execution elapsed time between end time 
     aiQueueSelectionPinned: false,
     aiTaskInProgress: false,
     aiTaskEvents: [],
-    aiReview: {},
     aiTaskConsole: {
       submitted: true,
       template: { id: 'tpl-1' },

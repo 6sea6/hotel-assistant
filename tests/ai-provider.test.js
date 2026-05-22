@@ -356,8 +356,6 @@ test('AI IPC registers direct task start endpoint', () => {
           testConnection() {},
           sendChat() {},
           startTask() {},
-          analyzeCollection() {},
-          applyCollectionReview() {},
           cancelTask() {},
           getTaskStatus() {}
         };
@@ -366,8 +364,6 @@ test('AI IPC registers direct task start endpoint', () => {
   });
 
   assert.ok(handlers.has('ai:task:start'));
-  assert.ok(handlers.has('ai:collect:analyze'));
-  assert.ok(handlers.has('ai:collect:apply-review'));
   assert.ok(handlers.has('ai:ctrip-list-url:parse'));
   assert.ok(handlers.has('ai:ctrip-list-url:build'));
   assert.equal(aiServiceAccessCount, 0);
@@ -393,8 +389,6 @@ test('AI IPC keeps compatibility with direct aiService object', () => {
         testConnection() {},
         sendChat() {},
         startTask() {},
-        analyzeCollection() {},
-        applyCollectionReview() {},
         cancelTask() {},
         getTaskStatus() {}
       }
@@ -402,8 +396,6 @@ test('AI IPC keeps compatibility with direct aiService object', () => {
   });
 
   assert.ok(channels.includes('ai:task:start'));
-  assert.ok(channels.includes('ai:collect:analyze'));
-  assert.ok(channels.includes('ai:collect:apply-review'));
   assert.ok(channels.includes('ai:ctrip-list-url:parse'));
   assert.ok(channels.includes('ai:ctrip-list-url:build'));
 });
@@ -670,323 +662,7 @@ test('direct AI task cancellation emits cancel status instead of task error', as
   );
 });
 
-test('AI collect analysis uses task review_input and disables apply on invalid evidence', async (t) => {
-  const originalFetch = globalThis.fetch;
-  const capturedRequests = [];
-  globalThis.fetch = async (url, init) => {
-    capturedRequests.push({ url, body: JSON.parse(init.body) });
-    return {
-      ok: true,
-      async text() {
-        return JSON.stringify({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: JSON.stringify({
-                  canApply: true,
-                  summary: '建议改价',
-                  issues: ['价格证据不足'],
-                  revisedHotels: [
-                    {
-                      name: '测试酒店',
-                      website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-                      total_price: 999
-                    }
-                  ],
-                  diffs: [
-                    {
-                      field: 'total_price',
-                      before: 300,
-                      after: 999,
-                      reason: '用户怀疑价格错误'
-                    }
-                  ],
-                  evidence: [
-                    {
-                      source: 'rawRoomCandidates',
-                      id: 'missing-id',
-                      field: 'rawPriceText',
-                      value: '999',
-                      supports: '价格'
-                    }
-                  ],
-                  missingEvidence: []
-                })
-              }
-            }
-          ]
-        });
-      }
-    };
-  };
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-  });
 
-  const service = createAiService({
-    dataService: {
-      getDataFolderPath() {
-        return 'E:/实验/1/宾馆比较助手';
-      },
-      getStore() {
-        return {
-          get(key) {
-            assert.equal(key, 'settings');
-            return {
-              ai_provider_config: {
-                enabled: true,
-                provider: 'deepseek',
-                baseUrl: 'https://api.deepseek.com',
-                model: 'deepseek-chat',
-                apiKey: 'secret-key',
-                temperature: 0.2
-              }
-            };
-          }
-        };
-      }
-    },
-    windowService: {
-      getMainWindow() {
-        return null;
-      }
-    },
-    hotelTaskRunner: async (input, context) => ({
-      success: true,
-      hotelName: '测试酒店',
-      eligibleCount: 1,
-      eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
-      writeResult: { operation: 'inserted' },
-      reviewInput: {
-        taskMeta: {
-          taskId: context.taskId,
-          url: input.url,
-          templateId: input.templateId,
-          templateName: input.templateName,
-          outputFingerprint: 'fingerprint'
-        },
-        finalHotels: [
-          {
-            id: 'final-1',
-            name: '测试酒店',
-            website: input.url,
-            total_price: 300,
-            template_id: input.templateId,
-            distance: '2公里',
-            subway_station: '江汉路站',
-            subway_distance: '600米',
-            transport_time: '18分钟',
-            bus_route: '乘地铁2号线'
-          }
-        ],
-        eligibleRoomTypes: [
-          {
-            id: 'room-candidate-001',
-            totalPrice: 300
-          }
-        ],
-        rejectedRoomTypes: [],
-        rawRoomCandidates: [
-          {
-            id: 'room-candidate-001',
-            rawPriceText: '¥300'
-          }
-        ],
-        normalizeLogs: [],
-        selectionLogs: [],
-        finalHotelFieldLogs: [
-          {
-            id: 'field-distance',
-            hotelId: 'final-1',
-            field: 'distance',
-            value: '2公里',
-            source: 'finalHotels'
-          },
-          {
-            id: 'field-area',
-            hotelId: 'final-1',
-            field: 'room_area',
-            value: '40平方米',
-            source: 'rawRoomCandidates'
-          }
-        ],
-        pageSnapshotSummary: {
-          hasPriceArea: true
-        },
-        userConcern: ''
-      }
-    })
-  });
-
-  const taskResult = await service.startTask({
-    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-    templateId: '100',
-    templateName: '武汉'
-  });
-  const analysis = await service.analyzeCollection({
-    taskId: taskResult.taskStatus.id,
-    userConcern: '价格不对'
-  });
-
-  assert.equal(analysis.canApply, false);
-  assert.match(analysis.missingEvidence.join('\n'), /不存在/);
-  await assert.rejects(
-    () => service.applyCollectionReview({ reviewId: analysis.reviewId }),
-    /未通过证据校验/
-  );
-  assert.equal(capturedRequests.length, 1);
-  assert.match(capturedRequests[0].body.messages[1].content, /review_input/);
-  assert.doesNotMatch(capturedRequests[0].body.messages[1].content, /secret-key/);
-  assert.doesNotMatch(
-    capturedRequests[0].body.messages.map((message) => message.content).join('\n'),
-    /江汉路站|乘地铁2号线|field-distance|subway_station|transport_time|bus_route/
-  );
-  assert.match(capturedRequests[0].body.messages[1].content, /room_area/);
-});
-
-test('AI collect analysis repairs invalid JSON response before validation', async (t) => {
-  const originalFetch = globalThis.fetch;
-  const capturedRequests = [];
-  globalThis.fetch = async (url, init) => {
-    capturedRequests.push({ url, body: JSON.parse(init.body) });
-    const content =
-      capturedRequests.length === 1
-        ? '{"canApply": true, "summary": "建议重填", "issues": ["价格可能漏选" "缺少逗号"], "revisedHotels": []}'
-        : JSON.stringify({
-            canApply: true,
-            summary: '建议重填',
-            issues: ['价格可能漏选'],
-            revisedHotels: [
-              {
-                name: '测试酒店',
-                website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-                total_price: 300,
-                template_id: '100'
-              }
-            ],
-            diffs: [
-              {
-                field: 'total_price',
-                before: '',
-                after: 300,
-                reason: 'rawRoomCandidates 中存在价格证据'
-              }
-            ],
-            evidence: [
-              {
-                source: 'rawRoomCandidates',
-                id: 'room-candidate-001',
-                field: 'rawPriceText',
-                value: '¥300',
-                supports: 'total_price'
-              }
-            ],
-            missingEvidence: []
-          });
-    return {
-      ok: true,
-      async text() {
-        return JSON.stringify({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content
-              }
-            }
-          ]
-        });
-      }
-    };
-  };
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  const service = createAiService({
-    dataService: {
-      getDataFolderPath() {
-        return 'E:/实验/1/宾馆比较助手';
-      },
-      getStore() {
-        return {
-          get() {
-            return {
-              ai_provider_config: {
-                enabled: true,
-                provider: 'deepseek',
-                baseUrl: 'https://api.deepseek.com',
-                model: 'deepseek-chat',
-                apiKey: 'secret-key',
-                temperature: 0.2
-              }
-            };
-          }
-        };
-      }
-    },
-    windowService: {
-      getMainWindow() {
-        return null;
-      }
-    },
-    hotelTaskRunner: async (input, context) => ({
-      success: true,
-      hotelName: '测试酒店',
-      eligibleCount: 1,
-      eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
-      writeResult: { operation: 'inserted' },
-      reviewInput: {
-        taskMeta: {
-          taskId: context.taskId,
-          url: input.url,
-          templateId: input.templateId,
-          templateName: input.templateName,
-          outputFingerprint: 'fingerprint'
-        },
-        finalHotels: [
-          {
-            id: 'final-1',
-            name: '测试酒店',
-            website: input.url,
-            total_price: 300,
-            template_id: input.templateId
-          }
-        ],
-        eligibleRoomTypes: [],
-        rejectedRoomTypes: [],
-        rawRoomCandidates: [
-          {
-            id: 'room-candidate-001',
-            rawPriceText: '¥300'
-          }
-        ],
-        normalizeLogs: [],
-        selectionLogs: [],
-        pageSnapshotSummary: {
-          hasPriceArea: true
-        },
-        userConcern: ''
-      }
-    })
-  });
-
-  const taskResult = await service.startTask({
-    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-    templateId: '100',
-    templateName: '武汉'
-  });
-  const analysis = await service.analyzeCollection({
-    taskId: taskResult.taskStatus.id,
-    userConcern: '价格不对'
-  });
-
-  assert.equal(capturedRequests.length, 2);
-  assert.match(capturedRequests[1].body.messages[1].content, /JSON 格式修复/);
-  assert.equal(analysis.canApply, true);
-  assert.equal(analysis.revisedHotels.length, 1);
-});
 
 test('AI scraper retry detector asks for visible login when Ctrip price is locked or missing', () => {
   const locked = getVisibleLoginRetryNeed({

@@ -31,7 +31,6 @@ const {
 const { shouldSkipHotelWrite } = require('./cli/write-policy');
 const { getTransitInfo } = require('./amap');
 const { buildHotelRecord, buildEligibleRoomRecords } = require('./hotel-record');
-const { buildReviewInput, buildReviewInputSummary } = require('./review-input');
 const {
   applyMatchedTemplate,
   loadTemplate,
@@ -391,7 +390,6 @@ function buildBatchOutputPayload({
 }) {
   const firstPayload = resultPayloads[0] || {};
   const firstHotel = allHotels[0] || firstPayload.hotel || null;
-  const reviewInputs = resultPayloads.map((payload) => payload.review_input).filter(Boolean);
   const batchStats = {
     ...(expandedInputs.summary || {}),
     succeededCount: childResults.length,
@@ -446,15 +444,10 @@ function buildBatchOutputPayload({
   };
 
   if (isFullReport) {
-    payload.review_input = reviewInputs[0] || null;
-    payload.review_inputs = reviewInputs;
     payload.scrape_debug.item_debug = resultPayloads
       .map((payload) => payload.scrape_debug)
       .filter(Boolean);
-    payload.review_input_mode = 'full';
   } else {
-    payload.review_input = reviewInputs[0] || null;
-    payload.review_input_mode = reviewInputs[0] ? 'full' : 'summary';
     payload.scrape_debug.item_debug_count = resultPayloads.length;
   }
 
@@ -473,7 +466,6 @@ function buildBatchResult({
   compareAppSettings,
   writeResult,
   cleanupResult,
-  reviewInput,
   performance,
   reportLevel = 'normal'
 }) {
@@ -538,7 +530,6 @@ function buildBatchResult({
     compareAppSettings: sanitizeSensitiveData(compareAppSettings),
     writeResult,
     cleanupResult,
-    reviewInput,
     reportLevel,
     performance,
     failedItems
@@ -567,8 +558,6 @@ async function runPreparedSingleDetailImport(context) {
     pageIndex = null,
     reportLevel = 'normal',
     isBatchItem = false,
-    includeReviewInput = false,
-    forceReviewInput = false,
     captureStrategy: contextCaptureStrategy = null,
     edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null,
     scrapeEventForwarder = emit
@@ -638,32 +627,6 @@ async function runPreparedSingleDetailImport(context) {
   );
   performance.transitMs = durationSince(transitStartedAt);
 
-  let reviewInputParams = null;
-  if (!reportDisabled) {
-    reviewInputParams = {
-      taskMeta: {
-        taskId,
-        url: itemTemplate.ctrip_url,
-        templateId: null,
-        templateName: itemTemplate.template_name,
-        checkInDate: itemTemplate.check_in_date,
-        checkOutDate: itemTemplate.check_out_date,
-        roomCount: itemTemplate.room_count,
-        guestCount: itemTemplate.room_count,
-        destination: effectiveDestination
-      },
-      finalHotels: [],
-      roomCandidates: scraped.raw_room_candidates || scraped.room_candidates || [],
-      evaluations:
-        scraped.room_selection_diagnostics &&
-        Array.isArray(scraped.room_selection_diagnostics.evaluations)
-          ? scraped.room_selection_diagnostics.evaluations
-          : [],
-      pageSnapshot: scraped.page_snapshot,
-      template: itemTemplate
-    };
-  }
-
   const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries } = await itemPerf.runPhase(
     'parse_data',
     { url: itemTemplate.ctrip_url },
@@ -698,39 +661,6 @@ async function runPreparedSingleDetailImport(context) {
       };
     }
   );
-
-  if (reviewInputParams) {
-    reviewInputParams.taskMeta.templateId = hotelRecord.template_id;
-    reviewInputParams.finalHotels =
-      eligibleRoomRecords.length > 0 ? eligibleRoomRecords : [hotelRecord];
-  }
-
-  const needsFullReviewInput =
-    !reportDisabled &&
-    (reportLevel === 'full' ||
-      includeReviewInput ||
-      forceReviewInput ||
-      (!isBatchItem && reportLevel === 'normal'));
-  let reviewInput;
-  let reviewInputSummary;
-
-  if (needsFullReviewInput) {
-    const reviewInputStartedAt = Date.now();
-    reviewInput = await itemPerf.runPhase(
-      'build_review_input',
-      { url: itemTemplate.ctrip_url },
-      async () => buildReviewInput(reviewInputParams)
-    );
-    performance.reviewInputMs = durationSince(reviewInputStartedAt);
-  } else if (!reportDisabled) {
-    const reviewSummaryStartedAt = Date.now();
-    reviewInputSummary = await itemPerf.runPhase(
-      'build_review_summary',
-      { url: itemTemplate.ctrip_url },
-      async () => buildReviewInputSummary(reviewInputParams)
-    );
-    performance.reviewInputMs = durationSince(reviewSummaryStartedAt);
-  }
 
   const outputPath = reportDisabled
     ? ''
@@ -779,7 +709,6 @@ async function runPreparedSingleDetailImport(context) {
   performance.totalMs = durationSince(totalStartedAt);
 
   const isFullReport = reportLevel === 'full';
-  const reviewInputMode = reviewInput ? 'full' : reviewInputSummary ? 'summary' : 'omitted';
   let outputPayload = null;
   if (!reportDisabled) {
     const buildReportStartedAt = Date.now();
@@ -790,9 +719,6 @@ async function runPreparedSingleDetailImport(context) {
         sanitizeSensitiveData({
           hotels: eligibleRoomRecords,
           hotel: hotelRecord,
-          review_input: reviewInput || null,
-          review_input_summary: reviewInputSummary || undefined,
-          review_input_mode: reviewInputMode,
           compare_app_store: getCompareAppStorePath(),
           matched_template: matchedTemplate,
           effective_template: itemTemplate,
@@ -805,9 +731,6 @@ async function runPreparedSingleDetailImport(context) {
             eligible_rooms: scraped.eligible_rooms,
             room_candidates: scraped.room_candidates,
             raw_room_candidates: isFullReport ? scraped.raw_room_candidates : undefined,
-            selection_logs: isFullReport && reviewInput ? reviewInput.selectionLogs : undefined,
-            rejected_room_types: reviewInput ? reviewInput.rejectedRoomTypes : undefined,
-            normalize_logs: isFullReport && reviewInput ? reviewInput.normalizeLogs : undefined,
             page_snapshot: scraped.page_snapshot,
             transit,
             performance
@@ -879,8 +802,6 @@ async function runPreparedSingleDetailImport(context) {
   if (!reportDisabled) {
     result.compareAppSettings = sanitizeSensitiveData(compareAppSettings);
     result.cleanupResult = cleanupResult;
-    result.reviewInput = reviewInput || null;
-    result.reviewInputSummary = reviewInputSummary || undefined;
   }
 
   return {
@@ -1112,8 +1033,6 @@ async function runBatchHotelImportTask(context) {
           Array.isArray(result.eligibleHotels) ? result.eligibleHotels : []
         )
       : resultPayloads.flatMap((payload) => (Array.isArray(payload.hotels) ? payload.hotels : []));
-    const reviewInput =
-      resultPayloads.map((payload) => payload && payload.review_input).filter(Boolean)[0] || null;
 
     let writeResult = null;
     if (args['write-app-data']) {
@@ -1212,7 +1131,6 @@ async function runBatchHotelImportTask(context) {
             childResults,
             failedItems,
             allHotels,
-            reviewInput,
             writeResult,
             performance,
             reportLevel,
@@ -1258,7 +1176,6 @@ async function runBatchHotelImportTask(context) {
       compareAppSettings,
       writeResult,
       cleanupResult,
-      reviewInput,
       performance,
       reportLevel
     });

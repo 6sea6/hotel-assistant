@@ -32,82 +32,10 @@ const CANCEL_STEP_DEFINITION = {
   doneTitle: '任务已取消'
 };
 
-const REVIEW_PHASES = [
-  '正在读取复核数据包',
-  '正在检查酒店基础信息',
-  '正在分析房型候选',
-  '正在核对价格与入住人数',
-  '正在生成修正建议'
-];
-
-const REVIEW_SOURCE_LABELS = {
-  finalHotels: '最终结果',
-  eligibleRoomTypes: '合格房型',
-  rejectedRoomTypes: '排除房型',
-  rawRoomCandidates: '原始房型候选',
-  normalizeLogs: '标准化记录',
-  selectionLogs: '筛选记录',
-  finalHotelFieldLogs: '最终字段来源',
-  pageSnapshotSummary: '页面摘要'
-};
-
 const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
 const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
 
-const REVIEW_FIELD_LABELS = {
-  room_area: '房型面积',
-  roomArea: '房型面积',
-  notes: '备注',
-  roomName: '房型名称',
-  normalizedRoomName: '标准化房型名称',
-  rawRoomName: '原始房型名称',
-  price: '价格',
-  totalPrice: '总价',
-  rawPriceText: '原始价格文本',
-  cancelPolicy: '取消规则',
-  cancelPolicyType: '取消规则类型',
-  occupancy: '入住人数',
-  bedText: '床型',
-  area: '面积',
-  windowStatus: '窗户信息',
-  source: '来源',
-  matchScore: '匹配分数',
-  matchReason: '匹配原因',
-  rejectReason: '排除原因',
-  rejectReasonCode: '排除原因代码',
-  rawCancelPolicyText: '原始取消规则',
-  rawOccupancyText: '原始入住人数',
-  rawBedText: '原始床型',
-  rawAreaText: '原始面积',
-  ratePlan: '价格计划',
-  sourceField: '来源字段',
-  compactRawText: '原始摘要',
-  field: '字段',
-  rawValue: '原始值',
-  normalizedValue: '标准化值',
-  matchedTemplate: '匹配模板',
-  confidence: '置信度',
-  method: '处理方式',
-  action: '处理动作',
-  score: '分数',
-  reason: '原因',
-  reasonCode: '原因代码',
-  evidenceFields: '证据字段',
-  roomCardCount: '页面房型卡片数量',
-  apiRoomCount: '接口房型数量',
-  rawCandidateCount: '原始候选数量',
-  eligibleCount: '合格数量',
-  rejectedCount: '排除数量',
-  hasPriceArea: '是否存在价格区域',
-  hasLockedPriceHint: '是否存在登录价提示',
-  suspectedLoginPrice: '疑似登录价',
-  expandedAllRooms: '是否展开全部房型',
-  apiError: '接口异常',
-  sourceSummary: '来源摘要'
-};
-
 let elapsedTimer = null;
-let reviewElapsedTimer = null;
 
 export function formatAiTime(value) {
   const date = value ? new Date(value) : new Date();
@@ -312,22 +240,6 @@ function getToolName(event = {}) {
 export function getReadableToolLabel(toolName) {
   if (!toolName) return '';
   return TOOL_LABELS[toolName] || `正在执行：${toolName}`;
-}
-
-function localizeReviewText(value) {
-  let text = typeof value === 'string' ? value : JSON.stringify(value);
-  if (!text) return '';
-  [...Object.entries(REVIEW_SOURCE_LABELS), ...Object.entries(REVIEW_FIELD_LABELS)].forEach(
-    ([key, label]) => {
-      text = text.replace(new RegExp(`\\b${key}\\b`, 'g'), label);
-    }
-  );
-  return text.replace(/\breview_input\b/g, '复核数据包');
-}
-
-function getReviewFieldLabel(field) {
-  const text = String(field || '');
-  return REVIEW_FIELD_LABELS[text] || localizeReviewText(text || '字段');
 }
 
 function getEventStepKey(event = {}) {
@@ -576,14 +488,6 @@ function formatDuration(ms) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
 
-function formatReviewDuration(ms) {
-  const totalSeconds = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${pad(minutes)}:${pad(seconds)}`;
-}
-
 function getElapsedText(taskInfo = {}, status = 'idle', now = Date.now()) {
   const start = getTimeValue(taskInfo.startTime);
   if (!start) return '00:00:00';
@@ -614,38 +518,6 @@ function syncElapsedTimer(status) {
   if (elapsedTimer) {
     globalThis.clearInterval(elapsedTimer);
     elapsedTimer = null;
-  }
-}
-
-function getReviewElapsedText(review = {}, now = Date.now()) {
-  const start = getTimeValue(review.startedAt);
-  if (!start) return '00:00';
-  const end = review.inProgress ? now : getTimeValue(review.endedAt) || now;
-  return formatReviewDuration(end - start);
-}
-
-function updateReviewElapsedTimerText() {
-  const timer = $('aiReviewElapsedTime');
-  if (!timer) return;
-
-  timer.textContent = getReviewElapsedText({
-    startedAt: timer.dataset.startTime,
-    endedAt: timer.dataset.endTime,
-    inProgress: timer.dataset.status === 'running'
-  });
-}
-
-function syncReviewElapsedTimer(review = {}) {
-  updateReviewElapsedTimerText();
-  if (review.inProgress) {
-    if (!reviewElapsedTimer)
-      reviewElapsedTimer = globalThis.setInterval(updateReviewElapsedTimerText, 1000);
-    return;
-  }
-
-  if (reviewElapsedTimer) {
-    globalThis.clearInterval(reviewElapsedTimer);
-    reviewElapsedTimer = null;
   }
 }
 
@@ -754,8 +626,7 @@ function buildTaskError(task = {}, events = []) {
 export function normalizeTaskState({
   task = {},
   events = [],
-  inProgress = false,
-  review = {}
+  inProgress = false
 } = {}) {
   const submitted = Boolean(
     task.submitted || task.hotelUrl || task.result || task.error || events.length
@@ -778,10 +649,6 @@ export function normalizeTaskState({
 
   const steps = buildTaskSteps(task, events, status);
   const collectResult = getTaskCollectResult(task);
-  const taskStatus = task.result && task.result.taskStatus ? task.result.taskStatus : {};
-  const reviewInputAvailable = Boolean(
-    collectResult.reviewInputAvailable || taskStatus.reviewInputAvailable
-  );
   const taskInfo = {
     taskId:
       task.taskId || (task.result && task.result.taskStatus && task.result.taskStatus.id) || '',
@@ -797,9 +664,7 @@ export function normalizeTaskState({
     steps,
     progressStats: buildProgressStats(events),
     result: buildTaskResult(task),
-    error: buildTaskError(task, events),
-    review,
-    canReview: false
+    error: buildTaskError(task, events)
   };
 }
 
@@ -1003,165 +868,6 @@ function renderProgressStats(stats) {
   `;
 }
 
-function renderReviewList(items = [], emptyText = '暂无') {
-  const values = (Array.isArray(items) ? items : []).filter(Boolean);
-  if (!values.length) {
-    return `<p class="ai-review-muted">${escapeHtml(emptyText)}</p>`;
-  }
-  return `
-    <ul class="ai-review-list">
-      ${values.map((item) => `<li>${escapeHtml(localizeReviewText(item))}</li>`).join('')}
-    </ul>
-  `;
-}
-
-function renderReviewDiffs(diffs = []) {
-  const rows = (Array.isArray(diffs) ? diffs : []).filter(Boolean);
-  if (!rows.length) {
-    return '<p class="ai-review-muted">暂无差异。</p>';
-  }
-  return `
-    <div class="ai-review-diff-list">
-      ${rows
-        .map(
-          (diff) => `
-        <div class="ai-review-diff-item">
-          <strong>${escapeHtml(getReviewFieldLabel(diff.field || '字段'))}</strong>
-          <span>${escapeHtml(localizeReviewText(String(diff.before ?? '')))} → ${escapeHtml(localizeReviewText(String(diff.after ?? '')))}</span>
-          ${diff.reason ? `<small>${escapeHtml(localizeReviewText(diff.reason))}</small>` : ''}
-        </div>
-      `
-        )
-        .join('')}
-    </div>
-  `;
-}
-
-function renderReviewLoading(review = {}) {
-  const elapsedText = getReviewElapsedText(review);
-  return `
-    <div class="ai-review-loading">
-      <div class="review-loading-main">
-        <div class="review-loading-content">
-          <strong>
-            正在复核本次采集证据
-            <span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-          </strong>
-          <div class="review-stage-rotator" aria-live="polite">
-            ${REVIEW_PHASES.map((phase, index) => `<span class="review-stage-${index + 1}">${escapeHtml(phase)}</span>`).join('')}
-          </div>
-        </div>
-        <div class="review-runtime-pill" aria-label="复核已运行时间">
-          <span class="review-runtime-icon" aria-hidden="true">⏱</span>
-          <span>已运行 <strong id="aiReviewElapsedTime" data-start-time="${escapeHtml(review.startedAt || '')}" data-end-time="${escapeHtml(review.endedAt || '')}" data-status="${review.inProgress ? 'running' : 'done'}">${escapeHtml(elapsedText)}</strong></span>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function renderReviewFailed(errorMessage) {
-  return `
-    <div class="ai-review-failed-state result-fade-in">
-      <strong>分析失败</strong>
-      <span>${escapeHtml(localizeReviewText(errorMessage || '复核请求没有完成，请检查接口配置或稍后重试。'))}</span>
-      <ul class="ai-review-list">
-        <li>确认接口配置可用。</li>
-        <li>保留当前任务结果后重新点击开始分析。</li>
-        <li>如果多次失败，请查看设置中的接口状态。</li>
-      </ul>
-    </div>
-  `;
-}
-
-function renderReviewOutput(review = {}) {
-  if (review.inProgress) {
-    return renderReviewLoading(review);
-  }
-
-  if (review.error) {
-    return renderReviewFailed(review.error);
-  }
-
-  const result = review.result;
-  if (!result) {
-    return `
-      <div class="ai-review-empty-output">
-        <strong>等待分析</strong>
-        <span>在下方说明你认为脚本哪里采错了，例如“漏掉三人房”“价格不对”“过滤掉了可住房型”。</span>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="ai-review-status-row result-fade-in">
-      <strong>${escapeHtml(result.canApply ? '可预览差异后覆盖写入' : '证据不足，不能自动覆盖写入')}</strong>
-      <span>${escapeHtml(localizeReviewText(result.summary || ''))}</span>
-    </div>
-    <div class="ai-review-section result-fade-in result-fade-delay-1">
-      <h3>发现的问题</h3>
-      ${renderReviewList(result.issues, '未发现明确问题。')}
-    </div>
-    <div class="ai-review-section result-fade-in result-fade-delay-2">
-      <h3>差异预览</h3>
-      ${renderReviewDiffs(result.diffs)}
-    </div>
-    ${
-      result.canApply
-        ? ''
-        : `
-      <div class="ai-review-section result-fade-in result-fade-delay-4">
-        <h3>缺少证据</h3>
-        ${renderReviewList(result.missingEvidence, '暂无。')}
-      </div>
-    `
-    }
-  `;
-}
-
-function renderReviewReplaceView(taskState) {
-  const review = taskState.review || {};
-  const resultClass = review.inProgress
-    ? ' analyzing-card'
-    : review.error
-      ? ' ai-review-failed'
-      : review.result
-        ? review.result.canApply
-          ? ' ai-review-can-apply'
-          : ' ai-review-cannot-apply'
-        : '';
-  const applyDisabled =
-    !review.result || !review.result.canApply || !review.reviewId || review.applyInProgress;
-  return `
-    <section class="task-review-console task-review-replace-view" aria-label="AI分析重填">
-      <div class="task-review-header">
-        <div>
-          <span class="task-card-eyebrow">AI REVIEW</span>
-          <h3>AI分析重填</h3>
-        </div>
-        <button class="task-secondary-button" type="button" data-action="close-ai-review">返回结果</button>
-      </div>
-      <div id="aiReviewResult" class="ai-review-result${resultClass}">
-        ${renderReviewOutput(review)}
-      </div>
-      <div class="task-review-input-area">
-        <label class="task-review-concern-field" for="aiReviewConcernInput">
-          <span>哪里不对</span>
-          <textarea id="aiReviewConcernInput" class="input" rows="2" placeholder="例如：脚本选错房型、漏掉三人房、价格不对、过滤原因不合理">${escapeHtml(review.userConcern || '')}</textarea>
-        </label>
-        <div class="task-review-actions">
-          <button id="aiReviewAnalyzeBtn" class="task-primary-inline-button review-analyze-button${review.inProgress ? ' is-loading' : ''}" type="button" data-action="analyze-ai-collection" ${review.inProgress ? 'disabled' : ''}>
-            ${review.inProgress ? '<span class="task-button-spinner" aria-hidden="true"></span>正在分析' : '开始分析'}
-          </button>
-          <button id="aiReviewApplyBtn" class="task-secondary-button review-apply-button${!applyDisabled ? ' is-review-ready' : ''}" type="button" data-action="apply-ai-collection-review" ${applyDisabled ? 'disabled' : ''}>
-            ${review.applyInProgress ? '正在覆盖写入...' : '确认覆盖写入'}
-          </button>
-        </div>
-      </div>
-    </section>
-  `;
-}
-
 function renderIdleView() {
   return `
     <div class="task-empty-state">
@@ -1277,7 +983,6 @@ function renderSuccessView(taskState) {
       </div>
       ${renderSummaryCards(taskState, 'success')}
       <div class="task-panel-actions">
-        ${taskState.canReview ? '<button class="task-secondary-button" type="button" data-action="open-ai-review">AI分析重填</button>' : ''}
         <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新采集</button>
       </div>
     </div>
@@ -1296,7 +1001,6 @@ function renderErrorView(taskState) {
       </div>
       ${renderSummaryCards(taskState, 'error')}
       <div class="task-panel-actions">
-        ${taskState.canReview ? '<button class="task-secondary-button" type="button" data-action="open-ai-review">AI分析重填</button>' : ''}
         <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新尝试</button>
         <button class="task-secondary-button" type="button" data-action="focus-ai-task-start-bar">返回编辑</button>
       </div>
@@ -1354,23 +1058,16 @@ export function renderAiTaskConsole(state) {
   const taskState = normalizeTaskState({
     task: currentConsole,
     events: state.aiTaskEvents || [],
-    inProgress: selectedTaskInProgress,
-    review:
-      selectedQueueTask && selectedQueueTask.review
-        ? selectedQueueTask.review
-        : state.aiReview || {}
+    inProgress: selectedTaskInProgress
   });
 
-  const shouldShowReview = taskState.canReview && taskState.review && taskState.review.isOpen;
-  const viewHtml = shouldShowReview
-    ? renderReviewReplaceView(taskState)
-    : {
-        idle: renderIdleView,
-        running: renderRunningView,
-        success: renderSuccessView,
-        error: renderErrorView,
-        cancelled: renderCancelledView
-      }[taskState.status](taskState);
+  const viewHtml = {
+    idle: renderIdleView,
+    running: renderRunningView,
+    success: renderSuccessView,
+    error: renderErrorView,
+    cancelled: renderCancelledView
+  }[taskState.status](taskState);
 
   panel.innerHTML = viewHtml;
   const queuePanel = $('aiTaskQueuePanel');
@@ -1381,7 +1078,6 @@ export function renderAiTaskConsole(state) {
   }
   updateStartBar();
   syncElapsedTimer(taskState.status);
-  syncReviewElapsedTimer(taskState.review || {});
   return taskState;
 }
 

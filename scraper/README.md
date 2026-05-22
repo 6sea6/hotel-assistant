@@ -175,7 +175,7 @@ node src/cli.js --url "携程链接" --templateName bw \
 结果写入 `output/` 目录：
 
 - `output/<酒店名>.json` — 完整输出（含 hotels 数组、所有 eligible rooms、调试信息）
-- `output/batch-<模板名>.json` — 多 URL 或列表页输入时的聚合输出，仍保留 `hotels`、`hotel`、`review_input`，可继续通过 `--apply-output` 回写
+- `output/batch-<模板名>.json` — 多 URL 或列表页输入时的聚合输出，仍保留 `hotels`、`hotel`，可继续通过 `--apply-output` 回写
 - `output/latest-run.json` — 固定的最终凭证文件（面向 AI/自动化的紧凑摘要，不再内嵌大体积调试明细）
 
 ### 判断成功

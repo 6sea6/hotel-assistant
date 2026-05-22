@@ -592,7 +592,6 @@ test('reportLevel off batch skips item reports and can still write app data', as
     assert.equal(result.batchMode, true);
     assert.equal(result.eligibleCount, 2);
     assert.equal(result.outputPath || '', '');
-    assert.equal(result.reviewInput, null);
     assert.equal(result.writeResult.operation, 'append');
 
     const outputDir = path.join(tempDir, 'output');

@@ -50,9 +50,9 @@ python scripts/analyze_perf.py logs/perf/collect_perf_2026-05-18.jsonl
 
 ## 报告输出对照
 
-性能日志和结果报告是两套独立开关。`ENABLE_PERF_LOG=1` 只控制 `logs/perf/*.jsonl`；`--report-level` 控制采集结束后是否构建复核输入和输出 JSON。
+性能日志和结果报告是两套独立开关。`ENABLE_PERF_LOG=1` 只控制 `logs/perf/*.jsonl`；`--report-level` 控制采集结束后是否构建采集报告和输出 JSON。
 
-轻量采集，不生成采集报告、复核输入、调试输出：
+轻量采集，不生成采集报告、调试输出：
 
 ```bash
 HOTEL_COLLECTOR_ENV=dev ENABLE_PERF_LOG=1 node scraper/src/cli.js --url "携程链接" --templateName "模板名" --report-level off

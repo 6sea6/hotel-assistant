@@ -53,16 +53,6 @@ function renderTaskConsole() {
   updateTaskInputCount();
 }
 
-function syncReviewConcernFromInput() {
-  const input = $('aiReviewConcernInput');
-  if (!input || !state.aiReview || !state.aiReview.isOpen) return;
-  state.aiReview = {
-    ...state.aiReview,
-    userConcern: input.value
-  };
-  syncCurrentReviewToSelectedTask();
-}
-
 function renderProviderOptions() {
   const select = $('aiProviderSelect');
   if (!select || !state.aiProviderPresets.length) return;
@@ -227,21 +217,6 @@ function setupAiTemplatePicker() {
   window.addEventListener('scroll', positionAiTemplatePickerMenu, true);
 
   state.aiTemplatePickerBound = true;
-}
-
-function setupAiReviewInputSync() {
-  if (state.aiReviewInputSyncBound) return;
-
-  document.addEventListener('input', (event) => {
-    if (!event.target || event.target.id !== 'aiReviewConcernInput') return;
-    state.aiReview = {
-      ...state.aiReview,
-      userConcern: event.target.value
-    };
-    syncCurrentReviewToSelectedTask();
-  });
-
-  state.aiReviewInputSyncBound = true;
 }
 
 function findSelectedAiTemplate() {
@@ -573,69 +548,6 @@ function buildTaskPayload(task) {
   };
 }
 
-function createEmptyReviewState(overrides = {}) {
-  return {
-    isOpen: false,
-    inProgress: false,
-    applyInProgress: false,
-    result: null,
-    reviewId: '',
-    userConcern: '',
-    error: '',
-    startedAt: '',
-    endedAt: '',
-    ...overrides
-  };
-}
-
-function normalizeReviewState(review = {}) {
-  return createEmptyReviewState({
-    isOpen: Boolean(review.isOpen),
-    inProgress: Boolean(review.inProgress),
-    applyInProgress: Boolean(review.applyInProgress),
-    result: review.result || null,
-    reviewId: review.reviewId || '',
-    userConcern: review.userConcern || '',
-    error: review.error || '',
-    startedAt: review.startedAt || '',
-    endedAt: review.endedAt || ''
-  });
-}
-
-function getSelectedTaskReviewState() {
-  const task = getSelectedQueueTask();
-  return task ? normalizeReviewState(task.review) : createEmptyReviewState();
-}
-
-function syncCurrentReviewToSelectedTask() {
-  const task = getSelectedQueueTask();
-  if (task) {
-    task.review = normalizeReviewState(state.aiReview);
-  }
-}
-
-function setReviewStateForTask(task, review) {
-  const nextReview = normalizeReviewState(review);
-  if (task) {
-    task.review = nextReview;
-  }
-  if (!task || String(state.aiSelectedQueueTaskId) === String(task.id)) {
-    state.aiReview = normalizeReviewState(nextReview);
-  }
-  return nextReview;
-}
-
-function restoreReviewForTask(task) {
-  state.aiReview = task ? normalizeReviewState(task.review) : createEmptyReviewState();
-}
-
-function resetAiReviewState(options = {}) {
-  state.aiReview = createEmptyReviewState();
-  if (options.syncTask !== false) {
-    syncCurrentReviewToSelectedTask();
-  }
-}
-
 function getRunningQueueTask() {
   return (state.aiTaskQueue || []).find((task) => task.status === 'running') || null;
 }
@@ -726,7 +638,6 @@ function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
     resultSummary: '',
     events: [],
     console: createEmptyTaskConsole(),
-    review: createEmptyReviewState(),
     cancelNoticeShown: false
   };
 }
@@ -736,7 +647,6 @@ function syncDisplayedTask(task) {
   state.aiSelectedQueueTaskId = task.id;
   state.aiTaskConsole = task.console || createEmptyTaskConsole();
   state.aiTaskEvents = task.events || [];
-  restoreReviewForTask(task);
 }
 
 function shouldAutoDisplayStartedTask(task) {
@@ -768,7 +678,6 @@ function startTaskConsole(template, url, queueTask = null) {
     queueTask.cancelNoticeShown = false;
     queueTask.events = events;
     queueTask.console = consoleState;
-    queueTask.review = createEmptyReviewState();
     if (shouldAutoDisplayStartedTask(queueTask)) {
       state.aiQueueSelectionPinned = false;
       syncDisplayedTask(queueTask);
@@ -776,7 +685,6 @@ function startTaskConsole(template, url, queueTask = null) {
   } else {
     state.aiTaskEvents = events;
     state.aiTaskConsole = consoleState;
-    resetAiReviewState({ syncTask: false });
   }
   renderTaskConsole();
 }
@@ -945,7 +853,6 @@ function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
   if (!state.aiSelectedQueueTaskId) {
     state.aiSelectedQueueTaskId = task.id;
     state.aiQueueSelectionPinned = false;
-    restoreReviewForTask(task);
   }
   renderTaskConsole();
   return task;
@@ -1086,7 +993,6 @@ export function closeAiAssistant() {
 async function initializeAiAssistant() {
   if (!state.aiAssistantInitialized) {
     state.aiTaskConsole = state.aiTaskConsole || createEmptyTaskConsole();
-    setupAiReviewInputSync();
     window.electronAPI.ai.onTaskEvent((event) => {
       const task = findQueueTaskByBackendTaskId(event.taskId) || getRunningQueueTask();
       if (task) {
@@ -1199,7 +1105,6 @@ export function clearAiTaskRecords() {
     state.aiQueueSelectionPinned = false;
     state.aiTaskEvents = [];
     state.aiTaskConsole = createEmptyTaskConsole();
-    resetAiReviewState({ syncTask: false });
   }
   setValue('aiHotelUrlInput', '');
   renderTaskConsole();
@@ -1216,7 +1121,6 @@ export function clearAiTaskQueue() {
     state.aiQueueSelectionPinned = false;
     state.aiTaskEvents = [];
     state.aiTaskConsole = createEmptyTaskConsole();
-    resetAiReviewState({ syncTask: false });
   }
   renderTaskConsole();
 }
@@ -1224,7 +1128,6 @@ export function clearAiTaskQueue() {
 export function selectAiQueueTask(taskId) {
   const task = (state.aiTaskQueue || []).find((item) => String(item.id) === String(taskId));
   if (!task) return;
-  syncReviewConcernFromInput();
   state.aiQueueSelectionPinned = true;
   syncDisplayedTask(task);
   renderTaskConsole();
@@ -1245,7 +1148,6 @@ export function removeAiQueueTask(taskId) {
       state.aiQueueSelectionPinned = false;
       state.aiTaskConsole = createEmptyTaskConsole();
       state.aiTaskEvents = [];
-      resetAiReviewState({ syncTask: false });
     }
   }
   renderTaskConsole();
@@ -1260,8 +1162,6 @@ export function retryAiQueueTask(taskId) {
     state.aiTaskQueue.push(sourceTask);
     state.aiSelectedQueueTaskId = sourceTask.id;
     state.aiQueueSelectionPinned = false;
-    sourceTask.review = createEmptyReviewState();
-    restoreReviewForTask(sourceTask);
     renderTaskConsole();
     showNotification('已移到队列末尾', 'success');
     runNextQueueTask();
@@ -1276,7 +1176,6 @@ export function retryAiQueueTask(taskId) {
   state.aiTaskQueue.push(task);
   state.aiSelectedQueueTaskId = task.id;
   state.aiQueueSelectionPinned = false;
-  restoreReviewForTask(task);
   renderTaskConsole();
   showNotification('已重新加入队列', 'success');
   runNextQueueTask();
@@ -1289,35 +1188,6 @@ export function rerunCurrentAiTask() {
     return;
   }
   focusAiTaskStartBar();
-}
-
-function getCurrentReviewTaskId() {
-  return state.aiTaskConsole && state.aiTaskConsole.taskId ? state.aiTaskConsole.taskId : '';
-}
-
-function renderAiReviewResult() {
-  renderTaskConsole();
-}
-
-export function openAiReviewPanel() {
-  showNotification('AI分析重填功能已关闭。', 'info');
-}
-
-export function closeAiReviewPanel() {
-  const reviewTask = getSelectedQueueTask();
-  setReviewStateForTask(reviewTask, {
-    ...getSelectedTaskReviewState(),
-    isOpen: false
-  });
-  renderTaskConsole();
-}
-
-export async function analyzeAiCollection() {
-  showNotification('AI分析重填功能已关闭。', 'info');
-}
-
-export async function applyAiCollectionReview() {
-  showNotification('AI覆盖写入功能已关闭。', 'info');
 }
 
 export function showAiTaskDetails() {

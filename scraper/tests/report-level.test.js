@@ -152,7 +152,7 @@ test('buildBatchOutputPayload with normal reportLevel excludes review_inputs and
   assert.equal(payload.scrape_debug.item_debug, undefined);
 });
 
-test('buildBatchOutputPayload with full reportLevel includes review_inputs and item_debug', () => {
+test('buildBatchOutputPayload with full reportLevel includes item_debug but not review_inputs', () => {
   const { buildBatchOutputPayload } = require('../src/task-runner');
 
   const resultPayloads = [
@@ -201,8 +201,7 @@ test('buildBatchOutputPayload with full reportLevel includes review_inputs and i
   });
 
   assert.equal(payload.reportLevel, 'full');
-  assert.ok(Array.isArray(payload.review_inputs));
-  assert.equal(payload.review_inputs.length, 2);
+  assert.equal(payload.review_inputs, undefined);
   assert.ok(Array.isArray(payload.scrape_debug.item_debug));
   assert.equal(payload.scrape_debug.item_debug.length, 2);
 });
@@ -496,7 +495,7 @@ test('buildReviewInput includes summary counts', () => {
   assert.ok(reviewInput._summaryCounts.final_field_log_count >= 0);
 });
 
-test('single hotel normal report includes full review_input', () => {
+test('single hotel normal report does not include review_input', () => {
   const { buildBatchOutputPayload } = require('../src/task-runner');
 
   const resultPayloads = [
@@ -535,8 +534,8 @@ test('single hotel normal report includes full review_input', () => {
   });
 
   assert.equal(payload.reportLevel, 'normal');
-  assert.ok(payload.review_input);
-  assert.equal(payload.review_input_mode, 'full');
+  assert.equal(payload.review_input, undefined);
+  assert.equal(payload.review_input_mode, undefined);
 });
 
 test('batch normal report does not include full review_inputs', () => {
@@ -593,7 +592,7 @@ test('batch normal report does not include full review_inputs', () => {
   assert.ok(payload.scrape_debug.item_debug_count > 0);
 });
 
-test('summary report includes review_input_summary only', () => {
+test('summary report does not include review_input or review_input_summary', () => {
   const { buildBatchOutputPayload } = require('../src/task-runner');
 
   const resultPayloads = [
@@ -629,9 +628,11 @@ test('summary report includes review_input_summary only', () => {
 
   assert.equal(payload.reportLevel, 'summary');
   assert.equal(payload.review_inputs, undefined);
+  assert.equal(payload.review_input, undefined);
+  assert.equal(payload.review_input_summary, undefined);
 });
 
-test('full report includes review_inputs and item_debug', () => {
+test('full report includes item_debug but not review_inputs', () => {
   const { buildBatchOutputPayload } = require('../src/task-runner');
 
   const resultPayloads = [
@@ -670,8 +671,7 @@ test('full report includes review_inputs and item_debug', () => {
   });
 
   assert.equal(payload.reportLevel, 'full');
-  assert.ok(Array.isArray(payload.review_inputs));
-  assert.equal(payload.review_inputs.length, 2);
+  assert.equal(payload.review_inputs, undefined);
   assert.ok(Array.isArray(payload.scrape_debug.item_debug));
   assert.equal(payload.scrape_debug.item_debug.length, 2);
 });

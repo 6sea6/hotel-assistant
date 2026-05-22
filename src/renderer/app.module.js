@@ -113,10 +113,6 @@ import {
   handleAiTaskInputKeydown,
   showAiTaskDetails,
   focusAiTaskStartBar,
-  openAiReviewPanel,
-  closeAiReviewPanel,
-  analyzeAiCollection,
-  applyAiCollectionReview,
   handleAiTaskInputChange,
   syncAiCtripListUrlFromSettings,
   loadAiConfig,
@@ -226,11 +222,7 @@ const ACTION_HANDLERS = {
   'remove-ai-queue-task': (_event, element) => removeAiQueueTask(element.dataset.taskId),
   'rerun-current-ai-task': () => rerunCurrentAiTask(),
   'show-ai-task-details': () => showAiTaskDetails(),
-  'focus-ai-task-start-bar': () => focusAiTaskStartBar(),
-  'open-ai-review': () => openAiReviewPanel(),
-  'close-ai-review': () => closeAiReviewPanel(),
-  'analyze-ai-collection': () => analyzeAiCollection(),
-  'apply-ai-collection-review': () => applyAiCollectionReview()
+  'focus-ai-task-start-bar': () => focusAiTaskStartBar()
 };
 
 function handleActionClick(event) {

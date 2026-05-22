@@ -52,13 +52,6 @@ function compactTaskResult(result = {}) {
     eligibleRoomTypes,
     eligibleHotels,
     pageSnapshot: result.pageSnapshot || null,
-    reviewInputAvailable: Boolean(result.reviewInput),
-    reviewTaskId:
-      result.reviewInput && result.reviewInput.taskMeta ? result.reviewInput.taskMeta.taskId : '',
-    outputFingerprint:
-      result.reviewInput && result.reviewInput.taskMeta
-        ? result.reviewInput.taskMeta.outputFingerprint
-        : '',
     error: result.error || ''
   };
 }
@@ -79,6 +72,21 @@ function normalizeChatMessages(messages = []) {
       content: String(message.content || '')
     }))
     .filter((message) => message.content.trim());
+}
+
+function compactErrorMessage(error) {
+  return error && error.message ? error.message : String(error || '未知错误');
+}
+
+function isCancellationError(error, signal) {
+  if (signal && signal.aborted) {
+    return true;
+  }
+  const message = compactErrorMessage(error);
+  return (
+    /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message) ||
+    (error && error.name === 'AbortError')
+  );
 }
 
 function buildSystemPrompt() {
@@ -114,371 +122,11 @@ function buildSystemPrompt() {
 用简洁中文，优先告诉用户现在发生了什么、是否写入、如果没写入该怎么做。`;
 }
 
-const REVIEW_EVIDENCE_SOURCES = new Set([
-  'finalHotels',
-  'eligibleRoomTypes',
-  'rejectedRoomTypes',
-  'rawRoomCandidates',
-  'normalizeLogs',
-  'selectionLogs',
-  'finalHotelFieldLogs',
-  'pageSnapshotSummary'
-]);
-
-const REVIEW_REQUIRED_HOTEL_LOCKED_FIELDS = [
-  'website',
-  'check_in_date',
-  'check_out_date',
-  'days',
-  'template_id',
-  'template_info',
-  'distance',
-  'subway_station',
-  'subway_distance',
-  'transport_time',
-  'bus_route'
-];
-
-const REVIEW_EXCLUDED_TRAFFIC_FIELDS = new Set([
-  'distance',
-  'subway_station',
-  'subway_distance',
-  'transport_time',
-  'bus_route'
-]);
-
-function sanitizeForAi(value, seen = new WeakSet()) {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeForAi(item, seen));
-  }
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-  if (seen.has(value)) {
-    return null;
-  }
-  seen.add(value);
-
-  const output = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (/api[-_]?key|token|secret|cookie|authorization|password/i.test(key)) {
-      output[key] = '[REDACTED]';
-      continue;
-    }
-    output[key] = sanitizeForAi(item, seen);
-  }
-  return output;
-}
-
-function isReviewExcludedTrafficField(field) {
-  return REVIEW_EXCLUDED_TRAFFIC_FIELDS.has(String(field || '').trim());
-}
-
-function stripReviewExcludedFields(value) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => stripReviewExcludedFields(item))
-      .filter((item) => item !== undefined);
-  }
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-
-  if (
-    isReviewExcludedTrafficField(value.field) ||
-    isReviewExcludedTrafficField(value.sourceField)
-  ) {
-    return undefined;
-  }
-
-  const output = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (isReviewExcludedTrafficField(key)) {
-      continue;
-    }
-    const nextValue = stripReviewExcludedFields(item);
-    if (nextValue !== undefined) {
-      output[key] = nextValue;
-    }
-  }
-  return output;
-}
-
-function sanitizeReviewInputForAi(reviewInput) {
-  return stripReviewExcludedFields(sanitizeForAi(reviewInput));
-}
-
-function extractJsonObject(content = '') {
-  const text = String(content || '').trim();
-  if (!text) {
-    throw new Error('AI 没有返回可解析的分析结果。');
-  }
-
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1].trim() : text;
-  try {
-    return JSON.parse(candidate);
-  } catch (error) {
-    const first = candidate.indexOf('{');
-    const last = candidate.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-      return JSON.parse(candidate.slice(first, last + 1));
-    }
-    throw error;
-  }
-}
-
-function compactErrorMessage(error) {
-  return error && error.message ? error.message : String(error || '未知错误');
-}
-
-function isCancellationError(error, signal) {
-  if (signal && signal.aborted) {
-    return true;
-  }
-  const message = compactErrorMessage(error);
-  return (
-    /任务已取消|采集任务已取消|operation was aborted|aborted/i.test(message) ||
-    (error && error.name === 'AbortError')
-  );
-}
-
-function redactSensitiveText(text) {
-  return String(text || '')
-    .replace(/(bearer\s+)[a-z0-9._~+/-]+/gi, '$1[REDACTED]')
-    .replace(
-      /((?:api[-_]?key|token|secret|cookie|authorization|password)["'\s:=]+)([^"',\s}{\]]+)/gi,
-      '$1[REDACTED]'
-    );
-}
-
-function truncateText(text, maxLength = 8000) {
-  const safeText = redactSensitiveText(text);
-  return safeText.length > maxLength ? `${safeText.slice(0, maxLength)}\n...[TRUNCATED]` : safeText;
-}
-
-function buildReviewSystemPrompt() {
-  return `你是宾馆比较助手的采集复核助手。你只能分析程序提供的 review_input，不能重新采集网页、不能读取本地文件、不能使用 cookie/token/API key，也不能编造价格、房型或系统字段。
-
-你的任务：
-1. 判断脚本是否在解析、标准化、过滤、匹配或最终选择阶段遗漏了正确数据。
-2. 如果证据充分，返回可预览的 revisedHotels。
-3. 如果证据不足，返回 canApply=false，并说明缺少哪些证据。
-4. 交通相关字段不参与本次复核，程序不会提供这类字段；不要检查、评价或修改交通相关字段。
-
-必须返回纯 JSON，不要 Markdown，不要解释性前后缀。JSON 字段：
-{
-  "canApply": boolean,
-  "summary": "简短结论",
-  "issues": ["发现的问题"],
-  "revisedHotels": [],
-  "diffs": [{"field":"","before":"","after":"","reason":""}],
-  "evidence": [{"source":"","id":"","field":"","value":"","supports":""}],
-  "missingEvidence": ["缺少的证据"]
-}
-
-证据规则：
-- evidence.source 只能是 finalHotels、eligibleRoomTypes、rejectedRoomTypes、rawRoomCandidates、normalizeLogs、selectionLogs、finalHotelFieldLogs、pageSnapshotSummary。
-- 修改价格、房型、取消规则、人数、床型、面积、备注等字段时，必须能从 evidence 中找到对应来源和字段。
-- 如果 rawRoomCandidates、eligibleRoomTypes、rejectedRoomTypes、normalizeLogs、selectionLogs 或 finalHotelFieldLogs 中没有支撑某个价格/房型/备注信息的证据，禁止编造，canApply=false。`;
-}
-
-function buildReviewUserPrompt(reviewInput) {
-  return `请根据以下 review_input 分析本次携程酒店采集结果是否需要重填。只使用 review_input 中的证据。交通字段已从复核输入中移除，不要复核或修改交通字段。\n\nreview_input:\n${JSON.stringify(sanitizeReviewInputForAi(reviewInput), null, 2)}`;
-}
-
-function buildReviewJsonRepairPrompt(invalidContent, parseError) {
-  return `下面是上一步模型返回的内容，但它不是合法 JSON，程序解析失败。
-
-解析错误：
-${compactErrorMessage(parseError)}
-
-请你只做 JSON 格式修复：
-1. 只输出一个合法 JSON 对象。
-2. 不要 Markdown，不要代码块，不要解释。
-3. 不要新增证据、价格、房型或字段含义，只修复逗号、引号、数组/对象闭合等语法问题。
-4. 保留这些字段：canApply、summary、issues、revisedHotels、diffs、evidence、missingEvidence。
-
-原始内容：
-${truncateText(invalidContent)}`;
-}
-
-function buildUnparseableReviewResult(primaryError, repairError) {
-  return {
-    canApply: false,
-    summary: 'AI 返回的分析结果不是合法 JSON，已拒绝写入。',
-    issues: [
-      'AI 已返回分析内容，但格式不符合程序要求。',
-      '程序已尝试自动修复 JSON，仍无法安全解析。'
-    ],
-    revisedHotels: [],
-    diffs: [],
-    evidence: [],
-    missingEvidence: [
-      `首次解析失败：${compactErrorMessage(primaryError)}`,
-      repairError ? `自动修复后仍失败：${compactErrorMessage(repairError)}` : ''
-    ].filter(Boolean)
-  };
-}
-
-function buildEvidenceIndex(reviewInput = {}) {
-  const index = new Map();
-  for (const source of REVIEW_EVIDENCE_SOURCES) {
-    const value = reviewInput[source];
-    if (Array.isArray(value)) {
-      const ids = new Set(
-        value.map((item, itemIndex) => String(item && item.id ? item.id : itemIndex))
-      );
-      index.set(source, ids);
-    } else if (value && typeof value === 'object') {
-      index.set(source, new Set(Object.keys(value)));
-    } else {
-      index.set(source, new Set());
-    }
-  }
-  return index;
-}
-
-function normalizeAnalysisResult(rawResult = {}) {
-  return {
-    canApply: Boolean(rawResult.canApply),
-    summary: String(rawResult.summary || ''),
-    issues: Array.isArray(rawResult.issues) ? rawResult.issues.map(String).filter(Boolean) : [],
-    revisedHotels: Array.isArray(rawResult.revisedHotels)
-      ? rawResult.revisedHotels.filter((item) => item && typeof item === 'object')
-      : [],
-    diffs: Array.isArray(rawResult.diffs)
-      ? rawResult.diffs.filter((item) => item && typeof item === 'object')
-      : [],
-    evidence: Array.isArray(rawResult.evidence)
-      ? rawResult.evidence.filter((item) => item && typeof item === 'object')
-      : [],
-    missingEvidence: Array.isArray(rawResult.missingEvidence)
-      ? rawResult.missingEvidence.map(String).filter(Boolean)
-      : []
-  };
-}
-
-function validateEvidenceReferences(analysis, reviewInput) {
-  const evidenceIndex = buildEvidenceIndex(reviewInput);
-  const errors = [];
-
-  for (const item of analysis.evidence) {
-    const source = String(item.source || '');
-    const id = String(item.id || '');
-    const field = String(item.field || '');
-    if (!REVIEW_EVIDENCE_SOURCES.has(source)) {
-      errors.push(`未知证据来源：${source || '空'}`);
-      continue;
-    }
-    if (!field) {
-      errors.push(`证据缺少字段名：${source}`);
-    }
-    if (source === 'pageSnapshotSummary') {
-      if (id && !evidenceIndex.get(source).has(id)) {
-        errors.push(`pageSnapshotSummary 中不存在字段：${id}`);
-      }
-      continue;
-    }
-    if (!id || !evidenceIndex.get(source).has(id)) {
-      errors.push(`证据 ${source}.${id || '(空)'} 不存在`);
-    }
-  }
-
-  return errors;
-}
-
-function hasPriceEvidence(analysis) {
-  return analysis.evidence.some((item) => {
-    const source = String(item.source || '');
-    const field = String(item.field || '').toLowerCase();
-    return (
-      ['finalHotels', 'eligibleRoomTypes', 'rejectedRoomTypes', 'rawRoomCandidates'].includes(
-        source
-      ) && /price|价格|total|daily|rawpricetext/.test(field)
-    );
-  });
-}
-
-function validateAnalysisResult(analysis, reviewInput) {
-  const normalized = normalizeAnalysisResult(analysis);
-  const validationErrors = validateEvidenceReferences(normalized, reviewInput);
-
-  if (normalized.canApply) {
-    if (normalized.revisedHotels.length === 0) {
-      validationErrors.push('AI 没有返回可写入的 revisedHotels。');
-    }
-    if (normalized.evidence.length === 0) {
-      validationErrors.push('AI 没有返回 evidence，无法确认修正依据。');
-    }
-    const hasHotelWithPrice = normalized.revisedHotels.some(
-      (hotel) =>
-        (hotel.total_price !== null &&
-          hotel.total_price !== undefined &&
-          hotel.total_price !== '') ||
-        (hotel.daily_price !== null && hotel.daily_price !== undefined && hotel.daily_price !== '')
-    );
-    if (hasHotelWithPrice && !hasPriceEvidence(normalized)) {
-      validationErrors.push('AI 返回了价格，但没有提供价格证据。');
-    }
-  }
-
-  if (validationErrors.length > 0) {
-    normalized.canApply = false;
-    normalized.missingEvidence = [...new Set([...normalized.missingEvidence, ...validationErrors])];
-  }
-
-  return normalized;
-}
-
-function lockReviewedHotelFields(revisedHotels = [], reviewInput = {}) {
-  const finalHotels = Array.isArray(reviewInput.finalHotels) ? reviewInput.finalHotels : [];
-  const baseHotel = finalHotels[0] || {};
-  const taskMeta = reviewInput.taskMeta || {};
-  const lockedValues = {
-    website: baseHotel.website || taskMeta.url || '',
-    check_in_date: baseHotel.check_in_date || taskMeta.checkInDate || '',
-    check_out_date: baseHotel.check_out_date || taskMeta.checkOutDate || '',
-    days: baseHotel.days,
-    template_id: baseHotel.template_id ?? taskMeta.templateId ?? null,
-    template_info: baseHotel.template_info || {
-      id: taskMeta.templateId ?? null,
-      name: taskMeta.templateName || '',
-      destination: taskMeta.destination || '',
-      check_in_date: taskMeta.checkInDate || '',
-      check_out_date: taskMeta.checkOutDate || '',
-      room_count: taskMeta.roomCount ?? taskMeta.guestCount ?? null
-    },
-    distance: baseHotel.distance ?? '',
-    subway_station: baseHotel.subway_station ?? '',
-    subway_distance: baseHotel.subway_distance ?? '',
-    transport_time: baseHotel.transport_time ?? '',
-    bus_route: baseHotel.bus_route ?? ''
-  };
-
-  return revisedHotels.map((hotel) => {
-    const nextHotel = {
-      ...baseHotel,
-      ...hotel
-    };
-    for (const field of REVIEW_REQUIRED_HOTEL_LOCKED_FIELDS) {
-      if (lockedValues[field] !== undefined) {
-        nextHotel[field] = lockedValues[field];
-      }
-    }
-    delete nextHotel.apiKey;
-    delete nextHotel.token;
-    delete nextHotel.secret;
-    return nextHotel;
-  });
-}
-
 function createAiService({ dataService, windowService, hotelTaskRunner = null }) {
   const state = {
     currentTask: null,
     lastTask: null,
-    taskHistory: new Map(),
-    pendingReviews: new Map()
+    taskHistory: new Map()
   };
 
   function getStore() {
@@ -501,11 +149,6 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
     }
     const scraperRunner = await loadScraperRunner();
     return scraperRunner.collectAndWriteCtripHotel;
-  }
-
-  async function applyReviewedHotelsLazy(hotels, context) {
-    const scraperRunner = await loadScraperRunner();
-    return scraperRunner.applyReviewedHotels(hotels, context);
   }
 
   function saveProviderConfig(nextConfig = {}) {
@@ -570,7 +213,6 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       finishedAt: task.finishedAt || '',
       events: task.events.slice(-80),
       result: task.result ? compactTaskResult(task.result) : null,
-      reviewInputAvailable: Boolean(task.result && task.result.reviewInput),
       error: task.error || ''
     };
   }
@@ -686,35 +328,6 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       ],
       taskStatus: getTaskStatus()
     };
-  }
-
-  function getTaskById(taskId) {
-    const id = String(taskId || '');
-    const candidates = [state.currentTask, state.lastTask].filter(Boolean);
-    return candidates.find((task) => String(task.id) === id) || state.taskHistory.get(id) || null;
-  }
-
-  function getReviewInputForTask(taskId, userConcern = '') {
-    const task = getTaskById(taskId);
-    if (!task) {
-      throw new Error('未找到对应的采集任务，无法进行 AI 分析。');
-    }
-    if (!task.result || !task.result.reviewInput) {
-      throw new Error('当前任务没有生成 review_input，无法进行 AI 分析。');
-    }
-
-    return {
-      ...task.result.reviewInput,
-      userConcern: String(userConcern || '').trim()
-    };
-  }
-
-  async function analyzeCollection() {
-    throw new Error('AI分析重填功能已关闭。');
-  }
-
-  async function applyCollectionReview() {
-    throw new Error('AI覆盖写入功能已关闭。');
   }
 
   async function testConnection(configOverride = {}) {
@@ -844,8 +457,6 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
   }
 
   return {
-    analyzeCollection,
-    applyCollectionReview,
     cancelTask,
     getProviderConfig,
     getProviderPresets: getAiProviderPresets,
