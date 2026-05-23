@@ -92,8 +92,7 @@ function scheduleRebuild(ctx) {
     rebuildMenu(ctx);
     if (openInstance === ctx) {
       positionMenu(ctx);
-      const selectedIndex = ctx.select.selectedIndex;
-      setActiveIndex(ctx, selectedIndex >= 0 ? selectedIndex : 0);
+      clearActive(ctx);
     }
   };
 
@@ -174,15 +173,23 @@ export function refreshCustomSelects(root = document, options = {}) {
       rebuildMenu(ctx);
     } else if (select.dataset[READY_ATTR] === 'true') {
       initOne(select);
+    } else if (select.dataset.customSelect === 'true') {
+      enhanceCustomSelect(select);
+    } else if (auto && select.classList.contains('input')) {
+      enhanceCustomSelect(select);
     }
   });
 }
 
 /**
  * 刷新单个 select。
+ * @param {HTMLSelectElement} select
+ * @param {Object} [options]
+ * @param {boolean} [options.auto=false] - 为 true 时对 select.input 自动 enhance
  */
-export function refreshCustomSelect(select) {
+export function refreshCustomSelect(select, options = {}) {
   if (!select) return;
+  if (select.multiple || (select.size && select.size > 1)) return;
   clearStaleReadyState(select);
   const ctx = instances.get(select);
   if (ctx) {
@@ -192,6 +199,12 @@ export function refreshCustomSelect(select) {
     select.dataset.customSelect === 'true'
   ) {
     initOne(select);
+  } else if (options.auto === true && select.classList.contains('input')) {
+    if (select.dataset.nativeSelect !== 'true' &&
+        select.dataset.customSelect !== 'false' &&
+        select.dataset.customSelectAuto !== 'false') {
+      enhanceCustomSelect(select);
+    }
   }
 }
 
@@ -277,6 +290,7 @@ function findTargetSelects(root, auto = false) {
   const candidates = root.querySelectorAll(selector);
 
   candidates.forEach((select) => {
+    clearStaleReadyState(select);
     if (select.dataset.nativeSelect === 'true') return;
     if (select.dataset.customSelect === 'false') return;
     if (auto && select.dataset.customSelectAuto === 'false') return;
@@ -516,20 +530,21 @@ function toggleMenu(ctx) {
 }
 
 function openMenu(ctx) {
-  const { wrapper, button, menu, select } = ctx;
+  const { wrapper, button, menu } = ctx;
   wrapper.classList.add(OPEN_CLASS);
   button.setAttribute('aria-expanded', 'true');
   menu.hidden = false;
 
   positionMenu(ctx);
 
-  const selectedIndex = select.selectedIndex;
-  setActiveIndex(ctx, selectedIndex >= 0 ? selectedIndex : 0);
+  // 打开菜单时不自动高亮任何选项，避免误显示 hover 效果
+  clearActive(ctx);
 
   openInstance = ctx;
   ensureGlobalListeners();
 
-  requestAnimationFrame(() => {
+  const raf = getAnimationFrame();
+  raf(() => {
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('keydown', handleGlobalKey);
   });

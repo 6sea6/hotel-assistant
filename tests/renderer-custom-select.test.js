@@ -662,3 +662,147 @@ test('custom-select: data-custom-select-option used in keyboard navigation', asy
   const options = menu.querySelectorAll('[data-custom-select-option="true"]');
   assert.equal(options[1].classList.contains('is-active'), true, 'second option should have is-active');
 });
+
+test('custom-select: setupCustomSelects can recover stale ready state', async () => {
+  installMockDom();
+  const { setupCustomSelects, getCustomSelectInstance } = await loadCustomSelectModule();
+
+  const select = createMockSelect('staleSelect', [
+    { value: 'a', text: 'A' },
+  ]);
+  // Simulate stale ready: dataset says ready, class says native, but no WeakMap instance
+  select.dataset.customSelectReady = 'true';
+  select.classList.add('custom-select-native');
+  document.elements.set('staleSelect', select);
+
+  // Override querySelectorAll to return this select for data-custom-select selector
+  const origQsa = document.querySelectorAll;
+  document.querySelectorAll = function (selector) {
+    if (selector.includes('data-custom-select')) {
+      return [select];
+    }
+    return [];
+  };
+
+  setupCustomSelects(document, { auto: true });
+
+  assert.ok(getCustomSelectInstance(select), 'stale select should be re-enhanced');
+  assert.equal(select.dataset.customSelectReady, 'true', 'ready attr should be set again');
+
+  document.querySelectorAll = origQsa;
+});
+
+test('custom-select: refreshCustomSelects auto enhances newly inserted select.input', async () => {
+  installMockDom();
+  const { refreshCustomSelects, getCustomSelectInstance } = await loadCustomSelectModule();
+
+  const select = createMockSelect('newSelect', [
+    { value: 'x', text: 'X' },
+    { value: 'y', text: 'Y' },
+  ]);
+  select.classList.add('input');
+  // No data-custom-select, no ready, no native class — just a plain select.input
+  document.elements.set('newSelect', select);
+
+  const origQsa = document.querySelectorAll;
+  document.querySelectorAll = function (selector) {
+    // Handle comma-separated selectors
+    const parts = selector.split(',').map(s => s.trim());
+    const results = [];
+    for (const part of parts) {
+      if (part.includes('select.input')) {
+        results.push(select);
+      }
+    }
+    return results;
+  };
+
+  refreshCustomSelects(document, { auto: true });
+
+  assert.ok(getCustomSelectInstance(select), 'new select.input should be enhanced by refreshCustomSelects auto');
+  assert.equal(select.dataset.customSelectReady, 'true', 'ready attr should be set');
+
+  document.querySelectorAll = origQsa;
+});
+
+test('custom-select: refreshCustomSelect with auto option enhances single select.input', async () => {
+  installMockDom();
+  const { refreshCustomSelect, getCustomSelectInstance } = await loadCustomSelectModule();
+
+  const select = createMockSelect('singleNew', [
+    { value: 'p', text: 'P' },
+  ]);
+  select.classList.add('input');
+  document.elements.set('singleNew', select);
+
+  refreshCustomSelect(select, { auto: true });
+
+  assert.ok(getCustomSelectInstance(select), 'select.input should be enhanced by refreshCustomSelect with auto');
+});
+
+test('custom-select: refreshCustomSelects auto still excludes aiTemplateSelect', async () => {
+  installMockDom();
+  const { refreshCustomSelects, getCustomSelectInstance } = await loadCustomSelectModule();
+
+  const aiSelect = createMockSelect('aiTemplateSelect', [
+    { value: 't1', text: 'T1' },
+  ], { customSelect: 'false', customSelectAuto: 'false' });
+  aiSelect.className = 'input ai-template-select';
+
+  const normalSelect = createMockSelect('normalSel', [
+    { value: 'n', text: 'N' },
+  ], { customSelect: 'true' });
+
+  const origQsa = document.querySelectorAll;
+  document.querySelectorAll = function (selector) {
+    if (selector.includes('select.input') || selector.includes('data-custom-select')) {
+      return [aiSelect, normalSelect];
+    }
+    return [];
+  };
+
+  refreshCustomSelects(document, { auto: true });
+
+  assert.equal(getCustomSelectInstance(aiSelect), null, 'aiTemplateSelect should still be excluded');
+
+  document.querySelectorAll = origQsa;
+});
+
+test('custom-select: openMenu uses getAnimationFrame fallback when requestAnimationFrame missing', async () => {
+  installMockDom();
+  const { enhanceCustomSelect, getCustomSelectInstance } = await loadCustomSelectModule();
+
+  // Remove global requestAnimationFrame to simulate test/env edge
+  const origRaf = global.requestAnimationFrame;
+  delete global.requestAnimationFrame;
+
+  const select = createMockSelect('rafTest', [
+    { value: 'a', text: 'A' },
+  ]);
+  document.elements.set('rafTest', select);
+
+  const wrapper = createMockElement('div');
+  const button = createMockElement('button');
+  const textSpan = createMockElement('span');
+  const menu = createMockElement('div');
+  wrapper.appendChild(button);
+  button.appendChild(textSpan);
+  wrapper.appendChild(menu);
+
+  enhanceCustomSelect(select, {
+    existingElements: { wrapper, button, textSpan, menu },
+  });
+
+  const ctx = getCustomSelectInstance(select);
+  assert.ok(ctx);
+
+  // openMenu should not throw even without requestAnimationFrame
+  assert.doesNotThrow(() => {
+    button._listeners['click'][0]({ preventDefault() {} });
+  }, 'openMenu should work with getAnimationFrame fallback');
+
+  assert.equal(menu.hidden, false, 'menu should be visible');
+
+  // Restore
+  global.requestAnimationFrame = origRaf;
+});

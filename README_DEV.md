@@ -99,31 +99,32 @@ node --test tests/package-scripts.test.js
 
 ```html
 <select id="mySelect" class="input" data-custom-select="true">
+  <option value="请选择" value="">请选择</option>
   <option value="a">选项 A</option>
   <option value="b">选项 B</option>
 </select>
 ```
 
-初始化时调用：
+应用初始化时已自动调用：
 
 ```js
-import { setupCustomSelects } from './modules/custom-select.js';
 setupCustomSelects(document, { auto: true });
 ```
 
 `auto: true` 会自动增强所有 `select.input`（排除 `data-native-select="true"` 和 `data-custom-select="false"`）。
 
-### 保留原生 select
+### 动态插入 DOM 后
 
-需要保留浏览器原生外观时：
+运行时插入新的 `<select class="input">` 后，调用：
 
-```html
-<select class="input" data-native-select="true">...</select>
-<!-- 或 -->
-<select class="input" data-custom-select="false">...</select>
+```js
+import { refreshCustomSelects } from './modules/custom-select.js';
+refreshCustomSelects(container, { auto: true });
 ```
 
-### 动态刷新
+它会自动发现并增强尚未增强的 `select.input`。
+
+### 动态更新 options 后
 
 当 `<select>` 的 `<option>` 在运行时被重建后，调用刷新以同步自定义菜单：
 
@@ -135,23 +136,39 @@ refreshCustomSelect(document.getElementById('mySelect'));
 
 // 刷新所有已增强的
 refreshCustomSelects();
+
+// 刷新单个且自动增强（对新插入的 select.input 也生效）
+refreshCustomSelect(document.getElementById('myNewSelect'), { auto: true });
 ```
 
-### 公共 API
+### 单个新 select 手动增强
 
-| 函数 | 说明 |
-|------|------|
-| `setupCustomSelects(root, options)` | 增强 root 内目标 select。`options.auto` 为 true 时增强所有 `select.input` |
-| `enhanceCustomSelect(select, options)` | 增强单个 select，支持自定义 className 和复用已有 DOM |
-| `refreshCustomSelect(select)` | 刷新单个 select 的菜单和按钮文本 |
-| `refreshCustomSelects(root)` | 刷新范围内所有已增强 select |
-| `destroyCustomSelect(select)` | 销毁增强，恢复原生 select |
-| `closeAllCustomSelects()` | 关闭当前打开的菜单 |
-| `getCustomSelectInstance(select)` | 获取 ctx 实例（调试用） |
+```js
+import { enhanceCustomSelect } from './modules/custom-select.js';
+enhanceCustomSelect(document.getElementById('mySelect'));
+```
 
-### 自定义样式 variant
+### 保留原生 select
 
-通过 `options` 参数可覆盖默认 className，用于特殊场景（如采集助手模板选择器）：
+需要保留浏览器原生外观时：
+
+```html
+<select class="input" data-native-select="true">...</select>
+<!-- 或 -->
+<select class="input" data-custom-select="false">...</select>
+```
+
+### 只排除自动增强，但允许手动 enhance
+
+```html
+<select class="input" data-custom-select-auto="false">...</select>
+```
+
+该 select 不会被 `setupCustomSelects(document, { auto: true })` 增强，但 `enhanceCustomSelect(select)` 仍可手动增强。
+
+### 复用已有 DOM 的特殊组件
+
+采集助手模板选择器等场景，需要复用页面上已有的 wrapper、button、menu：
 
 ```js
 enhanceCustomSelect(select, {
@@ -167,9 +184,23 @@ enhanceCustomSelect(select, {
 });
 ```
 
-### 注意事项
+### 公共 API
+
+| 函数 | 说明 |
+|------|------|
+| `setupCustomSelects(root, options)` | 增强 root 内目标 select。`options.auto` 为 true 时增强所有 `select.input` |
+| `enhanceCustomSelect(select, options)` | 增强单个 select，支持自定义 className 和复用已有 DOM |
+| `refreshCustomSelect(select, options)` | 刷新单个 select 的菜单和按钮文本。`options.auto` 为 true 时对 `select.input` 自动 enhance |
+| `refreshCustomSelects(root, options)` | 刷新范围内所有已增强 select。`options.auto` 为 true 时也增强新发现的 `select.input` |
+| `destroyCustomSelect(select)` | 销毁增强，恢复原生 select |
+| `closeAllCustomSelects()` | 关闭当前打开的菜单 |
+| `getCustomSelectInstance(select)` | 获取 ctx 实例（调试用） |
+
+### 开发规范
 
 - 不要手写新的 picker 组件，优先使用 custom-select。
+- 不要复制 ai-template-picker 逻辑，使用 `existingElements` 复用已有 DOM。
 - 需要特殊样式时使用 variant/className，而不是复制一套逻辑。
 - 原生 `<select>` 始终作为真实数据源，业务逻辑通过 `change` 事件触发。
 - `MutationObserver` 会自动监听 `<select>` 子节点变化并同步菜单。
+- 不要删除原生 select，custom-select 只是视觉增强层。
