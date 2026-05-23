@@ -666,6 +666,329 @@ async function openVisibleEdgeLogin(input, context = {}) {
   });
 }
 
+const PRESERVED_FIELDS_ON_REFRESH = [
+  'distance',
+  'subway_station',
+  'subway_distance',
+  'transport_time',
+  'bus_route',
+  'destination',
+  'template_id',
+  'template_info',
+  'check_in_date',
+  'check_out_date',
+  'days',
+  'is_favorite',
+  'notes'
+];
+
+async function refreshExistingCtripHotels(input, context = {}) {
+  const dataFolderPath = context.dataFolderPath;
+  if (!dataFolderPath) {
+    throw new Error('缺少比较助手数据目录，无法读取宾馆数据。');
+  }
+
+  const scraperPath = resolveScraperPath();
+  const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
+  ensureScraperRuntimeDirs(workDir);
+
+  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
+    const rollbackState = {};
+    const emit = (type, message, details = {}) => {
+      if (typeof context.onEvent !== 'function') return;
+      context.onEvent({ type, message, details, at: new Date().toISOString() });
+    };
+
+    try {
+      assertNotCancelled(context.signal);
+
+      // 1. Load current store data
+      emit('refresh:load-data', '正在读取当前宾馆数据');
+      const bridge = await loadScraperModule(scraperPath, 'compare-app-bridge.js');
+      const hotelMerge = await loadScraperModule(scraperPath, 'compare-app/hotel-merge.js');
+      const store = bridge.loadCompareAppStore();
+      const rawHotels = Array.isArray(store.hotels) ? store.hotels : [];
+      const { expandStoredHotels, compactHotels } = await loadScraperModule(
+        scraperPath,
+        'compare-app/shared-module.js'
+      ).then((mod) => {
+        const groups = mod.requireSharedCompareAppModule('hotel-groups.js');
+        return { expandStoredHotels: groups.expandStoredHotels, compactHotels: groups.compactHotels };
+      });
+      const expandedHotels = expandStoredHotels(rawHotels);
+
+      // 2. Group hotels by website (ctrip URL), find ones with ctrip links
+      const hotelGroups = new Map();
+      for (const hotel of expandedHotels) {
+        const url = hotel.website || '';
+        if (!url || !isCtripHotelUrl(url)) continue;
+        if (!hotelGroups.has(url)) {
+          hotelGroups.set(url, []);
+        }
+        hotelGroups.get(url).push(hotel);
+      }
+
+      const hotelUrls = Array.from(hotelGroups.keys());
+      const totalHotelCount = hotelUrls.length;
+
+      if (totalHotelCount === 0) {
+        emit('refresh:summary', '当前没有找到带携程链接的宾馆');
+        return {
+          success: true,
+          totalHotelCount: 0,
+          updatedHotelCount: 0,
+          updatedRoomTypeCount: 0,
+          deletedRoomTypeCount: 0,
+          skippedHotelCount: 0,
+          items: [],
+          message: '当前没有找到带携程链接的宾馆，未执行更新。'
+        };
+      }
+
+      emit('refresh:summary', `找到 ${totalHotelCount} 家有携程链接的宾馆，准备逐家更新`);
+
+      // 3. Prepare Edge session
+      assertNotCancelled(context.signal);
+      emit('edge:login-required', '正在准备 Edge 登录态');
+      const { launchAndWaitForEdge } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
+      await launchAndWaitForEdge({
+        userDataDir: path.join(workDir, 'state', 'edge-profile'),
+        profileDirectory: 'Default',
+        port: 9222,
+        url: hotelUrls[0] || 'https://hotels.ctrip.com/'
+      });
+      emit('edge:login-done', 'Edge 登录态已准备完成');
+
+      assertNotCancelled(context.signal);
+      await createWriteRollbackSnapshot(scraperPath, rollbackState);
+
+      // 4. Process each hotel
+      let updatedHotelCount = 0;
+      let updatedRoomTypeCount = 0;
+      let deletedRoomTypeCount = 0;
+      let skippedHotelCount = 0;
+      const items = [];
+
+      const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
+
+      for (let index = 0; index < hotelUrls.length; index++) {
+        assertNotCancelled(context.signal);
+
+        const url = hotelUrls[index];
+        const existingHotels = hotelGroups.get(url);
+        const firstHotel = existingHotels[0] || {};
+        const hotelName = firstHotel.name || '';
+
+        emit('refresh:item-start', `正在更新第 ${index + 1}/${totalHotelCount} 家：${hotelName}`, {
+          index: index + 1,
+          total: totalHotelCount,
+          hotelName
+        });
+
+        try {
+          // Run single detail page scrape with skipTransit
+          const collectArgs = buildScraperArgs(
+            {
+              url,
+              templateId: firstHotel.template_id || '',
+              templateName: '',
+              amapKey: input.amapKey
+            },
+            workDir
+          );
+          collectArgs.skipTransit = true;
+
+          const collectResult = await runHotelImportTask(collectArgs, {
+            workingDirectory: workDir,
+            taskId: context.taskId,
+            signal: context.signal,
+            onEvent: (event) => {
+              // Only forward non-transit events
+              const type = event.type || '';
+              if (!type.startsWith('transit:') && type !== 'transit:start' && type !== 'transit:done') {
+                emit(event.type, event.message, event.details || {});
+              }
+            }
+          });
+
+          assertNotCancelled(context.signal);
+
+          // Check if collection was successful with valid room data
+          if (
+            !collectResult ||
+            collectResult.success !== true ||
+            !Number.isFinite(Number(collectResult.eligibleCount)) ||
+            Number(collectResult.eligibleCount) <= 0
+          ) {
+            const skipReason =
+              collectResult && collectResult.error
+                ? collectResult.error
+                : '采集未返回有效房型数据';
+            skippedHotelCount++;
+            items.push({
+              hotelName,
+              url,
+              status: 'skipped',
+              updatedRoomTypeCount: 0,
+              deletedRoomTypeCount: 0,
+              skipReason,
+              error: skipReason
+            });
+            emit('refresh:item-skipped', `跳过 ${hotelName}：${skipReason}`, {
+              index: index + 1,
+              hotelName,
+              reason: skipReason
+            });
+            continue;
+          }
+
+          // Check price availability
+          const newHotels = Array.isArray(collectResult.eligibleHotels)
+            ? collectResult.eligibleHotels
+            : [];
+          if (newHotels.length === 0) {
+            skippedHotelCount++;
+            items.push({
+              hotelName,
+              url,
+              status: 'skipped',
+              updatedRoomTypeCount: 0,
+              deletedRoomTypeCount: 0,
+              skipReason: '采集成功但没有有效房型',
+              error: ''
+            });
+            emit('refresh:item-skipped', `跳过 ${hotelName}：没有有效房型`, {
+              index: index + 1,
+              hotelName,
+              reason: '没有有效房型'
+            });
+            continue;
+          }
+
+          // Preserve old fields from existing records
+          const oldRoomTypes = new Set(existingHotels.map((h) => (h.room_type || '').trim()).filter(Boolean));
+          const preservedByRoomType = new Map();
+          for (const oldHotel of existingHotels) {
+            const roomType = (oldHotel.room_type || '').trim();
+            preservedByRoomType.set(roomType, oldHotel);
+          }
+
+          const refreshedHotels = newHotels.map((newHotel) => {
+            const oldHotel = preservedByRoomType.get((newHotel.room_type || '').trim()) || firstHotel;
+            const preserved = {};
+            for (const field of PRESERVED_FIELDS_ON_REFRESH) {
+              if (oldHotel[field] !== undefined && oldHotel[field] !== null && oldHotel[field] !== '') {
+                preserved[field] = oldHotel[field];
+              }
+            }
+            // Also preserve is_favorite as numeric
+            if (oldHotel.is_favorite !== undefined) {
+              preserved.is_favorite = oldHotel.is_favorite;
+            }
+            // Also preserve notes even if empty string (user may have cleared them)
+            if (oldHotel.notes !== undefined) {
+              preserved.notes = oldHotel.notes;
+            }
+            return {
+              ...newHotel,
+              ...preserved
+            };
+          });
+
+          // Calculate deleted room types
+          const newRoomTypes = new Set(refreshedHotels.map((h) => (h.room_type || '').trim()).filter(Boolean));
+          let deletedForThisHotel = 0;
+          for (const oldType of oldRoomTypes) {
+            if (!newRoomTypes.has(oldType)) {
+              deletedForThisHotel++;
+            }
+          }
+
+          // Write using overwriteExistingGroup strategy
+          emit('refresh:write', `正在写入 ${hotelName} 的更新结果`);
+          const writeResult = await hotelMerge.appendHotelsToStore(refreshedHotels, {
+            overwriteExistingGroup: true
+          });
+
+          updatedHotelCount++;
+          updatedRoomTypeCount += refreshedHotels.length;
+          deletedRoomTypeCount += deletedForThisHotel;
+
+          items.push({
+            hotelName,
+            url,
+            status: 'updated',
+            updatedRoomTypeCount: refreshedHotels.length,
+            deletedRoomTypeCount: deletedForThisHotel,
+            skipReason: '',
+            error: ''
+          });
+
+          emit('refresh:item-done', `已更新 ${hotelName}：${refreshedHotels.length} 种房型`, {
+            index: index + 1,
+            total: totalHotelCount,
+            hotelName,
+            roomTypeCount: refreshedHotels.length,
+            deletedRoomTypeCount: deletedForThisHotel
+          });
+        } catch (error) {
+          if (isTaskCancelled(error, context.signal)) {
+            throw error;
+          }
+          const errorMessage = error && error.message ? error.message : String(error || '未知错误');
+          skippedHotelCount++;
+          items.push({
+            hotelName,
+            url,
+            status: 'failed',
+            updatedRoomTypeCount: 0,
+            deletedRoomTypeCount: 0,
+            skipReason: errorMessage,
+            error: errorMessage
+          });
+          emit('refresh:item-skipped', `跳过 ${hotelName}：${errorMessage}`, {
+            index: index + 1,
+            hotelName,
+            reason: errorMessage
+          });
+        }
+      }
+
+      const message =
+        totalHotelCount === 0
+          ? '当前没有找到带携程链接的宾馆，未执行更新。'
+          : updatedHotelCount === 0 && skippedHotelCount > 0
+            ? `本次没有成功更新的宾馆，已跳过 ${skippedHotelCount} 家。请检查携程登录态或稍后重试。`
+            : `更新完成，本次更新 ${updatedHotelCount} 家宾馆信息，更新 ${updatedRoomTypeCount} 种房型价格，删除 ${deletedRoomTypeCount} 种已下架房型，跳过 ${skippedHotelCount} 家。`;
+
+      emit('refresh:summary', message, {
+        totalHotelCount,
+        updatedHotelCount,
+        updatedRoomTypeCount,
+        deletedRoomTypeCount,
+        skippedHotelCount
+      });
+
+      return {
+        success: true,
+        totalHotelCount,
+        updatedHotelCount,
+        updatedRoomTypeCount,
+        deletedRoomTypeCount,
+        skippedHotelCount,
+        items,
+        message,
+        writeResult: { batchMode: true, appliedCount: updatedHotelCount, skippedCount: skippedHotelCount, items: items.map((item) => ({ skipped: item.status !== 'updated', reason: item.skipReason || '' })) }
+      };
+    } catch (error) {
+      if (isTaskCancelled(error, context.signal)) {
+        restoreWriteRollbackSnapshot(rollbackState, context);
+      }
+      throw error;
+    }
+  });
+}
+
 module.exports = {
   assertSafeWriteResult,
   createWriteRollbackSnapshot,
@@ -675,6 +998,7 @@ module.exports = {
   isTaskCancelled,
   loadScraperModule,
   openVisibleEdgeLogin,
+  refreshExistingCtripHotels,
   resolveRootPerfLogDir,
   restoreWriteRollbackSnapshot,
   resolveScraperPath,

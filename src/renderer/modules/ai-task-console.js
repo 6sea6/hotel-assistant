@@ -5,6 +5,7 @@ const TOOL_LABELS = {
   list_templates: '读取模板列表',
   get_settings: '读取比较助手设置',
   collect_and_write_ctrip_hotel: '采集携程酒店页面',
+  refresh_existing_ctrip_hotels: '更新已有宾馆数据',
   open_visible_edge_login: '打开 Edge 登录准备窗口',
   prepare_edge: '准备 Edge 登录态',
   calculate_traffic: '计算交通与地铁信息',
@@ -18,6 +19,14 @@ const BASE_STEP_DEFINITIONS = [
   { key: 'scrape', title: '正在采集携程酒店页面', doneTitle: '房型采集与筛选' },
   { key: 'transit', title: '正在计算交通与地铁信息', doneTitle: '交通与地铁计算' },
   { key: 'write', title: '等待回写采集结果', doneTitle: '结果汇总' }
+];
+
+const REFRESH_STEP_DEFINITIONS = [
+  { key: 'received', title: '已接收更新任务', doneTitle: '任务创建' },
+  { key: 'load-data', title: '正在读取当前宾馆数据', doneTitle: '读取当前宾馆数据' },
+  { key: 'edge', title: '正在准备 Edge 登录态', doneTitle: '准备 Edge 登录态' },
+  { key: 'refresh', title: '正在更新房型与价格', doneTitle: '房型与价格更新' },
+  { key: 'write', title: '等待写入更新结果', doneTitle: '结果汇总' }
 ];
 
 const LOGIN_STEP_DEFINITION = {
@@ -99,7 +108,7 @@ export function extractCtripUrls(text) {
 export function getCollectToolResult(result = {}) {
   if (!Array.isArray(result.toolResults)) return null;
   return (
-    result.toolResults.find((item) => item && item.name === 'collect_and_write_ctrip_hotel') || null
+    result.toolResults.find((item) => item && (item.name === 'collect_and_write_ctrip_hotel' || item.name === 'refresh_existing_ctrip_hotels')) || null
   );
 }
 
@@ -242,14 +251,27 @@ export function getReadableToolLabel(toolName) {
   return TOOL_LABELS[toolName] || `正在执行：${toolName}`;
 }
 
-function getEventStepKey(event = {}) {
+function getEventStepKey(event = {}, taskKind = 'collect') {
   const type = String(event.type || '');
   const toolName = getToolName(event);
+  const isRefresh = taskKind === 'refresh-data';
 
   if (type === 'task:start') return 'received';
   if (type === 'task:done') return 'done';
   if (type === 'task:error') return 'error';
   if (type === 'task:cancel') return 'cancel';
+  if (isRefresh) {
+    if (type === 'refresh:load-data') return 'load-data';
+    if (type.startsWith('refresh:')) return 'refresh';
+    if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done')
+      return 'login';
+    if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
+    if (type.startsWith('write:') || type.startsWith('apply:')) return 'write';
+    if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return 'received';
+    if (toolName === 'refresh_existing_ctrip_hotels') return 'refresh';
+    if (toolName === 'get_task_status') return 'received';
+    return '';
+  }
   if (toolName === 'list_templates' || toolName === 'get_settings') return 'template';
   if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done')
     return 'login';
@@ -273,6 +295,12 @@ function getReadableEventTitle(event = {}) {
   if (type === 'task:done') return '采集任务完成';
   if (type === 'task:error') return '任务执行失败';
   if (type === 'task:cancel') return '任务已取消';
+  if (type === 'refresh:load-data') return '正在读取当前宾馆数据';
+  if (type === 'refresh:item-start') return event.message || '正在更新房型与价格';
+  if (type === 'refresh:item-done') return event.message || '房型与价格更新完成';
+  if (type === 'refresh:item-skipped') return event.message || '跳过该宾馆';
+  if (type === 'refresh:write') return '等待写入更新结果';
+  if (type === 'refresh:summary') return '结果汇总';
   if (type === 'edge:login-required') return event.message || '需要登录携程后继续采集';
   if (type === 'edge:login-window') return event.message || '已打开 Edge 登录窗口，等待你完成登录';
   if (type === 'edge:login-done') return event.message || '携程登录窗口已关闭，继续采集';
@@ -284,6 +312,9 @@ function getReadableEventTitle(event = {}) {
     if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start')
       return '已接收采集任务';
     if (toolName === 'collect_and_write_ctrip_hotel') return '正在采集携程酒店页面';
+    if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start')
+      return '已接收更新任务';
+    if (toolName === 'refresh_existing_ctrip_hotels') return '正在更新已有宾馆数据';
     if (toolName === 'list_templates' || toolName === 'get_settings')
       return '正在读取模板与比较助手设置';
     return label.startsWith('正在') ? label : `正在${label}`;
@@ -294,9 +325,9 @@ function getReadableEventTitle(event = {}) {
     .replace(/^AI\s*采集任务/, '采集任务');
 }
 
-function normalizeEvent(event = {}) {
+function normalizeEvent(event = {}, taskKind = 'collect') {
   return {
-    key: getEventStepKey(event),
+    key: getEventStepKey(event, taskKind),
     time: event.at || '',
     title: getReadableEventTitle(event),
     detail: event.details && typeof event.details === 'object' ? event.details : null,
@@ -399,7 +430,23 @@ function buildProgressStats(events = []) {
   };
 }
 
-function getStepDefinitions(normalizedEvents = []) {
+function getStepDefinitions(normalizedEvents = [], taskKind = 'collect') {
+  if (taskKind === 'refresh-data') {
+    const hasLoginStep = normalizedEvents.some((event) => event.key === 'login');
+    const hasCancelStep = normalizedEvents.some((event) => event.key === 'cancel');
+    if (!hasLoginStep && !hasCancelStep) return REFRESH_STEP_DEFINITIONS;
+
+    const definitions = [...REFRESH_STEP_DEFINITIONS];
+    if (hasLoginStep) {
+      const edgeIndex = definitions.findIndex((step) => step.key === 'edge');
+      definitions.splice(edgeIndex < 0 ? 2 : edgeIndex, 0, LOGIN_STEP_DEFINITION);
+    }
+    if (hasCancelStep) {
+      definitions.push(CANCEL_STEP_DEFINITION);
+    }
+    return definitions;
+  }
+
   const hasLoginStep = normalizedEvents.some((event) => event.key === 'login');
   const hasCancelStep = normalizedEvents.some((event) => event.key === 'cancel');
   if (!hasLoginStep && !hasCancelStep) return BASE_STEP_DEFINITIONS;
@@ -416,8 +463,9 @@ function getStepDefinitions(normalizedEvents = []) {
 }
 
 function buildTaskSteps(task, events, status) {
-  const normalizedEvents = (events || []).map(normalizeEvent).filter((event) => event.title);
-  const stepDefinitions = getStepDefinitions(normalizedEvents);
+  const taskKind = task.taskKind || 'collect';
+  const normalizedEvents = (events || []).map((event) => normalizeEvent(event, taskKind)).filter((event) => event.title);
+  const stepDefinitions = getStepDefinitions(normalizedEvents, taskKind);
   const lastProgressEvent = normalizedEvents
     .slice()
     .reverse()
@@ -532,6 +580,42 @@ function getTaskCollectResult(task = {}) {
 
 function buildTaskResult(task = {}) {
   const collectResult = getTaskCollectResult(task);
+  const taskKind = task.taskKind || 'collect';
+  const isRefresh = taskKind === 'refresh-data';
+
+  // Refresh-data task result
+  if (isRefresh && collectResult) {
+    const totalHotelCount = Number(collectResult.totalHotelCount || 0);
+    const updatedHotelCount = Number(collectResult.updatedHotelCount || 0);
+    const updatedRoomTypeCount = Number(collectResult.updatedRoomTypeCount || 0);
+    const deletedRoomTypeCount = Number(collectResult.deletedRoomTypeCount || 0);
+    const skippedHotelCount = Number(collectResult.skippedHotelCount || 0);
+    const wroteResult = hasWriteResult(collectResult.writeResult);
+
+    let refreshResultText = '';
+    if (totalHotelCount === 0) {
+      refreshResultText = '当前没有找到带携程链接的宾馆，未执行更新。';
+    } else if (updatedHotelCount === 0 && skippedHotelCount > 0) {
+      refreshResultText = `本次没有成功更新的宾馆，已跳过 ${skippedHotelCount} 家。请检查携程登录态或稍后重试。`;
+    } else {
+      refreshResultText = `本次更新 ${updatedHotelCount} 家宾馆信息，更新 ${updatedRoomTypeCount} 种房型价格，删除 ${deletedRoomTypeCount} 种已下架房型，跳过 ${skippedHotelCount} 家。`;
+    }
+
+    return {
+      hasMatchedRoom: updatedHotelCount > 0,
+      hotelName: refreshResultText,
+      actualResultText: refreshResultText,
+      isBatchResult: false,
+      eligibleCount: updatedRoomTypeCount,
+      priceText: '',
+      matchedRooms: [],
+      reasons: [],
+      writeBackStatus: wroteResult ? '已写入数据' : '未写入数据',
+      summary: refreshResultText,
+      raw: collectResult
+    };
+  }
+
   const eligibleCount = Number(collectResult.eligibleCount || 0);
   const matchedRooms = Array.isArray(collectResult.eligibleRoomTypes)
     ? collectResult.eligibleRoomTypes
@@ -839,17 +923,25 @@ function renderProgressIcon(type) {
   return icons[type] || '';
 }
 
-function renderProgressStats(stats) {
+function renderProgressStats(stats, taskKind = 'collect') {
   if (!stats || !Number.isFinite(Number(stats.total)) || Number(stats.total) <= 0) {
     return '';
   }
 
-  const cards = [
-    { type: 'hotel', label: '酒店总数', value: stats.total },
-    { type: 'done', label: '已完成', value: stats.completed },
-    { type: 'running', label: '进行中', value: stats.running },
-    { type: 'pending', label: '待处理', value: stats.pending }
-  ];
+  const isRefresh = taskKind === 'refresh-data';
+  const cards = isRefresh
+    ? [
+        { type: 'hotel', label: '宾馆总数', value: stats.total },
+        { type: 'done', label: '已更新', value: stats.completed },
+        { type: 'running', label: '进行中', value: stats.running },
+        { type: 'pending', label: '待处理', value: stats.pending }
+      ]
+    : [
+        { type: 'hotel', label: '酒店总数', value: stats.total },
+        { type: 'done', label: '已完成', value: stats.completed },
+        { type: 'running', label: '进行中', value: stats.running },
+        { type: 'pending', label: '待处理', value: stats.pending }
+      ];
 
   return `
     <div class="task-progress-stats" aria-label="批量采集进度统计">
@@ -884,14 +976,15 @@ function renderIdleView() {
   `;
 }
 
-function renderRunningView(taskState) {
+function renderRunningView(taskState, taskKind = 'collect') {
+  const isRefresh = taskKind === 'refresh-data';
   return `
     <div class="task-running-view">
       <div class="task-result-hero task-result-hero-running">
         <span aria-hidden="true">…</span>
         <div>
-          <h3>正在采集</h3>
-          <p>正在采集房型与价格信息……</p>
+          <h3>${isRefresh ? '正在更新数据' : '正在采集'}</h3>
+          <p>${isRefresh ? '正在更新已有宾馆的房型与价格信息……' : '正在采集房型与价格信息……'}</p>
         </div>
       </div>
       ${renderTaskMeta(taskState)}
@@ -900,21 +993,22 @@ function renderRunningView(taskState) {
           <h3>执行进度</h3>
           ${renderStatusBadge('running', '执行中')}
         </div>
-        ${renderProgressStats(taskState.progressStats)}
+        ${renderProgressStats(taskState.progressStats, taskKind)}
         ${renderTaskTimeline(taskState.steps)}
       </section>
       <div class="task-panel-actions">
-        <button class="task-secondary-button" type="button" data-action="cancel-ai-task">取消当前任务</button>
+        <button class="task-secondary-button" type="button" data-action="cancel-ai-task">${isRefresh ? '取消更新任务' : '取消当前任务'}</button>
       </div>
     </div>
   `;
 }
 
-function renderSummaryCards(taskState, variant) {
+function renderSummaryCards(taskState, variant, taskKind = 'collect') {
   const { taskInfo, result, error } = taskState;
   const elapsedText = getElapsedText(taskInfo, taskState.status);
   const isError = variant === 'error';
   const isCancelled = variant === 'cancelled';
+  const isRefresh = taskKind === 'refresh-data';
   const reasonItems =
     isError || isCancelled
       ? [error.reason || error.message, ...error.suggestions].filter(Boolean)
@@ -925,12 +1019,34 @@ function renderSummaryCards(taskState, variant) {
       </ul>`
     : '';
 
+  const resultAnalysisContent = isRefresh
+    ? `
+      <dl>
+        <div><dt>更新结果</dt><dd>${escapeHtml(result.actualResultText || result.hotelName)}</dd></div>
+        <div><dt>写入状态</dt><dd>${escapeHtml(result.writeBackStatus)}</dd></div>
+      </dl>
+    `
+    : isError || isCancelled
+      ? `
+        <dl>
+          <div><dt>${isCancelled ? '取消原因' : '错误原因'}</dt><dd>${escapeHtml(error.message || (isCancelled ? '任务已取消' : '暂无详细原因'))}</dd></div>
+          <div><dt>建议操作</dt><dd>${escapeHtml(isCancelled ? '如需继续，请重新采集。' : '检查链接、刷新登录态、重新执行任务。')}</dd></div>
+        </dl>
+      `
+      : `
+        <dl>
+          <div><dt>模板规则</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
+          <div><dt>实际采集结果</dt><dd>${escapeHtml(result.actualResultText || result.hotelName)}</dd></div>
+          <div><dt>写入状态</dt><dd>${escapeHtml(result.writeBackStatus)}</dd></div>
+        </dl>
+      `;
+
   return `
     <div class="task-result-grid">
       <section class="task-result-card">
         <h3>任务摘要</h3>
         <dl>
-          <div><dt>模板</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
+          <div><dt>${isRefresh ? '任务类型' : '模板'}</dt><dd>${isRefresh ? '更新已有宾馆数据' : escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
           <div><dt>开始时间</dt><dd>${escapeHtml(formatAiTime(taskInfo.startTime) || '暂无')}</dd></div>
           <div><dt>${isCancelled ? '取消时间' : isError ? '失败时间' : '完成时间'}</dt><dd>${escapeHtml(formatAiTime(taskInfo.endTime) || '暂无')}</dd></div>
           <div><dt>执行时间</dt><dd>${escapeHtml(elapsedText)}</dd></div>
@@ -945,82 +1061,72 @@ function renderSummaryCards(taskState, variant) {
 
       <section class="task-result-card">
         <h3>${isCancelled ? '取消详情' : isError ? '错误详情' : '结果分析'}</h3>
-        ${
-          isError || isCancelled
-            ? `
-          <dl>
-            <div><dt>${isCancelled ? '取消原因' : '错误原因'}</dt><dd>${escapeHtml(error.message || (isCancelled ? '任务已取消' : '暂无详细原因'))}</dd></div>
-            <div><dt>建议操作</dt><dd>${escapeHtml(isCancelled ? '如需继续，请重新采集。' : '检查链接、刷新登录态、重新执行任务。')}</dd></div>
-          </dl>
-        `
-            : `
-          <dl>
-            <div><dt>模板规则</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
-            <div><dt>实际采集结果</dt><dd>${escapeHtml(result.actualResultText || result.hotelName)}</dd></div>
-            <div><dt>写入状态</dt><dd>${escapeHtml(result.writeBackStatus)}</dd></div>
-          </dl>
-        `
-        }
+        ${resultAnalysisContent}
         ${reasonList}
       </section>
     </div>
   `;
 }
 
-function renderSuccessView(taskState) {
-  const title = taskState.result.hasMatchedRoom
-    ? '采集完成，已找到符合条件的房型'
-    : '采集完成，但没有符合条件的房型';
+function renderSuccessView(taskState, taskKind = 'collect') {
+  const isRefresh = taskKind === 'refresh-data';
+  const title = isRefresh
+    ? '更新完成'
+    : taskState.result.hasMatchedRoom
+      ? '采集完成，已找到符合条件的房型'
+      : '采集完成，但没有符合条件的房型';
 
   return `
     <div class="task-finished-view">
       <div class="task-result-hero task-result-hero-success">
         <span aria-hidden="true">✓</span>
         <div>
-          <h3>采集完成</h3>
+          <h3>${isRefresh ? '更新完成' : '采集完成'}</h3>
           <p>${escapeHtml(title)}</p>
         </div>
       </div>
-      ${renderSummaryCards(taskState, 'success')}
+      ${renderSummaryCards(taskState, 'success', taskKind)}
       <div class="task-panel-actions">
-        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新采集</button>
+        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">${isRefresh ? '再次更新' : '重新采集'}</button>
       </div>
     </div>
   `;
 }
 
-function renderErrorView(taskState) {
+function renderErrorView(taskState, taskKind = 'collect') {
+  const isRefresh = taskKind === 'refresh-data';
   return `
     <div class="task-finished-view">
       <div class="task-result-hero task-result-hero-error">
         <span aria-hidden="true">!</span>
         <div>
           <h3>任务执行失败</h3>
-          <p>系统在采集携程酒店页面时发生异常，请检查链接或稍后重试。</p>
+          <p>${isRefresh ? '更新数据时发生异常，请检查携程登录态或稍后重试。' : '系统在采集携程酒店页面时发生异常，请检查链接或稍后重试。'}</p>
         </div>
       </div>
-      ${renderSummaryCards(taskState, 'error')}
+      ${renderSummaryCards(taskState, 'error', taskKind)}
       <div class="task-panel-actions">
-        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新尝试</button>
+        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">${isRefresh ? '再次尝试更新' : '重新尝试'}</button>
         <button class="task-secondary-button" type="button" data-action="focus-ai-task-start-bar">返回编辑</button>
       </div>
     </div>
   `;
 }
 
-function renderCancelledView(taskState) {
+function renderCancelledView(taskState, taskKind = 'collect') {
+  const isRefresh = taskKind === 'refresh-data';
   return `
     <div class="task-finished-view">
       <div class="task-result-hero task-result-hero-cancelled">
         <span aria-hidden="true">×</span>
         <div>
           <h3>任务已取消</h3>
-          <p>采集任务已中止，本次取消会撤销已经写回的数据。</p>
+          <p>${isRefresh ? '更新任务已取消，本次取消会撤销已经写回的数据。' : '采集任务已中止，本次取消会撤销已经写回的数据。'}</p>
         </div>
       </div>
-      ${renderSummaryCards(taskState, 'cancelled')}
+      ${renderSummaryCards(taskState, 'cancelled', taskKind)}
       <div class="task-panel-actions">
-        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">重新采集</button>
+        <button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">${isRefresh ? '再次更新' : '重新采集'}</button>
         <button class="task-secondary-button" type="button" data-action="focus-ai-task-start-bar">返回编辑</button>
       </div>
     </div>
@@ -1061,12 +1167,13 @@ export function renderAiTaskConsole(state) {
     inProgress: selectedTaskInProgress
   });
 
+  const taskKind = currentConsole.taskKind || 'collect';
   const viewHtml = {
     idle: renderIdleView,
-    running: renderRunningView,
-    success: renderSuccessView,
-    error: renderErrorView,
-    cancelled: renderCancelledView
+    running: () => renderRunningView(taskState, taskKind),
+    success: () => renderSuccessView(taskState, taskKind),
+    error: () => renderErrorView(taskState, taskKind),
+    cancelled: () => renderCancelledView(taskState, taskKind)
   }[taskState.status](taskState);
 
   panel.innerHTML = viewHtml;

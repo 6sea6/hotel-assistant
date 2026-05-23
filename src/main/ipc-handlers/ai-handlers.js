@@ -11,6 +11,7 @@ function registerAiHandlers({ ipcMain, services }) {
   ipcMain.handle('ai:config:test', async (event, config) => getAiService().testConnection(config));
   ipcMain.handle('ai:chat:send', async (event, payload) => getAiService().sendChat(payload));
   ipcMain.handle('ai:task:start', async (event, payload) => getAiService().startTask(payload));
+  ipcMain.handle('ai:task:refresh-data', async (event, payload) => getAiService().refreshHotelData(payload));
   ipcMain.handle('ai:task:cancel', () => getAiService().cancelTask());
   ipcMain.handle('ai:task:status', () => getAiService().getTaskStatus());
   ipcMain.handle('ai:ctrip-list-url:parse', (event, url) =>

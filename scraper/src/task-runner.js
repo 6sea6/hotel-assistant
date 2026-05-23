@@ -614,18 +614,24 @@ async function runPreparedSingleDetailImport(context) {
   performance.scrape = scraped.performance || null;
 
   assertNotCancelled(signal);
-  emit('transit:start', '正在计算交通与地铁信息');
-  const transitStartedAt = Date.now();
-  const transit = await getTransitInfo(
-    scraped.address,
-    effectiveDestination,
-    args.amapKey || DEFAULT_AMAP_KEY,
-    {
-      hotelGeo: scraped.geo,
-      cache: transitCache
-    }
-  );
-  performance.transitMs = durationSince(transitStartedAt);
+  const skipTransit = Boolean(args.skipTransit || args['skip-transit']);
+  let transit = null;
+  if (!skipTransit) {
+    emit('transit:start', '正在计算交通与地铁信息');
+    const transitStartedAt = Date.now();
+    transit = await getTransitInfo(
+      scraped.address,
+      effectiveDestination,
+      args.amapKey || DEFAULT_AMAP_KEY,
+      {
+        hotelGeo: scraped.geo,
+        cache: transitCache
+      }
+    );
+    performance.transitMs = durationSince(transitStartedAt);
+  } else {
+    performance.transitMs = 0;
+  }
 
   const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries } = await itemPerf.runPhase(
     'parse_data',

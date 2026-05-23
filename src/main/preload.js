@@ -216,6 +216,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     testConnection: (config) => ipcRenderer.invoke('ai:config:test', config),
     sendChat: (payload) => ipcRenderer.invoke('ai:chat:send', payload),
     startTask: (payload) => ipcRenderer.invoke('ai:task:start', payload),
+    refreshHotelData: (payload) => ipcRenderer.invoke('ai:task:refresh-data', payload),
     cancelTask: () => ipcRenderer.invoke('ai:task:cancel'),
     getTaskStatus: () => ipcRenderer.invoke('ai:task:status'),
     parseCtripListUrl: (url) => ipcRenderer.invoke('ai:ctrip-list-url:parse', url),

@@ -42,7 +42,8 @@ function createEmptyTaskConsole() {
     result: null,
     collectResult: null,
     error: null,
-    reply: ''
+    reply: '',
+    taskKind: 'collect'
   };
 }
 
@@ -456,21 +457,23 @@ function findQueueTaskByBackendTaskId(taskId) {
   return (state.aiTaskQueue || []).find((task) => String(task.backendTaskId || '') === id) || null;
 }
 
-function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
+function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}, taskKind = 'collect') {
   state.aiTaskQueueCounter = Number(state.aiTaskQueueCounter || 0) + 1;
   const displayIndex = String(state.aiTaskQueueCounter).padStart(2, '0');
-  const title = formatAiTemplateLabel(template);
+  const isRefresh = taskKind === 'refresh-data';
+  const title = isRefresh ? '更新整个程序目前的宾馆数据' : formatAiTemplateLabel(template);
   return {
     id: `queue-${Date.now()}-${state.aiTaskQueueCounter}`,
     displayIndex,
     url,
-    templateId: String(template.id ?? ''),
-    templateName: template.name || '',
+    templateId: isRefresh ? '' : String(template.id ?? ''),
+    templateName: isRefresh ? '' : (template.name || ''),
     templateLabel: title,
     title,
     template,
     listFilters,
     listUrlFilters,
+    taskKind,
     status: 'waiting',
     currentStep: '',
     createdAt: new Date().toISOString(),
@@ -504,13 +507,15 @@ function shouldAutoDisplayStartedTask(task) {
 function startTaskConsole(template, url, queueTask = null) {
   const startedAt = new Date().toISOString();
   const events = [];
+  const taskKind = queueTask && queueTask.taskKind ? queueTask.taskKind : 'collect';
   const consoleState = {
     ...createEmptyTaskConsole(),
     submitted: true,
     template,
-    templateLabel: formatAiTemplateLabel(template),
+    templateLabel: taskKind === 'refresh-data' ? '更新已有宾馆数据' : formatAiTemplateLabel(template),
     hotelUrl: url,
-    startedAt
+    startedAt,
+    taskKind
   };
   if (queueTask) {
     queueTask.status = 'running';
@@ -705,17 +710,28 @@ async function executeCollectTask(task) {
   markAiTaskInProgress(task);
   startTaskConsole(task.template, task.url, task);
   let shouldRunNextImmediately = true;
+  const isRefresh = task.taskKind === 'refresh-data';
 
   try {
-    const result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
+    let result;
+    if (isRefresh) {
+      result = await window.electronAPI.ai.refreshHotelData({
+        amapKey: String(state.settings.amapApiKey || '').trim() || undefined
+      });
+    } else {
+      result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
+    }
     const reply = result.message || '任务已处理。';
     finishTaskConsole(result, reply, task);
 
-    if (getQueueResultWrote(result)) {
+    if (isRefresh || getQueueResultWrote(result)) {
       await actions.reloadAllData({ includeSettings: true, invalidateCache: true, verbose: false });
       actions.updateTemplateFilter({ interactionFirst: true });
       actions.renderHotelList({ interactionFirst: true });
-      showNotification('采集结果已写入，宾馆列表已刷新', 'success');
+      showNotification(
+        isRefresh ? '更新数据完成，宾馆列表已刷新' : '采集结果已写入，宾馆列表已刷新',
+        'success'
+      );
     }
   } catch (error) {
     if (isTaskCancellationError(error)) {
@@ -1003,4 +1019,22 @@ export function focusAiTaskStartBar() {
     input.focus();
     input.select();
   }
+}
+
+export async function enqueueRefreshHotelDataTask() {
+  const runningTask = getRunningQueueTask();
+  if (runningTask) {
+    showNotification('当前有任务正在运行，请等待完成后再更新数据', 'warning');
+    return;
+  }
+
+  const task = createQueueTask(null, '', {}, {}, 'refresh-data');
+  state.aiTaskQueue.push(task);
+  if (!state.aiSelectedQueueTaskId) {
+    state.aiSelectedQueueTaskId = task.id;
+    state.aiQueueSelectionPinned = false;
+  }
+  renderTaskConsole();
+  showNotification('已创建更新数据任务，准备开始', 'success');
+  await runNextQueueTask();
 }

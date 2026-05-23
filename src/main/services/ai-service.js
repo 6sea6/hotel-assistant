@@ -16,6 +16,20 @@ function toJsonContent(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function compactRefreshResult(result = {}) {
+  return {
+    success: Boolean(result.success),
+    totalHotelCount: result.totalHotelCount ?? 0,
+    updatedHotelCount: result.updatedHotelCount ?? 0,
+    updatedRoomTypeCount: result.updatedRoomTypeCount ?? 0,
+    deletedRoomTypeCount: result.deletedRoomTypeCount ?? 0,
+    skippedHotelCount: result.skippedHotelCount ?? 0,
+    items: Array.isArray(result.items) ? result.items.slice(0, 50) : [],
+    writeResult: result.writeResult || null,
+    error: result.error || ''
+  };
+}
+
 function compactTaskResult(result = {}) {
   const eligibleRoomTypes = Array.isArray(result.eligibleRoomTypes)
     ? result.eligibleRoomTypes.slice(0, 12)
@@ -457,11 +471,43 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
     };
   }
 
+  async function refreshHotelData(payload = {}) {
+    const result = await runTask(async ({ taskId, signal, onTaskEvent }) => {
+      const scraperRunner = await loadScraperRunner();
+      return scraperRunner.refreshExistingCtripHotels(
+        {
+          amapKey: payload.amapKey
+        },
+        {
+          taskId,
+          dataFolderPath: dataService.getDataFolderPath(),
+          signal,
+          onEvent: onTaskEvent
+        }
+      );
+    });
+    const compactResult = compactRefreshResult(result);
+
+    return {
+      success: true,
+      message: result.message || `更新完成，本次更新 ${compactResult.updatedHotelCount} 家宾馆信息`,
+      collectResult: compactResult,
+      toolResults: [
+        {
+          name: 'refresh_existing_ctrip_hotels',
+          result: compactResult
+        }
+      ],
+      taskStatus: getTaskStatus()
+    };
+  }
+
   return {
     cancelTask,
     getProviderConfig,
     getProviderPresets: getAiProviderPresets,
     getTaskStatus,
+    refreshHotelData,
     saveProviderConfig,
     sendChat,
     startTask,
