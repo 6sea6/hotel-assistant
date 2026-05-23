@@ -656,11 +656,12 @@ test('custom-select: data-custom-select-option used in keyboard navigation', asy
     preventDefault() {},
   });
 
-  assert.equal(ctx.activeIndex, 1, 'activeIndex should move to 1 after ArrowDown');
+  // Menu opens with no active option (activeIndex = -1), so ArrowDown moves to index 0
+  assert.equal(ctx.activeIndex, 0, 'activeIndex should move to 0 after first ArrowDown');
 
-  // The active option should have is-active class via data selector
+  // The first option should have is-active class via data selector
   const options = menu.querySelectorAll('[data-custom-select-option="true"]');
-  assert.equal(options[1].classList.contains('is-active'), true, 'second option should have is-active');
+  assert.equal(options[0].classList.contains('is-active'), true, 'first option should have is-active after first ArrowDown');
 });
 
 test('custom-select: setupCustomSelects can recover stale ready state', async () => {

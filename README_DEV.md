@@ -99,7 +99,7 @@ node --test tests/package-scripts.test.js
 
 ```html
 <select id="mySelect" class="input" data-custom-select="true">
-  <option value="请选择" value="">请选择</option>
+  <option value="">请选择</option>
   <option value="a">选项 A</option>
   <option value="b">选项 B</option>
 </select>
