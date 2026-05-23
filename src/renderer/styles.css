@@ -3992,8 +3992,8 @@ body.modal-open .modal.active {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-radius: 12px;
-  padding: 8px 12px 8px 14px;
+  border-radius: 999px;
+  padding: 8px 14px 8px 18px;
   background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
   cursor: pointer;
   text-align: left;
@@ -4027,10 +4027,9 @@ body.modal-open .modal.active {
   display: grid;
   gap: 4px;
   padding: 6px;
-  overflow-y: auto;
-  max-height: 240px;
+  overflow-y: visible;
   border: 1px solid color-mix(in srgb, var(--primary-color) 26%, var(--border-color));
-  border-radius: 18px;
+  border-radius: 22px;
   background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-secondary) 4%);
   box-shadow: 0 18px 42px rgba(28, 54, 84, 0.18);
 }
@@ -4071,6 +4070,10 @@ body.modal-open .modal.active {
     var(--primary-color),
     color-mix(in srgb, var(--primary-color) 76%, #0e4cd9)
   );
+}
+
+.custom-select-option:active {
+  transform: scale(0.99);
 }
 
 .custom-select-option.is-disabled {

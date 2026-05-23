@@ -114,25 +114,59 @@ function positionAiTemplatePickerMenu() {
   const menu = $('aiTemplatePickerMenu');
   if (!picker || !button || !menu || menu.hidden || !picker.classList.contains('is-open')) return;
 
-  const viewportPadding = 12;
+  const padding = 12;
+  const gap = 8;
   const rect = button.getBoundingClientRect();
-  const belowSpace = window.innerHeight - rect.bottom - viewportPadding;
-  const aboveSpace = rect.top - viewportPadding;
-  const menuLimit = Math.max(128, Math.min(240, Math.max(belowSpace, aboveSpace)));
-  const preferredHeight = Math.min(menu.scrollHeight || menuLimit, menuLimit);
-  const left = Math.max(
-    viewportPadding,
-    Math.min(rect.left, window.innerWidth - rect.width - viewportPadding)
-  );
-  const shouldOpenBelow = belowSpace >= preferredHeight || belowSpace >= aboveSpace;
-  const top = shouldOpenBelow
-    ? rect.bottom + 8
-    : Math.max(viewportPadding, rect.top - preferredHeight - 8);
+  const viewportH = window.innerHeight;
+  const viewportW = window.innerWidth;
 
+  // 清理旧样式
+  menu.style.maxHeight = '';
+  menu.style.overflowY = 'visible';
+
+  // 水平定位
+  const left = Math.max(
+    padding,
+    Math.min(rect.left, viewportW - rect.width - padding)
+  );
   menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
   menu.style.width = `${rect.width}px`;
-  menu.style.maxHeight = `${menuLimit}px`;
+
+  // 计算自然高度
+  const fullHeight = menu.scrollHeight;
+  const spaceBelow = viewportH - rect.bottom - padding - gap;
+  const spaceAbove = rect.top - padding - gap;
+
+  let shouldOpenBelow = true;
+  let available = spaceBelow;
+  let scrollable = false;
+
+  if (fullHeight <= spaceBelow) {
+    shouldOpenBelow = true;
+    available = fullHeight;
+  } else if (fullHeight <= spaceAbove) {
+    shouldOpenBelow = false;
+    available = fullHeight;
+  } else {
+    shouldOpenBelow = spaceBelow >= spaceAbove;
+    available = Math.max(120, shouldOpenBelow ? spaceBelow : spaceAbove);
+    scrollable = true;
+  }
+
+  if (scrollable) {
+    menu.style.maxHeight = `${available}px`;
+    menu.style.overflowY = 'auto';
+  } else {
+    menu.style.maxHeight = `${fullHeight}px`;
+    menu.style.overflowY = 'visible';
+  }
+
+  if (shouldOpenBelow) {
+    menu.style.top = `${rect.bottom + gap}px`;
+  } else {
+    menu.style.top = `${rect.top - available - gap}px`;
+  }
+
   menu.classList.toggle('is-above', !shouldOpenBelow);
 }
 

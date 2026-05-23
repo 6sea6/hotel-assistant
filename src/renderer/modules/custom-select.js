@@ -109,6 +109,7 @@ function initOne(select) {
 
   select.addEventListener('change', () => {
     syncButtonText(ctx);
+    syncSelectedOption(ctx);
   });
 
   // 监听原生 select 子节点变化（动态 options）
@@ -147,13 +148,30 @@ function buildOptions(ctx) {
       btn.setAttribute('aria-disabled', 'true');
     }
 
+    if (index === select.selectedIndex) {
+      btn.classList.add(SELECTED_CLASS);
+      btn.setAttribute('aria-selected', 'true');
+    }
+
     menu.appendChild(btn);
+  });
+}
+
+function syncSelectedOption(ctx) {
+  const { select, menu } = ctx;
+  const options = menu.querySelectorAll('.custom-select-option');
+  const selectedValue = select.value;
+  options.forEach((option) => {
+    const isSelected = option.dataset.value === selectedValue;
+    option.classList.toggle(SELECTED_CLASS, isSelected);
+    option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
   });
 }
 
 function rebuildMenu(ctx) {
   buildOptions(ctx);
   syncButtonText(ctx);
+  syncSelectedOption(ctx);
   if (ctx.activeIndex >= 0) {
     ctx.activeIndex = -1;
   }
@@ -255,34 +273,66 @@ function positionMenu(ctx) {
   const rect = button.getBoundingClientRect();
   const viewportH = window.innerHeight;
   const viewportW = window.innerWidth;
-  const padding = 8;
-  const menuMaxH = 240;
+  const padding = 12;
+  const gap = 8;
 
-  const spaceBelow = viewportH - rect.bottom - padding;
-  const spaceAbove = rect.top - padding;
-  const openUp = spaceBelow < Math.min(menuMaxH, 120) && spaceAbove > spaceBelow;
+  // 清理旧样式
+  menu.style.maxHeight = '';
+  menu.style.overflowY = 'visible';
+  menu.style.top = '';
+  menu.style.bottom = '';
 
+  // 宽度与水平定位
   const width = rect.width;
-  let top = openUp ? rect.top - padding : rect.bottom + padding;
   let left = rect.left;
-
-  // 确保不超出视口
   if (left + width > viewportW - padding) {
     left = viewportW - width - padding;
   }
   if (left < padding) left = padding;
-
   menu.style.width = `${width}px`;
   menu.style.left = `${left}px`;
-  menu.style.maxHeight = `${menuMaxH}px`;
+
+  // 计算菜单自然高度
+  const fullHeight = menu.scrollHeight;
+  const spaceBelow = viewportH - rect.bottom - padding - gap;
+  const spaceAbove = rect.top - padding - gap;
+
+  let openUp = false;
+  let available = spaceBelow;
+  let scrollable = false;
+
+  if (fullHeight <= spaceBelow) {
+    // 下方空间足够，完整显示
+    openUp = false;
+    available = fullHeight;
+  } else if (fullHeight <= spaceAbove) {
+    // 下方不够但上方足够，向上展开
+    openUp = true;
+    available = fullHeight;
+  } else {
+    // 上下都不够，选择更大的一侧并限制高度
+    openUp = spaceAbove > spaceBelow;
+    available = Math.max(120, openUp ? spaceAbove : spaceBelow);
+    scrollable = true;
+  }
+
+  if (scrollable) {
+    menu.style.maxHeight = `${available}px`;
+    menu.style.overflowY = 'auto';
+  } else {
+    menu.style.maxHeight = `${fullHeight}px`;
+    menu.style.overflowY = 'visible';
+  }
 
   if (openUp) {
     menu.style.top = 'auto';
-    menu.style.bottom = `${viewportH - top}px`;
+    menu.style.bottom = `${viewportH - rect.top + gap}px`;
   } else {
     menu.style.bottom = 'auto';
-    menu.style.top = `${top}px`;
+    menu.style.top = `${rect.bottom + gap}px`;
   }
+
+  ctx.menuScrollable = scrollable;
 }
 
 /* ---- 选中选项 ---- */
@@ -299,6 +349,7 @@ function selectOption(ctx, optElement) {
   }
 
   syncButtonText(ctx);
+  syncSelectedOption(ctx);
   closeMenu(ctx);
   ctx.button.focus();
 }
@@ -317,8 +368,9 @@ function setActiveIndex(ctx, index) {
   if (activeOpt) {
     activeOpt.classList.add(ACTIVE_CLASS);
     activeOpt.setAttribute('aria-selected', 'true');
-    // 滚动到可见
-    activeOpt.scrollIntoView({ block: 'nearest' });
+    if (ctx.menuScrollable) {
+      activeOpt.scrollIntoView({ block: 'nearest' });
+    }
   }
 }
 
@@ -326,7 +378,6 @@ function clearActive(ctx) {
   const prev = ctx.menu.querySelector(`.${ACTIVE_CLASS}`);
   if (prev) {
     prev.classList.remove(ACTIVE_CLASS);
-    prev.removeAttribute('aria-selected');
   }
   ctx.activeIndex = -1;
 }
