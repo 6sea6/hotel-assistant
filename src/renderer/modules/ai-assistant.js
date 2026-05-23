@@ -16,6 +16,7 @@ import {
   renderAiTaskConsole,
   updateAiInputCount as updateTaskInputCount
 } from './ai-task-console.js';
+import { enhanceCustomSelect, refreshCustomSelect } from './custom-select.js';
 
 const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
 let activeCollectTaskId = '';
@@ -67,174 +68,33 @@ function renderAiTemplateOptions() {
   if (currentValue && Array.from(select.options).some((option) => option.value === currentValue)) {
     select.value = currentValue;
   }
-  renderAiTemplatePicker();
-}
-
-function closeAiTemplatePicker() {
-  const picker = $('aiTemplatePicker');
-  const button = $('aiTemplatePickerButton');
-  const menu = $('aiTemplatePickerMenu');
-  if (!picker || !button || !menu) return;
-
-  picker.classList.remove('is-open');
-  button.setAttribute('aria-expanded', 'false');
-  menu.hidden = true;
-}
-
-function renderAiTemplatePicker() {
-  const select = $('aiTemplateSelect');
-  const button = $('aiTemplatePickerButton');
-  const text = $('aiTemplatePickerText');
-  const menu = $('aiTemplatePickerMenu');
-  if (!select || !button || !text || !menu) return;
-
-  const options = Array.from(select.options);
-  const selectedOption = select.selectedOptions[0] || options[0] || null;
-  text.textContent = selectedOption ? selectedOption.textContent : '请选择模板';
-  button.disabled = select.disabled;
-
-  menu.innerHTML = options
-    .map((option) => {
-      const value = option.value || '';
-      const isSelected = String(value) === String(select.value || '');
-      return `
-      <button class="ai-template-picker-option${isSelected ? ' is-selected' : ''}" type="button" role="option" aria-selected="${isSelected ? 'true' : 'false'}" data-template-value="${escapeHtml(value)}">
-        ${escapeHtml(option.textContent || '')}
-      </button>
-    `;
-    })
-    .join('');
-
-  positionAiTemplatePickerMenu();
-}
-
-function positionAiTemplatePickerMenu() {
-  const picker = $('aiTemplatePicker');
-  const button = $('aiTemplatePickerButton');
-  const menu = $('aiTemplatePickerMenu');
-  if (!picker || !button || !menu || menu.hidden || !picker.classList.contains('is-open')) return;
-
-  const padding = 12;
-  const gap = 8;
-  const rect = button.getBoundingClientRect();
-  const viewportH = window.innerHeight;
-  const viewportW = window.innerWidth;
-
-  // 清理旧样式
-  menu.style.maxHeight = '';
-  menu.style.overflowY = 'visible';
-
-  // 水平定位
-  const left = Math.max(
-    padding,
-    Math.min(rect.left, viewportW - rect.width - padding)
-  );
-  menu.style.left = `${left}px`;
-  menu.style.width = `${rect.width}px`;
-
-  // 计算自然高度
-  const fullHeight = menu.scrollHeight;
-  const spaceBelow = viewportH - rect.bottom - padding - gap;
-  const spaceAbove = rect.top - padding - gap;
-
-  let shouldOpenBelow = true;
-  let available = spaceBelow;
-  let scrollable = false;
-
-  if (fullHeight <= spaceBelow) {
-    shouldOpenBelow = true;
-    available = fullHeight;
-  } else if (fullHeight <= spaceAbove) {
-    shouldOpenBelow = false;
-    available = fullHeight;
-  } else {
-    shouldOpenBelow = spaceBelow >= spaceAbove;
-    available = Math.max(120, shouldOpenBelow ? spaceBelow : spaceAbove);
-    scrollable = true;
-  }
-
-  if (scrollable) {
-    menu.style.maxHeight = `${available}px`;
-    menu.style.overflowY = 'auto';
-  } else {
-    menu.style.maxHeight = `${fullHeight}px`;
-    menu.style.overflowY = 'visible';
-  }
-
-  if (shouldOpenBelow) {
-    menu.style.top = `${rect.bottom + gap}px`;
-  } else {
-    menu.style.top = `${rect.top - available - gap}px`;
-  }
-
-  menu.classList.toggle('is-above', !shouldOpenBelow);
-}
-
-function toggleAiTemplatePicker() {
-  const picker = $('aiTemplatePicker');
-  const button = $('aiTemplatePickerButton');
-  const menu = $('aiTemplatePickerMenu');
-  if (!picker || !button || !menu || button.disabled) return;
-
-  const shouldOpen = !picker.classList.contains('is-open');
-  picker.classList.toggle('is-open', shouldOpen);
-  button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
-  menu.hidden = !shouldOpen;
-  if (shouldOpen) {
-    renderAiTemplatePicker();
-    positionAiTemplatePickerMenu();
-  }
-}
-
-function chooseAiTemplateOption(value) {
-  const select = $('aiTemplateSelect');
-  if (!select) return;
-  select.value = value;
-  select.dispatchEvent(new Event('change', { bubbles: true }));
-  renderAiTemplatePicker();
-  closeAiTemplatePicker();
+  refreshCustomSelect(select);
 }
 
 function setupAiTemplatePicker() {
   if (state.aiTemplatePickerBound) return;
 
-  const picker = $('aiTemplatePicker');
-  const button = $('aiTemplatePickerButton');
-  const menu = $('aiTemplatePickerMenu');
   const select = $('aiTemplateSelect');
-  if (!picker || !button || !menu || !select) return;
+  if (!select) return;
 
-  button.addEventListener('click', (event) => {
-    event.preventDefault();
-    toggleAiTemplatePicker();
-  });
-
-  menu.addEventListener('click', (event) => {
-    const option =
-      event.target && event.target.closest ? event.target.closest('[data-template-value]') : null;
-    if (!option) return;
-    event.preventDefault();
-    chooseAiTemplateOption(option.dataset.templateValue || '');
-  });
-
-  select.addEventListener('change', renderAiTemplatePicker);
-
-  document.addEventListener('click', (event) => {
-    if (!picker.contains(event.target)) {
-      closeAiTemplatePicker();
+  const ctx = enhanceCustomSelect(select, {
+    wrapperClass: 'ai-template-picker custom-select',
+    buttonClass: 'input ai-template-picker-button custom-select-button',
+    textClass: 'ai-template-picker-text custom-select-text',
+    caretClass: 'ai-template-picker-caret custom-select-caret',
+    menuClass: 'ai-template-picker-menu custom-select-menu',
+    optionClass: 'ai-template-picker-option custom-select-option',
+    existingElements: {
+      wrapper: $('aiTemplatePicker'),
+      button: $('aiTemplatePickerButton'),
+      textSpan: $('aiTemplatePickerText'),
+      menu: $('aiTemplatePickerMenu')
     }
   });
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      closeAiTemplatePicker();
-    }
-  });
-
-  window.addEventListener('resize', positionAiTemplatePickerMenu);
-  window.addEventListener('scroll', positionAiTemplatePickerMenu, true);
-
-  state.aiTemplatePickerBound = true;
+  if (ctx) {
+    state.aiTemplatePickerBound = true;
+  }
 }
 
 function findSelectedAiTemplate() {

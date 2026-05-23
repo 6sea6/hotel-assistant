@@ -1,9 +1,25 @@
 /**
- * 自定义下拉组件 —— 将带 data-custom-select="true" 的原生 select 增强为
- * 圆角浮层样式下拉，与采集助手模板选择器视觉语言一致。
+ * custom-select —— 统一自定义下拉组件
  *
+ * 将原生 <select> 增强为圆角浮层样式下拉，视觉与采集助手模板选择器一致。
  * 原生 select 保持隐藏状态，继续作为真实数据源和事件源。
  * 业务逻辑通过原生 change 事件触发，无需修改。
+ *
+ * 用法：
+ *   <select class="input" data-custom-select="true">
+ *     <option value="a">A</option>
+ *   </select>
+ *
+ * 自动增强：
+ *   setupCustomSelects(document, { auto: true })
+ *   会增强所有 select.input（排除 data-native-select="true" 和 data-custom-select="false"）。
+ *
+ * 动态刷新：
+ *   refreshCustomSelect(select)  — 刷新单个
+ *   refreshCustomSelects(root)   — 刷新范围内所有已增强 select
+ *
+ * 销毁：
+ *   destroyCustomSelect(select)  — 移除增强，恢复原生 select
  */
 
 const OPEN_CLASS = 'is-open';
@@ -13,31 +29,117 @@ const DISABLED_CLASS = 'is-disabled';
 const NATIVE_CLASS = 'custom-select-native';
 const READY_ATTR = 'customSelectReady';
 
+const instances = new WeakMap();
 let openInstance = null;
 
-/* ---- 公共 API ---- */
+/* ============================================================
+ * 公共 API
+ * ============================================================ */
 
-export function setupCustomSelects(root = document) {
-  const selects = root.querySelectorAll('select[data-custom-select="true"]');
-  selects.forEach((select) => {
-    if (select.id === 'aiTemplateSelect') return;
-    if (select.dataset[READY_ATTR] === 'true') return;
-    initOne(select);
-  });
+/**
+ * 增强 root 内所有目标 select。
+ * @param {Document|Element} root
+ * @param {Object} options
+ * @param {boolean} [options.auto=false] - 为 true 时额外增强 select.input
+ */
+export function setupCustomSelects(root = document, options = {}) {
+  const selects = findTargetSelects(root, options.auto);
+  selects.forEach((select) => enhanceCustomSelect(select));
 }
 
+/**
+ * 增强单个 select，如果已增强则返回已有实例。
+ * @param {HTMLSelectElement} select
+ * @param {Object} options
+ * @param {string} [options.wrapperClass]
+ * @param {string} [options.buttonClass]
+ * @param {string} [options.textClass]
+ * @param {string} [options.caretClass]
+ * @param {string} [options.menuClass]
+ * @param {string} [options.optionClass]
+ * @param {Object} [options.existingElements] - 复用已有 DOM 元素
+ * @param {Element} [options.existingElements.wrapper]
+ * @param {Element} [options.existingElements.button]
+ * @param {Element} [options.existingElements.textSpan]
+ * @param {Element} [options.existingElements.caret]
+ * @param {Element} [options.existingElements.menu]
+ * @returns {Object} ctx
+ */
+export function enhanceCustomSelect(select, options = {}) {
+  if (!select || select.dataset[READY_ATTR] === 'true') {
+    return instances.get(select) || null;
+  }
+  if (select.multiple || (select.size && select.size > 1)) {
+    return null;
+  }
+
+  initOne(select, options);
+  return instances.get(select);
+}
+
+/**
+ * 刷新 root 内所有已增强的 select，对未增强的执行增强。
+ */
 export function refreshCustomSelects(root = document) {
-  const selects = root.querySelectorAll('select[data-custom-select="true"]');
+  const selects = root.querySelectorAll(
+    `select[data-custom-select="true"], select.${NATIVE_CLASS}`
+  );
   selects.forEach((select) => {
-    if (select.id === 'aiTemplateSelect') return;
-    if (select.dataset[READY_ATTR] === 'true') {
-      rebuildMenu(select);
-    } else {
+    if (select.multiple || (select.size && select.size > 1)) return;
+    const ctx = instances.get(select);
+    if (ctx) {
+      rebuildMenu(ctx);
+    } else if (select.dataset[READY_ATTR] === 'true') {
       initOne(select);
     }
   });
 }
 
+/**
+ * 刷新单个 select。
+ */
+export function refreshCustomSelect(select) {
+  if (!select) return;
+  const ctx = instances.get(select);
+  if (ctx) {
+    rebuildMenu(ctx);
+  } else if (
+    select.dataset[READY_ATTR] === 'true' ||
+    select.dataset.customSelect === 'true'
+  ) {
+    initOne(select);
+  }
+}
+
+/**
+ * 销毁增强，恢复原生 select。
+ */
+export function destroyCustomSelect(select) {
+  if (!select) return;
+  const ctx = instances.get(select);
+  if (!ctx) return;
+
+  if (openInstance === ctx) {
+    closeMenu(ctx);
+    openInstance = null;
+  }
+
+  if (ctx._observer) ctx._observer.disconnect();
+  if (ctx._attrObserver) ctx._attrObserver.disconnect();
+
+  select.classList.remove(NATIVE_CLASS);
+  delete select.dataset[READY_ATTR];
+
+  if (ctx.wrapper && ctx.wrapper.parentNode) {
+    ctx.wrapper.parentNode.removeChild(ctx.wrapper);
+  }
+
+  instances.delete(select);
+}
+
+/**
+ * 关闭当前打开的菜单。
+ */
 export function closeAllCustomSelects() {
   if (openInstance) {
     closeMenu(openInstance);
@@ -45,99 +147,177 @@ export function closeAllCustomSelects() {
   }
 }
 
-/* ---- 初始化单个 select ---- */
+/**
+ * 获取 select 对应的 ctx（调试用）。
+ */
+export function getCustomSelectInstance(select) {
+  return instances.get(select) || null;
+}
 
-function initOne(select) {
+/* ============================================================
+ * 查找目标 select
+ * ============================================================ */
+
+function findTargetSelects(root, auto = false) {
+  const results = [];
+  const selector = auto
+    ? 'select[data-custom-select="true"], select.input'
+    : 'select[data-custom-select="true"]';
+  const candidates = root.querySelectorAll(selector);
+
+  candidates.forEach((select) => {
+    if (select.dataset.nativeSelect === 'true') return;
+    if (select.dataset.customSelect === 'false') return;
+    if (select.multiple) return;
+    if (select.size && select.size > 1) return;
+    if (select.dataset[READY_ATTR] === 'true') return;
+    results.push(select);
+  });
+
+  return results;
+}
+
+/* ============================================================
+ * 初始化单个 select
+ * ============================================================ */
+
+function initOne(select, options = {}) {
+  if (select.dataset[READY_ATTR] === 'true') {
+    return;
+  }
+
+  const wrapperClass = options.wrapperClass || 'custom-select';
+  const buttonClass = options.buttonClass || 'input custom-select-button';
+  const textClass = options.textClass || 'custom-select-text';
+  const caretClass = options.caretClass || 'custom-select-caret';
+  const menuClass = options.menuClass || 'custom-select-menu';
+  const optionClass = options.optionClass || 'custom-select-option';
+  const existing = options.existingElements || {};
+
   select.dataset[READY_ATTR] = 'true';
   select.classList.add(NATIVE_CLASS);
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'custom-select';
+  // 复用或创建 wrapper
+  let wrapper = existing.wrapper || document.createElement('div');
+  wrapper.className = wrapperClass;
   wrapper.dataset.sourceSelectId = select.id || '';
 
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'input custom-select-button';
-  button.setAttribute('aria-haspopup', 'listbox');
-  button.setAttribute('aria-expanded', 'false');
+  // 复用或创建 button
+  let button = existing.button;
+  let textSpan = existing.textSpan;
+  let caret = existing.caret;
 
-  const textSpan = document.createElement('span');
-  textSpan.className = 'custom-select-text';
-  button.appendChild(textSpan);
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = buttonClass;
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-expanded', 'false');
 
-  const caret = document.createElement('span');
-  caret.className = 'custom-select-caret';
-  caret.setAttribute('aria-hidden', 'true');
-  caret.textContent = '⌄';
-  button.appendChild(caret);
+    textSpan = document.createElement('span');
+    textSpan.className = textClass;
+    button.appendChild(textSpan);
 
-  const menu = document.createElement('div');
-  menu.className = 'custom-select-menu';
+    caret = document.createElement('span');
+    caret.className = caretClass;
+    caret.setAttribute('aria-hidden', 'true');
+    caret.textContent = '\u2304';
+    button.appendChild(caret);
+  } else {
+    if (!textSpan) {
+      textSpan = button.querySelector(`.${textClass.split(' ')[0]}`) ||
+        button.querySelector('span');
+    }
+    if (!caret) {
+      caret = button.querySelector(`.${caretClass.split(' ')[0]}`) ||
+        button.querySelectorAll('span')[1];
+    }
+    if (!button.hasAttribute('aria-haspopup')) {
+      button.setAttribute('aria-haspopup', 'listbox');
+    }
+    if (!button.hasAttribute('aria-expanded')) {
+      button.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  // 复用或创建 menu
+  let menu = existing.menu || document.createElement('div');
+  menu.className = menuClass;
   menu.setAttribute('role', 'listbox');
   menu.hidden = true;
 
-  wrapper.appendChild(button);
-  wrapper.appendChild(menu);
+  // 只在 wrapper 未挂载到 DOM 时插入
+  if (!existing.wrapper || !wrapper.parentNode) {
+    select.parentNode.insertBefore(wrapper, select.nextSibling);
+  }
+  if (!button.parentNode || button.parentNode !== wrapper) {
+    wrapper.insertBefore(button, wrapper.firstChild);
+  }
+  if (!menu.parentNode || menu.parentNode !== wrapper) {
+    wrapper.appendChild(menu);
+  }
 
-  select.parentNode.insertBefore(wrapper, select.nextSibling);
+  const ctx = {
+    select,
+    wrapper,
+    button,
+    textSpan,
+    caret,
+    menu,
+    activeIndex: -1,
+    optionClass,
+    menuScrollable: false,
+    _observer: null,
+    _attrObserver: null
+  };
 
-  const ctx = { select, wrapper, button, textSpan, menu, activeIndex: -1 };
+  instances.set(select, ctx);
 
   syncDisabled(ctx);
   buildOptions(ctx);
   syncButtonText(ctx);
+  syncSelectedOption(ctx);
 
-  button.addEventListener('click', (e) => {
-    e.preventDefault();
-    toggleMenu(ctx);
-  });
-
-  button.addEventListener('keydown', (e) => {
-    handleButtonKeydown(e, ctx);
-  });
-
-  menu.addEventListener('click', (e) => {
-    const opt = e.target.closest('.custom-select-option');
+  // 事件绑定
+  ctx._onButtonClick = (e) => { e.preventDefault(); toggleMenu(ctx); };
+  ctx._onButtonKeydown = (e) => { handleButtonKeydown(e, ctx); };
+  ctx._onMenuClick = (e) => {
+    const opt = e.target.closest(`.${optionClass.split(' ')[0]}`);
     if (!opt) return;
     e.preventDefault();
     selectOption(ctx, opt);
-  });
+  };
+  ctx._onMenuKeydown = (e) => { handleMenuKeydown(e, ctx); };
+  ctx._onSelectChange = () => { syncButtonText(ctx); syncSelectedOption(ctx); };
 
-  menu.addEventListener('keydown', (e) => {
-    handleMenuKeydown(e, ctx);
-  });
-
-  select.addEventListener('change', () => {
-    syncButtonText(ctx);
-    syncSelectedOption(ctx);
-  });
+  button.addEventListener('click', ctx._onButtonClick);
+  button.addEventListener('keydown', ctx._onButtonKeydown);
+  menu.addEventListener('click', ctx._onMenuClick);
+  menu.addEventListener('keydown', ctx._onMenuKeydown);
+  select.addEventListener('change', ctx._onSelectChange);
 
   // 监听原生 select 子节点变化（动态 options）
-  const observer = new MutationObserver(() => {
-    rebuildMenu(ctx);
-  });
-  observer.observe(select, { childList: true, subtree: true });
-  ctx._observer = observer;
+  ctx._observer = new MutationObserver(() => { rebuildMenu(ctx); });
+  ctx._observer.observe(select, { childList: true, subtree: true });
 
   // 监听 disabled 属性变化
-  const attrObserver = new MutationObserver(() => {
-    syncDisabled(ctx);
-  });
-  attrObserver.observe(select, { attributes: true, attributeFilter: ['disabled'] });
-  ctx._attrObserver = attrObserver;
+  ctx._attrObserver = new MutationObserver(() => { syncDisabled(ctx); });
+  ctx._attrObserver.observe(select, { attributes: true, attributeFilter: ['disabled'] });
 }
 
-/* ---- 构建菜单选项 ---- */
+/* ============================================================
+ * 构建菜单选项
+ * ============================================================ */
 
 function buildOptions(ctx) {
-  const { select, menu } = ctx;
+  const { select, menu, optionClass } = ctx;
   menu.innerHTML = '';
 
   const options = Array.from(select.options);
   options.forEach((opt, index) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'custom-select-option';
+    btn.className = optionClass;
     btn.setAttribute('role', 'option');
     btn.dataset.index = String(index);
     btn.dataset.value = opt.value;
@@ -158,8 +338,9 @@ function buildOptions(ctx) {
 }
 
 function syncSelectedOption(ctx) {
-  const { select, menu } = ctx;
-  const options = menu.querySelectorAll('.custom-select-option');
+  const { select, menu, optionClass } = ctx;
+  const selector = `.${optionClass.split(' ')[0]}`;
+  const options = menu.querySelectorAll(selector);
   const selectedValue = select.value;
   options.forEach((option) => {
     const isSelected = option.dataset.value === selectedValue;
@@ -172,20 +353,26 @@ function rebuildMenu(ctx) {
   buildOptions(ctx);
   syncButtonText(ctx);
   syncSelectedOption(ctx);
+  syncDisabled(ctx);
   if (ctx.activeIndex >= 0) {
     ctx.activeIndex = -1;
   }
 }
 
-/* ---- 同步按钮文本 ---- */
+/* ============================================================
+ * 同步按钮文本
+ * ============================================================ */
 
 function syncButtonText(ctx) {
   const { select, textSpan } = ctx;
+  if (!textSpan) return;
   const selected = select.selectedOptions[0];
   textSpan.textContent = selected ? selected.textContent : '';
 }
 
-/* ---- 同步 disabled ---- */
+/* ============================================================
+ * 同步 disabled
+ * ============================================================ */
 
 function syncDisabled(ctx) {
   const { select, wrapper, button } = ctx;
@@ -198,7 +385,9 @@ function syncDisabled(ctx) {
   }
 }
 
-/* ---- 打开/关闭菜单 ---- */
+/* ============================================================
+ * 打开/关闭菜单
+ * ============================================================ */
 
 function toggleMenu(ctx) {
   if (openInstance && openInstance !== ctx) {
@@ -217,14 +406,13 @@ function openMenu(ctx) {
   button.setAttribute('aria-expanded', 'true');
   menu.hidden = false;
 
-  // 高亮当前选中项
   const selectedIndex = select.selectedIndex;
   setActiveIndex(ctx, selectedIndex >= 0 ? selectedIndex : 0);
 
   positionMenu(ctx);
   openInstance = ctx;
+  ensureGlobalListeners();
 
-  // 延迟绑定全局事件，避免当前点击立即关闭
   requestAnimationFrame(() => {
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('keydown', handleGlobalKey);
@@ -266,7 +454,9 @@ function handleGlobalKey(e) {
   }
 }
 
-/* ---- 菜单定位 ---- */
+/* ============================================================
+ * 菜单定位
+ * ============================================================ */
 
 function positionMenu(ctx) {
   const { button, menu } = ctx;
@@ -276,13 +466,11 @@ function positionMenu(ctx) {
   const padding = 12;
   const gap = 8;
 
-  // 清理旧样式
   menu.style.maxHeight = '';
   menu.style.overflowY = 'visible';
   menu.style.top = '';
   menu.style.bottom = '';
 
-  // 宽度与水平定位
   const width = rect.width;
   let left = rect.left;
   if (left + width > viewportW - padding) {
@@ -292,7 +480,6 @@ function positionMenu(ctx) {
   menu.style.width = `${width}px`;
   menu.style.left = `${left}px`;
 
-  // 计算菜单自然高度
   const fullHeight = menu.scrollHeight;
   const spaceBelow = viewportH - rect.bottom - padding - gap;
   const spaceAbove = rect.top - padding - gap;
@@ -302,15 +489,12 @@ function positionMenu(ctx) {
   let scrollable = false;
 
   if (fullHeight <= spaceBelow) {
-    // 下方空间足够，完整显示
     openUp = false;
     available = fullHeight;
   } else if (fullHeight <= spaceAbove) {
-    // 下方不够但上方足够，向上展开
     openUp = true;
     available = fullHeight;
   } else {
-    // 上下都不够，选择更大的一侧并限制高度
     openUp = spaceAbove > spaceBelow;
     available = Math.max(120, openUp ? spaceAbove : spaceBelow);
     scrollable = true;
@@ -335,7 +519,9 @@ function positionMenu(ctx) {
   ctx.menuScrollable = scrollable;
 }
 
-/* ---- 选中选项 ---- */
+/* ============================================================
+ * 选中选项
+ * ============================================================ */
 
 function selectOption(ctx, optElement) {
   if (optElement.classList.contains(DISABLED_CLASS)) return;
@@ -354,10 +540,13 @@ function selectOption(ctx, optElement) {
   ctx.button.focus();
 }
 
-/* ---- 键盘导航 ---- */
+/* ============================================================
+ * 键盘导航
+ * ============================================================ */
 
 function setActiveIndex(ctx, index) {
-  const options = ctx.menu.querySelectorAll('.custom-select-option');
+  const selector = `.${ctx.optionClass.split(' ')[0]}`;
+  const options = ctx.menu.querySelectorAll(selector);
   if (!options.length) return;
 
   clearActive(ctx);
@@ -367,7 +556,6 @@ function setActiveIndex(ctx, index) {
   const activeOpt = options[clamped];
   if (activeOpt) {
     activeOpt.classList.add(ACTIVE_CLASS);
-    activeOpt.setAttribute('aria-selected', 'true');
     if (ctx.menuScrollable) {
       activeOpt.scrollIntoView({ block: 'nearest' });
     }
@@ -375,7 +563,8 @@ function setActiveIndex(ctx, index) {
 }
 
 function clearActive(ctx) {
-  const prev = ctx.menu.querySelector(`.${ACTIVE_CLASS}`);
+  const selector = `.${ctx.optionClass.split(' ')[0]}`;
+  const prev = ctx.menu.querySelector(`${selector}.${ACTIVE_CLASS}`);
   if (prev) {
     prev.classList.remove(ACTIVE_CLASS);
   }
@@ -390,13 +579,13 @@ function handleButtonKeydown(e, ctx) {
 }
 
 function handleMenuKeydown(e, ctx) {
-  const options = ctx.menu.querySelectorAll('.custom-select-option');
+  const selector = `.${ctx.optionClass.split(' ')[0]}`;
+  const options = ctx.menu.querySelectorAll(selector);
   const maxIndex = options.length - 1;
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();
     let next = ctx.activeIndex + 1;
-    // 跳过 disabled
     while (next <= maxIndex && options[next]?.classList.contains(DISABLED_CLASS)) next++;
     if (next <= maxIndex) setActiveIndex(ctx, next);
   } else if (e.key === 'ArrowUp') {
@@ -412,20 +601,30 @@ function handleMenuKeydown(e, ctx) {
   }
 }
 
-/* ---- 窗口变化时重新定位或关闭 ---- */
+/* ============================================================
+ * 窗口变化时重新定位或关闭（延迟绑定，避免模块加载时副作用）
+ * ============================================================ */
 
-window.addEventListener('resize', () => {
-  if (openInstance) {
-    positionMenu(openInstance);
-  }
-});
+let globalListenersBound = false;
 
-window.addEventListener(
-  'scroll',
-  () => {
+function ensureGlobalListeners() {
+  if (globalListenersBound) return;
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+  globalListenersBound = true;
+
+  window.addEventListener('resize', () => {
     if (openInstance) {
       positionMenu(openInstance);
     }
-  },
-  true
-);
+  });
+
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (openInstance) {
+        positionMenu(openInstance);
+      }
+    },
+    true
+  );
+}

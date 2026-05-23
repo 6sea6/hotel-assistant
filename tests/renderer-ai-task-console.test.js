@@ -38,6 +38,7 @@ async function loadAiAssistantModules() {
       'actions.js',
       'ai-assistant.js',
       'ai-task-console.js',
+      'custom-select.js',
       'dom-helpers.js',
       'notification.js',
       'state.js'

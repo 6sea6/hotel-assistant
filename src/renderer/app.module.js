@@ -392,7 +392,7 @@ async function initializeApp() {
       setupEventListeners();
       setupMenuListeners();
       setupTemplateSyncListener();
-      setupCustomSelects();
+      setupCustomSelects(document, { auto: true });
       refreshCustomSelects();
       checkAndShowManual();
       console.log('[初始化] 界面渲染完成');

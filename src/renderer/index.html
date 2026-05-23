@@ -242,15 +242,15 @@
           <div class="task-start-grid">
             <div class="task-field task-field-template">
               <span>模板</span>
-              <div id="aiTemplatePicker" class="ai-template-picker">
-                <select id="aiTemplateSelect" class="input ai-template-select" aria-hidden="true" tabindex="-1">
+              <div id="aiTemplatePicker" class="ai-template-picker custom-select">
+                <select id="aiTemplateSelect" class="input ai-template-select custom-select-native" data-custom-select="false" aria-hidden="true" tabindex="-1">
                   <option value="">请选择模板</option>
                 </select>
-                <button id="aiTemplatePickerButton" class="input ai-template-picker-button" type="button" aria-haspopup="listbox" aria-expanded="false">
-                  <span id="aiTemplatePickerText" class="ai-template-picker-text">请选择模板</span>
-                  <span class="ai-template-picker-caret" aria-hidden="true">⌄</span>
+                <button id="aiTemplatePickerButton" class="input ai-template-picker-button custom-select-button" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="aiTemplatePickerText" class="ai-template-picker-text custom-select-text">请选择模板</span>
+                  <span class="ai-template-picker-caret custom-select-caret" aria-hidden="true">⌄</span>
                 </button>
-                <div id="aiTemplatePickerMenu" class="ai-template-picker-menu" role="listbox" hidden></div>
+                <div id="aiTemplatePickerMenu" class="ai-template-picker-menu custom-select-menu" role="listbox" hidden></div>
               </div>
             </div>
             <label class="task-field task-field-url" for="aiHotelUrlInput">
@@ -487,7 +487,7 @@
               </div>
               <div class="form-group">
                 <label for="templateRoomCount">房间人数</label>
-                <select id="templateRoomCount" class="input">
+                <select id="templateRoomCount" class="input" data-custom-select="true">
                   <option value="1">单人</option>
                   <option value="2">双人</option>
                   <option value="3">三人</option>
