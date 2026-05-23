@@ -10,25 +10,59 @@ function getPointerFilePath({ appDataRoot, pointerFileName }) {
   return path.join(getAppDataRoot(appDataRoot), pointerFileName);
 }
 
-function readPointerDataFolder(pointerFilePath) {
+function readPointerData(pointerFilePath) {
   try {
     if (!pointerFilePath || !fs.existsSync(pointerFilePath)) {
-      return '';
+      return null;
     }
 
     const pointer = JSON.parse(fs.readFileSync(pointerFilePath, 'utf-8'));
-    return typeof pointer.dataFolder === 'string' && path.isAbsolute(pointer.dataFolder)
-      ? pointer.dataFolder
-      : '';
+    if (!pointer || typeof pointer !== 'object') {
+      return null;
+    }
+
+    const dataFolder =
+      typeof pointer.dataFolder === 'string' && path.isAbsolute(pointer.dataFolder)
+        ? pointer.dataFolder
+        : '';
+    if (!dataFolder) {
+      return null;
+    }
+
+    return {
+      dataFolder,
+      source: typeof pointer.source === 'string' ? pointer.source : '',
+      appId: typeof pointer.appId === 'string' ? pointer.appId : '',
+      appVersion: typeof pointer.appVersion === 'string' ? pointer.appVersion : '',
+      updatedAt: typeof pointer.updatedAt === 'string' ? pointer.updatedAt : ''
+    };
   } catch (error) {
     console.error('[compare-app:data-folder] 读取指针文件失败:', error);
-    return '';
+    return null;
   }
 }
 
-function writePointerDataFolder(pointerFilePath, dataFolderPath) {
+function readPointerDataFolder(pointerFilePath) {
+  const pointer = readPointerData(pointerFilePath);
+  return pointer ? pointer.dataFolder : '';
+}
+
+function writePointerDataFolder(pointerFilePath, dataFolderPath, metadata = {}) {
   fs.mkdirSync(path.dirname(pointerFilePath), { recursive: true });
-  fs.writeFileSync(pointerFilePath, JSON.stringify({ dataFolder: dataFolderPath }, null, 2));
+  fs.writeFileSync(
+    pointerFilePath,
+    JSON.stringify(
+      {
+        dataFolder: dataFolderPath,
+        source: metadata.source || '',
+        appId: metadata.appId || '',
+        appVersion: metadata.appVersion || '',
+        updatedAt: metadata.updatedAt || new Date().toISOString()
+      },
+      null,
+      2
+    )
+  );
 }
 
 function getLegacyDataFolderPath({ appDataRoot, appFolderName }) {
@@ -59,6 +93,7 @@ module.exports = {
   getPointerFilePath,
   looksLikeManagedAppExecutable,
   pickFirstExistingPath,
+  readPointerData,
   readPointerDataFolder,
   writePointerDataFolder
 };

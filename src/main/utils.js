@@ -6,6 +6,7 @@ const {
   getInstalledDataFolderPath,
   getLegacyDataFolderPath: getLegacyCompareAppDataFolderPath,
   getPointerFilePath,
+  readPointerData,
   readPointerDataFolder,
   writePointerDataFolder
 } = requireSharedCompareAppModule('data-folder.js');
@@ -57,14 +58,54 @@ class DataFolderManager {
     this.dataFolderName = DEFAULT_COMPARE_APP_FILES.appFolderName;
   }
 
+  isPackagedApp() {
+    try {
+      return Boolean(require('electron').app.isPackaged);
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  getPointerSource() {
+    return this.isPackagedApp() ? 'packaged' : 'development';
+  }
+
+  getPointerAppId() {
+    return 'com.hotel.comparison.desktop';
+  }
+
+  readDataFolderPointer() {
+    return readPointerData(this.pointerFilePath);
+  }
+
+  isTrustedPointer(pointer) {
+    if (!pointer || !pointer.dataFolder) {
+      return false;
+    }
+
+    // 开发环境：继续兼容旧指针和新指针，避免影响开发调试。
+    if (!this.isPackagedApp()) {
+      return true;
+    }
+
+    // 正式安装版：只信任正式版自己写过的指针。
+    // 这样可以避免开发环境留下的旧 hotel-app-pointer.json 污染新安装应用。
+    return pointer.source === 'packaged' && pointer.appId === this.getPointerAppId();
+  }
+
   // 读取数据文件夹路径（从指针文件）
   readDataFolderPath() {
-    return readPointerDataFolder(this.pointerFilePath) || null;
+    const pointer = this.readDataFolderPointer();
+    return this.isTrustedPointer(pointer) ? pointer.dataFolder : null;
   }
 
   // 保存数据文件夹路径（写入指针文件）
   saveDataFolderPath(folderPath) {
-    writePointerDataFolder(this.pointerFilePath, folderPath);
+    writePointerDataFolder(this.pointerFilePath, folderPath, {
+      source: this.getPointerSource(),
+      appId: this.getPointerAppId(),
+      appVersion: require('./config').APP_CONFIG.VERSION
+    });
   }
 
   getLegacyDataFolderPath() {
