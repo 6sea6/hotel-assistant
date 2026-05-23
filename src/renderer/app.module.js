@@ -70,6 +70,7 @@ import {
   applySettings,
   changeTheme,
   toggleIncludeFourPersonRoomsForThreePersonTemplate,
+  toggleEnableCollectPerfLog,
   saveAmapApiKeySetting,
   saveAiListPrefilterSetting,
   openListPrefilterSettings,
@@ -290,6 +291,11 @@ function setupStaticFormListeners() {
     'includeFourPersonRoomsForThreePersonTemplate',
     'change',
     toggleIncludeFourPersonRoomsForThreePersonTemplate
+  );
+  addEvent(
+    'enableCollectPerfLog',
+    'change',
+    toggleEnableCollectPerfLog
   );
   [
     'aiCtripPriceMin',

@@ -658,6 +658,17 @@
             <small class="help-text">开启后，当模板入住人数为 3 人时，采集器仍会额外保留携程页面上明确显示可住 4 人的房型；查询参数仍按 3 人发起。</small>
           </div>
           <div class="form-group">
+            <label>采集性能日志</label>
+            <div class="setting-switch-container">
+              <label class="switch-label">
+                <input type="checkbox" id="enableCollectPerfLog">
+                <span class="switch-slider"></span>
+              </label>
+              <span class="switch-text" id="enableCollectPerfLogText">关闭</span>
+            </div>
+            <small class="help-text">开启后会在数据目录下记录采集各阶段耗时 JSONL，用于排查慢任务和异常阶段；普通使用建议关闭。</small>
+          </div>
+          <div class="form-group">
             <label for="amapApiKeyInput">高德 API Key</label>
             <div class="data-path-container">
               <input type="password" id="amapApiKeyInput" class="input" placeholder="留空使用程序默认高德 Key" autocomplete="off">

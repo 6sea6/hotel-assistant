@@ -234,6 +234,7 @@ async function executeAiTool(name, rawArguments, context) {
         if (!collectArgs.amapKey && settings.amapApiKey) {
           collectArgs.amapKey = settings.amapApiKey;
         }
+        collectArgs.enableCollectPerfLog = Boolean(settings.enableCollectPerfLog);
         return collectAndWriteCtripHotel(collectArgs, {
           dataFolderPath: dataService.getDataFolderPath(),
           signal,

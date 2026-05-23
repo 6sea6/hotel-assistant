@@ -76,6 +76,11 @@ export function applySettings() {
     'includeFourPersonRoomsForThreePersonTemplate',
     'includeFourPersonRoomsForThreePersonTemplateText'
   );
+  applyBooleanSettingToggle(
+    'enableCollectPerfLog',
+    'enableCollectPerfLog',
+    'enableCollectPerfLogText'
+  );
   setValue('amapApiKeyInput', state.settings.amapApiKey || '');
   applyListPrefilterSettings();
 
@@ -350,6 +355,28 @@ export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
     }
   } catch (error) {
     console.error('保存采集偏好设置失败:', error);
+    if (checkbox) {
+      checkbox.checked = !isEnabled;
+    }
+    if (textEl) {
+      textEl.textContent = !isEnabled ? '开启' : '关闭';
+    }
+  }
+}
+
+export async function toggleEnableCollectPerfLog() {
+  const checkbox = document.getElementById('enableCollectPerfLog');
+  const textEl = document.getElementById('enableCollectPerfLogText');
+  const isEnabled = Boolean(checkbox && checkbox.checked);
+
+  try {
+    await window.electronAPI.setSetting('enableCollectPerfLog', isEnabled);
+    state.settings.enableCollectPerfLog = isEnabled;
+    if (textEl) {
+      textEl.textContent = isEnabled ? '开启' : '关闭';
+    }
+  } catch (error) {
+    console.error('保存采集性能日志设置失败:', error);
     if (checkbox) {
       checkbox.checked = !isEnabled;
     }

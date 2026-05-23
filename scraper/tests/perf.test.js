@@ -16,7 +16,7 @@ function installMock(modulePath, exports) {
 }
 
 function clearPerfModules() {
-  ['../src/runtime/perf', '../src/runtime/noop-perf', '../../devtools/perf-log'].forEach(
+  ['../src/runtime/perf', '../src/runtime/noop-perf', '../src/runtime/file-perf', '../../devtools/perf-log'].forEach(
     (modulePath) => {
       try {
         delete require.cache[require.resolve(modulePath)];

@@ -304,7 +304,8 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
           sortMode: payload.sortMode,
           freeCancel: payload.freeCancel,
           reviewCountMin: payload.reviewCountMin,
-          ctripScoreMin: payload.ctripScoreMin
+          ctripScoreMin: payload.ctripScoreMin,
+          enableCollectPerfLog: payload.enableCollectPerfLog
         },
         {
           taskId,

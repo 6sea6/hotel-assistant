@@ -386,7 +386,8 @@ function buildTaskPayload(task) {
     sortMode: task.listUrlFilters ? task.listUrlFilters.sortMode : undefined,
     freeCancel: task.listUrlFilters ? task.listUrlFilters.freeCancel : undefined,
     reviewCountMin: task.listUrlFilters ? task.listUrlFilters.reviewCountMin : undefined,
-    ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined
+    ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined,
+    enableCollectPerfLog: Boolean(state.settings.enableCollectPerfLog)
   };
 }
 

@@ -438,7 +438,9 @@ async function runCollectTask(scraperPath, input, workDir, context) {
     workingDirectory: workDir,
     taskId: context.taskId,
     signal: context.signal,
-    onEvent: context.onEvent
+    onEvent: context.onEvent,
+    perfLogEnabled: Boolean(input.enableCollectPerfLog),
+    perfLogDir: path.join(workDir, 'logs', 'perf')
   });
 }
 

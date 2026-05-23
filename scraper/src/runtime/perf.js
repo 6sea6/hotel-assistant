@@ -1,21 +1,21 @@
-function shouldEnablePerfLog() {
+function shouldEnablePerfLog(options = {}) {
+  if (options.enabled === true) return true;
   return process.env.HOTEL_COLLECTOR_ENV === 'dev' && process.env.ENABLE_PERF_LOG === '1';
 }
 
-function loadPerfImplementation() {
-  if (!shouldEnablePerfLog()) {
-    return require('./noop-perf');
+function setup_perf_logger(options = {}) {
+  if (!shouldEnablePerfLog(options)) {
+    return require('./noop-perf').setup_perf_logger(options);
   }
-
-  try {
-    return require('../../../devtools/perf-log');
-  } catch (error) {
-    console.warn('[perf] 开发版性能日志模块不可用，已回退为空实现:', error.message);
-    return require('./noop-perf');
-  }
+  return require('./file-perf').setup_perf_logger({ ...options, enabled: true });
 }
 
+const filePerf = require('./file-perf');
+const noopPerf = require('./noop-perf');
+
 module.exports = {
-  ...loadPerfImplementation(),
+  setup_perf_logger,
+  PerfTimer: filePerf.PerfTimer,
+  BatchStats: filePerf.BatchStats,
   shouldEnablePerfLog
 };
