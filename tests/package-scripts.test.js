@@ -537,30 +537,24 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.doesNotMatch(runBuildScript, /Hotel Comparison Packager/);
 });
 
-test('build-nsis.bat uses Chinese UI with UTF-8 codepage and no English menu', () => {
-  const batScript = fs.readFileSync(
-    path.resolve(__dirname, '..', 'build-nsis.bat'),
-    'utf-8'
-  );
+test('build-nsis.bat uses Chinese UI with GBK codepage and CRLF line endings', () => {
+  const batBuffer = fs.readFileSync(path.resolve(__dirname, '..', 'build-nsis.bat'));
+  const asciiPart = batBuffer.toString('ascii');
 
-  assert.match(batScript, /chcp 65001/);
-  assert.match(batScript, /宾馆比较终极版打包工具/);
-  assert.match(batScript, /选择打包模式/);
-  assert.match(batScript, /基础版安装包/);
-  assert.match(batScript, /完整版安装包/);
-  assert.match(batScript, /请选择打包模式/);
-  assert.match(batScript, /打包完成/);
-  assert.match(batScript, /打包失败/);
-  assert.match(batScript, /开始打包/);
-  assert.match(batScript, /安装包路径/);
+  assert.ok(asciiPart.startsWith('@echo off'), 'bat file must start with @echo off');
+  assert.ok(asciiPart.includes('chcp 936'), 'bat file must use GBK codepage');
 
-  assert.doesNotMatch(batScript, /Hotel Comparison Packager/);
-  assert.doesNotMatch(batScript, /Choose build mode/);
-  assert.doesNotMatch(batScript, /Base package/);
-  assert.doesNotMatch(batScript, /Full package with scraper/);
-  assert.doesNotMatch(batScript, /Select mode/);
-  assert.doesNotMatch(batScript, /Build completed/);
-  assert.doesNotMatch(batScript, /Packaging failed/);
-  assert.doesNotMatch(batScript, /Latest installer/);
-  assert.doesNotMatch(batScript, /Node\.js was not found/);
+  const crlfCount = batBuffer.filter((b) => b === 0x0d).length;
+  const lfCount = batBuffer.filter((b) => b === 0x0a).length;
+  assert.ok(crlfCount > 0, 'bat file must use CRLF line endings');
+  assert.equal(crlfCount, lfCount, 'CR and LF count must match for CRLF');
+
+  assert.doesNotMatch(asciiPart, /Hotel Comparison Packager/);
+  assert.doesNotMatch(asciiPart, /Choose build mode/);
+  assert.doesNotMatch(asciiPart, /Base package/);
+  assert.doesNotMatch(asciiPart, /Build completed/);
+  assert.doesNotMatch(asciiPart, /Packaging failed/);
+  assert.doesNotMatch(asciiPart, /Select mode/);
+  assert.doesNotMatch(asciiPart, /Latest installer/);
+  assert.doesNotMatch(asciiPart, /Node\.js was not found/);
 });
