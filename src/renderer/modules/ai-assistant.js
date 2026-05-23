@@ -16,7 +16,7 @@ import {
   renderAiTaskConsole,
   updateAiInputCount as updateTaskInputCount
 } from './ai-task-console.js';
-import { enhanceCustomSelect, refreshCustomSelect } from './custom-select.js';
+import { enhanceCustomSelect, refreshCustomSelect, destroyCustomSelect, getCustomSelectInstance } from './custom-select.js';
 
 const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
 let activeCollectTaskId = '';
@@ -77,6 +77,13 @@ function setupAiTemplatePicker() {
   const select = $('aiTemplateSelect');
   if (!select) return;
 
+  // 保护：如果 select 已被默认 auto 增强抢先，先销毁再用 existingElements 重新增强
+  const expectedWrapper = $('aiTemplatePicker');
+  const existingCtx = getCustomSelectInstance(select);
+  if (existingCtx && existingCtx.wrapper !== expectedWrapper) {
+    destroyCustomSelect(select);
+  }
+
   const ctx = enhanceCustomSelect(select, {
     wrapperClass: 'ai-template-picker custom-select',
     buttonClass: 'input ai-template-picker-button custom-select-button',
@@ -85,7 +92,7 @@ function setupAiTemplatePicker() {
     menuClass: 'ai-template-picker-menu custom-select-menu',
     optionClass: 'ai-template-picker-option custom-select-option',
     existingElements: {
-      wrapper: $('aiTemplatePicker'),
+      wrapper: expectedWrapper,
       button: $('aiTemplatePickerButton'),
       textSpan: $('aiTemplatePickerText'),
       menu: $('aiTemplatePickerMenu')

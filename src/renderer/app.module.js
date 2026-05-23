@@ -393,7 +393,7 @@ async function initializeApp() {
       setupMenuListeners();
       setupTemplateSyncListener();
       setupCustomSelects(document, { auto: true });
-      refreshCustomSelects();
+      refreshCustomSelects(document, { auto: true });
       checkAndShowManual();
       console.log('[初始化] 界面渲染完成');
     });

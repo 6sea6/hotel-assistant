@@ -28,9 +28,81 @@ const ACTIVE_CLASS = 'is-active';
 const DISABLED_CLASS = 'is-disabled';
 const NATIVE_CLASS = 'custom-select-native';
 const READY_ATTR = 'customSelectReady';
+const OPTION_SELECTOR = `[data-custom-select-option="true"]`;
 
 const instances = new WeakMap();
 let openInstance = null;
+let pendingPositionFrame = 0;
+
+/**
+ * 清除失效的 ready 标记。
+ * 当 select 有 ready 标记但 WeakMap 中无对应实例时，重置标记以允许重新增强。
+ */
+function clearStaleReadyState(select) {
+  if (!select) return;
+  if (select.dataset[READY_ATTR] === 'true' && !instances.get(select)) {
+    delete select.dataset[READY_ATTR];
+    select.classList.remove(NATIVE_CLASS);
+  }
+}
+
+/* ============================================================
+ * rAF 合并定位调度
+ * ============================================================ */
+
+function getAnimationFrame() {
+  if (typeof requestAnimationFrame === 'function') return requestAnimationFrame;
+  return (callback) => setTimeout(callback, 16);
+}
+
+function getCancelAnimationFrame() {
+  if (typeof cancelAnimationFrame === 'function') return cancelAnimationFrame;
+  return clearTimeout;
+}
+
+function schedulePositionOpenMenu() {
+  if (!openInstance) return;
+  if (pendingPositionFrame) return;
+  const raf = getAnimationFrame();
+  pendingPositionFrame = raf(() => {
+    pendingPositionFrame = 0;
+    if (openInstance) {
+      positionMenu(openInstance);
+    }
+  });
+}
+
+function cancelPendingPositionFrame() {
+  if (!pendingPositionFrame) return;
+  getCancelAnimationFrame()(pendingPositionFrame);
+  pendingPositionFrame = 0;
+}
+
+/* ============================================================
+ * MutationObserver rebuild 批处理
+ * ============================================================ */
+
+function scheduleRebuild(ctx) {
+  if (!ctx || ctx._rebuildScheduled) return;
+  ctx._rebuildScheduled = true;
+
+  const run = () => {
+    ctx._rebuildScheduled = false;
+    if (!instances.get(ctx.select)) return;
+    rebuildMenu(ctx);
+    if (openInstance === ctx) {
+      positionMenu(ctx);
+      const selectedIndex = ctx.select.selectedIndex;
+      setActiveIndex(ctx, selectedIndex >= 0 ? selectedIndex : 0);
+    }
+  };
+
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(run);
+  } else {
+    Promise.resolve().then(run);
+  }
+}
 
 /* ============================================================
  * 公共 API
@@ -66,7 +138,9 @@ export function setupCustomSelects(root = document, options = {}) {
  * @returns {Object} ctx
  */
 export function enhanceCustomSelect(select, options = {}) {
-  if (!select || select.dataset[READY_ATTR] === 'true') {
+  if (!select) return null;
+  clearStaleReadyState(select);
+  if (select.dataset[READY_ATTR] === 'true') {
     return instances.get(select) || null;
   }
   if (select.multiple || (select.size && select.size > 1)) {
@@ -79,13 +153,22 @@ export function enhanceCustomSelect(select, options = {}) {
 
 /**
  * 刷新 root 内所有已增强的 select，对未增强的执行增强。
+ * @param {Document|Element} root
+ * @param {Object} options
+ * @param {boolean} [options.auto=false] - 为 true 时额外刷新 select.input
  */
-export function refreshCustomSelects(root = document) {
-  const selects = root.querySelectorAll(
-    `select[data-custom-select="true"], select.${NATIVE_CLASS}`
-  );
+export function refreshCustomSelects(root = document, options = {}) {
+  const auto = options.auto === true;
+  const selector = auto
+    ? `select[data-custom-select="true"], select.${NATIVE_CLASS}, select.input`
+    : `select[data-custom-select="true"], select.${NATIVE_CLASS}`;
+  const selects = root.querySelectorAll(selector);
   selects.forEach((select) => {
     if (select.multiple || (select.size && select.size > 1)) return;
+    if (auto && select.dataset.nativeSelect === 'true') return;
+    if (auto && select.dataset.customSelect === 'false') return;
+    if (auto && select.dataset.customSelectAuto === 'false') return;
+    clearStaleReadyState(select);
     const ctx = instances.get(select);
     if (ctx) {
       rebuildMenu(ctx);
@@ -100,6 +183,7 @@ export function refreshCustomSelects(root = document) {
  */
 export function refreshCustomSelect(select) {
   if (!select) return;
+  clearStaleReadyState(select);
   const ctx = instances.get(select);
   if (ctx) {
     rebuildMenu(ctx);
@@ -122,16 +206,42 @@ export function destroyCustomSelect(select) {
   if (openInstance === ctx) {
     closeMenu(ctx);
     openInstance = null;
+    cancelPendingPositionFrame();
   }
 
+  // 移除事件监听器
+  if (ctx.button && ctx._onButtonClick) {
+    ctx.button.removeEventListener('click', ctx._onButtonClick);
+  }
+  if (ctx.button && ctx._onButtonKeydown) {
+    ctx.button.removeEventListener('keydown', ctx._onButtonKeydown);
+  }
+  if (ctx.menu && ctx._onMenuClick) {
+    ctx.menu.removeEventListener('click', ctx._onMenuClick);
+  }
+  if (ctx.menu && ctx._onMenuKeydown) {
+    ctx.menu.removeEventListener('keydown', ctx._onMenuKeydown);
+  }
+  if (ctx.select && ctx._onSelectChange) {
+    ctx.select.removeEventListener('change', ctx._onSelectChange);
+  }
+
+  // 断开 MutationObserver
   if (ctx._observer) ctx._observer.disconnect();
   if (ctx._attrObserver) ctx._attrObserver.disconnect();
 
   select.classList.remove(NATIVE_CLASS);
   delete select.dataset[READY_ATTR];
 
-  if (ctx.wrapper && ctx.wrapper.parentNode) {
+  // 只删除 custom-select 自己创建的 wrapper，保留 existingElements
+  if (ctx.ownsWrapper && ctx.wrapper && ctx.wrapper.parentNode) {
     ctx.wrapper.parentNode.removeChild(ctx.wrapper);
+  } else {
+    // 对 existingElements，只清空 menu 内容并隐藏，保留 DOM
+    if (ctx.menu) {
+      ctx.menu.innerHTML = '';
+      ctx.menu.hidden = true;
+    }
   }
 
   instances.delete(select);
@@ -144,6 +254,7 @@ export function closeAllCustomSelects() {
   if (openInstance) {
     closeMenu(openInstance);
     openInstance = null;
+    cancelPendingPositionFrame();
   }
 }
 
@@ -168,6 +279,7 @@ function findTargetSelects(root, auto = false) {
   candidates.forEach((select) => {
     if (select.dataset.nativeSelect === 'true') return;
     if (select.dataset.customSelect === 'false') return;
+    if (auto && select.dataset.customSelectAuto === 'false') return;
     if (select.multiple) return;
     if (select.size && select.size > 1) return;
     if (select.dataset[READY_ATTR] === 'true') return;
@@ -267,6 +379,9 @@ function initOne(select, options = {}) {
     activeIndex: -1,
     optionClass,
     menuScrollable: false,
+    ownsWrapper: !existing.wrapper,
+    ownsButton: !existing.button,
+    ownsMenu: !existing.menu,
     _observer: null,
     _attrObserver: null
   };
@@ -282,7 +397,7 @@ function initOne(select, options = {}) {
   ctx._onButtonClick = (e) => { e.preventDefault(); toggleMenu(ctx); };
   ctx._onButtonKeydown = (e) => { handleButtonKeydown(e, ctx); };
   ctx._onMenuClick = (e) => {
-    const opt = e.target.closest(`.${optionClass.split(' ')[0]}`);
+    const opt = e.target.closest(OPTION_SELECTOR);
     if (!opt) return;
     e.preventDefault();
     selectOption(ctx, opt);
@@ -296,8 +411,8 @@ function initOne(select, options = {}) {
   menu.addEventListener('keydown', ctx._onMenuKeydown);
   select.addEventListener('change', ctx._onSelectChange);
 
-  // 监听原生 select 子节点变化（动态 options）
-  ctx._observer = new MutationObserver(() => { rebuildMenu(ctx); });
+  // 监听原生 select 子节点变化（动态 options）—— 批处理
+  ctx._observer = new MutationObserver(() => { scheduleRebuild(ctx); });
   ctx._observer.observe(select, { childList: true, subtree: true });
 
   // 监听 disabled 属性变化
@@ -319,6 +434,7 @@ function buildOptions(ctx) {
     btn.type = 'button';
     btn.className = optionClass;
     btn.setAttribute('role', 'option');
+    btn.dataset.customSelectOption = 'true';
     btn.dataset.index = String(index);
     btn.dataset.value = opt.value;
     btn.textContent = opt.textContent;
@@ -338,9 +454,8 @@ function buildOptions(ctx) {
 }
 
 function syncSelectedOption(ctx) {
-  const { select, menu, optionClass } = ctx;
-  const selector = `.${optionClass.split(' ')[0]}`;
-  const options = menu.querySelectorAll(selector);
+  const { select, menu } = ctx;
+  const options = menu.querySelectorAll(OPTION_SELECTOR);
   const selectedValue = select.value;
   options.forEach((option) => {
     const isSelected = option.dataset.value === selectedValue;
@@ -406,10 +521,11 @@ function openMenu(ctx) {
   button.setAttribute('aria-expanded', 'true');
   menu.hidden = false;
 
+  positionMenu(ctx);
+
   const selectedIndex = select.selectedIndex;
   setActiveIndex(ctx, selectedIndex >= 0 ? selectedIndex : 0);
 
-  positionMenu(ctx);
   openInstance = ctx;
   ensureGlobalListeners();
 
@@ -432,6 +548,7 @@ function closeMenu(ctx) {
 
   if (openInstance === ctx) {
     openInstance = null;
+    cancelPendingPositionFrame();
   }
 }
 
@@ -545,8 +662,7 @@ function selectOption(ctx, optElement) {
  * ============================================================ */
 
 function setActiveIndex(ctx, index) {
-  const selector = `.${ctx.optionClass.split(' ')[0]}`;
-  const options = ctx.menu.querySelectorAll(selector);
+  const options = ctx.menu.querySelectorAll(OPTION_SELECTOR);
   if (!options.length) return;
 
   clearActive(ctx);
@@ -563,8 +679,7 @@ function setActiveIndex(ctx, index) {
 }
 
 function clearActive(ctx) {
-  const selector = `.${ctx.optionClass.split(' ')[0]}`;
-  const prev = ctx.menu.querySelector(`${selector}.${ACTIVE_CLASS}`);
+  const prev = ctx.menu.querySelector(`${OPTION_SELECTOR}.${ACTIVE_CLASS}`);
   if (prev) {
     prev.classList.remove(ACTIVE_CLASS);
   }
@@ -579,8 +694,7 @@ function handleButtonKeydown(e, ctx) {
 }
 
 function handleMenuKeydown(e, ctx) {
-  const selector = `.${ctx.optionClass.split(' ')[0]}`;
-  const options = ctx.menu.querySelectorAll(selector);
+  const options = ctx.menu.querySelectorAll(OPTION_SELECTOR);
   const maxIndex = options.length - 1;
 
   if (e.key === 'ArrowDown') {
@@ -613,17 +727,13 @@ function ensureGlobalListeners() {
   globalListenersBound = true;
 
   window.addEventListener('resize', () => {
-    if (openInstance) {
-      positionMenu(openInstance);
-    }
+    schedulePositionOpenMenu();
   });
 
   window.addEventListener(
     'scroll',
     () => {
-      if (openInstance) {
-        positionMenu(openInstance);
-      }
+      schedulePositionOpenMenu();
     },
     true
   );
