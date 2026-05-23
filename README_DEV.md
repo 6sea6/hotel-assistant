@@ -97,7 +97,7 @@ node --test tests/package-scripts.test.js
 
 在应用设置页打开"采集性能日志"开关。开启后，采集任务会自动写入 JSONL 性能日志。
 
-- 日志路径：`<数据目录>/scraper-data/logs/perf/collect_perf_YYYY-MM-DD.jsonl`
+- 日志路径：`logs/perf/collect_perf_YYYY-MM-DD.jsonl`
 - 默认关闭，普通使用建议关闭
 - 用于排查慢任务和异常采集阶段
 

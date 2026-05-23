@@ -24,6 +24,7 @@ const {
   createWriteRollbackSnapshot,
   getVisibleLoginRetryNeed,
   isTaskCancelled,
+  resolveRootPerfLogDir,
   resolveScraperPath,
   restoreWriteRollbackSnapshot
 } = require('../src/main/ai/scraper-runner');
@@ -420,6 +421,22 @@ test('scraper runner resolves the embedded scraper in the app repository', (t) =
     }),
     path.join(tempRoot, 'project', 'scraper')
   );
+});
+
+test('scraper runner perfLogDir resolves to program root logs/perf', () => {
+  const perfLogDir = resolveRootPerfLogDir();
+
+  assert.equal(perfLogDir, path.resolve('logs', 'perf'));
+  assert.ok(!perfLogDir.includes('scraper-data'));
+  assert.ok(perfLogDir.endsWith(path.join('logs', 'perf')));
+});
+
+test('scraper runner perfLogDir is independent of workDir', () => {
+  const perfLogDir = resolveRootPerfLogDir();
+  const fakeWorkDir = path.join(os.tmpdir(), 'some-work-dir', 'scraper-data');
+
+  assert.notEqual(perfLogDir, path.join(fakeWorkDir, 'logs', 'perf'));
+  assert.ok(!perfLogDir.includes('scraper-data'));
 });
 
 test('AI scraper write rollback restores compare-app store snapshot', async (t) => {

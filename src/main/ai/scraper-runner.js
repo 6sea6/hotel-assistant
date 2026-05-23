@@ -432,6 +432,10 @@ function buildLoginRetrySummary(previousResult = {}, retryNeed = {}) {
   };
 }
 
+function resolveRootPerfLogDir() {
+  return path.resolve('logs', 'perf');
+}
+
 async function runCollectTask(scraperPath, input, workDir, context) {
   const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
   return runHotelImportTask(buildScraperArgs(input, workDir), {
@@ -440,7 +444,7 @@ async function runCollectTask(scraperPath, input, workDir, context) {
     signal: context.signal,
     onEvent: context.onEvent,
     perfLogEnabled: Boolean(input.enableCollectPerfLog),
-    perfLogDir: path.join(workDir, 'logs', 'perf')
+    perfLogDir: resolveRootPerfLogDir()
   });
 }
 
@@ -671,6 +675,7 @@ module.exports = {
   isTaskCancelled,
   loadScraperModule,
   openVisibleEdgeLogin,
+  resolveRootPerfLogDir,
   restoreWriteRollbackSnapshot,
   resolveScraperPath,
   resolveScraperWorkDir
