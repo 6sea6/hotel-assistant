@@ -40,8 +40,7 @@ function getBundleManifest(bundleRoot) {
           '!**/edge-profile/**',
           '!**/raw-pages/**',
           '!**/hotel-data.json',
-          '!**/*api*key*',
-          '!**/*token*'
+          '!**/*api*key*'
         ]
       }
     ],
@@ -59,6 +58,16 @@ function getBundleManifest(bundleRoot) {
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'axios', 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'cheerio', 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'ws', 'package.json'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'parse5', 'package.json'),
+        path.join(
+          BUNDLE_RESOURCE_MAP.scraperDirName,
+          'vendor',
+          'parse5',
+          'dist',
+          'cjs',
+          'tokenizer',
+          'index.js'
+        ),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, PROMPT_CONTRACT.unifiedPromptFileName)
       ],
       baseOnlyAbsentResources: [path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js')],

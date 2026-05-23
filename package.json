@@ -92,7 +92,6 @@
       "!**/raw-pages/**/*",
       "!**/hotel-data.json",
       "!**/*api*key*",
-      "!**/*token*",
       "!**/*.md",
       "!**/*.ts",
       "!**/*.map"
@@ -142,7 +141,12 @@
       "shortcutName": "宾馆比较终极版",
       "uninstallDisplayName": "宾馆比较终极版",
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "displayLanguageSelector": false,
+      "unicode": true
     },
     "electronDist": null,
     "electronVersion": "42.0.1",

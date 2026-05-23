@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const readline = require('readline');
 const { createBuilderConfig } = require('./create-builder-config');
 const { getSetupArtifactName } = require('./bundle-manifest');
 const { prepareFullBundle } = require('./prepare-full-bundle');
@@ -73,6 +74,31 @@ function copyFinalInstaller({ projectRoot, tempBuildDir, version, mode }) {
   return targetPath;
 }
 
+function promptBuildMode(version) {
+  const divider = '='.repeat(48);
+  console.log(divider);
+  console.log(`  宾馆比较终极版打包工具 v${version}`);
+  console.log(divider);
+  console.log('');
+  console.log('[1/2] 选择打包模式');
+  console.log('');
+  console.log('  1. 基础版安装包');
+  console.log('  2. 完整版安装包（包含采集模块资源）');
+  console.log('');
+
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+    rl.question('请选择打包模式（1/2，默认 1）：', (answer) => {
+      rl.close();
+      const trimmed = answer.trim();
+      resolve(trimmed === '2' ? '2' : '1');
+    });
+  });
+}
+
 function ensureNodeModules(projectRoot) {
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   const scraperPackageJsonPath = path.join(projectRoot, 'scraper', 'package.json');
@@ -113,29 +139,38 @@ function syncBuildAssets(projectRoot) {
   });
 }
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
-  const mode = getArgValue(argv, '--mode', '-m') || argv[0] || '1';
+  const argMode = getArgValue(argv, '--mode', '-m') || argv[0] || '';
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.resolve(projectRoot, 'scraper');
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   const version = packageJson.version;
   const tempBuildDir = path.join(projectRoot, `dist-verify-build-${process.pid}-${Date.now()}`);
 
+  const mode = argMode || (await promptBuildMode(version));
+
   let preparedBundle = null;
   let builderConfig = null;
 
   try {
+    console.log('\n[2/2] 开始打包\n');
+
+    console.log('正在检查依赖...');
     ensureNodeModules(projectRoot);
+
+    console.log('正在同步构建资源...');
     syncBuildAssets(projectRoot);
 
     if (mode === '2') {
+      console.log('正在准备完整版采集模块资源...');
       preparedBundle = prepareFullBundle({
         projectRoot,
         scraperDir
       });
     }
 
+    console.log('正在生成打包配置...');
     builderConfig = createBuilderConfig({
       projectRoot,
       mode,
@@ -143,11 +178,13 @@ function main() {
       extraResources: preparedBundle ? preparedBundle.manifest.extraResources : []
     });
 
+    console.log('正在运行 electron-builder...');
     runElectronBuilder({
       projectRoot,
       configPath: builderConfig.configPath
     });
 
+    console.log('正在校验安装包资源...');
     verifyPackageLayout({
       tempBuildDir,
       mode
@@ -169,7 +206,10 @@ function main() {
       );
     }
 
-    console.log(finalInstaller);
+    console.log(`\n打包完成：${finalInstaller}`);
+  } catch (error) {
+    console.error('\n打包失败：', error.message || error);
+    process.exitCode = 1;
   } finally {
     if (builderConfig && builderConfig.configPath) {
       removeIfExists(builderConfig.configPath);

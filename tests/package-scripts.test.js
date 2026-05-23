@@ -47,6 +47,8 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
     path.join('scraper', 'vendor', 'axios', 'package.json'),
     path.join('scraper', 'vendor', 'cheerio', 'package.json'),
     path.join('scraper', 'vendor', 'ws', 'package.json'),
+    path.join('scraper', 'vendor', 'parse5', 'package.json'),
+    path.join('scraper', 'vendor', 'parse5', 'dist', 'cjs', 'tokenizer', 'index.js'),
     path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
   ]);
   [
@@ -86,6 +88,11 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
     manifest.extraResources[0].filter.some((pattern) => pattern === '!**/*.jsonl'),
     'full bundle resource filter excludes JSONL logs'
   );
+  assert.equal(
+    manifest.extraResources[0].filter.includes('!**/*token*'),
+    false,
+    'bundle resource filter must not use broad !**/*token* that would exclude parse5 tokenizer'
+  );
 });
 
 test('electron-builder config excludes development perf tooling and JSONL logs', () => {
@@ -104,6 +111,25 @@ test('electron-builder config excludes development perf tooling and JSONL logs',
   ].forEach((pattern) => {
     assert.ok(files.includes(pattern), `missing electron-builder exclude: ${pattern}`);
   });
+  assert.equal(
+    files.includes('!**/*token*'),
+    false,
+    'build.files must not use broad !**/*token* that would exclude parse5 tokenizer'
+  );
+});
+
+test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', () => {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+  );
+  const nsis = packageJson.build.nsis;
+
+  assert.deepEqual(nsis.installerLanguages, ['zh_CN']);
+  assert.equal(nsis.displayLanguageSelector, false);
+  assert.equal(nsis.unicode, true);
+  assert.equal(packageJson.build.productName, '宾馆比较终极版');
+  assert.equal(nsis.shortcutName, '宾馆比较终极版');
+  assert.equal(nsis.uninstallDisplayName, '宾馆比较终极版');
 });
 
 test('scraper dependency packages are declared only in the workspace package', () => {
@@ -222,8 +248,27 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
     }
   });
   writePackageFixture(nodeModulesDir, 'follow-redirects');
-  writePackageFixture(nodeModulesDir, 'cheerio');
+  writePackageFixture(nodeModulesDir, 'cheerio', {
+    dependencies: {
+      parse5: '^7.0.0'
+    }
+  });
   writePackageFixture(nodeModulesDir, 'ws');
+  writePackageFixture(nodeModulesDir, 'parse5');
+  const parse5TokenizerDir = path.join(nodeModulesDir, 'parse5', 'dist', 'cjs', 'tokenizer');
+  fs.mkdirSync(parse5TokenizerDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(parse5TokenizerDir, 'index.js'),
+    'module.exports = {};',
+    'utf-8'
+  );
+  const parse5ParserDir = path.join(nodeModulesDir, 'parse5', 'dist', 'cjs', 'parser');
+  fs.mkdirSync(parse5ParserDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(parse5ParserDir, 'index.js'),
+    "require('../tokenizer/index.js');",
+    'utf-8'
+  );
 
   const prepared = prepareFullBundle({
     projectRoot: tempRoot,
@@ -273,6 +318,28 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
       )
     ),
     true
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'parse5', 'package.json')
+    ),
+    true,
+    'parse5 package.json must be copied to full bundle'
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(
+        prepared.manifest.directories.scraperRoot,
+        'vendor',
+        'parse5',
+        'dist',
+        'cjs',
+        'tokenizer',
+        'index.js'
+      )
+    ),
+    true,
+    'parse5 tokenizer/index.js must be copied to full bundle'
   );
   assert.equal(
     fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'examples')),
@@ -443,4 +510,57 @@ test('build asset sync is implemented by the Node script without Python or Pillo
   assert.doesNotMatch(psWrapper, /python|pillow|PIL/i);
   assert.match(runBuildScript, /sync-build-assets\.js/);
   assert.match(smokeBuildScript, /sync-build-assets\.js/);
+});
+
+test('run-build script uses Chinese UI text and does not contain English menu strings', () => {
+  const runBuildScript = fs.readFileSync(
+    path.resolve(__dirname, '..', 'scripts', 'package', 'run-build.js'),
+    'utf-8'
+  );
+
+  assert.match(runBuildScript, /选择打包模式/);
+  assert.match(runBuildScript, /基础版安装包/);
+  assert.match(runBuildScript, /完整版安装包/);
+  assert.match(runBuildScript, /请选择打包模式/);
+  assert.match(runBuildScript, /宾馆比较终极版打包工具/);
+  assert.match(runBuildScript, /正在同步构建资源/);
+  assert.match(runBuildScript, /正在准备完整版采集模块资源/);
+  assert.match(runBuildScript, /正在运行 electron-builder/);
+  assert.match(runBuildScript, /正在校验安装包资源/);
+  assert.match(runBuildScript, /打包完成/);
+  assert.match(runBuildScript, /打包失败/);
+
+  assert.doesNotMatch(runBuildScript, /Choose build mode/);
+  assert.doesNotMatch(runBuildScript, /Base package/);
+  assert.doesNotMatch(runBuildScript, /Full package with scraper resources/);
+  assert.doesNotMatch(runBuildScript, /Select mode/);
+  assert.doesNotMatch(runBuildScript, /Hotel Comparison Packager/);
+});
+
+test('build-nsis.bat uses Chinese UI with UTF-8 codepage and no English menu', () => {
+  const batScript = fs.readFileSync(
+    path.resolve(__dirname, '..', 'build-nsis.bat'),
+    'utf-8'
+  );
+
+  assert.match(batScript, /chcp 65001/);
+  assert.match(batScript, /宾馆比较终极版打包工具/);
+  assert.match(batScript, /选择打包模式/);
+  assert.match(batScript, /基础版安装包/);
+  assert.match(batScript, /完整版安装包/);
+  assert.match(batScript, /请选择打包模式/);
+  assert.match(batScript, /打包完成/);
+  assert.match(batScript, /打包失败/);
+  assert.match(batScript, /开始打包/);
+  assert.match(batScript, /安装包路径/);
+
+  assert.doesNotMatch(batScript, /Hotel Comparison Packager/);
+  assert.doesNotMatch(batScript, /Choose build mode/);
+  assert.doesNotMatch(batScript, /Base package/);
+  assert.doesNotMatch(batScript, /Full package with scraper/);
+  assert.doesNotMatch(batScript, /Select mode/);
+  assert.doesNotMatch(batScript, /Build completed/);
+  assert.doesNotMatch(batScript, /Packaging failed/);
+  assert.doesNotMatch(batScript, /Latest installer/);
+  assert.doesNotMatch(batScript, /Node\.js was not found/);
 });

@@ -324,3 +324,69 @@ test('DataFolderManager packaged env returns null when no pointer file exists', 
   // No pointer file written — should return null
   assert.equal(manager.readDataFolderPath(), null);
 });
+
+test('DataFolderManager packaged env ignores old pointer and falls back to packaged default folder', (t) => {
+  const tempRoot = makeTempRoot();
+  const appDataRoot = path.join(tempRoot, 'appdata');
+  const devDataDir = path.join(tempRoot, 'dev-data');
+  fs.mkdirSync(appDataRoot, { recursive: true });
+  fs.mkdirSync(devDataDir, { recursive: true });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const pointerFile = path.join(appDataRoot, 'hotel-app-pointer.json');
+  fs.writeFileSync(pointerFile, JSON.stringify({ dataFolder: devDataDir }, null, 2), 'utf-8');
+
+  const manager = createMockDataFolderManager({
+    isPackaged: true,
+    appDataRoot
+  });
+
+  const packagedDefault = path.join(tempRoot, 'installed-app', '宾馆比较助手');
+  fs.mkdirSync(packagedDefault, { recursive: true });
+  manager.getPackagedDefaultDataFolderPath = () => packagedDefault;
+
+  assert.equal(manager.getDataFolderPath(), packagedDefault);
+  assert.notEqual(manager.getDataFolderPath(), devDataDir);
+});
+
+test('DataFolderManager packaged env uses trusted packaged pointer before default folder', (t) => {
+  const tempRoot = makeTempRoot();
+  const appDataRoot = path.join(tempRoot, 'appdata');
+  const customDataDir = path.join(tempRoot, 'user-chosen-data');
+  fs.mkdirSync(appDataRoot, { recursive: true });
+  fs.mkdirSync(customDataDir, { recursive: true });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const pointerFile = path.join(appDataRoot, 'hotel-app-pointer.json');
+  fs.writeFileSync(
+    pointerFile,
+    JSON.stringify(
+      {
+        dataFolder: customDataDir,
+        source: 'packaged',
+        appId: 'com.hotel.comparison.desktop',
+        appVersion: '8.8'
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  );
+
+  const manager = createMockDataFolderManager({
+    isPackaged: true,
+    appDataRoot
+  });
+
+  const packagedDefault = path.join(tempRoot, 'installed-app', '宾馆比较助手');
+  fs.mkdirSync(packagedDefault, { recursive: true });
+  manager.getPackagedDefaultDataFolderPath = () => packagedDefault;
+
+  assert.equal(manager.getDataFolderPath(), customDataDir);
+});

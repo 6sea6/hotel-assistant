@@ -7,7 +7,6 @@ const {
   getLegacyDataFolderPath: getLegacyCompareAppDataFolderPath,
   getPointerFilePath,
   readPointerData,
-  readPointerDataFolder,
   writePointerDataFolder
 } = requireSharedCompareAppModule('data-folder.js');
 
