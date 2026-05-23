@@ -209,8 +209,8 @@ const TEMPLATE_INFO_FIELDS = [
 // 应用常量
 const APP_CONFIG = {
   NAME: '宾馆比较助手',
-  VERSION: '8.0',
-  RELEASE_DATE: '2026-05-17',
+  VERSION: '8.8',
+  RELEASE_DATE: '2026-05-23',
   AUTHOR: 'Sea',
   APP_USER_MODEL_ID: 'com.hotel.comparison.desktop',
 
