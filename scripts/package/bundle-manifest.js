@@ -53,6 +53,9 @@ function getBundleManifest(bundleRoot) {
       ],
       fullOnlyResources: [
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'perf.js'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'file-perf.js'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'noop-perf.js'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'axios', 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'cheerio', 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'vendor', 'ws', 'package.json'),

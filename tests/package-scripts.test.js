@@ -41,6 +41,9 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
   assert.equal(getSetupArtifactName('2', '7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
   assert.deepEqual(manifest.expectations.fullOnlyResources, [
     path.join('scraper', 'src', 'cli.js'),
+    path.join('scraper', 'src', 'runtime', 'perf.js'),
+    path.join('scraper', 'src', 'runtime', 'file-perf.js'),
+    path.join('scraper', 'src', 'runtime', 'noop-perf.js'),
     path.join('scraper', 'vendor', 'axios', 'package.json'),
     path.join('scraper', 'vendor', 'cheerio', 'package.json'),
     path.join('scraper', 'vendor', 'ws', 'package.json'),
@@ -59,6 +62,26 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
   ].forEach((relativePath) => {
     assert.ok(manifest.expectations.neverResources.includes(relativePath));
   });
+  assert.ok(
+    manifest.expectations.neverResources.includes(path.join('devtools')),
+    'neverResources must exclude devtools'
+  );
+  assert.ok(
+    manifest.expectations.neverResources.includes(path.join('logs')),
+    'neverResources must exclude logs'
+  );
+  assert.ok(
+    manifest.expectations.neverResources.includes(path.join('scraper', 'logs')),
+    'neverResources must exclude scraper/logs'
+  );
+  assert.ok(
+    manifest.expectations.neverResources.includes(path.join('scraper', 'devtools')),
+    'neverResources must exclude scraper/devtools'
+  );
+  assert.ok(
+    manifest.expectations.neverResources.includes(path.join('scraper', 'src', 'runtime', 'perf_log.py')),
+    'neverResources must exclude perf_log.py'
+  );
   assert.ok(
     manifest.extraResources[0].filter.some((pattern) => pattern === '!**/*.jsonl'),
     'full bundle resource filter excludes JSONL logs'
@@ -143,8 +166,33 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   const nodeModulesDir = path.join(tempRoot, 'node_modules');
 
   fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(scraperDir, 'src', 'runtime'), { recursive: true });
   fs.mkdirSync(path.join(scraperDir, 'examples'), { recursive: true });
   fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(scraperDir, 'src', 'runtime', 'perf.js'), '// perf entry\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, 'src', 'runtime', 'file-perf.js'),
+    '// file-perf impl\n',
+    'utf-8'
+  );
+  fs.writeFileSync(
+    path.join(scraperDir, 'src', 'runtime', 'noop-perf.js'),
+    '// noop-perf impl\n',
+    'utf-8'
+  );
+  fs.mkdirSync(path.join(scraperDir, 'logs'), { recursive: true });
+  fs.writeFileSync(
+    path.join(scraperDir, 'logs', 'collect_perf_2026-05-23.jsonl'),
+    '{}\n',
+    'utf-8'
+  );
+  fs.mkdirSync(path.join(scraperDir, 'devtools'), { recursive: true });
+  fs.writeFileSync(path.join(scraperDir, 'devtools', 'perf-log.js'), '// devtools perf\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, 'src', 'runtime', 'perf_log.py'),
+    '# python perf\n',
+    'utf-8'
+  );
   fs.writeFileSync(
     path.join(scraperDir, 'package.json'),
     JSON.stringify(
@@ -230,6 +278,25 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
     fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'examples')),
     false
   );
+  assert.equal(
+    fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'src', 'runtime', 'perf.js')),
+    true,
+    'runtime/perf.js must be copied to full bundle'
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'src', 'runtime', 'file-perf.js')
+    ),
+    true,
+    'runtime/file-perf.js must be copied to full bundle'
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'src', 'runtime', 'noop-perf.js')
+    ),
+    true,
+    'runtime/noop-perf.js must be copied to full bundle'
+  );
 });
 
 test('verifyPackageLayout distinguishes base and full resource layouts', (t) => {
@@ -271,6 +338,28 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
   assert.throws(
     () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'base'), mode: '1' }),
     /不应存在的打包资源/
+  );
+});
+
+test('full package manifest requires runtime perf logger modules', () => {
+  const manifest = getBundleManifest('E:/temp/bundle-root');
+  assert.ok(
+    manifest.expectations.fullOnlyResources.includes(path.join('scraper', 'src', 'runtime', 'perf.js'))
+  );
+  assert.ok(
+    manifest.expectations.fullOnlyResources.includes(
+      path.join('scraper', 'src', 'runtime', 'file-perf.js')
+    )
+  );
+  assert.ok(
+    manifest.expectations.fullOnlyResources.includes(
+      path.join('scraper', 'src', 'runtime', 'noop-perf.js')
+    )
+  );
+  assert.equal(
+    manifest.expectations.fullOnlyResources.includes(path.join('scraper', 'devtools', 'perf-log.js')),
+    false,
+    'devtools/perf-log.js must NOT be in fullOnlyResources'
   );
 });
 
