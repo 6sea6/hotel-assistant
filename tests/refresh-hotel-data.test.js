@@ -152,7 +152,7 @@ test('ai-task-console.js: REFRESH_STEP_DEFINITIONS exists and has no transit ste
   assert.ok(!stepsContent.includes('transit'), 'Refresh steps should NOT contain transit');
   assert.ok(stepsContent.includes('load-data'), 'Should have load-data step');
   assert.ok(stepsContent.includes('refresh'), 'Should have refresh step');
-  assert.ok(stepsContent.includes('已接收更新任务'), 'Should have refresh-specific received title');
+  assert.ok(stepsContent.includes('已接收任务'), 'Should have received title matching BASE');
 });
 
 test('ai-task-console.js: refresh running view shows "正在更新数据"', async () => {
@@ -497,4 +497,249 @@ test('normal collect: enqueueAiCollectTask still requires template and URL', asy
     collectFnMatch[0].includes('getSubmittedUrl'),
     'enqueueAiCollectTask should still check for URL'
   );
+});
+
+/* ============================================================
+ * Test: refresh-data steps do NOT contain transit
+ * ============================================================ */
+
+test('refresh-data: REFRESH_STEP_DEFINITIONS does not contain transit', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  const refreshStepsMatch = code.match(
+    /REFRESH_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/
+  );
+  assert.ok(refreshStepsMatch, 'REFRESH_STEP_DEFINITIONS should exist');
+  const stepsContent = refreshStepsMatch[1];
+  assert.ok(!stepsContent.includes('transit'), 'Refresh steps should NOT contain transit');
+});
+
+/* ============================================================
+ * Test: refresh-data progressStats from events
+ * ============================================================ */
+
+test('refresh-data: buildRefreshProgressStats calculates from refresh:item-start/done/skipped', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const events = [
+    { type: 'task:start', at: '2026-01-01T00:00:00Z' },
+    { type: 'refresh:load-data', message: '正在读取当前宾馆数据', at: '2026-01-01T00:00:01Z' },
+    { type: 'edge:login-required', message: '正在准备 Edge 登录态', at: '2026-01-01T00:00:02Z' },
+    { type: 'edge:login-done', message: 'Edge 登录态已准备完成', at: '2026-01-01T00:00:05Z' },
+    { type: 'refresh:item-start', message: '正在更新第 1/3 家：酒店A', details: { index: 1, total: 3, hotelName: '酒店A' }, at: '2026-01-01T00:00:06Z' },
+    { type: 'refresh:item-done', message: '已更新 酒店A：5 种房型', details: { index: 1, total: 3, hotelName: '酒店A', status: 'updated' }, at: '2026-01-01T00:00:20Z' },
+    { type: 'refresh:item-start', message: '正在更新第 2/3 家：酒店B', details: { index: 2, total: 3, hotelName: '酒店B' }, at: '2026-01-01T00:00:21Z' },
+    { type: 'refresh:item-done', message: '已更新 酒店B：3 种房型', details: { index: 2, total: 3, hotelName: '酒店B', status: 'updated' }, at: '2026-01-01T00:00:35Z' },
+    { type: 'refresh:item-start', message: '正在更新第 3/3 家：酒店C', details: { index: 3, total: 3, hotelName: '酒店C' }, at: '2026-01-01T00:00:36Z' },
+    { type: 'refresh:item-skipped', message: '跳过 酒店C：登录失效', details: { index: 3, total: 3, hotelName: '酒店C', status: 'skipped', reason: '登录失效' }, at: '2026-01-01T00:00:40Z' },
+    { type: 'refresh:summary', message: '更新完成', details: { totalHotelCount: 3, updatedHotelCount: 2, skippedHotelCount: 1 }, at: '2026-01-01T00:00:41Z' },
+    { type: 'task:done', at: '2026-01-01T00:00:42Z' }
+  ];
+
+  const taskState = normalizeTaskState({
+    task: { taskKind: 'refresh-data', submitted: true, startedAt: '2026-01-01T00:00:00Z', result: {} },
+    events,
+    inProgress: false
+  });
+
+  assert.ok(taskState.progressStats, 'Should have progressStats');
+  assert.equal(taskState.progressStats.total, 3, 'Total should be 3');
+  assert.equal(taskState.progressStats.completed, 2, 'Completed (updated) should be 2');
+  assert.ok(taskState.progressStats.pending >= 0, 'Pending should be >= 0');
+});
+
+test('refresh-data: progressStats is null when no refresh events', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const taskState = normalizeTaskState({
+    task: { taskKind: 'refresh-data', submitted: false },
+    events: [],
+    inProgress: false
+  });
+  assert.equal(taskState.progressStats, null, 'Should be null with no events');
+});
+
+/* ============================================================
+ * Test: refresh-data renders 4 progress stat cards
+ * ============================================================ */
+
+test('refresh-data: renderProgressStats shows 4 cards with correct labels', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const stats = { total: 5, completed: 2, running: 1, pending: 2 };
+
+  // Read source to verify renderProgressStats logic
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  assert.ok(code.includes('宾馆总数'), 'Should have "宾馆总数" label for refresh');
+  assert.ok(code.includes('已更新'), 'Should have "已更新" label for refresh');
+  assert.ok(code.includes('进行中'), 'Should have "进行中" label for refresh');
+  assert.ok(code.includes('待处理'), 'Should have "待处理" label for refresh');
+});
+
+/* ============================================================
+ * Test: refresh-data does NOT insert login step
+ * ============================================================ */
+
+test('refresh-data: getStepDefinitions does not insert LOGIN_STEP_DEFINITION', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  // Find the getStepDefinitions function
+  const fnStart = code.indexOf('function getStepDefinitions');
+  const fnEnd = code.indexOf('function buildTaskSteps');
+  assert.ok(fnStart > 0, 'Should find getStepDefinitions');
+  const fnBody = code.substring(fnStart, fnEnd);
+
+  // In the refresh-data branch, check that LOGIN_STEP_DEFINITION is NOT inserted
+  const refreshBranchMatch = fnBody.match(
+    /if\s*\(\s*taskKind\s*===\s*'refresh-data'\s*\)[\s\S]*?return\s+definitions;/
+  );
+  assert.ok(refreshBranchMatch, 'Should find refresh-data branch');
+  const refreshBranch = refreshBranchMatch[0];
+  assert.ok(!refreshBranch.includes('LOGIN_STEP_DEFINITION'), 'refresh-data should NOT insert LOGIN_STEP_DEFINITION');
+});
+
+test('refresh-data: edge events map to edge step, not login step', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  // Find getEventStepKey
+  const fnStart = code.indexOf('function getEventStepKey');
+  const fnEnd = code.indexOf('function getReadableEventTitle');
+  assert.ok(fnStart > 0, 'Should find getEventStepKey');
+  const fnBody = code.substring(fnStart, fnEnd);
+
+  // In the refresh-data branch, edge:login-required should return 'edge', not 'login'
+  const isRefreshBlock = fnBody.match(
+    /if\s*\(\s*isRefresh\s*\)[\s\S]*?return\s+'';\s*\}/
+  );
+  assert.ok(isRefreshBlock, 'Should find isRefresh block');
+  const refreshBlock = isRefreshBlock[0];
+  assert.ok(!refreshBlock.includes("return 'login'"), 'refresh-data should NOT return login for edge events');
+  assert.ok(refreshBlock.includes("return 'edge'"), 'refresh-data should return edge for edge events');
+});
+
+/* ============================================================
+ * Test: collect tasks are not affected by refresh changes
+ * ============================================================ */
+
+test('collect: buildProgressStats still works with batch: events', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const events = [
+    { type: 'task:start', at: '2026-01-01T00:00:00Z' },
+    { type: 'batch:item-start', message: '第 1/2 家', details: { index: 1, total: 2 }, at: '2026-01-01T00:00:05Z' },
+    { type: 'batch:item-done', message: '第 1 家酒店采集完成', details: { index: 1, total: 2 }, at: '2026-01-01T00:00:15Z' },
+    { type: 'batch:item-start', message: '第 2/2 家', details: { index: 2, total: 2 }, at: '2026-01-01T00:00:16Z' },
+    { type: 'batch:item-done', message: '第 2 家酒店采集完成', details: { index: 2, total: 2 }, at: '2026-01-01T00:00:25Z' },
+  ];
+
+  const taskState = normalizeTaskState({
+    task: { submitted: true, startedAt: '2026-01-01T00:00:00Z', result: {} },
+    events,
+    inProgress: true
+  });
+
+  assert.ok(taskState.progressStats, 'Should have progressStats');
+  assert.equal(taskState.progressStats.total, 2, 'Total should be 2');
+  assert.equal(taskState.progressStats.completed, 2, 'Completed should be 2');
+  assert.equal(taskState.progressStats.running, 0, 'Running should be 0');
+  assert.equal(taskState.progressStats.pending, 0, 'Pending should be 0');
+});
+
+test('collect: getStepDefinitions still inserts LOGIN_STEP_DEFINITION when login events present', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  // Find the collect branch in getStepDefinitions (after refresh-data branch)
+  const fnStart = code.indexOf('function getStepDefinitions');
+  const fnEnd = code.indexOf('function buildTaskSteps');
+  const fnBody = code.substring(fnStart, fnEnd);
+
+  // The collect branch should still check hasLoginStep and insert LOGIN_STEP_DEFINITION
+  assert.ok(fnBody.includes('hasLoginStep'), 'Collect branch should check hasLoginStep');
+  // Verify that in the collect (non-refresh) section, LOGIN_STEP_DEFINITION is inserted
+  const collectSection = fnBody.substring(fnBody.lastIndexOf('hasLoginStep'));
+  assert.ok(collectSection.includes('LOGIN_STEP_DEFINITION'), 'Collect branch should still insert LOGIN_STEP_DEFINITION');
+});
+
+/* ============================================================
+ * Test: refresh-data aria-label
+ * ============================================================ */
+
+test('refresh-data: renderProgressStats aria-label is "更新数据进度统计"', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  assert.ok(code.includes('更新数据进度统计'), 'Should have "更新数据进度统计" aria-label for refresh');
+  assert.ok(code.includes('批量采集进度统计'), 'Should still have "批量采集进度统计" for collect');
+});
+
+/* ============================================================
+ * Test: refresh-data event titles
+ * ============================================================ */
+
+test('refresh-data: getReadableEventTitle returns correct titles', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    'utf8'
+  );
+  // Check refresh-specific event titles
+  assert.ok(code.includes("正在读取当前宾馆数据"), 'Should have refresh:load-data title');
+  assert.ok(code.includes("等待写入更新结果"), 'Should have refresh:write title');
+  assert.ok(code.includes("结果汇总"), 'Should have refresh:summary title');
+  // Check edge:login-done title for refresh
+  assert.ok(code.includes("Edge 登录态已准备完成"), 'Should have refresh-specific edge:login-done title');
+  // Should NOT contain "采集任务完成" for task:done in refresh mode
+  assert.ok(code.includes("更新任务完成"), 'Should have refresh-specific task:done title');
+});
+
+/* ============================================================
+ * Test: scraper-runner event details completeness
+ * ============================================================ */
+
+test('scraper-runner: refresh:item-done has status and total in details', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    'utf8'
+  );
+  const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
+  const refreshEnd = code.indexOf('module.exports', refreshStart);
+  assert.ok(refreshStart > 0, 'Should find refreshExistingCtripHotels function');
+  const fnBody = code.substring(refreshStart, refreshEnd);
+
+  // Check refresh:item-done has status: 'updated' and total
+  const itemDoneMatch = fnBody.match(/refresh:item-done[\s\S]*?emit\([\s\S]*?\{[\s\S]*?\}/);
+  assert.ok(itemDoneMatch, 'Should find refresh:item-done emit');
+  assert.ok(itemDoneMatch[0].includes("status: 'updated'"), 'item-done should have status: updated');
+  assert.ok(itemDoneMatch[0].includes('total:'), 'item-done should have total field');
+
+  // Check refresh:item-skipped has status and total
+  const skippedMatches = fnBody.match(/refresh:item-skipped/g);
+  assert.ok(skippedMatches && skippedMatches.length >= 1, 'Should have refresh:item-skipped events');
+  // Verify at least one has total field
+  assert.ok(fnBody.includes("total: totalHotelCount"), 'Should include total in details');
+});
+
+test('scraper-runner: refresh:summary has complete statistics', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    'utf8'
+  );
+  const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
+  const refreshEnd = code.indexOf('module.exports', refreshStart);
+  const fnBody = code.substring(refreshStart, refreshEnd);
+
+  // Check refresh:summary has all fields
+  const summaryMatch = fnBody.match(/refresh:summary[\s\S]*?emit\([\s\S]*?totalHotelCount/);
+  assert.ok(summaryMatch, 'refresh:summary should include totalHotelCount in details');
+  assert.ok(fnBody.includes('updatedHotelCount'), 'Should include updatedHotelCount');
+  assert.ok(fnBody.includes('skippedHotelCount'), 'Should include skippedHotelCount');
+  assert.ok(fnBody.includes('deletedRoomTypeCount'), 'Should include deletedRoomTypeCount');
+  assert.ok(fnBody.includes('updatedRoomTypeCount'), 'Should include updatedRoomTypeCount');
 });

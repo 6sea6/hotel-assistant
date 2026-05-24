@@ -22,7 +22,7 @@ const BASE_STEP_DEFINITIONS = [
 ];
 
 const REFRESH_STEP_DEFINITIONS = [
-  { key: 'received', title: '已接收更新任务', doneTitle: '任务创建' },
+  { key: 'received', title: '已接收任务', doneTitle: '任务创建' },
   { key: 'load-data', title: '正在读取当前宾馆数据', doneTitle: '读取当前宾馆数据' },
   { key: 'edge', title: '正在准备 Edge 登录态', doneTitle: '准备 Edge 登录态' },
   { key: 'refresh', title: '正在更新房型与价格', doneTitle: '房型与价格更新' },
@@ -262,10 +262,12 @@ function getEventStepKey(event = {}, taskKind = 'collect') {
   if (type === 'task:cancel') return 'cancel';
   if (isRefresh) {
     if (type === 'refresh:load-data') return 'load-data';
+    if (type === 'refresh:write') return 'write';
+    if (type === 'refresh:summary') return 'write';
+    if (type === 'refresh:item-start' || type === 'refresh:item-done' || type === 'refresh:item-skipped')
+      return 'refresh';
     if (type.startsWith('refresh:')) return 'refresh';
-    if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done')
-      return 'login';
-    if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
+    if (type.startsWith('edge:') || toolName === 'open_visible_edge_login') return 'edge';
     if (type.startsWith('write:') || type.startsWith('apply:')) return 'write';
     if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return 'received';
     if (toolName === 'refresh_existing_ctrip_hotels') return 'refresh';
@@ -287,12 +289,13 @@ function getEventStepKey(event = {}, taskKind = 'collect') {
   return '';
 }
 
-function getReadableEventTitle(event = {}) {
+function getReadableEventTitle(event = {}, taskKind = 'collect') {
   const type = String(event.type || '');
   const toolName = getToolName(event);
+  const isRefresh = taskKind === 'refresh-data';
 
   if (type === 'task:start') return '已接收任务';
-  if (type === 'task:done') return '采集任务完成';
+  if (type === 'task:done') return isRefresh ? '更新任务完成' : '采集任务完成';
   if (type === 'task:error') return '任务执行失败';
   if (type === 'task:cancel') return '任务已取消';
   if (type === 'refresh:load-data') return '正在读取当前宾馆数据';
@@ -301,9 +304,9 @@ function getReadableEventTitle(event = {}) {
   if (type === 'refresh:item-skipped') return event.message || '跳过该宾馆';
   if (type === 'refresh:write') return '等待写入更新结果';
   if (type === 'refresh:summary') return '结果汇总';
-  if (type === 'edge:login-required') return event.message || '需要登录携程后继续采集';
+  if (type === 'edge:login-required') return isRefresh ? '正在准备 Edge 登录态' : (event.message || '需要登录携程后继续采集');
   if (type === 'edge:login-window') return event.message || '已打开 Edge 登录窗口，等待你完成登录';
-  if (type === 'edge:login-done') return event.message || '携程登录窗口已关闭，继续采集';
+  if (type === 'edge:login-done') return isRefresh ? 'Edge 登录态已准备完成' : (event.message || '携程登录窗口已关闭，继续采集');
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
   if (type.startsWith('batch:') || type.startsWith('list:'))
     return event.message || '正在处理批量采集任务';
@@ -313,7 +316,7 @@ function getReadableEventTitle(event = {}) {
       return '已接收采集任务';
     if (toolName === 'collect_and_write_ctrip_hotel') return '正在采集携程酒店页面';
     if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start')
-      return '已接收更新任务';
+      return '已接收任务';
     if (toolName === 'refresh_existing_ctrip_hotels') return '正在更新已有宾馆数据';
     if (toolName === 'list_templates' || toolName === 'get_settings')
       return '正在读取模板与比较助手设置';
@@ -329,7 +332,7 @@ function normalizeEvent(event = {}, taskKind = 'collect') {
   return {
     key: getEventStepKey(event, taskKind),
     time: event.at || '',
-    title: getReadableEventTitle(event),
+    title: getReadableEventTitle(event, taskKind),
     detail: event.details && typeof event.details === 'object' ? event.details : null,
     toolName: getToolName(event),
     raw: event
@@ -392,7 +395,11 @@ function parseBatchProgressEvent(event = {}) {
   return parsed;
 }
 
-function buildProgressStats(events = []) {
+function buildProgressStats(events = [], taskKind = 'collect') {
+  if (taskKind === 'refresh-data') {
+    return buildRefreshProgressStats(events);
+  }
+
   const itemStatus = new Map();
   let total = 0;
 
@@ -430,17 +437,79 @@ function buildProgressStats(events = []) {
   };
 }
 
+function buildRefreshProgressStats(events = []) {
+  let total = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+  let runningCount = 0;
+  const itemStatus = new Map();
+
+  for (const event of events || []) {
+    const type = String(event.type || '');
+    const detail = event.details && typeof event.details === 'object' ? event.details : {};
+    const message = String(event.message || '');
+
+    if (type === 'refresh:item-start') {
+      const index = Number(detail.index || 0);
+      const eventTotal = Number(detail.total || 0);
+      if (eventTotal > total) total = eventTotal;
+      if (index > 0) {
+        itemStatus.set(index, 'running');
+      }
+    } else if (type === 'refresh:item-done') {
+      const index = Number(detail.index || 0);
+      const eventTotal = Number(detail.total || 0);
+      if (eventTotal > total) total = eventTotal;
+      if (index > 0) {
+        itemStatus.set(index, 'completed');
+      }
+      updatedCount++;
+    } else if (type === 'refresh:item-skipped') {
+      const index = Number(detail.index || 0);
+      const eventTotal = Number(detail.total || 0);
+      if (eventTotal > total) total = eventTotal;
+      if (index > 0) {
+        itemStatus.set(index, 'skipped');
+      }
+      skippedCount++;
+    } else if (type === 'refresh:summary') {
+      const summaryTotal = Number(detail.totalHotelCount || 0);
+      if (summaryTotal > total) total = summaryTotal;
+    } else if (type === 'refresh:load-data' || type.startsWith('refresh:')) {
+      const eventTotal = Number(detail.total || 0);
+      if (eventTotal > total) total = eventTotal;
+    }
+
+    // Also try to parse total from message like "第 1/2 家"
+    if (!total) {
+      const match = message.match(/第\s*\d+\s*\/\s*(\d+)/);
+      if (match) {
+        total = Math.max(total, Number(match[1]));
+      }
+    }
+  }
+
+  if (total <= 0) {
+    return null;
+  }
+
+  runningCount = [...itemStatus.values()].filter((status) => status === 'running').length;
+  const pending = Math.max(0, total - updatedCount - skippedCount - runningCount);
+
+  return {
+    total,
+    completed: updatedCount,
+    running: runningCount,
+    pending
+  };
+}
+
 function getStepDefinitions(normalizedEvents = [], taskKind = 'collect') {
   if (taskKind === 'refresh-data') {
-    const hasLoginStep = normalizedEvents.some((event) => event.key === 'login');
     const hasCancelStep = normalizedEvents.some((event) => event.key === 'cancel');
-    if (!hasLoginStep && !hasCancelStep) return REFRESH_STEP_DEFINITIONS;
+    if (!hasCancelStep) return REFRESH_STEP_DEFINITIONS;
 
     const definitions = [...REFRESH_STEP_DEFINITIONS];
-    if (hasLoginStep) {
-      const edgeIndex = definitions.findIndex((step) => step.key === 'edge');
-      definitions.splice(edgeIndex < 0 ? 2 : edgeIndex, 0, LOGIN_STEP_DEFINITION);
-    }
     if (hasCancelStep) {
       definitions.push(CANCEL_STEP_DEFINITION);
     }
@@ -733,6 +802,7 @@ export function normalizeTaskState({
 
   const steps = buildTaskSteps(task, events, status);
   const collectResult = getTaskCollectResult(task);
+  const taskKind = task.taskKind || 'collect';
   const taskInfo = {
     taskId:
       task.taskId || (task.result && task.result.taskStatus && task.result.taskStatus.id) || '',
@@ -746,7 +816,7 @@ export function normalizeTaskState({
     status,
     taskInfo,
     steps,
-    progressStats: buildProgressStats(events),
+    progressStats: buildProgressStats(events, taskKind),
     result: buildTaskResult(task),
     error: buildTaskError(task, events)
   };
@@ -944,7 +1014,7 @@ function renderProgressStats(stats, taskKind = 'collect') {
       ];
 
   return `
-    <div class="task-progress-stats" aria-label="批量采集进度统计">
+    <div class="task-progress-stats" aria-label="${isRefresh ? '更新数据进度统计' : '批量采集进度统计'}">
       ${cards
         .map(
           (card) => `

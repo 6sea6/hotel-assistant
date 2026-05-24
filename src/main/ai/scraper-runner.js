@@ -836,7 +836,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
             });
             emit('refresh:item-skipped', `跳过 ${hotelName}：${skipReason}`, {
               index: index + 1,
+              total: totalHotelCount,
               hotelName,
+              status: 'skipped',
               reason: skipReason
             });
             continue;
@@ -859,7 +861,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
             });
             emit('refresh:item-skipped', `跳过 ${hotelName}：没有有效房型`, {
               index: index + 1,
+              total: totalHotelCount,
               hotelName,
+              status: 'skipped',
               reason: '没有有效房型'
             });
             continue;
@@ -928,6 +932,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
             index: index + 1,
             total: totalHotelCount,
             hotelName,
+            status: 'updated',
             roomTypeCount: refreshedHotels.length,
             deletedRoomTypeCount: deletedForThisHotel
           });
@@ -948,7 +953,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
           });
           emit('refresh:item-skipped', `跳过 ${hotelName}：${errorMessage}`, {
             index: index + 1,
+            total: totalHotelCount,
             hotelName,
+            status: 'failed',
             reason: errorMessage
           });
         }
