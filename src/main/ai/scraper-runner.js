@@ -732,7 +732,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
       const totalHotelCount = hotelUrls.length;
 
       if (totalHotelCount === 0) {
-        emit('refresh:summary', '当前没有找到带携程链接的宾馆');
+        emit('refresh:scan-done', '当前没有找到带携程链接的宾馆', {
+          total: 0
+        });
         return {
           success: true,
           totalHotelCount: 0,
@@ -745,7 +747,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
         };
       }
 
-      emit('refresh:summary', `找到 ${totalHotelCount} 家有携程链接的宾馆，准备逐家更新`);
+      emit('refresh:scan-done', `找到 ${totalHotelCount} 家有携程链接的宾馆，准备逐家更新`, {
+        total: totalHotelCount
+      });
 
       // 3. Prepare Edge session
       assertNotCancelled(context.signal);

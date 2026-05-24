@@ -262,6 +262,7 @@ function getEventStepKey(event = {}, taskKind = 'collect') {
   if (type === 'task:cancel') return 'cancel';
   if (isRefresh) {
     if (type === 'refresh:load-data') return 'load-data';
+    if (type === 'refresh:scan-done') return 'load-data';
     if (type === 'refresh:write') return 'write';
     if (type === 'refresh:summary') return 'write';
     if (type === 'refresh:item-start' || type === 'refresh:item-done' || type === 'refresh:item-skipped')
@@ -299,6 +300,7 @@ function getReadableEventTitle(event = {}, taskKind = 'collect') {
   if (type === 'task:error') return '任务执行失败';
   if (type === 'task:cancel') return '任务已取消';
   if (type === 'refresh:load-data') return '正在读取当前宾馆数据';
+  if (type === 'refresh:scan-done') return event.message || '已扫描当前宾馆数据';
   if (type === 'refresh:item-start') return event.message || '正在更新房型与价格';
   if (type === 'refresh:item-done') return event.message || '房型与价格更新完成';
   if (type === 'refresh:item-skipped') return event.message || '跳过该宾馆';
@@ -352,6 +354,87 @@ function getLastTaskError(events = [], task = {}) {
     .reverse()
     .find((event) => event.type === 'task:error' || event.type === 'task:cancel');
   return errorEvent ? errorEvent.message || errorEvent.type : '';
+}
+
+function getRefreshCurrentStepKey(events = []) {
+  const itemStatus = new Map();
+  let hasWrite = false;
+  let hasEdge = false;
+  let hasLoadData = false;
+  let hasReceived = false;
+
+  for (const event of events || []) {
+    const type = String(event.type || '');
+    const detail = event.details && typeof event.details === 'object' ? event.details : {};
+    const index = Number(detail.index || detail.itemIndex || detail.currentIndex || 0);
+
+    if (type === 'task:start') {
+      hasReceived = true;
+    }
+
+    if (type === 'refresh:load-data' || type === 'refresh:scan-done') {
+      hasLoadData = true;
+    }
+
+    if (type.startsWith('edge:')) {
+      hasEdge = true;
+    }
+
+    if (type === 'refresh:item-start' && index > 0) {
+      itemStatus.set(index, 'running');
+    }
+
+    if ((type === 'refresh:item-done' || type === 'refresh:item-skipped') && index > 0) {
+      itemStatus.set(index, 'done');
+    }
+
+    if (type === 'refresh:write' || type === 'refresh:summary') {
+      hasWrite = true;
+    }
+  }
+
+  const hasRunningItem = [...itemStatus.values()].some((status) => status === 'running');
+
+  if (hasWrite) return 'write';
+  if (hasRunningItem) return 'refresh';
+  if (hasEdge) return 'edge';
+  if (hasLoadData) return 'load-data';
+  if (hasReceived) return 'received';
+  return '';
+}
+
+function findRefreshStepEvent(normalizedEvents, key) {
+  if (key !== 'refresh') {
+    return findStepEvent(normalizedEvents, key);
+  }
+
+  // For refresh step: prefer the last running refresh:item-start event
+  const runningItemStart = normalizedEvents
+    .slice()
+    .reverse()
+    .find((event) => {
+      if (event.key !== 'refresh') return false;
+      const rawType = event.raw && event.raw.type;
+      if (rawType !== 'refresh:item-start') return false;
+      // Check if this item index is still running (no done/skipped yet)
+      const detail = event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
+      const index = Number(detail.index || 0);
+      if (index <= 0) return false;
+      // Verify no done/skipped for same index
+      const completed = normalizedEvents.some((e) => {
+        if (e.key !== 'refresh') return false;
+        const eType = e.raw && e.raw.type;
+        if (eType !== 'refresh:item-done' && eType !== 'refresh:item-skipped') return false;
+        const eDetail = e.raw.details && typeof e.raw.details === 'object' ? e.raw.details : {};
+        return Number(eDetail.index || 0) === index;
+      });
+      return !completed;
+    });
+
+  if (runningItemStart) return runningItemStart;
+
+  // Fallback: last refresh event
+  return findStepEvent(normalizedEvents, key);
 }
 
 function findStepEvent(normalizedEvents, key) {
@@ -542,12 +625,22 @@ function buildTaskSteps(task, events, status) {
       (event) =>
         event.key && event.key !== 'done' && event.key !== 'error' && event.key !== 'cancel'
     );
-  const currentKey = status === 'running' && lastProgressEvent ? lastProgressEvent.key : '';
+
+  let currentKey = '';
+  if (status === 'running') {
+    if (taskKind === 'refresh-data') {
+      currentKey = getRefreshCurrentStepKey(events);
+    } else {
+      currentKey = lastProgressEvent ? lastProgressEvent.key : '';
+    }
+  }
   const currentIndex = stepDefinitions.findIndex((step) => step.key === currentKey);
   const errorKey = status === 'error' && lastProgressEvent ? lastProgressEvent.key : 'scrape';
 
   return stepDefinitions.map((definition, index) => {
-    const matchedEvent = findStepEvent(normalizedEvents, definition.key);
+    const matchedEvent = taskKind === 'refresh-data'
+      ? findRefreshStepEvent(normalizedEvents, definition.key)
+      : findStepEvent(normalizedEvents, definition.key);
     let stepStatus = 'pending';
 
     if (status === 'success') {

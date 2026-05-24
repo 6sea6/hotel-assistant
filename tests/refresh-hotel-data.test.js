@@ -735,9 +735,9 @@ test('scraper-runner: refresh:summary has complete statistics', () => {
   const refreshEnd = code.indexOf('module.exports', refreshStart);
   const fnBody = code.substring(refreshStart, refreshEnd);
 
-  // Check refresh:summary has all fields
-  const summaryMatch = fnBody.match(/refresh:summary[\s\S]*?emit\([\s\S]*?totalHotelCount/);
-  assert.ok(summaryMatch, 'refresh:summary should include totalHotelCount in details');
+  // Check refresh:summary has all fields (the final summary emit, not the early scan-done)
+  const summaryEmitMatch = fnBody.match(/emit\(\s*'refresh:summary'[\s\S]*?totalHotelCount/);
+  assert.ok(summaryEmitMatch, 'refresh:summary should include totalHotelCount in details');
   assert.ok(fnBody.includes('updatedHotelCount'), 'Should include updatedHotelCount');
   assert.ok(fnBody.includes('skippedHotelCount'), 'Should include skippedHotelCount');
   assert.ok(fnBody.includes('deletedRoomTypeCount'), 'Should include deletedRoomTypeCount');
