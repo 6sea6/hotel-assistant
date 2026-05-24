@@ -278,8 +278,8 @@ function isAbortLikeError(error, signal = null) {
   const message = error && error.message ? error.message : String(error || '');
   return Boolean(
     (signal && signal.aborted) ||
-      (error && (error.name === 'AbortError' || error.code === 'ERR_CANCELED')) ||
-      /任务已取消|aborted|cancelled|canceled/i.test(message)
+    (error && (error.name === 'AbortError' || error.code === 'ERR_CANCELED')) ||
+    /任务已取消|aborted|cancelled|canceled/i.test(message)
   );
 }
 

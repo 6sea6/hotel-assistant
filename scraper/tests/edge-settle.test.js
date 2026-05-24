@@ -303,13 +303,7 @@ test('settleRoomListInEdgeSession treats duplicate skipped clicks as stable for 
 test('edge page ready performs a short confirmation after navigate ready signal', async () => {
   const waitCalls = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
-    waitForSessionCondition: async (
-      connection,
-      sessionId,
-      expression,
-      timeoutMs,
-      intervalMs
-    ) => {
+    waitForSessionCondition: async (connection, sessionId, expression, timeoutMs, intervalMs) => {
       waitCalls.push({ connection, sessionId, expression, timeoutMs, intervalMs });
       return true;
     }
@@ -391,7 +385,10 @@ test('edge settle retries once after transient execution context destruction', a
       }
     });
 
-    assert.equal(isTransientEdgeExecutionContextError(new Error('Execution context was destroyed.')), true);
+    assert.equal(
+      isTransientEdgeExecutionContextError(new Error('Execution context was destroyed.')),
+      true
+    );
     assert.equal(settleAttempts, 2);
     assert.equal(waitCalls.length, 1);
     assert.equal(waitCalls[0].navigateSignal.reason, 'retry_after_settle_context_destroyed');
@@ -485,10 +482,7 @@ test('settle expand helper does not click collapse-only hidden room labels', asy
     });
 
     const browserExpression = expressions.join('\n');
-    assert.equal(
-      browserExpression.includes("const expandTexts = ['展示额外', '隐藏房型'"),
-      false
-    );
+    assert.equal(browserExpression.includes("const expandTexts = ['展示额外', '隐藏房型'"), false);
     assert.ok(browserExpression.includes('isCollapseOnlyRoomToggle'));
     assert.ok(browserExpression.includes('if (isCollapseOnlyRoomToggle(text)) continue;'));
   } finally {
@@ -908,7 +902,10 @@ test('settle step retries transient execution context destruction locally', asyn
 
     assert.equal(evaluateCount, 7);
     assert.equal(stats.clickedCount, 6);
-    assert.equal(records.some((record) => record.event === 'phase_error'), false);
+    assert.equal(
+      records.some((record) => record.event === 'phase_error'),
+      false
+    );
     assert.deepEqual(
       records.find((record) => record.event === 'edge_settle_step_retry'),
       {
@@ -1713,11 +1710,20 @@ test('edge DOM extract uses lightweight mode when room API capture is complete',
       apiCaptureComplete: true
     });
 
-    assert.equal(evaluateTimeoutMs, getEdgeDomExtractTimeoutMs(roomBlocks, { apiCaptureComplete: true }));
+    assert.equal(
+      evaluateTimeoutMs,
+      getEdgeDomExtractTimeoutMs(roomBlocks, { apiCaptureComplete: true })
+    );
     assert.equal(evaluateTimeoutMs, 900);
-    assert.equal(evaluatedExpression.includes("querySelectorAll('div, li, section, article')"), false);
+    assert.equal(
+      evaluatedExpression.includes("querySelectorAll('div, li, section, article')"),
+      false
+    );
     assert.equal(evaluatedExpression.includes('snapshots: []'), true);
-    assert.equal(roomBlocks.some((room) => room.source === 'edge-api'), true);
+    assert.equal(
+      roomBlocks.some((room) => room.source === 'edge-api'),
+      true
+    );
     assert.equal(stats.timedOut, false);
     const phaseRecord = records.find((record) => record.phase === 'edge_dom_extract');
     assert.equal(phaseRecord.event, 'phase');

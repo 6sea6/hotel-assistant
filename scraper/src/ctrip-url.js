@@ -1,5 +1,6 @@
 const { normalizeText, toNumber } = require('./utils');
 
+// Duplicated from src/shared/url-constants.js — scraper is separate npm workspace
 const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
 const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
 

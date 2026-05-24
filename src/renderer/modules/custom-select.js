@@ -194,15 +194,14 @@ export function refreshCustomSelect(select, options = {}) {
   const ctx = instances.get(select);
   if (ctx) {
     rebuildMenu(ctx);
-  } else if (
-    select.dataset[READY_ATTR] === 'true' ||
-    select.dataset.customSelect === 'true'
-  ) {
+  } else if (select.dataset[READY_ATTR] === 'true' || select.dataset.customSelect === 'true') {
     initOne(select);
   } else if (options.auto === true && select.classList.contains('input')) {
-    if (select.dataset.nativeSelect !== 'true' &&
-        select.dataset.customSelect !== 'false' &&
-        select.dataset.customSelectAuto !== 'false') {
+    if (
+      select.dataset.nativeSelect !== 'true' &&
+      select.dataset.customSelect !== 'false' &&
+      select.dataset.customSelectAuto !== 'false'
+    ) {
       enhanceCustomSelect(select);
     }
   }
@@ -351,12 +350,12 @@ function initOne(select, options = {}) {
     button.appendChild(caret);
   } else {
     if (!textSpan) {
-      textSpan = button.querySelector(`.${textClass.split(' ')[0]}`) ||
-        button.querySelector('span');
+      textSpan =
+        button.querySelector(`.${textClass.split(' ')[0]}`) || button.querySelector('span');
     }
     if (!caret) {
-      caret = button.querySelector(`.${caretClass.split(' ')[0]}`) ||
-        button.querySelectorAll('span')[1];
+      caret =
+        button.querySelector(`.${caretClass.split(' ')[0]}`) || button.querySelectorAll('span')[1];
     }
     if (!button.hasAttribute('aria-haspopup')) {
       button.setAttribute('aria-haspopup', 'listbox');
@@ -408,16 +407,26 @@ function initOne(select, options = {}) {
   syncSelectedOption(ctx);
 
   // 事件绑定
-  ctx._onButtonClick = (e) => { e.preventDefault(); toggleMenu(ctx); };
-  ctx._onButtonKeydown = (e) => { handleButtonKeydown(e, ctx); };
+  ctx._onButtonClick = (e) => {
+    e.preventDefault();
+    toggleMenu(ctx);
+  };
+  ctx._onButtonKeydown = (e) => {
+    handleButtonKeydown(e, ctx);
+  };
   ctx._onMenuClick = (e) => {
     const opt = e.target.closest(OPTION_SELECTOR);
     if (!opt) return;
     e.preventDefault();
     selectOption(ctx, opt);
   };
-  ctx._onMenuKeydown = (e) => { handleMenuKeydown(e, ctx); };
-  ctx._onSelectChange = () => { syncButtonText(ctx); syncSelectedOption(ctx); };
+  ctx._onMenuKeydown = (e) => {
+    handleMenuKeydown(e, ctx);
+  };
+  ctx._onSelectChange = () => {
+    syncButtonText(ctx);
+    syncSelectedOption(ctx);
+  };
 
   button.addEventListener('click', ctx._onButtonClick);
   button.addEventListener('keydown', ctx._onButtonKeydown);
@@ -426,11 +435,15 @@ function initOne(select, options = {}) {
   select.addEventListener('change', ctx._onSelectChange);
 
   // 监听原生 select 子节点变化（动态 options）—— 批处理
-  ctx._observer = new MutationObserver(() => { scheduleRebuild(ctx); });
+  ctx._observer = new MutationObserver(() => {
+    scheduleRebuild(ctx);
+  });
   ctx._observer.observe(select, { childList: true, subtree: true });
 
   // 监听 disabled 属性变化
-  ctx._attrObserver = new MutationObserver(() => { syncDisabled(ctx); });
+  ctx._attrObserver = new MutationObserver(() => {
+    syncDisabled(ctx);
+  });
   ctx._attrObserver.observe(select, { attributes: true, attributeFilter: ['disabled'] });
 }
 

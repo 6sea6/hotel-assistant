@@ -81,7 +81,9 @@ test('package manifest keeps base and full bundle resource contracts stable', ()
     'neverResources must exclude scraper/devtools'
   );
   assert.ok(
-    manifest.expectations.neverResources.includes(path.join('scraper', 'src', 'runtime', 'perf_log.py')),
+    manifest.expectations.neverResources.includes(
+      path.join('scraper', 'src', 'runtime', 'perf_log.py')
+    ),
     'neverResources must exclude perf_log.py'
   );
   assert.ok(
@@ -207,11 +209,7 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
     'utf-8'
   );
   fs.mkdirSync(path.join(scraperDir, 'logs'), { recursive: true });
-  fs.writeFileSync(
-    path.join(scraperDir, 'logs', 'collect_perf_2026-05-23.jsonl'),
-    '{}\n',
-    'utf-8'
-  );
+  fs.writeFileSync(path.join(scraperDir, 'logs', 'collect_perf_2026-05-23.jsonl'), '{}\n', 'utf-8');
   fs.mkdirSync(path.join(scraperDir, 'devtools'), { recursive: true });
   fs.writeFileSync(path.join(scraperDir, 'devtools', 'perf-log.js'), '// devtools perf\n', 'utf-8');
   fs.writeFileSync(
@@ -257,11 +255,7 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   writePackageFixture(nodeModulesDir, 'parse5');
   const parse5TokenizerDir = path.join(nodeModulesDir, 'parse5', 'dist', 'cjs', 'tokenizer');
   fs.mkdirSync(parse5TokenizerDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(parse5TokenizerDir, 'index.js'),
-    'module.exports = {};',
-    'utf-8'
-  );
+  fs.writeFileSync(path.join(parse5TokenizerDir, 'index.js'), 'module.exports = {};', 'utf-8');
   const parse5ParserDir = path.join(nodeModulesDir, 'parse5', 'dist', 'cjs', 'parser');
   fs.mkdirSync(parse5ParserDir, { recursive: true });
   fs.writeFileSync(
@@ -346,7 +340,9 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
     false
   );
   assert.equal(
-    fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'src', 'runtime', 'perf.js')),
+    fs.existsSync(
+      path.join(prepared.manifest.directories.scraperRoot, 'src', 'runtime', 'perf.js')
+    ),
     true,
     'runtime/perf.js must be copied to full bundle'
   );
@@ -411,7 +407,9 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
 test('full package manifest requires runtime perf logger modules', () => {
   const manifest = getBundleManifest('E:/temp/bundle-root');
   assert.ok(
-    manifest.expectations.fullOnlyResources.includes(path.join('scraper', 'src', 'runtime', 'perf.js'))
+    manifest.expectations.fullOnlyResources.includes(
+      path.join('scraper', 'src', 'runtime', 'perf.js')
+    )
   );
   assert.ok(
     manifest.expectations.fullOnlyResources.includes(
@@ -424,7 +422,9 @@ test('full package manifest requires runtime perf logger modules', () => {
     )
   );
   assert.equal(
-    manifest.expectations.fullOnlyResources.includes(path.join('scraper', 'devtools', 'perf-log.js')),
+    manifest.expectations.fullOnlyResources.includes(
+      path.join('scraper', 'devtools', 'perf-log.js')
+    ),
     false,
     'devtools/perf-log.js must NOT be in fullOnlyResources'
   );

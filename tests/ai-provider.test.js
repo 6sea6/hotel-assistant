@@ -679,8 +679,6 @@ test('direct AI task cancellation emits cancel status instead of task error', as
   );
 });
 
-
-
 test('AI scraper retry detector asks for visible login when Ctrip price is locked or missing', () => {
   const locked = getVisibleLoginRetryNeed({
     success: true,

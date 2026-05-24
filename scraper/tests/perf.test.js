@@ -16,15 +16,18 @@ function installMock(modulePath, exports) {
 }
 
 function clearPerfModules() {
-  ['../src/runtime/perf', '../src/runtime/noop-perf', '../src/runtime/file-perf', '../../devtools/perf-log'].forEach(
-    (modulePath) => {
-      try {
-        delete require.cache[require.resolve(modulePath)];
-      } catch (_error) {
-        // Module may not exist yet while running the red test.
-      }
+  [
+    '../src/runtime/perf',
+    '../src/runtime/noop-perf',
+    '../src/runtime/file-perf',
+    '../../devtools/perf-log'
+  ].forEach((modulePath) => {
+    try {
+      delete require.cache[require.resolve(modulePath)];
+    } catch (_error) {
+      // Module may not exist yet while running the red test.
     }
-  );
+  });
 }
 
 function withEnv(env, callback) {

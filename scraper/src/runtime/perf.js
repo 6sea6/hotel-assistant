@@ -11,7 +11,6 @@ function setup_perf_logger(options = {}) {
 }
 
 const filePerf = require('./file-perf');
-const noopPerf = require('./noop-perf');
 
 module.exports = {
   setup_perf_logger,

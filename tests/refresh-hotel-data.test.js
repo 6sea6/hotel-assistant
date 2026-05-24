@@ -114,7 +114,10 @@ test('ai-assistant.js: createQueueTask supports taskKind parameter', async () =>
   );
   assert.ok(code.includes("taskKind = 'collect'"), 'Default taskKind should be collect');
   assert.ok(code.includes("taskKind === 'refresh-data'"), 'Should check for refresh-data taskKind');
-  assert.ok(code.includes("'更新整个程序目前的宾馆数据'"), 'Refresh task should have specific title');
+  assert.ok(
+    code.includes("'更新整个程序目前的宾馆数据'"),
+    'Refresh task should have specific title'
+  );
 });
 
 test('ai-assistant.js: refresh task does not require template or URL', async () => {
@@ -123,9 +126,7 @@ test('ai-assistant.js: refresh task does not require template or URL', async () 
     'utf8'
   );
   // enqueueRefreshHotelDataTask should not check for template or URL
-  const refreshFnMatch = code.match(
-    /async function enqueueRefreshHotelDataTask[\s\S]*?^}/m
-  );
+  const refreshFnMatch = code.match(/async function enqueueRefreshHotelDataTask[\s\S]*?^}/m);
   assert.ok(refreshFnMatch, 'enqueueRefreshHotelDataTask should exist');
   const fnBody = refreshFnMatch[0];
   assert.ok(!fnBody.includes('findSelectedAiTemplate'), 'Should not check for template');
@@ -144,9 +145,7 @@ test('ai-task-console.js: REFRESH_STEP_DEFINITIONS exists and has no transit ste
   assert.ok(code.includes('REFRESH_STEP_DEFINITIONS'), 'Should define REFRESH_STEP_DEFINITIONS');
 
   // Extract REFRESH_STEP_DEFINITIONS
-  const refreshStepsMatch = code.match(
-    /REFRESH_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/
-  );
+  const refreshStepsMatch = code.match(/REFRESH_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/);
   assert.ok(refreshStepsMatch, 'REFRESH_STEP_DEFINITIONS should be array');
   const stepsContent = refreshStepsMatch[1];
   assert.ok(!stepsContent.includes('transit'), 'Refresh steps should NOT contain transit');
@@ -186,10 +185,7 @@ test('ai-task-console.js: refresh result analysis shows update statistics', asyn
     code.includes('updatedRoomTypeCount') && code.includes('deletedRoomTypeCount'),
     'Should reference room type count fields'
   );
-  assert.ok(
-    code.includes('skippedHotelCount'),
-    'Should reference skipped hotel count'
-  );
+  assert.ok(code.includes('skippedHotelCount'), 'Should reference skipped hotel count');
 });
 
 test('ai-task-console.js: getEventStepKey handles refresh events without transit', async () => {
@@ -199,12 +195,12 @@ test('ai-task-console.js: getEventStepKey handles refresh events without transit
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
     'utf8'
   );
-  assert.ok(code.includes("refresh:load-data"), 'Should map refresh:load-data event');
-  assert.ok(code.includes("refresh:item-start"), 'Should map refresh:item-start event');
-  assert.ok(code.includes("refresh:item-done"), 'Should map refresh:item-done event');
-  assert.ok(code.includes("refresh:item-skipped"), 'Should map refresh:item-skipped event');
-  assert.ok(code.includes("refresh:write"), 'Should map refresh:write event');
-  assert.ok(code.includes("refresh:summary"), 'Should map refresh:summary event');
+  assert.ok(code.includes('refresh:load-data'), 'Should map refresh:load-data event');
+  assert.ok(code.includes('refresh:item-start'), 'Should map refresh:item-start event');
+  assert.ok(code.includes('refresh:item-done'), 'Should map refresh:item-done event');
+  assert.ok(code.includes('refresh:item-skipped'), 'Should map refresh:item-skipped event');
+  assert.ok(code.includes('refresh:write'), 'Should map refresh:write event');
+  assert.ok(code.includes('refresh:summary'), 'Should map refresh:summary event');
 });
 
 /* ============================================================
@@ -214,7 +210,7 @@ test('ai-task-console.js: getEventStepKey handles refresh events without transit
 test('preload.js: ai.refreshHotelData IPC is exposed', () => {
   const code = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'preload.js'), 'utf8');
   assert.ok(
-    code.includes("refreshHotelData") && code.includes("ai:task:refresh-data"),
+    code.includes('refreshHotelData') && code.includes('ai:task:refresh-data'),
     'preload should expose refreshHotelData mapping to ai:task:refresh-data'
   );
 });
@@ -229,13 +225,10 @@ test('ai-handlers.js: registers ai:task:refresh-data handler', () => {
     'utf8'
   );
   assert.ok(
-    code.includes("ai:task:refresh-data"),
+    code.includes('ai:task:refresh-data'),
     'Should register ai:task:refresh-data IPC handler'
   );
-  assert.ok(
-    code.includes('refreshHotelData'),
-    'Should call getAiService().refreshHotelData'
-  );
+  assert.ok(code.includes('refreshHotelData'), 'Should call getAiService().refreshHotelData');
 });
 
 /* ============================================================
@@ -251,18 +244,12 @@ test('ai-service.js: exports refreshHotelData method', () => {
     code.includes('async function refreshHotelData'),
     'Should define refreshHotelData function'
   );
+  assert.ok(code.includes('refreshExistingCtripHotels'), 'Should call refreshExistingCtripHotels');
   assert.ok(
-    code.includes('refreshExistingCtripHotels'),
-    'Should call refreshExistingCtripHotels'
-  );
-  assert.ok(
-    code.includes("refresh_existing_ctrip_hotels"),
+    code.includes('refresh_existing_ctrip_hotels'),
     'Should use refresh_existing_ctrip_hotels tool name in result'
   );
-  assert.ok(
-    code.includes('compactRefreshResult'),
-    'Should compact refresh result'
-  );
+  assert.ok(code.includes('compactRefreshResult'), 'Should compact refresh result');
 });
 
 test('ai-service.js: refreshHotelData is in returned service object', () => {
@@ -341,18 +328,9 @@ test('scraper-runner.js: refresh skips hotels on collection failure', () => {
     'utf8'
   );
   // Verify that collection failure leads to skipped status
-  assert.ok(
-    code.includes("status: 'skipped'"),
-    'Should mark failed collections as skipped'
-  );
-  assert.ok(
-    code.includes("status: 'failed'"),
-    'Should mark error collections as failed'
-  );
-  assert.ok(
-    code.includes("status: 'updated'"),
-    'Should mark successful collections as updated'
-  );
+  assert.ok(code.includes("status: 'skipped'"), 'Should mark failed collections as skipped');
+  assert.ok(code.includes("status: 'failed'"), 'Should mark error collections as failed');
+  assert.ok(code.includes("status: 'updated'"), 'Should mark successful collections as updated');
 });
 
 /* ============================================================
@@ -375,11 +353,6 @@ test('task-runner.js: skipTransit skips getTransitInfo call', () => {
     path.join(__dirname, '..', 'scraper', 'src', 'task-runner.js'),
     'utf8'
   );
-  // Find the section around transit:start
-  const transitSection = code.substring(
-    code.indexOf("emit('transit:start'"),
-    code.indexOf("emit('transit:start'") + 2000
-  );
   // Verify that transit is conditional
   assert.ok(
     code.includes('if (!skipTransit)'),
@@ -393,7 +366,7 @@ test('task-runner.js: skipTransit does not emit transit:start', () => {
     'utf8'
   );
   assert.ok(
-    code.includes("if (!skipTransit)") && code.includes("emit('transit:start'"),
+    code.includes('if (!skipTransit)') && code.includes("emit('transit:start'"),
     'transit:start should only be emitted when skipTransit is false'
   );
 });
@@ -431,10 +404,7 @@ test('hotel-merge.js: appendHotelsToStore supports overwriteExistingGroup', () =
     code.includes('overwriteExistingGroup'),
     'Should support overwriteExistingGroup option'
   );
-  assert.ok(
-    code.includes('overwriteHotelsToStore'),
-    'Should have overwriteHotelsToStore function'
-  );
+  assert.ok(code.includes('overwriteHotelsToStore'), 'Should have overwriteHotelsToStore function');
 });
 
 test('hotel-merge.js: overwriteHotelsToStore replaces entire group', () => {
@@ -443,7 +413,7 @@ test('hotel-merge.js: overwriteHotelsToStore replaces entire group', () => {
     'utf8'
   );
   assert.ok(
-    code.includes("groupedHotels[existingGroupIndex] = sanitizedGroup"),
+    code.includes('groupedHotels[existingGroupIndex] = sanitizedGroup'),
     'Should replace entire group for existing hotels'
   );
 });
@@ -457,9 +427,7 @@ test('normal collect: BASE_STEP_DEFINITIONS still has transit step', async () =>
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
     'utf8'
   );
-  const baseMatch = code.match(
-    /BASE_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/
-  );
+  const baseMatch = code.match(/BASE_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/);
   assert.ok(baseMatch, 'BASE_STEP_DEFINITIONS should exist');
   assert.ok(baseMatch[1].includes('transit'), 'BASE_STEP_DEFINITIONS should still have transit');
   assert.ok(baseMatch[1].includes('scrape'), 'BASE_STEP_DEFINITIONS should still have scrape');
@@ -485,9 +453,7 @@ test('normal collect: enqueueAiCollectTask still requires template and URL', asy
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-assistant.js'),
     'utf8'
   );
-  const collectFnMatch = code.match(
-    /async function enqueueAiCollectTask[\s\S]*?^}/m
-  );
+  const collectFnMatch = code.match(/async function enqueueAiCollectTask[\s\S]*?^}/m);
   assert.ok(collectFnMatch, 'enqueueAiCollectTask should exist');
   assert.ok(
     collectFnMatch[0].includes('findSelectedAiTemplate'),
@@ -508,9 +474,7 @@ test('refresh-data: REFRESH_STEP_DEFINITIONS does not contain transit', () => {
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
     'utf8'
   );
-  const refreshStepsMatch = code.match(
-    /REFRESH_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/
-  );
+  const refreshStepsMatch = code.match(/REFRESH_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/);
   assert.ok(refreshStepsMatch, 'REFRESH_STEP_DEFINITIONS should exist');
   const stepsContent = refreshStepsMatch[1];
   assert.ok(!stepsContent.includes('transit'), 'Refresh steps should NOT contain transit');
@@ -527,18 +491,58 @@ test('refresh-data: buildRefreshProgressStats calculates from refresh:item-start
     { type: 'refresh:load-data', message: '正在读取当前宾馆数据', at: '2026-01-01T00:00:01Z' },
     { type: 'edge:login-required', message: '正在准备 Edge 登录态', at: '2026-01-01T00:00:02Z' },
     { type: 'edge:login-done', message: 'Edge 登录态已准备完成', at: '2026-01-01T00:00:05Z' },
-    { type: 'refresh:item-start', message: '正在更新第 1/3 家：酒店A', details: { index: 1, total: 3, hotelName: '酒店A' }, at: '2026-01-01T00:00:06Z' },
-    { type: 'refresh:item-done', message: '已更新 酒店A：5 种房型', details: { index: 1, total: 3, hotelName: '酒店A', status: 'updated' }, at: '2026-01-01T00:00:20Z' },
-    { type: 'refresh:item-start', message: '正在更新第 2/3 家：酒店B', details: { index: 2, total: 3, hotelName: '酒店B' }, at: '2026-01-01T00:00:21Z' },
-    { type: 'refresh:item-done', message: '已更新 酒店B：3 种房型', details: { index: 2, total: 3, hotelName: '酒店B', status: 'updated' }, at: '2026-01-01T00:00:35Z' },
-    { type: 'refresh:item-start', message: '正在更新第 3/3 家：酒店C', details: { index: 3, total: 3, hotelName: '酒店C' }, at: '2026-01-01T00:00:36Z' },
-    { type: 'refresh:item-skipped', message: '跳过 酒店C：登录失效', details: { index: 3, total: 3, hotelName: '酒店C', status: 'skipped', reason: '登录失效' }, at: '2026-01-01T00:00:40Z' },
-    { type: 'refresh:summary', message: '更新完成', details: { totalHotelCount: 3, updatedHotelCount: 2, skippedHotelCount: 1 }, at: '2026-01-01T00:00:41Z' },
+    {
+      type: 'refresh:item-start',
+      message: '正在更新第 1/3 家：酒店A',
+      details: { index: 1, total: 3, hotelName: '酒店A' },
+      at: '2026-01-01T00:00:06Z'
+    },
+    {
+      type: 'refresh:item-done',
+      message: '已更新 酒店A：5 种房型',
+      details: { index: 1, total: 3, hotelName: '酒店A', status: 'updated' },
+      at: '2026-01-01T00:00:20Z'
+    },
+    {
+      type: 'refresh:item-start',
+      message: '正在更新第 2/3 家：酒店B',
+      details: { index: 2, total: 3, hotelName: '酒店B' },
+      at: '2026-01-01T00:00:21Z'
+    },
+    {
+      type: 'refresh:item-done',
+      message: '已更新 酒店B：3 种房型',
+      details: { index: 2, total: 3, hotelName: '酒店B', status: 'updated' },
+      at: '2026-01-01T00:00:35Z'
+    },
+    {
+      type: 'refresh:item-start',
+      message: '正在更新第 3/3 家：酒店C',
+      details: { index: 3, total: 3, hotelName: '酒店C' },
+      at: '2026-01-01T00:00:36Z'
+    },
+    {
+      type: 'refresh:item-skipped',
+      message: '跳过 酒店C：登录失效',
+      details: { index: 3, total: 3, hotelName: '酒店C', status: 'skipped', reason: '登录失效' },
+      at: '2026-01-01T00:00:40Z'
+    },
+    {
+      type: 'refresh:summary',
+      message: '更新完成',
+      details: { totalHotelCount: 3, updatedHotelCount: 2, skippedHotelCount: 1 },
+      at: '2026-01-01T00:00:41Z'
+    },
     { type: 'task:done', at: '2026-01-01T00:00:42Z' }
   ];
 
   const taskState = normalizeTaskState({
-    task: { taskKind: 'refresh-data', submitted: true, startedAt: '2026-01-01T00:00:00Z', result: {} },
+    task: {
+      taskKind: 'refresh-data',
+      submitted: true,
+      startedAt: '2026-01-01T00:00:00Z',
+      result: {}
+    },
     events,
     inProgress: false
   });
@@ -564,8 +568,8 @@ test('refresh-data: progressStats is null when no refresh events', async () => {
  * ============================================================ */
 
 test('refresh-data: renderProgressStats shows 4 cards with correct labels', async () => {
-  const { normalizeTaskState } = await loadTaskConsoleModule();
-  const stats = { total: 5, completed: 2, running: 1, pending: 2 };
+  const { normalizeTaskState: _normalizeTaskState } = await loadTaskConsoleModule();
+  const _stats = { total: 5, completed: 2, running: 1, pending: 2 };
 
   // Read source to verify renderProgressStats logic
   const code = fs.readFileSync(
@@ -599,7 +603,10 @@ test('refresh-data: getStepDefinitions does not insert LOGIN_STEP_DEFINITION', (
   );
   assert.ok(refreshBranchMatch, 'Should find refresh-data branch');
   const refreshBranch = refreshBranchMatch[0];
-  assert.ok(!refreshBranch.includes('LOGIN_STEP_DEFINITION'), 'refresh-data should NOT insert LOGIN_STEP_DEFINITION');
+  assert.ok(
+    !refreshBranch.includes('LOGIN_STEP_DEFINITION'),
+    'refresh-data should NOT insert LOGIN_STEP_DEFINITION'
+  );
 });
 
 test('refresh-data: edge events map to edge step, not login step', () => {
@@ -614,13 +621,17 @@ test('refresh-data: edge events map to edge step, not login step', () => {
   const fnBody = code.substring(fnStart, fnEnd);
 
   // In the refresh-data branch, edge:login-required should return 'edge', not 'login'
-  const isRefreshBlock = fnBody.match(
-    /if\s*\(\s*isRefresh\s*\)[\s\S]*?return\s+'';\s*\}/
-  );
+  const isRefreshBlock = fnBody.match(/if\s*\(\s*isRefresh\s*\)[\s\S]*?return\s+'';\s*\}/);
   assert.ok(isRefreshBlock, 'Should find isRefresh block');
   const refreshBlock = isRefreshBlock[0];
-  assert.ok(!refreshBlock.includes("return 'login'"), 'refresh-data should NOT return login for edge events');
-  assert.ok(refreshBlock.includes("return 'edge'"), 'refresh-data should return edge for edge events');
+  assert.ok(
+    !refreshBlock.includes("return 'login'"),
+    'refresh-data should NOT return login for edge events'
+  );
+  assert.ok(
+    refreshBlock.includes("return 'edge'"),
+    'refresh-data should return edge for edge events'
+  );
 });
 
 /* ============================================================
@@ -631,10 +642,30 @@ test('collect: buildProgressStats still works with batch: events', async () => {
   const { normalizeTaskState } = await loadTaskConsoleModule();
   const events = [
     { type: 'task:start', at: '2026-01-01T00:00:00Z' },
-    { type: 'batch:item-start', message: '第 1/2 家', details: { index: 1, total: 2 }, at: '2026-01-01T00:00:05Z' },
-    { type: 'batch:item-done', message: '第 1 家酒店采集完成', details: { index: 1, total: 2 }, at: '2026-01-01T00:00:15Z' },
-    { type: 'batch:item-start', message: '第 2/2 家', details: { index: 2, total: 2 }, at: '2026-01-01T00:00:16Z' },
-    { type: 'batch:item-done', message: '第 2 家酒店采集完成', details: { index: 2, total: 2 }, at: '2026-01-01T00:00:25Z' },
+    {
+      type: 'batch:item-start',
+      message: '第 1/2 家',
+      details: { index: 1, total: 2 },
+      at: '2026-01-01T00:00:05Z'
+    },
+    {
+      type: 'batch:item-done',
+      message: '第 1 家酒店采集完成',
+      details: { index: 1, total: 2 },
+      at: '2026-01-01T00:00:15Z'
+    },
+    {
+      type: 'batch:item-start',
+      message: '第 2/2 家',
+      details: { index: 2, total: 2 },
+      at: '2026-01-01T00:00:16Z'
+    },
+    {
+      type: 'batch:item-done',
+      message: '第 2 家酒店采集完成',
+      details: { index: 2, total: 2 },
+      at: '2026-01-01T00:00:25Z'
+    }
   ];
 
   const taskState = normalizeTaskState({
@@ -664,7 +695,10 @@ test('collect: getStepDefinitions still inserts LOGIN_STEP_DEFINITION when login
   assert.ok(fnBody.includes('hasLoginStep'), 'Collect branch should check hasLoginStep');
   // Verify that in the collect (non-refresh) section, LOGIN_STEP_DEFINITION is inserted
   const collectSection = fnBody.substring(fnBody.lastIndexOf('hasLoginStep'));
-  assert.ok(collectSection.includes('LOGIN_STEP_DEFINITION'), 'Collect branch should still insert LOGIN_STEP_DEFINITION');
+  assert.ok(
+    collectSection.includes('LOGIN_STEP_DEFINITION'),
+    'Collect branch should still insert LOGIN_STEP_DEFINITION'
+  );
 });
 
 /* ============================================================
@@ -676,7 +710,10 @@ test('refresh-data: renderProgressStats aria-label is "更新数据进度统计"
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
     'utf8'
   );
-  assert.ok(code.includes('更新数据进度统计'), 'Should have "更新数据进度统计" aria-label for refresh');
+  assert.ok(
+    code.includes('更新数据进度统计'),
+    'Should have "更新数据进度统计" aria-label for refresh'
+  );
   assert.ok(code.includes('批量采集进度统计'), 'Should still have "批量采集进度统计" for collect');
 });
 
@@ -690,13 +727,16 @@ test('refresh-data: getReadableEventTitle returns correct titles', () => {
     'utf8'
   );
   // Check refresh-specific event titles
-  assert.ok(code.includes("正在读取当前宾馆数据"), 'Should have refresh:load-data title');
-  assert.ok(code.includes("等待写入更新结果"), 'Should have refresh:write title');
-  assert.ok(code.includes("结果汇总"), 'Should have refresh:summary title');
+  assert.ok(code.includes('正在读取当前宾馆数据'), 'Should have refresh:load-data title');
+  assert.ok(code.includes('等待写入更新结果'), 'Should have refresh:write title');
+  assert.ok(code.includes('结果汇总'), 'Should have refresh:summary title');
   // Check edge:login-done title for refresh
-  assert.ok(code.includes("Edge 登录态已准备完成"), 'Should have refresh-specific edge:login-done title');
+  assert.ok(
+    code.includes('Edge 登录态已准备完成'),
+    'Should have refresh-specific edge:login-done title'
+  );
   // Should NOT contain "采集任务完成" for task:done in refresh mode
-  assert.ok(code.includes("更新任务完成"), 'Should have refresh-specific task:done title');
+  assert.ok(code.includes('更新任务完成'), 'Should have refresh-specific task:done title');
 });
 
 /* ============================================================
@@ -716,14 +756,20 @@ test('scraper-runner: refresh:item-done has status and total in details', () => 
   // Check refresh:item-done has status: 'updated' and total
   const itemDoneMatch = fnBody.match(/refresh:item-done[\s\S]*?emit\([\s\S]*?\{[\s\S]*?\}/);
   assert.ok(itemDoneMatch, 'Should find refresh:item-done emit');
-  assert.ok(itemDoneMatch[0].includes("status: 'updated'"), 'item-done should have status: updated');
+  assert.ok(
+    itemDoneMatch[0].includes("status: 'updated'"),
+    'item-done should have status: updated'
+  );
   assert.ok(itemDoneMatch[0].includes('total:'), 'item-done should have total field');
 
   // Check refresh:item-skipped has status and total
   const skippedMatches = fnBody.match(/refresh:item-skipped/g);
-  assert.ok(skippedMatches && skippedMatches.length >= 1, 'Should have refresh:item-skipped events');
+  assert.ok(
+    skippedMatches && skippedMatches.length >= 1,
+    'Should have refresh:item-skipped events'
+  );
   // Verify at least one has total field
-  assert.ok(fnBody.includes("total: totalHotelCount"), 'Should include total in details');
+  assert.ok(fnBody.includes('total: totalHotelCount'), 'Should include total in details');
 });
 
 test('scraper-runner: refresh:summary has complete statistics', () => {
@@ -759,7 +805,10 @@ test('scraper-runner: refresh uses refresh:item-write instead of refresh:write f
   const fnBody = code.substring(refreshStart, refreshEnd);
 
   // Should have refresh:item-write event
-  assert.ok(fnBody.includes("emit('refresh:item-write'"), 'Should use refresh:item-write for single hotel write');
+  assert.ok(
+    fnBody.includes("emit('refresh:item-write'"),
+    'Should use refresh:item-write for single hotel write'
+  );
   // Should include scope: 'item'
   assert.ok(fnBody.includes("scope: 'item'"), 'refresh:item-write should include scope: item');
 });
@@ -767,7 +816,11 @@ test('scraper-runner: refresh uses refresh:item-write instead of refresh:write f
 test('refresh-data: refresh:item-write maps to refresh step, not write step', async () => {
   const mod = await loadTaskConsoleModule();
 
-  const event = { type: 'refresh:item-write', message: '正在写入第 1/2 家的更新结果：测试酒店', details: { index: 1, total: 2, hotelName: '测试酒店', scope: 'item' } };
+  const event = {
+    type: 'refresh:item-write',
+    message: '正在写入第 1/2 家的更新结果：测试酒店',
+    details: { index: 1, total: 2, hotelName: '测试酒店', scope: 'item' }
+  };
   // getEventStepKey is not exported, so test via normalizeTaskState
   const result = mod.normalizeTaskState({
     task: { taskKind: 'refresh-data', startedAt: new Date().toISOString() },
@@ -777,7 +830,12 @@ test('refresh-data: refresh:item-write maps to refresh step, not write step', as
       { type: 'refresh:scan-done', at: new Date().toISOString(), details: { total: 2 } },
       { type: 'edge:login-required', at: new Date().toISOString() },
       { type: 'edge:login-done', at: new Date().toISOString() },
-      { type: 'refresh:item-start', at: new Date().toISOString(), message: '正在更新第 1/2 家', details: { index: 1, total: 2 } },
+      {
+        type: 'refresh:item-start',
+        at: new Date().toISOString(),
+        message: '正在更新第 1/2 家',
+        details: { index: 1, total: 2 }
+      },
       event
     ],
     inProgress: true
@@ -786,12 +844,20 @@ test('refresh-data: refresh:item-write maps to refresh step, not write step', as
   // The refresh step should be running
   const refreshStep = result.steps.find((s) => s.key === 'refresh');
   assert.ok(refreshStep, 'Should have a refresh step');
-  assert.equal(refreshStep.status, 'running', 'refresh step should be running when item-write is active');
+  assert.equal(
+    refreshStep.status,
+    'running',
+    'refresh step should be running when item-write is active'
+  );
 
   // The write step should be pending
   const writeStep = result.steps.find((s) => s.key === 'write');
   assert.ok(writeStep, 'Should have a write step');
-  assert.equal(writeStep.status, 'pending', 'write step should be pending when items are still being processed');
+  assert.equal(
+    writeStep.status,
+    'pending',
+    'write step should be pending when items are still being processed'
+  );
 });
 
 test('refresh-data: current step stays on refresh after first hotel item-write while second hotel starts', async () => {
@@ -807,20 +873,48 @@ test('refresh-data: current step stays on refresh after first hotel item-write w
       { type: 'edge:login-required', at: now },
       { type: 'edge:login-done', at: now },
       // Hotel 1
-      { type: 'refresh:item-start', at: now, message: '正在更新第 1/2 家：酒店A', details: { index: 1, total: 2 } },
-      { type: 'refresh:item-write', at: now, message: '正在写入第 1/2 家的更新结果：酒店A', details: { index: 1, total: 2, scope: 'item' } },
-      { type: 'refresh:item-done', at: now, message: '已更新 酒店A', details: { index: 1, total: 2, status: 'updated' } },
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 1/2 家：酒店A',
+        details: { index: 1, total: 2 }
+      },
+      {
+        type: 'refresh:item-write',
+        at: now,
+        message: '正在写入第 1/2 家的更新结果：酒店A',
+        details: { index: 1, total: 2, scope: 'item' }
+      },
+      {
+        type: 'refresh:item-done',
+        at: now,
+        message: '已更新 酒店A',
+        details: { index: 1, total: 2, status: 'updated' }
+      },
       // Hotel 2 started but not done
-      { type: 'refresh:item-start', at: now, message: '正在更新第 2/2 家：酒店B', details: { index: 2, total: 2 } }
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 2/2 家：酒店B',
+        details: { index: 2, total: 2 }
+      }
     ],
     inProgress: true
   });
 
   const refreshStep = result.steps.find((s) => s.key === 'refresh');
-  assert.equal(refreshStep.status, 'running', 'refresh step should be running when hotel 2 is in progress');
+  assert.equal(
+    refreshStep.status,
+    'running',
+    'refresh step should be running when hotel 2 is in progress'
+  );
 
   const writeStep = result.steps.find((s) => s.key === 'write');
-  assert.equal(writeStep.status, 'pending', 'write step should be pending when items are still being processed');
+  assert.equal(
+    writeStep.status,
+    'pending',
+    'write step should be pending when items are still being processed'
+  );
 });
 
 test('refresh-data: current step becomes write only after all items are processed', async () => {
@@ -836,21 +930,60 @@ test('refresh-data: current step becomes write only after all items are processe
       { type: 'edge:login-required', at: now },
       { type: 'edge:login-done', at: now },
       // Hotel 1
-      { type: 'refresh:item-start', at: now, message: '正在更新第 1/2 家：酒店A', details: { index: 1, total: 2 } },
-      { type: 'refresh:item-write', at: now, message: '正在写入第 1/2 家的更新结果：酒店A', details: { index: 1, total: 2, scope: 'item' } },
-      { type: 'refresh:item-done', at: now, message: '已更新 酒店A', details: { index: 1, total: 2, status: 'updated' } },
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 1/2 家：酒店A',
+        details: { index: 1, total: 2 }
+      },
+      {
+        type: 'refresh:item-write',
+        at: now,
+        message: '正在写入第 1/2 家的更新结果：酒店A',
+        details: { index: 1, total: 2, scope: 'item' }
+      },
+      {
+        type: 'refresh:item-done',
+        at: now,
+        message: '已更新 酒店A',
+        details: { index: 1, total: 2, status: 'updated' }
+      },
       // Hotel 2
-      { type: 'refresh:item-start', at: now, message: '正在更新第 2/2 家：酒店B', details: { index: 2, total: 2 } },
-      { type: 'refresh:item-write', at: now, message: '正在写入第 2/2 家的更新结果：酒店B', details: { index: 2, total: 2, scope: 'item' } },
-      { type: 'refresh:item-done', at: now, message: '已更新 酒店B', details: { index: 2, total: 2, status: 'updated' } },
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 2/2 家：酒店B',
+        details: { index: 2, total: 2 }
+      },
+      {
+        type: 'refresh:item-write',
+        at: now,
+        message: '正在写入第 2/2 家的更新结果：酒店B',
+        details: { index: 2, total: 2, scope: 'item' }
+      },
+      {
+        type: 'refresh:item-done',
+        at: now,
+        message: '已更新 酒店B',
+        details: { index: 2, total: 2, status: 'updated' }
+      },
       // Final summary
-      { type: 'refresh:summary', at: now, message: '更新完成', details: { totalHotelCount: 2, updatedHotelCount: 2 } }
+      {
+        type: 'refresh:summary',
+        at: now,
+        message: '更新完成',
+        details: { totalHotelCount: 2, updatedHotelCount: 2 }
+      }
     ],
     inProgress: true
   });
 
   const writeStep = result.steps.find((s) => s.key === 'write');
-  assert.equal(writeStep.status, 'running', 'write step should be running after all items processed and summary emitted');
+  assert.equal(
+    writeStep.status,
+    'running',
+    'write step should be running after all items processed and summary emitted'
+  );
 });
 
 test('refresh-data: refresh:item-write has correct readable title', async () => {
@@ -861,8 +994,18 @@ test('refresh-data: refresh:item-write has correct readable title', async () => 
     task: { taskKind: 'refresh-data', startedAt: now },
     events: [
       { type: 'task:start', at: now },
-      { type: 'refresh:item-start', at: now, message: '正在更新第 1/2 家：酒店A', details: { index: 1, total: 2 } },
-      { type: 'refresh:item-write', at: now, message: '正在写入第 1/2 家的更新结果：酒店A', details: { index: 1, total: 2, scope: 'item' } }
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 1/2 家：酒店A',
+        details: { index: 1, total: 2 }
+      },
+      {
+        type: 'refresh:item-write',
+        at: now,
+        message: '正在写入第 1/2 家的更新结果：酒店A',
+        details: { index: 1, total: 2, scope: 'item' }
+      }
     ],
     inProgress: true
   });
@@ -871,7 +1014,10 @@ test('refresh-data: refresh:item-write has correct readable title', async () => 
   const refreshStep = result.steps.find((s) => s.key === 'refresh');
   assert.ok(refreshStep, 'Should have refresh step');
   // The title should contain info about the hotel being written
-  assert.ok(refreshStep.title.includes('写入') || refreshStep.title.includes('更新'), `refresh step title should mention writing/updating, got: "${refreshStep.title}"`);
+  assert.ok(
+    refreshStep.title.includes('写入') || refreshStep.title.includes('更新'),
+    `refresh step title should mention writing/updating, got: "${refreshStep.title}"`
+  );
 });
 
 test('collect: normal collect is not affected by refresh:item-write changes', async () => {

@@ -1,11 +1,5 @@
 import { state } from './state.js';
-import {
-  $,
-  escapeHtml,
-  getValue,
-  setChecked,
-  setValue
-} from './dom-helpers.js';
+import { $, escapeHtml, getValue, setChecked, setValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { actions } from './actions.js';
 import {
@@ -16,7 +10,12 @@ import {
   renderAiTaskConsole,
   updateAiInputCount as updateTaskInputCount
 } from './ai-task-console.js';
-import { enhanceCustomSelect, refreshCustomSelect, destroyCustomSelect, getCustomSelectInstance } from './custom-select.js';
+import {
+  enhanceCustomSelect,
+  refreshCustomSelect,
+  destroyCustomSelect,
+  getCustomSelectInstance
+} from './custom-select.js';
 
 const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
 let activeCollectTaskId = '';
@@ -457,7 +456,13 @@ function findQueueTaskByBackendTaskId(taskId) {
   return (state.aiTaskQueue || []).find((task) => String(task.backendTaskId || '') === id) || null;
 }
 
-function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}, taskKind = 'collect') {
+function createQueueTask(
+  template,
+  url,
+  listFilters = {},
+  listUrlFilters = {},
+  taskKind = 'collect'
+) {
   state.aiTaskQueueCounter = Number(state.aiTaskQueueCounter || 0) + 1;
   const displayIndex = String(state.aiTaskQueueCounter).padStart(2, '0');
   const isRefresh = taskKind === 'refresh-data';
@@ -467,7 +472,7 @@ function createQueueTask(template, url, listFilters = {}, listUrlFilters = {}, t
     displayIndex,
     url,
     templateId: isRefresh ? '' : String(template.id ?? ''),
-    templateName: isRefresh ? '' : (template.name || ''),
+    templateName: isRefresh ? '' : template.name || '',
     templateLabel: title,
     title,
     template,
@@ -512,7 +517,8 @@ function startTaskConsole(template, url, queueTask = null) {
     ...createEmptyTaskConsole(),
     submitted: true,
     template,
-    templateLabel: taskKind === 'refresh-data' ? '更新已有宾馆数据' : formatAiTemplateLabel(template),
+    templateLabel:
+      taskKind === 'refresh-data' ? '更新已有宾馆数据' : formatAiTemplateLabel(template),
     hotelUrl: url,
     startedAt,
     taskKind

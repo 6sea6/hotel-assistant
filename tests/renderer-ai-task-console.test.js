@@ -75,9 +75,15 @@ function createFakeElement(value = '') {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     },
-    set innerHTML(v) { textContentValue = v; },
-    get textContent() { return textContentValue; },
-    set textContent(v) { textContentValue = String(v == null ? '' : v); },
+    set innerHTML(v) {
+      textContentValue = v;
+    },
+    get textContent() {
+      return textContentValue;
+    },
+    set textContent(v) {
+      textContentValue = String(v == null ? '' : v);
+    },
     dataset: {},
     options: [],
     selectedOptions: [],

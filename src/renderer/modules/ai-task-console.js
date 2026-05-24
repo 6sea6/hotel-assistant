@@ -41,6 +41,7 @@ const CANCEL_STEP_DEFINITION = {
   doneTitle: '任务已取消'
 };
 
+// Duplicated from src/shared/url-constants.js — renderer uses ESM, cannot import CJS
 const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
 const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
 
@@ -108,7 +109,12 @@ export function extractCtripUrls(text) {
 export function getCollectToolResult(result = {}) {
   if (!Array.isArray(result.toolResults)) return null;
   return (
-    result.toolResults.find((item) => item && (item.name === 'collect_and_write_ctrip_hotel' || item.name === 'refresh_existing_ctrip_hotels')) || null
+    result.toolResults.find(
+      (item) =>
+        item &&
+        (item.name === 'collect_and_write_ctrip_hotel' ||
+          item.name === 'refresh_existing_ctrip_hotels')
+    ) || null
   );
 }
 
@@ -263,7 +269,12 @@ function getEventStepKey(event = {}, taskKind = 'collect') {
   if (isRefresh) {
     if (type === 'refresh:load-data') return 'load-data';
     if (type === 'refresh:scan-done') return 'load-data';
-    if (type === 'refresh:item-start' || type === 'refresh:item-write' || type === 'refresh:item-done' || type === 'refresh:item-skipped')
+    if (
+      type === 'refresh:item-start' ||
+      type === 'refresh:item-write' ||
+      type === 'refresh:item-done' ||
+      type === 'refresh:item-skipped'
+    )
       return 'refresh';
     if (type.startsWith('refresh:')) return 'refresh';
     if (type === 'refresh:write') return 'write';
@@ -307,9 +318,11 @@ function getReadableEventTitle(event = {}, taskKind = 'collect') {
   if (type === 'refresh:item-skipped') return event.message || '跳过该宾馆';
   if (type === 'refresh:write') return '等待写入更新结果';
   if (type === 'refresh:summary') return '结果汇总';
-  if (type === 'edge:login-required') return isRefresh ? '正在准备 Edge 登录态' : (event.message || '需要登录携程后继续采集');
+  if (type === 'edge:login-required')
+    return isRefresh ? '正在准备 Edge 登录态' : event.message || '需要登录携程后继续采集';
   if (type === 'edge:login-window') return event.message || '已打开 Edge 登录窗口，等待你完成登录';
-  if (type === 'edge:login-done') return isRefresh ? 'Edge 登录态已准备完成' : (event.message || '携程登录窗口已关闭，继续采集');
+  if (type === 'edge:login-done')
+    return isRefresh ? 'Edge 登录态已准备完成' : event.message || '携程登录窗口已关闭，继续采集';
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
   if (type.startsWith('batch:') || type.startsWith('list:'))
     return event.message || '正在处理批量采集任务';
@@ -318,8 +331,7 @@ function getReadableEventTitle(event = {}, taskKind = 'collect') {
     if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start')
       return '已接收采集任务';
     if (toolName === 'collect_and_write_ctrip_hotel') return '正在采集携程酒店页面';
-    if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start')
-      return '已接收任务';
+    if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return '已接收任务';
     if (toolName === 'refresh_existing_ctrip_hotels') return '正在更新已有宾馆数据';
     if (toolName === 'list_templates' || toolName === 'get_settings')
       return '正在读取模板与比较助手设置';
@@ -457,7 +469,8 @@ function findRefreshStepEvent(normalizedEvents, key) {
       if (event.key !== 'refresh') return false;
       const rawType = event.raw && event.raw.type;
       if (rawType !== 'refresh:item-write') return false;
-      const detail = event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
+      const detail =
+        event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
       const index = Number(detail.index || 0);
       return isIndexRunning(index);
     });
@@ -472,7 +485,8 @@ function findRefreshStepEvent(normalizedEvents, key) {
       if (event.key !== 'refresh') return false;
       const rawType = event.raw && event.raw.type;
       if (rawType !== 'refresh:item-start') return false;
-      const detail = event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
+      const detail =
+        event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
       const index = Number(detail.index || 0);
       return isIndexRunning(index);
     });
@@ -662,7 +676,9 @@ function getStepDefinitions(normalizedEvents = [], taskKind = 'collect') {
 
 function buildTaskSteps(task, events, status) {
   const taskKind = task.taskKind || 'collect';
-  const normalizedEvents = (events || []).map((event) => normalizeEvent(event, taskKind)).filter((event) => event.title);
+  const normalizedEvents = (events || [])
+    .map((event) => normalizeEvent(event, taskKind))
+    .filter((event) => event.title);
   const stepDefinitions = getStepDefinitions(normalizedEvents, taskKind);
   const lastProgressEvent = normalizedEvents
     .slice()
@@ -684,9 +700,10 @@ function buildTaskSteps(task, events, status) {
   const errorKey = status === 'error' && lastProgressEvent ? lastProgressEvent.key : 'scrape';
 
   return stepDefinitions.map((definition, index) => {
-    const matchedEvent = taskKind === 'refresh-data'
-      ? findRefreshStepEvent(normalizedEvents, definition.key)
-      : findStepEvent(normalizedEvents, definition.key);
+    const matchedEvent =
+      taskKind === 'refresh-data'
+        ? findRefreshStepEvent(normalizedEvents, definition.key)
+        : findStepEvent(normalizedEvents, definition.key);
     let stepStatus = 'pending';
 
     if (status === 'success') {
@@ -915,11 +932,7 @@ function buildTaskError(task = {}, events = []) {
   };
 }
 
-export function normalizeTaskState({
-  task = {},
-  events = [],
-  inProgress = false
-} = {}) {
+export function normalizeTaskState({ task = {}, events = [], inProgress = false } = {}) {
   const submitted = Boolean(
     task.submitted || task.hotelUrl || task.result || task.error || events.length
   );
@@ -940,7 +953,7 @@ export function normalizeTaskState({
   }
 
   const steps = buildTaskSteps(task, events, status);
-  const collectResult = getTaskCollectResult(task);
+  const _collectResult = getTaskCollectResult(task);
   const taskKind = task.taskKind || 'collect';
   const taskInfo = {
     taskId:

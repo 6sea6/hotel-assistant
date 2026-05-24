@@ -140,10 +140,7 @@ function sanitizeUrl(value) {
 }
 
 function sanitizeString(value) {
-  return sanitizeUrl(String(value)).replace(
-    /([A-Za-z]:\\Users\\)[^\\/]+/gi,
-    '$1[REDACTED]'
-  );
+  return sanitizeUrl(String(value)).replace(/([A-Za-z]:\\Users\\)[^\\/]+/gi, '$1[REDACTED]');
 }
 
 function sanitizeForLog(value, key = '') {
@@ -156,9 +153,7 @@ function sanitizeForLog(value, key = '') {
   }
 
   if (Array.isArray(value)) {
-    return value
-      .map((item) => sanitizeForLog(item, key))
-      .filter((item) => item !== undefined);
+    return value.map((item) => sanitizeForLog(item, key)).filter((item) => item !== undefined);
   }
 
   if (value && typeof value === 'object') {

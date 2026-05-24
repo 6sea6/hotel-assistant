@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { readPointerData } = require('../shared/compare-app/data-folder');
+const { readPointerData: _readPointerData } = require('../shared/compare-app/data-folder');
 const { DataFolderManager } = require('../src/main/utils');
 
 function makeTempRoot() {

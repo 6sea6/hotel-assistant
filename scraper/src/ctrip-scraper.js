@@ -46,7 +46,7 @@ function isCancellationError(error) {
   const message = error && error.message ? error.message : String(error || '');
   return Boolean(
     (error && (error.name === 'AbortError' || error.code === 'CDP_ABORTED')) ||
-      /任务已取消|aborted|cancelled|canceled/i.test(message)
+    /任务已取消|aborted|cancelled|canceled/i.test(message)
   );
 }
 

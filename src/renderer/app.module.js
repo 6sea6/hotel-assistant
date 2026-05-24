@@ -294,11 +294,7 @@ function setupStaticFormListeners() {
     'change',
     toggleIncludeFourPersonRoomsForThreePersonTemplate
   );
-  addEvent(
-    'enableCollectPerfLog',
-    'change',
-    toggleEnableCollectPerfLog
-  );
+  addEvent('enableCollectPerfLog', 'change', toggleEnableCollectPerfLog);
   [
     'aiCtripPriceMin',
     'aiCtripPriceMax',

@@ -557,7 +557,7 @@ async function runPreparedSingleDetailImport(context) {
     perf = null,
     pageIndex = null,
     reportLevel = 'normal',
-    isBatchItem = false,
+    isBatchItem: _isBatchItem = false,
     captureStrategy: contextCaptureStrategy = null,
     edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null,
     scrapeEventForwarder = emit
@@ -1239,10 +1239,12 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
   const scrapeEventForwarder = createScrapeEventForwarder(emit);
   const signal = options.signal || null;
   const latestRunPathInput = args.latestRun || DEFAULT_LATEST_RUN_PATH;
-  const perfLogger = options.perfLogger || setup_perf_logger({
-    enabled: Boolean(options.perfLogEnabled),
-    logDir: options.perfLogDir
-  });
+  const perfLogger =
+    options.perfLogger ||
+    setup_perf_logger({
+      enabled: Boolean(options.perfLogEnabled),
+      logDir: options.perfLogDir
+    });
   const taskKind = args['apply-output'] ? 'apply_output' : 'collect';
   const requestedReportLevel =
     args['skip-report'] || args['no-output-report']

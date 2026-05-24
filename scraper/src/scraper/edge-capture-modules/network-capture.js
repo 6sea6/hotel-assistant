@@ -268,9 +268,9 @@ function isAbortLikeError(error) {
 function isTimeoutLikeError(error) {
   return Boolean(
     error &&
-      (error.code === 'EDGE_RESPONSE_BODY_TIMEOUT' ||
-        error.code === 'CDP_TIMEOUT' ||
-        /timed out/i.test(error.message || ''))
+    (error.code === 'EDGE_RESPONSE_BODY_TIMEOUT' ||
+      error.code === 'CDP_TIMEOUT' ||
+      /timed out/i.test(error.message || ''))
   );
 }
 
@@ -432,11 +432,11 @@ function shouldUseEdgeRawTextFallback({
   }
   const hasTemplateSignal = Boolean(
     template &&
-      (template.room_type ||
-        template.roomType ||
-        template.room_count ||
-        template.roomCount ||
-        template.occupancy)
+    (template.room_type ||
+      template.roomType ||
+      template.room_count ||
+      template.roomCount ||
+      template.occupancy)
   );
   if (!hasTemplateSignal) {
     return true;
@@ -2089,9 +2089,9 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     // once room API data has already produced candidates.
     const apiCaptureComplete = Boolean(
       edgeParseStats &&
-        edgeParseStats.roomResponseCount > 0 &&
-        edgeParseStats.fastPathComplete &&
-        isEdgeRoomFastPathComplete(roomBlocks, template)
+      edgeParseStats.roomResponseCount > 0 &&
+      edgeParseStats.fastPathComplete &&
+      isEdgeRoomFastPathComplete(roomBlocks, template)
     );
     await extractEdgeDomRoomCandidates({
       connection,
@@ -2173,22 +2173,14 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     try {
       if (connection && sessionId) {
         await connection
-          .send(
-            'Target.detachFromTarget',
-            { sessionId },
-            '',
-            { timeoutMs: EDGE_CDP_CLEANUP_TIMEOUT_MS }
-          )
+          .send('Target.detachFromTarget', { sessionId }, '', {
+            timeoutMs: EDGE_CDP_CLEANUP_TIMEOUT_MS
+          })
           .catch(() => undefined);
       }
       if (connection && targetId && shouldCloseTarget) {
         await connection
-          .send(
-            'Target.closeTarget',
-            { targetId },
-            '',
-            { timeoutMs: EDGE_CDP_CLEANUP_TIMEOUT_MS }
-          )
+          .send('Target.closeTarget', { targetId }, '', { timeoutMs: EDGE_CDP_CLEANUP_TIMEOUT_MS })
           .catch(() => undefined);
       }
       if (connection) {

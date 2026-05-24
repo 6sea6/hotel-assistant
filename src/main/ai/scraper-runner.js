@@ -9,8 +9,7 @@ const {
 } = require('../bundled-setup');
 
 const scraperModuleCache = new Map();
-const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
-const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
+const { TRAILING_URL_PUNCTUATION, INLINE_URL_TEXT_SEPARATOR } = require('../../shared/url-constants');
 
 function resolveEmbeddedScraperPath(options = {}) {
   return path.resolve(options.currentDir || __dirname, '..', '..', '..', 'scraper');
@@ -708,12 +707,15 @@ async function refreshExistingCtripHotels(input, context = {}) {
       const hotelMerge = await loadScraperModule(scraperPath, 'compare-app/hotel-merge.js');
       const store = bridge.loadCompareAppStore();
       const rawHotels = Array.isArray(store.hotels) ? store.hotels : [];
-      const { expandStoredHotels, compactHotels } = await loadScraperModule(
+      const { expandStoredHotels, compactHotels: _compactHotels } = await loadScraperModule(
         scraperPath,
         'compare-app/shared-module.js'
       ).then((mod) => {
         const groups = mod.requireSharedCompareAppModule('hotel-groups.js');
-        return { expandStoredHotels: groups.expandStoredHotels, compactHotels: groups.compactHotels };
+        return {
+          expandStoredHotels: groups.expandStoredHotels,
+          compactHotels: groups.compactHotels
+        };
       });
       const expandedHotels = expandStoredHotels(rawHotels);
 
@@ -809,7 +811,11 @@ async function refreshExistingCtripHotels(input, context = {}) {
             onEvent: (event) => {
               // Only forward non-transit events
               const type = event.type || '';
-              if (!type.startsWith('transit:') && type !== 'transit:start' && type !== 'transit:done') {
+              if (
+                !type.startsWith('transit:') &&
+                type !== 'transit:start' &&
+                type !== 'transit:done'
+              ) {
                 emit(event.type, event.message, event.details || {});
               }
             }
@@ -825,9 +831,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
             Number(collectResult.eligibleCount) <= 0
           ) {
             const skipReason =
-              collectResult && collectResult.error
-                ? collectResult.error
-                : '采集未返回有效房型数据';
+              collectResult && collectResult.error ? collectResult.error : '采集未返回有效房型数据';
             skippedHotelCount++;
             items.push({
               hotelName,
@@ -874,7 +878,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
           }
 
           // Preserve old fields from existing records
-          const oldRoomTypes = new Set(existingHotels.map((h) => (h.room_type || '').trim()).filter(Boolean));
+          const oldRoomTypes = new Set(
+            existingHotels.map((h) => (h.room_type || '').trim()).filter(Boolean)
+          );
           const preservedByRoomType = new Map();
           for (const oldHotel of existingHotels) {
             const roomType = (oldHotel.room_type || '').trim();
@@ -882,10 +888,15 @@ async function refreshExistingCtripHotels(input, context = {}) {
           }
 
           const refreshedHotels = newHotels.map((newHotel) => {
-            const oldHotel = preservedByRoomType.get((newHotel.room_type || '').trim()) || firstHotel;
+            const oldHotel =
+              preservedByRoomType.get((newHotel.room_type || '').trim()) || firstHotel;
             const preserved = {};
             for (const field of PRESERVED_FIELDS_ON_REFRESH) {
-              if (oldHotel[field] !== undefined && oldHotel[field] !== null && oldHotel[field] !== '') {
+              if (
+                oldHotel[field] !== undefined &&
+                oldHotel[field] !== null &&
+                oldHotel[field] !== ''
+              ) {
                 preserved[field] = oldHotel[field];
               }
             }
@@ -904,7 +915,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
           });
 
           // Calculate deleted room types
-          const newRoomTypes = new Set(refreshedHotels.map((h) => (h.room_type || '').trim()).filter(Boolean));
+          const newRoomTypes = new Set(
+            refreshedHotels.map((h) => (h.room_type || '').trim()).filter(Boolean)
+          );
           let deletedForThisHotel = 0;
           for (const oldType of oldRoomTypes) {
             if (!newRoomTypes.has(oldType)) {
@@ -913,13 +926,17 @@ async function refreshExistingCtripHotels(input, context = {}) {
           }
 
           // Write using overwriteExistingGroup strategy
-          emit('refresh:item-write', `正在写入第 ${index + 1}/${totalHotelCount} 家的更新结果：${hotelName}`, {
-            index: index + 1,
-            total: totalHotelCount,
-            hotelName,
-            scope: 'item'
-          });
-          const writeResult = await hotelMerge.appendHotelsToStore(refreshedHotels, {
+          emit(
+            'refresh:item-write',
+            `正在写入第 ${index + 1}/${totalHotelCount} 家的更新结果：${hotelName}`,
+            {
+              index: index + 1,
+              total: totalHotelCount,
+              hotelName,
+              scope: 'item'
+            }
+          );
+          const _writeResult = await hotelMerge.appendHotelsToStore(refreshedHotels, {
             overwriteExistingGroup: true
           });
 
@@ -994,7 +1011,15 @@ async function refreshExistingCtripHotels(input, context = {}) {
         skippedHotelCount,
         items,
         message,
-        writeResult: { batchMode: true, appliedCount: updatedHotelCount, skippedCount: skippedHotelCount, items: items.map((item) => ({ skipped: item.status !== 'updated', reason: item.skipReason || '' })) }
+        writeResult: {
+          batchMode: true,
+          appliedCount: updatedHotelCount,
+          skippedCount: skippedHotelCount,
+          items: items.map((item) => ({
+            skipped: item.status !== 'updated',
+            reason: item.skipReason || ''
+          }))
+        }
       };
     } catch (error) {
       if (isTaskCancelled(error, context.signal)) {
