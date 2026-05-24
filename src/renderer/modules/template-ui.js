@@ -2,7 +2,7 @@
  * 模板管理 UI —— 模板列表展示、新建/编辑/删除、应用模板，以及模板同步事件。
  */
 
-import { state, rankingCache, TEMPLATE_FILTER_BATCH_SIZE } from './state.js';
+import { state, TEMPLATE_FILTER_BATCH_SIZE, setTemplates, markRankingCacheDirty } from './state.js';
 import {
   $,
   escapeHtml,
@@ -18,6 +18,10 @@ import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from
 import { isHotelInputPriorityActive } from './render-scheduler.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
+
+/**
+ * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
+ */
 
 /* ---- 打开/关闭模板弹窗 ---- */
 
@@ -90,8 +94,14 @@ export function renderTemplateList() {
 
 /* ---- 列表事件代理 ---- */
 
+/**
+ * @param {MouseEvent} event
+ */
 export function handleTemplateListClick(event) {
-  const actionButton = event.target.closest('button[data-action][data-id]');
+  const target = event.target instanceof Element ? event.target : null;
+  const actionButton = /** @type {HTMLButtonElement|null} */ (
+    target?.closest('button[data-action][data-id]') || null
+  );
   if (!actionButton) return;
 
   const action = actionButton.dataset.action;
@@ -159,6 +169,7 @@ export function cancelTemplateForm() {
 export async function saveTemplate() {
   const id = getValue('templateId');
 
+  /** @type {Partial<RawTemplateRecord>} */
   const template = {
     name: getValue('templateName').trim(),
     destination: getValue('templateDestination').trim(),
@@ -168,7 +179,7 @@ export async function saveTemplate() {
   };
 
   if (!template.name) {
-    const nameInput = $('templateName');
+    const nameInput = /** @type {HTMLInputElement|null} */ ($('templateName'));
     if (nameInput) {
       nameInput.focus();
       nameInput.style.borderColor = '#F53F3F';
@@ -195,7 +206,7 @@ export async function saveTemplate() {
       }
     } else {
       await window.electronAPI.addTemplate(template);
-      state.templates = await actions.loadTemplates();
+      setTemplates(await actions.loadTemplates());
       updateTemplateFilter();
       renderTemplateList();
     }
@@ -227,7 +238,7 @@ export async function deleteTemplate(id) {
     await actions.reloadAllData({ verbose: false });
     updateTemplateFilter();
     renderTemplateList();
-    rankingCache.invalidate();
+    markRankingCacheDirty();
     actions.renderHotelList();
     showNotification(
       `模板已删除${result.affectedHotelCount ? `，同步清理 ${result.affectedHotelCount} 家宾馆的模板关联` : ''}`,
@@ -251,7 +262,7 @@ export function applyTemplate(id) {
 /* ---- 侧栏模板筛选下拉 ---- */
 
 export function updateTemplateFilter(options = {}) {
-  const select = document.getElementById('filterTemplate');
+  const select = /** @type {HTMLSelectElement|null} */ (document.getElementById('filterTemplate'));
   if (!select) return;
 
   const currentValue = options.selectedValue ?? select.value;
@@ -272,7 +283,7 @@ export function updateTemplateFilter(options = {}) {
     for (let index = startIndex; index < endIndex; index++) {
       const template = state.templates[index];
       const option = document.createElement('option');
-      option.value = template.id;
+      option.value = String(template.id ?? '');
       option.textContent = template.name;
       fragment.appendChild(option);
     }

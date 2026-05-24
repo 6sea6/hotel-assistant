@@ -13,7 +13,7 @@
 
 /* ============ 模块导入 ============ */
 
-import { state } from './modules/state.js';
+import { state, setHotels, setTemplates, setSettings, setInitialized } from './modules/state.js';
 import { $, addEvent } from './modules/dom-helpers.js';
 
 import {
@@ -144,6 +144,11 @@ window.addEventListener('unhandledrejection', (event) => {
 
 /* ============ 统一页面动作绑定 ============ */
 
+/**
+ * @typedef {(event: MouseEvent, element: HTMLElement) => void|Promise<void>} ActionHandler
+ */
+
+/** @type {Record<string, ActionHandler>} */
 const ACTION_HANDLERS = {
   'open-ai-assistant': () => openAiAssistant(),
   'open-template-manager': () => openTemplateManager(),
@@ -220,12 +225,15 @@ const ACTION_HANDLERS = {
   'focus-ai-task-start-bar': () => focusAiTaskStartBar()
 };
 
+/**
+ * @param {MouseEvent} event
+ */
 function handleActionClick(event) {
-  const actionElement =
-    event.target && event.target.closest ? event.target.closest('[data-action]') : null;
+  const target = event.target instanceof Element ? event.target : null;
+  const actionElement = /** @type {HTMLElement|null} */ (target?.closest('[data-action]') || null);
   if (!actionElement) return;
 
-  const handler = ACTION_HANDLERS[actionElement.dataset.action];
+  const handler = ACTION_HANDLERS[actionElement.dataset.action || ''];
   if (!handler) return;
 
   event.preventDefault();
@@ -234,9 +242,13 @@ function handleActionClick(event) {
 
 /* ============ DOM 事件绑定 ============ */
 
+/**
+ * @param {KeyboardEvent} e
+ */
 function handleGlobalKeydown(e) {
   if (e.key !== 'Escape') return;
 
+  /** @type {Array<[string, () => void]>} */
   const closers = [
     ['hotelDetailsModal', closeHotelDetails],
     ['ruleDeleteModal', closeRuleDeleteModal],
@@ -263,17 +275,22 @@ function setupStaticFormListeners() {
   if (state.staticFormEventsBound) return;
 
   document.querySelectorAll('input[name="rankingMode"]').forEach((input) => {
+    const rankingInput = /** @type {HTMLInputElement} */ (input);
     input.addEventListener('change', () =>
-      changeRankingMode(input.dataset.rankingMode || input.value)
+      changeRankingMode(rankingInput.dataset.rankingMode || rankingInput.value)
     );
   });
 
   document.querySelectorAll('[data-weight-key]').forEach((input) => {
-    input.addEventListener('input', () => updateWeight(input.dataset.weightKey, input.value));
+    const weightInput = /** @type {HTMLInputElement} */ (input);
+    input.addEventListener('input', () =>
+      updateWeight(weightInput.dataset.weightKey, weightInput.value)
+    );
   });
 
   document.querySelectorAll('input[name="themeOption"]').forEach((input) => {
-    input.addEventListener('change', () => changeTheme(input.value));
+    const themeInput = /** @type {HTMLInputElement} */ (input);
+    input.addEventListener('change', () => changeTheme(themeInput.value));
   });
 
   addEvent('aiHotelUrlInput', 'input', handleAiTaskInputChange);
@@ -284,8 +301,12 @@ function setupStaticFormListeners() {
   addEvent('checkInDate', 'change', onCheckInChange);
   addEvent('checkOutDate', 'change', onCheckOutChange);
   addEvent('days', 'input', onDaysChange);
-  addEvent('ctripScore', 'input', (event) => validateScore(event.target));
-  addEvent('ctripScore', 'blur', (event) => formatScoreOnBlur(event.target));
+  addEvent('ctripScore', 'input', (event) => {
+    if (event.target instanceof HTMLInputElement) validateScore(event.target);
+  });
+  addEvent('ctripScore', 'blur', (event) => {
+    if (event.target instanceof HTMLInputElement) formatScoreOnBlur(event.target);
+  });
   addEvent('ruleDeletePrice', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
@@ -382,9 +403,9 @@ async function initializeApp() {
       templatesCount: loadedTemplates ? loadedTemplates.length : 0
     });
 
-    state.settings = loadedSettings || {};
-    state.hotels = loadedHotels || [];
-    state.templates = loadedTemplates || [];
+    setSettings(loadedSettings || {});
+    setHotels(loadedHotels || []);
+    setTemplates(loadedTemplates || []);
     await initializeWindowControls();
 
     requestAnimationFrame(() => {
@@ -402,7 +423,7 @@ async function initializeApp() {
       console.log('[初始化] 界面渲染完成');
     });
 
-    state.isInitialized = true;
+    setInitialized(true);
     console.log('[初始化] 应用初始化完成');
   } catch (error) {
     console.error('[初始化] 初始化失败:', error);

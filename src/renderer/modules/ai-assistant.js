@@ -52,7 +52,7 @@ function renderTaskConsole() {
 }
 
 function renderAiTemplateOptions() {
-  const select = $('aiTemplateSelect');
+  const select = /** @type {HTMLSelectElement|null} */ ($('aiTemplateSelect'));
   if (!select) return;
 
   const currentValue = select.value;
@@ -74,7 +74,7 @@ function renderAiTemplateOptions() {
 function setupAiTemplatePicker() {
   if (state.aiTemplatePickerBound) return;
 
-  const select = $('aiTemplateSelect');
+  const select = /** @type {HTMLSelectElement|null} */ ($('aiTemplateSelect'));
   if (!select) return;
 
   // 保护：如果 select 已被默认 auto 增强抢先，先销毁再用 existingElements 重新增强
@@ -243,9 +243,10 @@ function applyCtripUrlFilterSettingsToDom() {
     )
   );
   document.querySelectorAll('[data-star-level]').forEach((button) => {
-    const isSelected = selected.has(String(button.dataset.starLevel));
-    button.classList.toggle('is-selected', isSelected);
-    button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    const starButton = /** @type {HTMLElement} */ (button);
+    const isSelected = selected.has(String(starButton.dataset.starLevel));
+    starButton.classList.toggle('is-selected', isSelected);
+    starButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
   });
 }
 
@@ -433,10 +434,14 @@ async function isBackendTaskRunning() {
 function scheduleRunNextQueueTask(delayMs = 0) {
   if (delayMs > 0) {
     if (backendIdleRetryTimer) return;
-    backendIdleRetryTimer = globalThis.setTimeout(() => {
-      backendIdleRetryTimer = 0;
-      void runNextQueueTask();
-    }, delayMs);
+    backendIdleRetryTimer = /** @type {number} */ (
+      /** @type {unknown} */ (
+        globalThis.setTimeout(() => {
+          backendIdleRetryTimer = 0;
+          void runNextQueueTask();
+        }, delayMs)
+      )
+    );
     return;
   }
 
@@ -1020,7 +1025,7 @@ export function showAiTaskDetails() {
 }
 
 export function focusAiTaskStartBar() {
-  const input = $('aiHotelUrlInput');
+  const input = /** @type {HTMLInputElement|null} */ ($('aiHotelUrlInput'));
   if (input && !input.disabled) {
     input.focus();
     input.select();

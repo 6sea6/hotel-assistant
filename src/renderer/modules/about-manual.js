@@ -77,7 +77,7 @@ export async function openManual() {
 }
 
 export async function closeManual() {
-  const checkbox = $('dontShowManualAgain');
+  const checkbox = /** @type {HTMLInputElement|null} */ ($('dontShowManualAgain'));
   if (checkbox && checkbox.checked) {
     try {
       const result = await window.electronAPI.setSetting('showManualOnStartup', false);

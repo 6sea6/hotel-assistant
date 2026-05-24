@@ -14,6 +14,16 @@ import {
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
 
+/**
+ * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
+ */
+
+/**
+ * @param {string} id
+ * @returns {FormValueElement|null}
+ */
+const getFormValueElement = (id) => /** @type {FormValueElement|null} */ ($(id));
+
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
   dark: 'oak-brown',
@@ -93,22 +103,32 @@ export function applySettings() {
 
   weightMappings.forEach(({ key, id, valueId }) => {
     if (state.settings[key]) {
-      const weightEl = document.getElementById(id);
+      const weightEl = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
       const valueEl = document.getElementById(valueId);
-      if (weightEl) weightEl.value = state.settings[key];
-      if (valueEl) valueEl.textContent = state.settings[key];
+      if (weightEl) weightEl.value = String(state.settings[key]);
+      if (valueEl) valueEl.textContent = String(state.settings[key]);
     }
   });
 }
 
+/**
+ * @param {unknown} theme
+ * @returns {string}
+ */
 function normalizeThemeKey(theme) {
-  const normalizedTheme = THEME_ALIAS_MAP[theme] || theme;
+  const themeKey = String(theme || '');
+  const normalizedTheme = THEME_ALIAS_MAP[themeKey] || themeKey;
   return SUPPORTED_THEMES.has(normalizedTheme) ? normalizedTheme : 'totoro-blue';
 }
 
+/**
+ * @param {string} theme
+ * @returns {void}
+ */
 function syncThemePicker(theme) {
   document.querySelectorAll('input[name="themeOption"]').forEach((radio) => {
-    radio.checked = radio.value === theme;
+    const input = /** @type {HTMLInputElement} */ (radio);
+    input.checked = input.value === theme;
   });
 }
 
@@ -139,7 +159,7 @@ function applyThemeSelection(theme) {
 }
 
 function applyBooleanSettingToggle(settingKey, checkboxId, textId) {
-  const checkbox = document.getElementById(checkboxId);
+  const checkbox = /** @type {HTMLInputElement|null} */ (document.getElementById(checkboxId));
   const textEl = document.getElementById(textId);
   if (!checkbox || !textEl) {
     return;
@@ -254,9 +274,10 @@ function applyCtripStarLevelPills() {
     )
   );
   document.querySelectorAll('[data-star-level]').forEach((button) => {
-    const isSelected = selected.has(String(button.dataset.starLevel));
-    button.classList.toggle('is-selected', isSelected);
-    button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    const starButton = /** @type {HTMLElement} */ (button);
+    const isSelected = selected.has(String(starButton.dataset.starLevel));
+    starButton.classList.toggle('is-selected', isSelected);
+    starButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
   });
 }
 
@@ -276,41 +297,41 @@ function applyListPrefilterSettings() {
 
 function readListPrefilterFormValues() {
   const selectedStars = Array.from(document.querySelectorAll('[data-star-level].is-selected')).map(
-    (button) => button.dataset.starLevel
+    (button) => /** @type {HTMLElement} */ (button).dataset.starLevel
   );
   return {
     aiCtripPriceMin: normalizeListPrefilterSettingValue(
       'aiCtripPriceMin',
-      $('aiCtripPriceMin')?.value
+      getFormValueElement('aiCtripPriceMin')?.value
     ),
     aiCtripPriceMax: normalizeListPrefilterSettingValue(
       'aiCtripPriceMax',
-      $('aiCtripPriceMax')?.value
+      getFormValueElement('aiCtripPriceMax')?.value
     ),
     aiCtripStarLevels: normalizeListPrefilterSettingValue('aiCtripStarLevels', selectedStars),
     aiCtripSortMode: normalizeListPrefilterSettingValue(
       'aiCtripSortMode',
-      $('aiCtripSortMode')?.value
+      getFormValueElement('aiCtripSortMode')?.value
     ),
     aiCtripFreeCancel: normalizeListPrefilterSettingValue(
       'aiCtripFreeCancel',
-      Boolean($('aiCtripFreeCancel')?.checked)
+      Boolean(/** @type {HTMLInputElement|null} */ ($('aiCtripFreeCancel'))?.checked)
     ),
     aiCtripReviewCountMin: normalizeListPrefilterSettingValue(
       'aiCtripReviewCountMin',
-      $('aiCtripReviewCountMin')?.value
+      getFormValueElement('aiCtripReviewCountMin')?.value
     ),
     aiCtripScoreMin: normalizeListPrefilterSettingValue(
       'aiCtripScoreMin',
-      $('aiCtripScoreMin')?.value
+      getFormValueElement('aiCtripScoreMin')?.value
     ),
     aiListDesiredHotelCount: normalizeListPrefilterSettingValue(
       'aiListDesiredHotelCount',
-      $('aiListDesiredHotelCount')?.value
+      getFormValueElement('aiListDesiredHotelCount')?.value
     ),
     aiListExcludeHotelTypes: normalizeListPrefilterSettingValue(
       'aiListExcludeHotelTypes',
-      $('aiListExcludeHotelTypes')?.value
+      getFormValueElement('aiListExcludeHotelTypes')?.value
     )
   };
 }
@@ -343,7 +364,9 @@ async function persistListPrefilterSettings(nextSettings) {
 }
 
 export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
-  const checkbox = document.getElementById('includeFourPersonRoomsForThreePersonTemplate');
+  const checkbox = /** @type {HTMLInputElement|null} */ (
+    document.getElementById('includeFourPersonRoomsForThreePersonTemplate')
+  );
   const textEl = document.getElementById('includeFourPersonRoomsForThreePersonTemplateText');
   const isEnabled = Boolean(checkbox && checkbox.checked);
 
@@ -365,7 +388,9 @@ export async function toggleIncludeFourPersonRoomsForThreePersonTemplate() {
 }
 
 export async function toggleEnableCollectPerfLog() {
-  const checkbox = document.getElementById('enableCollectPerfLog');
+  const checkbox = /** @type {HTMLInputElement|null} */ (
+    document.getElementById('enableCollectPerfLog')
+  );
   const textEl = document.getElementById('enableCollectPerfLogText');
   const isEnabled = Boolean(checkbox && checkbox.checked);
 
@@ -387,7 +412,7 @@ export async function toggleEnableCollectPerfLog() {
 }
 
 export async function saveAmapApiKeySetting() {
-  const input = $('amapApiKeyInput');
+  const input = getFormValueElement('amapApiKeyInput');
   const nextValue = String(input ? input.value : '').trim();
   const previousValue = state.settings.amapApiKey || '';
 
@@ -404,8 +429,14 @@ export async function saveAmapApiKeySetting() {
   }
 }
 
+/**
+ * @param {Event} event
+ */
 export async function saveAiListPrefilterSetting(event) {
-  const input = event && event.target ? event.target : null;
+  const input =
+    event && event.target instanceof HTMLElement
+      ? /** @type {HTMLInputElement|HTMLSelectElement} */ (event.target)
+      : null;
   const key = input && input.dataset ? input.dataset.settingKey : '';
   if (!LIST_PREFILTER_SETTING_KEYS.has(key)) {
     return;
@@ -414,9 +445,11 @@ export async function saveAiListPrefilterSetting(event) {
   const previousValue = state.settings[key] ?? '';
   const rawValue =
     key === 'aiCtripFreeCancel'
-      ? input.checked
+      ? /** @type {HTMLInputElement} */ (input).checked
       : key === 'aiCtripStarLevels'
-        ? Array.from(input.selectedOptions || []).map((option) => option.value)
+        ? Array.from(/** @type {HTMLSelectElement} */ (input).selectedOptions || []).map(
+            (option) => option.value
+          )
         : input.value;
   const nextValue = normalizeListPrefilterSettingValue(key, rawValue);
 
@@ -528,7 +561,7 @@ export async function changeDataPath(eventLike) {
 /* ---- 应用图标 ---- */
 
 export async function loadAppIconState() {
-  const iconPathInput = $('appIconPathInput');
+  const iconPathInput = getFormValueElement('appIconPathInput');
   const iconStatus = $('appIconStatus');
   if (!iconPathInput || !iconStatus) return;
 
@@ -543,7 +576,7 @@ export async function loadAppIconState() {
 }
 
 export function applyAppIconState(iconState) {
-  const iconPathInput = $('appIconPathInput');
+  const iconPathInput = getFormValueElement('appIconPathInput');
   const iconStatus = $('appIconStatus');
   if (!iconPathInput || !iconStatus) return;
 
@@ -791,7 +824,7 @@ export async function refreshCurrentPage(options = {}) {
 }
 
 function setRefreshButtonState(isRefreshing) {
-  const refreshButton = $('refreshPageBtn');
+  const refreshButton = /** @type {HTMLButtonElement|null} */ ($('refreshPageBtn'));
   if (!refreshButton) return;
   refreshButton.disabled = isRefreshing;
   refreshButton.classList.toggle('is-refreshing', isRefreshing);

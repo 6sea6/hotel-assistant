@@ -30,6 +30,9 @@
  * @property {Set<EntityId>} selectedHotels
  * @property {boolean} batchDeleteInProgress
  * @property {boolean} manualRefreshInProgress
+ * @property {boolean} staticFormEventsBound
+ * @property {boolean} globalActionEventsBound
+ * @property {boolean} globalKeyEventsBound
  * @property {boolean} hotelListEventsBound
  * @property {boolean} templateListEventsBound
  * @property {boolean} hotelDetailsEventsBound
@@ -70,6 +73,9 @@ export const state = {
   selectedHotels: new Set(),
   batchDeleteInProgress: false,
   manualRefreshInProgress: false,
+  staticFormEventsBound: false,
+  globalActionEventsBound: false,
+  globalKeyEventsBound: false,
   hotelListEventsBound: false,
   templateListEventsBound: false,
   hotelDetailsEventsBound: false,
@@ -141,6 +147,14 @@ export function setTemplates(templates) {
  */
 export function setSettings(settings) {
   state.settings = settings;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+export function setInitialized(value) {
+  state.isInitialized = value;
 }
 
 /**
