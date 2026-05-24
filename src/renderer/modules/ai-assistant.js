@@ -1,4 +1,18 @@
-import { state } from './state.js';
+import {
+  state,
+  setAiTaskInProgress,
+  setAiAssistantInitialized,
+  setAiTaskEvents,
+  pushAiTaskEvent,
+  setAiTaskConsole,
+  resetAiTaskConsole,
+  pushAiTaskQueueItem,
+  removeAiTaskQueueItem,
+  setAiSelectedQueueTaskId,
+  setAiQueueSelectionPinned,
+  bumpAiTaskQueueCounter,
+  resetAiTaskQueueState
+} from './state.js';
 import { $, escapeHtml, getValue, setChecked, setValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { actions } from './actions.js';
@@ -17,6 +31,19 @@ import {
   getCustomSelectInstance
 } from './custom-select.js';
 
+/**
+ * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ * @typedef {import('../../shared/contracts').AiTaskKind} AiTaskKind
+ * @typedef {import('../../shared/contracts').AiTaskEvent} AiTaskEvent
+ * @typedef {import('../../shared/contracts').AiTaskConsoleState} AiTaskConsoleState
+ * @typedef {import('../../shared/contracts').AiTaskQueueItem} AiTaskQueueItem
+ * @typedef {import('../../shared/contracts').AiListFilters} AiListFilters
+ * @typedef {import('../../shared/contracts').AiListUrlFilters} AiListUrlFilters
+ * @typedef {import('../../shared/contracts').AiTaskPayload} AiTaskPayload
+ * @typedef {import('../../shared/contracts').AiTaskBackendResult} AiTaskBackendResult
+ * @typedef {import('../../shared/contracts').CtripUrlFilterSettings} CtripUrlFilterSettings
+ */
+
 const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
 let activeCollectTaskId = '';
 let backendIdleRetryTimer = 0;
@@ -29,6 +56,9 @@ function setPageVisible(id, visible) {
   }
 }
 
+/**
+ * @returns {AiTaskConsoleState}
+ */
 function createEmptyTaskConsole() {
   return {
     submitted: false,
@@ -138,6 +168,11 @@ function isCtripListUrl(url) {
   }
 }
 
+/**
+ * @param {unknown} value
+ * @param {{integer?: boolean, min?: number}} [options]
+ * @returns {number|null}
+ */
 function parseOptionalNumber(value, options = {}) {
   const text = String(value || '').trim();
   if (!text) return null;
@@ -149,6 +184,10 @@ function parseOptionalNumber(value, options = {}) {
   return number;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
 function parseKeywordInput(value) {
   return String(value || '')
     .split(/[,，;；\n\r|]+/)
@@ -156,6 +195,11 @@ function parseKeywordInput(value) {
     .filter(Boolean);
 }
 
+/**
+ * @param {unknown} value
+ * @param {{min?: number, allowed?: number[]}} [options]
+ * @returns {number|null}
+ */
 function parseIntegerSetting(value, options = {}) {
   const number = parseOptionalNumber(value, {
     integer: true,
@@ -166,11 +210,19 @@ function parseIntegerSetting(value, options = {}) {
   return number;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number|null}
+ */
 function parseScoreSetting(value) {
   const number = parseOptionalNumber(value);
   return [4, 4.5, 4.7].includes(number) ? number : null;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number|'max'|null}
+ */
 function parsePriceMaxSetting(value) {
   const text = String(value || '')
     .trim()
@@ -180,7 +232,12 @@ function parsePriceMaxSetting(value) {
   return parseIntegerSetting(text, { min: 0 });
 }
 
+/**
+ * @param {CtripUrlFilterSettings} [filters]
+ * @returns {CtripUrlFilterSettings}
+ */
 function compactActiveCtripUrlFilters(filters = {}) {
+  /** @type {CtripUrlFilterSettings} */
   const active = {};
   const hasPriceMin = filters.priceMin !== null && filters.priceMin !== undefined;
   const hasPriceMax = filters.priceMax !== null && filters.priceMax !== undefined;
@@ -203,6 +260,10 @@ function hasActiveCtripUrlFilterSettings() {
   return Object.keys(readCtripUrlFilterSettings({ activeOnly: true })).length > 0;
 }
 
+/**
+ * @param {{activeOnly?: boolean}} [options]
+ * @returns {CtripUrlFilterSettings}
+ */
 export function readCtripUrlFilterSettings(options = {}) {
   const settings = state.settings || {};
   const starLevels = Array.isArray(settings.aiCtripStarLevels)
@@ -314,6 +375,10 @@ export async function syncCtripListUrlSettingsFromInput() {
   }
 }
 
+/**
+ * @param {{activeOnly?: boolean, mode?: string}} [options]
+ * @returns {Promise<string>}
+ */
 export async function syncAiCtripListUrlFromSettings(options = {}) {
   const url = getSubmittedUrl();
   const inputText = getValue('aiHotelUrlInput');
@@ -354,6 +419,9 @@ export function handleAiTaskInputChange() {
   }, 350);
 }
 
+/**
+ * @returns {AiListFilters}
+ */
 function readListFilterForm() {
   const settings = state.settings || {};
   const desiredHotelCount = parseOptionalNumber(settings.aiListDesiredHotelCount, {
@@ -361,6 +429,7 @@ function readListFilterForm() {
     min: 1
   });
   const excludeHotelTypes = parseKeywordInput(settings.aiListExcludeHotelTypes);
+  /** @type {AiListFilters} */
   const listFilters = {};
 
   if (desiredHotelCount !== null) listFilters.desiredHotelCount = desiredHotelCount;
@@ -369,6 +438,10 @@ function readListFilterForm() {
   return listFilters;
 }
 
+/**
+ * @param {AiTaskQueueItem} task
+ * @returns {AiTaskPayload}
+ */
 function buildTaskPayload(task) {
   const listFilters =
     task.listFilters && typeof task.listFilters === 'object' ? task.listFilters : {};
@@ -392,20 +465,31 @@ function buildTaskPayload(task) {
   };
 }
 
+/**
+ * @returns {AiTaskQueueItem|null}
+ */
 function getRunningQueueTask() {
   return (state.aiTaskQueue || []).find((task) => task.status === 'running') || null;
 }
 
+/**
+ * @param {AiTaskQueueItem|null} task
+ * @returns {void}
+ */
 function markAiTaskInProgress(task) {
   activeCollectTaskId = task && task.id ? String(task.id) : '';
-  state.aiTaskInProgress = true;
+  setAiTaskInProgress(true);
 }
 
+/**
+ * @param {AiTaskQueueItem|null} task
+ * @returns {void}
+ */
 function clearAiTaskInProgressForTask(task) {
   const taskId = task && task.id ? String(task.id) : '';
   if (!activeCollectTaskId || activeCollectTaskId === taskId) {
     activeCollectTaskId = '';
-    state.aiTaskInProgress = false;
+    setAiTaskInProgress(false);
   }
 }
 
@@ -414,7 +498,7 @@ function releaseStaleAiTaskInProgress() {
   if (!state.aiTaskInProgress) return;
 
   activeCollectTaskId = '';
-  state.aiTaskInProgress = false;
+  setAiTaskInProgress(false);
 }
 
 async function isBackendTaskRunning() {
@@ -450,17 +534,32 @@ function scheduleRunNextQueueTask(delayMs = 0) {
   }, 0);
 }
 
+/**
+ * @returns {AiTaskQueueItem|null}
+ */
 function getSelectedQueueTask() {
   const selectedId = String(state.aiSelectedQueueTaskId || '');
   return (state.aiTaskQueue || []).find((task) => String(task.id) === selectedId) || null;
 }
 
+/**
+ * @param {string|undefined|null} taskId
+ * @returns {AiTaskQueueItem|null}
+ */
 function findQueueTaskByBackendTaskId(taskId) {
   const id = String(taskId || '');
   if (!id) return null;
   return (state.aiTaskQueue || []).find((task) => String(task.backendTaskId || '') === id) || null;
 }
 
+/**
+ * @param {TemplateRecord|null} template
+ * @param {string} url
+ * @param {AiListFilters} [listFilters]
+ * @param {AiListUrlFilters} [listUrlFilters]
+ * @param {AiTaskKind} [taskKind]
+ * @returns {AiTaskQueueItem}
+ */
 function createQueueTask(
   template,
   url,
@@ -468,12 +567,12 @@ function createQueueTask(
   listUrlFilters = {},
   taskKind = 'collect'
 ) {
-  state.aiTaskQueueCounter = Number(state.aiTaskQueueCounter || 0) + 1;
-  const displayIndex = String(state.aiTaskQueueCounter).padStart(2, '0');
+  const queueIndex = bumpAiTaskQueueCounter();
+  const displayIndex = String(queueIndex).padStart(2, '0');
   const isRefresh = taskKind === 'refresh-data';
   const title = isRefresh ? '更新整个程序目前的宾馆数据' : formatAiTemplateLabel(template);
   return {
-    id: `queue-${Date.now()}-${state.aiTaskQueueCounter}`,
+    id: `queue-${Date.now()}-${queueIndex}`,
     displayIndex,
     url,
     templateId: isRefresh ? '' : String(template.id ?? ''),
@@ -498,11 +597,15 @@ function createQueueTask(
   };
 }
 
+/**
+ * @param {AiTaskQueueItem|null} task
+ * @returns {void}
+ */
 function syncDisplayedTask(task) {
   if (!task) return;
-  state.aiSelectedQueueTaskId = task.id;
-  state.aiTaskConsole = task.console || createEmptyTaskConsole();
-  state.aiTaskEvents = task.events || [];
+  setAiSelectedQueueTaskId(task.id || '');
+  setAiTaskConsole(task.console || createEmptyTaskConsole());
+  setAiTaskEvents(task.events || []);
 }
 
 function shouldAutoDisplayStartedTask(task) {
@@ -514,6 +617,12 @@ function shouldAutoDisplayStartedTask(task) {
   );
 }
 
+/**
+ * @param {TemplateRecord|null} template
+ * @param {string} url
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @returns {void}
+ */
 function startTaskConsole(template, url, queueTask = null) {
   const startedAt = new Date().toISOString();
   const events = [];
@@ -538,26 +647,36 @@ function startTaskConsole(template, url, queueTask = null) {
     queueTask.events = events;
     queueTask.console = consoleState;
     if (shouldAutoDisplayStartedTask(queueTask)) {
-      state.aiQueueSelectionPinned = false;
+      setAiQueueSelectionPinned(false);
       syncDisplayedTask(queueTask);
     }
   } else {
-    state.aiTaskEvents = events;
-    state.aiTaskConsole = consoleState;
+    setAiTaskEvents(events);
+    setAiTaskConsole(consoleState);
   }
   renderTaskConsole();
 }
 
+/**
+ * @param {AiTaskBackendResult} result
+ * @param {string} reply
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @returns {void}
+ */
 function finishTaskConsole(result, reply, queueTask = null) {
   const collectToolResult = getCollectToolResult(result);
   const taskStatus = result && result.taskStatus ? result.taskStatus : {};
   const baseConsole = queueTask && queueTask.console ? queueTask.console : state.aiTaskConsole;
+  const collectResult = /** @type {AiTaskConsoleState['collectResult']} */ (
+    result.collectResult || (collectToolResult ? collectToolResult.result : null)
+  );
+  /** @type {AiTaskConsoleState} */
   const consoleState = {
     ...baseConsole,
     taskId: taskStatus.id || baseConsole.taskId || '',
     endedAt: taskStatus.finishedAt || new Date().toISOString(),
     result,
-    collectResult: result.collectResult || (collectToolResult ? collectToolResult.result : null),
+    collectResult,
     error: null,
     reply
   };
@@ -568,16 +687,25 @@ function finishTaskConsole(result, reply, queueTask = null) {
     queueTask.resultSummary = result.message || reply || '采集任务完成';
     queueTask.console = consoleState;
     if (String(state.aiSelectedQueueTaskId) === String(queueTask.id)) {
-      state.aiTaskConsole = consoleState;
-      state.aiTaskEvents = queueTask.events || [];
+      setAiTaskConsole(consoleState);
+      setAiTaskEvents(queueTask.events || []);
     }
   } else {
-    state.aiTaskConsole = consoleState;
+    setAiTaskConsole(consoleState);
   }
 }
 
+/**
+ * @param {Error|string|unknown} error
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @returns {void}
+ */
 function failTaskConsole(error, queueTask = null) {
-  const errorMessage = error && error.message ? error.message : String(error || '任务执行失败');
+  const errorLike = /** @type {{message?: string}|null} */ (
+    error && typeof error === 'object' ? error : null
+  );
+  const errorMessage =
+    errorLike && errorLike.message ? errorLike.message : String(error || '任务执行失败');
   const baseConsole = queueTask && queueTask.console ? queueTask.console : state.aiTaskConsole;
   const consoleState = {
     ...baseConsole,
@@ -592,11 +720,11 @@ function failTaskConsole(error, queueTask = null) {
     queueTask.resultSummary = errorMessage;
     queueTask.console = consoleState;
     if (String(state.aiSelectedQueueTaskId) === String(queueTask.id)) {
-      state.aiTaskConsole = consoleState;
-      state.aiTaskEvents = queueTask.events || [];
+      setAiTaskConsole(consoleState);
+      setAiTaskEvents(queueTask.events || []);
     }
   } else {
-    state.aiTaskConsole = consoleState;
+    setAiTaskConsole(consoleState);
   }
 }
 
@@ -639,6 +767,11 @@ function showTaskCancellationNotificationOnce(queueTask = null) {
   showNotification('采集任务已取消', 'warning');
 }
 
+/**
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @param {string} [message]
+ * @returns {void}
+ */
 function cancelTaskConsole(queueTask = null, message = '任务已取消') {
   const baseConsole = queueTask && queueTask.console ? queueTask.console : state.aiTaskConsole;
   const endedAt = new Date().toISOString();
@@ -669,14 +802,14 @@ function cancelTaskConsole(queueTask = null, message = '任务已取消') {
     }
     queueTask.console = consoleState;
     if (String(state.aiSelectedQueueTaskId) === String(queueTask.id)) {
-      state.aiTaskConsole = consoleState;
-      state.aiTaskEvents = queueTask.events || [];
+      setAiTaskConsole(consoleState);
+      setAiTaskEvents(queueTask.events || []);
     }
   } else {
-    state.aiTaskConsole = consoleState;
-    state.aiTaskEvents = state.aiTaskEvents || [];
+    setAiTaskConsole(consoleState);
+    setAiTaskEvents(state.aiTaskEvents || []);
     if (!state.aiTaskEvents.some((event) => event.type === 'task:cancel')) {
-      state.aiTaskEvents.push(cancelEvent);
+      pushAiTaskEvent(cancelEvent);
     }
   }
 }
@@ -702,21 +835,32 @@ function isDuplicateActiveUrl(url) {
   );
 }
 
+/**
+ * @param {TemplateRecord} template
+ * @param {string} url
+ * @param {AiListFilters} [listFilters]
+ * @param {AiListUrlFilters} [listUrlFilters]
+ * @returns {AiTaskQueueItem|null}
+ */
 function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
   if (isDuplicateActiveUrl(url)) {
     showNotification('该链接已在任务队列中', 'warning');
     return null;
   }
   const task = createQueueTask(template, url, listFilters, listUrlFilters);
-  state.aiTaskQueue.push(task);
+  pushAiTaskQueueItem(task);
   if (!state.aiSelectedQueueTaskId) {
-    state.aiSelectedQueueTaskId = task.id;
-    state.aiQueueSelectionPinned = false;
+    setAiSelectedQueueTaskId(task.id || '');
+    setAiQueueSelectionPinned(false);
   }
   renderTaskConsole();
   return task;
 }
 
+/**
+ * @param {AiTaskQueueItem} task
+ * @returns {Promise<void>}
+ */
 async function executeCollectTask(task) {
   markAiTaskInProgress(task);
   startTaskConsole(task.template, task.url, task);
@@ -768,6 +912,9 @@ async function executeCollectTask(task) {
   }
 }
 
+/**
+ * @returns {Promise<void>}
+ */
 async function runNextQueueTask() {
   if (queueStartCheckInProgress) return;
   if (getRunningQueueTask()) return;
@@ -810,7 +957,9 @@ export function closeAiAssistant() {
 
 async function initializeAiAssistant() {
   if (!state.aiAssistantInitialized) {
-    state.aiTaskConsole = state.aiTaskConsole || createEmptyTaskConsole();
+    if (!state.aiTaskConsole) {
+      setAiTaskConsole(createEmptyTaskConsole());
+    }
     window.electronAPI.ai.onTaskEvent((event) => {
       const task = findQueueTaskByBackendTaskId(event.taskId) || getRunningQueueTask();
       if (task) {
@@ -835,15 +984,15 @@ async function initializeAiAssistant() {
         }
         task.currentStep = event.message || task.currentStep || '';
         if (String(state.aiSelectedQueueTaskId) === String(task.id)) {
-          state.aiTaskEvents = task.events;
-          state.aiTaskConsole = task.console;
+          setAiTaskEvents(task.events);
+          setAiTaskConsole(task.console || createEmptyTaskConsole());
         }
       } else {
-        state.aiTaskEvents.push(event);
+        pushAiTaskEvent(event);
       }
       renderTaskConsole();
     });
-    state.aiAssistantInitialized = true;
+    setAiAssistantInitialized(true);
   }
 
   if (!state.templates || state.templates.length === 0) {
@@ -857,6 +1006,9 @@ async function initializeAiAssistant() {
   renderTaskConsole();
 }
 
+/**
+ * @returns {Promise<void>}
+ */
 export async function enqueueAiCollectTask() {
   const template = findSelectedAiTemplate();
   if (!template) {
@@ -883,6 +1035,9 @@ export async function enqueueAiCollectTask() {
   await runNextQueueTask();
 }
 
+/**
+ * @returns {Promise<void>}
+ */
 export async function cancelAiTask() {
   const runningTask = getRunningQueueTask();
   if (runningTask) {
@@ -909,76 +1064,88 @@ export function handleAiTaskInputKeydown(event) {
   }
 }
 
+/**
+ * @returns {void}
+ */
 export function clearAiTaskRecords() {
   const runningTask = getRunningQueueTask();
   if (runningTask) {
-    state.aiTaskQueue = [runningTask];
-    state.aiQueueSelectionPinned = false;
+    resetAiTaskQueueState({ keepRunningTask: true });
     syncDisplayedTask(runningTask);
     showNotification('当前任务仍在运行，已清空其余队列记录', 'warning');
   } else {
-    state.aiTaskQueue = [];
-    state.aiSelectedQueueTaskId = '';
-    state.aiQueueSelectionPinned = false;
-    state.aiTaskEvents = [];
-    state.aiTaskConsole = createEmptyTaskConsole();
+    resetAiTaskQueueState();
+    setAiTaskEvents([]);
+    resetAiTaskConsole();
   }
   setValue('aiHotelUrlInput', '');
   renderTaskConsole();
 }
 
+/**
+ * @returns {void}
+ */
 export function clearAiTaskQueue() {
   const runningTask = getRunningQueueTask();
-  state.aiTaskQueue = runningTask ? [runningTask] : [];
+  resetAiTaskQueueState({ keepRunningTask: Boolean(runningTask) });
   if (runningTask) {
-    state.aiQueueSelectionPinned = false;
     syncDisplayedTask(runningTask);
   } else {
-    state.aiSelectedQueueTaskId = '';
-    state.aiQueueSelectionPinned = false;
-    state.aiTaskEvents = [];
-    state.aiTaskConsole = createEmptyTaskConsole();
+    setAiTaskEvents([]);
+    resetAiTaskConsole();
   }
   renderTaskConsole();
 }
 
+/**
+ * @param {string} taskId
+ * @returns {void}
+ */
 export function selectAiQueueTask(taskId) {
   const task = (state.aiTaskQueue || []).find((item) => String(item.id) === String(taskId));
   if (!task) return;
-  state.aiQueueSelectionPinned = true;
+  setAiQueueSelectionPinned(true);
   syncDisplayedTask(task);
   renderTaskConsole();
 }
 
+/**
+ * @param {string} taskId
+ * @returns {void}
+ */
 export function removeAiQueueTask(taskId) {
   const task = (state.aiTaskQueue || []).find((item) => String(item.id) === String(taskId));
   if (!task || task.status === 'running') return;
-  state.aiTaskQueue = state.aiTaskQueue.filter((item) => String(item.id) !== String(taskId));
+  removeAiTaskQueueItem(String(taskId));
   if (String(state.aiSelectedQueueTaskId) === String(taskId)) {
     const runningTask = getRunningQueueTask();
     const fallback = runningTask || state.aiTaskQueue[0] || null;
     if (fallback) {
-      state.aiQueueSelectionPinned = false;
+      setAiQueueSelectionPinned(false);
       syncDisplayedTask(fallback);
     } else {
-      state.aiSelectedQueueTaskId = '';
-      state.aiQueueSelectionPinned = false;
-      state.aiTaskConsole = createEmptyTaskConsole();
-      state.aiTaskEvents = [];
+      setAiSelectedQueueTaskId('');
+      setAiQueueSelectionPinned(false);
+      resetAiTaskConsole();
+      setAiTaskEvents([]);
     }
   }
   renderTaskConsole();
 }
 
+/**
+ * @param {string} taskId
+ * @returns {void}
+ */
 export function retryAiQueueTask(taskId) {
   const sourceTask = (state.aiTaskQueue || []).find((item) => String(item.id) === String(taskId));
   if (!sourceTask) return;
   if (sourceTask.status === 'running') return;
   if (sourceTask.status === 'waiting') {
-    state.aiTaskQueue = state.aiTaskQueue.filter((item) => String(item.id) !== String(taskId));
-    state.aiTaskQueue.push(sourceTask);
-    state.aiSelectedQueueTaskId = sourceTask.id;
-    state.aiQueueSelectionPinned = false;
+    removeAiTaskQueueItem(String(taskId));
+    pushAiTaskQueueItem(sourceTask);
+    setAiSelectedQueueTaskId(sourceTask.id || '');
+    setAiQueueSelectionPinned(false);
     renderTaskConsole();
     showNotification('已移到队列末尾', 'success');
     runNextQueueTask();
@@ -990,9 +1157,9 @@ export function retryAiQueueTask(taskId) {
     sourceTask.listFilters || {},
     sourceTask.listUrlFilters || {}
   );
-  state.aiTaskQueue.push(task);
-  state.aiSelectedQueueTaskId = task.id;
-  state.aiQueueSelectionPinned = false;
+  pushAiTaskQueueItem(task);
+  setAiSelectedQueueTaskId(task.id || '');
+  setAiQueueSelectionPinned(false);
   renderTaskConsole();
   showNotification('已重新加入队列', 'success');
   runNextQueueTask();
@@ -1032,6 +1199,9 @@ export function focusAiTaskStartBar() {
   }
 }
 
+/**
+ * @returns {Promise<void>}
+ */
 export async function enqueueRefreshHotelDataTask() {
   const runningTask = getRunningQueueTask();
   if (runningTask) {
@@ -1040,10 +1210,10 @@ export async function enqueueRefreshHotelDataTask() {
   }
 
   const task = createQueueTask(null, '', {}, {}, 'refresh-data');
-  state.aiTaskQueue.push(task);
+  pushAiTaskQueueItem(task);
   if (!state.aiSelectedQueueTaskId) {
-    state.aiSelectedQueueTaskId = task.id;
-    state.aiQueueSelectionPinned = false;
+    setAiSelectedQueueTaskId(task.id || '');
+    setAiQueueSelectionPinned(false);
   }
   renderTaskConsole();
   showNotification('已创建更新数据任务，准备开始', 'success');

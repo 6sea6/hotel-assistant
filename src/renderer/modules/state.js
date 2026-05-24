@@ -15,6 +15,9 @@
  * @typedef {import('../../shared/contracts').EntityId} EntityId
  * @typedef {'card'|'list'} ViewMode
  * @typedef {Record<string, string|number|boolean|null|undefined>} CurrentFilters
+ * @typedef {object} ResetAiTaskQueueStateOptions
+ * @property {boolean} [keepRunningTask]
+ * @property {boolean} [resetCounter]
  */
 
 /**
@@ -60,6 +63,26 @@
  * @property {boolean} [aiTemplatePickerBound]
  */
 
+/**
+ * @returns {AiTaskConsoleState}
+ */
+function createDefaultAiTaskConsole() {
+  return {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    taskId: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: '',
+    taskKind: 'collect'
+  };
+}
+
 /** @type {RendererState} */
 export const state = {
   hotels: [],
@@ -91,18 +114,7 @@ export const state = {
 
   // 采集助手
   aiTaskEvents: [],
-  aiTaskConsole: {
-    submitted: false,
-    template: null,
-    templateLabel: '',
-    hotelUrl: '',
-    startedAt: '',
-    endedAt: '',
-    result: null,
-    collectResult: null,
-    error: null,
-    reply: ''
-  },
+  aiTaskConsole: createDefaultAiTaskConsole(),
   aiProviderPresets: [],
   aiProviderConfig: null,
   aiAssistantInitialized: false,
@@ -239,6 +251,140 @@ export function setPendingRenderInteractionFirst(value) {
  */
 export function setHotelNameFilterOptionSignature(signature) {
   state.hotelNameFilterOptionSignature = signature;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+export function setAiTaskInProgress(value) {
+  state.aiTaskInProgress = value;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+export function setAiAssistantInitialized(value) {
+  state.aiAssistantInitialized = value;
+}
+
+/**
+ * @param {AiTaskEvent[]} events
+ * @returns {void}
+ */
+export function setAiTaskEvents(events) {
+  state.aiTaskEvents = events;
+}
+
+/**
+ * @param {AiTaskEvent} event
+ * @returns {number}
+ */
+export function pushAiTaskEvent(event) {
+  return state.aiTaskEvents.push(event);
+}
+
+/**
+ * @param {AiTaskConsoleState} consoleState
+ * @returns {void}
+ */
+export function setAiTaskConsole(consoleState) {
+  state.aiTaskConsole = consoleState;
+}
+
+/**
+ * @returns {AiTaskConsoleState}
+ */
+export function resetAiTaskConsole() {
+  state.aiTaskConsole = createDefaultAiTaskConsole();
+  return state.aiTaskConsole;
+}
+
+/**
+ * @param {AiTaskQueueItem[]} queue
+ * @returns {void}
+ */
+export function setAiTaskQueue(queue) {
+  state.aiTaskQueue = queue;
+}
+
+/**
+ * @param {AiTaskQueueItem} task
+ * @returns {AiTaskQueueItem}
+ */
+export function pushAiTaskQueueItem(task) {
+  state.aiTaskQueue.push(task);
+  return task;
+}
+
+/**
+ * @param {string} taskId
+ * @param {(task: AiTaskQueueItem) => AiTaskQueueItem} updater
+ * @returns {AiTaskQueueItem|null}
+ */
+export function replaceAiTaskQueueItem(taskId, updater) {
+  const index = state.aiTaskQueue.findIndex((task) => String(task.id) === String(taskId));
+  if (index < 0) return null;
+
+  const nextTask = updater(state.aiTaskQueue[index]);
+  state.aiTaskQueue[index] = nextTask;
+  return nextTask;
+}
+
+/**
+ * @param {string} taskId
+ * @returns {AiTaskQueueItem|null}
+ */
+export function removeAiTaskQueueItem(taskId) {
+  const index = state.aiTaskQueue.findIndex((task) => String(task.id) === String(taskId));
+  if (index < 0) return null;
+
+  const [removedTask] = state.aiTaskQueue.splice(index, 1);
+  return removedTask || null;
+}
+
+/**
+ * @param {string} taskId
+ * @returns {void}
+ */
+export function setAiSelectedQueueTaskId(taskId) {
+  state.aiSelectedQueueTaskId = taskId;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+export function setAiQueueSelectionPinned(value) {
+  state.aiQueueSelectionPinned = value;
+}
+
+/**
+ * @returns {number}
+ */
+export function bumpAiTaskQueueCounter() {
+  state.aiTaskQueueCounter = Number(state.aiTaskQueueCounter || 0) + 1;
+  return state.aiTaskQueueCounter;
+}
+
+/**
+ * @param {ResetAiTaskQueueStateOptions} [options]
+ * @returns {void}
+ */
+export function resetAiTaskQueueState(options = {}) {
+  const keepRunningTask = Boolean(options.keepRunningTask);
+  const runningTask = keepRunningTask
+    ? state.aiTaskQueue.find((task) => task.status === 'running') || null
+    : null;
+
+  state.aiTaskQueue = runningTask ? [runningTask] : [];
+  state.aiSelectedQueueTaskId = runningTask && runningTask.id ? String(runningTask.id) : '';
+  state.aiQueueSelectionPinned = false;
+
+  if (options.resetCounter) {
+    state.aiTaskQueueCounter = 0;
+  }
 }
 
 /* ---- 常量 ---- */

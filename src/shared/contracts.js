@@ -13,11 +13,130 @@
  */
 
 /**
+ * Renderer-visible AI task kind. The first two values are the known queue
+ * modes; string keeps compatibility with backend experiments.
+ *
  * @typedef {'collect'|'refresh-data'|string} AiTaskKind
  */
 
 /**
+ * Renderer-visible AI task queue status. Known values are listed, while string
+ * keeps older or backend-specific states type-compatible.
+ *
  * @typedef {'waiting'|'running'|'completed'|'failed'|'cancelled'|string} AiTaskQueueStatus
+ */
+
+/**
+ * URL-level filters understood by the Ctrip list URL parser/builder.
+ *
+ * @typedef {object} CtripUrlFilterSettings
+ * @property {number|null} [priceMin]
+ * @property {number|'max'|null} [priceMax]
+ * @property {number[]} [starLevels]
+ * @property {'popularity'|'price_low'|'review_high'|string|null} [sortMode]
+ * @property {boolean} [freeCancel]
+ * @property {100|200|500|number|null} [reviewCountMin]
+ * @property {4|4.5|4.7|number|null} [ctripScoreMin]
+ */
+
+/**
+ * Renderer form filters that are passed to the AI collection backend before
+ * writing a hotel record.
+ *
+ * @typedef {object} AiListFilters
+ * @property {number} [desiredHotelCount]
+ * @property {string[]} [excludeHotelTypes]
+ */
+
+/**
+ * Parsed or generated Ctrip list URL filters. Extra fields cover parser
+ * metadata that is useful to the renderer but not part of the canonical
+ * settings shape.
+ *
+ * @typedef {CtripUrlFilterSettings & {
+ *   knownSettings?: CtripUrlFilterSettings,
+ *   detectedKnownFilterKeys?: string[],
+ *   listFilterParts?: string[],
+ *   nativeFilters?: Record<string, unknown>
+ * }} AiListUrlFilters
+ */
+
+/**
+ * @typedef {Record<string, unknown> & {
+ *   id?: string,
+ *   status?: AiTaskQueueStatus,
+ *   startedAt?: string,
+ *   finishedAt?: string,
+ *   events?: AiTaskEvent[]
+ * }} AiTaskBackendStatus
+ */
+
+/**
+ * @typedef {Record<string, unknown> & {
+ *   success?: boolean,
+ *   hotelName?: string,
+ *   eligibleCount?: number|string,
+ *   outputPath?: string,
+ *   writeResult?: unknown,
+ *   latestApplyResult?: Record<string, unknown>
+ * }} AiCollectResult
+ */
+
+/**
+ * @typedef {Record<string, unknown> & {
+ *   name?: string,
+ *   result?: AiCollectResult|Record<string, unknown>|null,
+ *   error?: string
+ * }} AiToolResult
+ */
+
+/**
+ * Payload sent from the renderer AI assistant to the backend task runner.
+ *
+ * @typedef {Record<string, unknown> & {
+ *   templateId?: string,
+ *   templateName?: string,
+ *   url?: string,
+ *   listFilters?: AiListFilters,
+ *   listUrlFilters?: AiListUrlFilters,
+ *   desiredHotelCount?: number,
+ *   excludeHotelTypes?: string[],
+ *   amapKey?: string,
+ *   priceMin?: number|null,
+ *   priceMax?: number|'max'|null,
+ *   starLevels?: number[],
+ *   sortMode?: string|null,
+ *   freeCancel?: boolean,
+ *   reviewCountMin?: number|null,
+ *   ctripScoreMin?: number|null,
+ *   enableCollectPerfLog?: boolean
+ * }} AiTaskPayload
+ */
+
+/**
+ * Backend result returned by collect/refresh AI tasks. Tool and write result
+ * payloads remain intentionally wide while common renderer fields are named.
+ *
+ * @typedef {Record<string, unknown> & {
+ *   success?: boolean,
+ *   message?: string,
+ *   error?: string,
+ *   taskId?: string,
+ *   taskStatus?: AiTaskBackendStatus,
+ *   collectResult?: AiCollectResult|Record<string, unknown>|null,
+ *   result?: AiCollectResult|Record<string, unknown>|null,
+ *   toolResults?: AiToolResult[],
+ *   running?: boolean,
+ *   status?: AiTaskQueueStatus,
+ *   events?: AiTaskEvent[],
+ *   cancelled?: boolean
+ * }} AiTaskBackendResult
+ */
+
+/**
+ * Compatibility alias for call sites that use the shorter result name.
+ *
+ * @typedef {AiTaskBackendResult} AiTaskResult
  */
 
 /**
@@ -176,9 +295,15 @@
  *   type?: string,
  *   message?: string,
  *   at?: string,
+ *   timestamp?: string,
  *   taskId?: string,
  *   toolName?: string,
- *   details?: Record<string, unknown>|null
+ *   details?: Record<string, unknown>|null,
+ *   status?: AiTaskQueueStatus,
+ *   level?: string,
+ *   hotelName?: string,
+ *   currentStep?: string,
+ *   result?: Record<string, unknown>|string|null
  * }} AiTaskEvent
  */
 
@@ -193,8 +318,8 @@
  * @property {string} [taskId]
  * @property {string} [startedAt]
  * @property {string} [endedAt]
- * @property {Record<string, unknown>|null} [result]
- * @property {Record<string, unknown>|null} [collectResult]
+ * @property {AiTaskBackendResult|Record<string, unknown>|null} [result]
+ * @property {AiCollectResult|Record<string, unknown>|null} [collectResult]
  * @property {string|null} [error]
  * @property {string} [reply]
  * @property {AiTaskKind} [taskKind]
@@ -214,8 +339,8 @@
  * @property {string} [templateLabel]
  * @property {string} [title]
  * @property {TemplateRecord|null} [template]
- * @property {Record<string, unknown>} [listFilters]
- * @property {Record<string, unknown>} [listUrlFilters]
+ * @property {AiListFilters} [listFilters]
+ * @property {AiListUrlFilters} [listUrlFilters]
  * @property {AiTaskKind} [taskKind]
  * @property {AiTaskQueueStatus} [status]
  * @property {string} [currentStep]
@@ -227,6 +352,7 @@
  * @property {string} [resultSummary]
  * @property {AiTaskEvent[]} [events]
  * @property {AiTaskConsoleState} [console]
+ * @property {AiTaskBackendResult|null} [result]
  * @property {boolean} [cancelNoticeShown]
  * @property {string} [selectedId]
  */
@@ -271,12 +397,12 @@
  * @property {(config: Record<string, unknown>) => Promise<IpcResult<unknown>>} saveConfig
  * @property {(config: Record<string, unknown>) => Promise<IpcResult<unknown>>} testConnection
  * @property {(payload: Record<string, unknown>) => Promise<Record<string, unknown>>} sendChat
- * @property {(payload: Record<string, unknown>) => Promise<Record<string, unknown>>} startTask
- * @property {(payload: Record<string, unknown>) => Promise<Record<string, unknown>>} refreshHotelData
+ * @property {(payload: AiTaskPayload) => Promise<AiTaskBackendResult>} startTask
+ * @property {(payload: Partial<AiTaskPayload>) => Promise<AiTaskBackendResult>} refreshHotelData
  * @property {() => Promise<IpcResult<unknown>>} cancelTask
- * @property {() => Promise<Record<string, unknown>>} getTaskStatus
- * @property {(url: string) => Promise<Record<string, unknown>>} parseCtripListUrl
- * @property {(payload: Record<string, unknown>) => Promise<string>} buildCtripListUrl
+ * @property {() => Promise<AiTaskBackendResult>} getTaskStatus
+ * @property {(url: string) => Promise<AiListUrlFilters>} parseCtripListUrl
+ * @property {(payload: {baseUrl: string, settings: CtripUrlFilterSettings}) => Promise<string>} buildCtripListUrl
  * @property {(callback: (event: AiTaskEvent) => void) => void} onTaskEvent
  */
 
