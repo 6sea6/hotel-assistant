@@ -743,3 +743,155 @@ test('scraper-runner: refresh:summary has complete statistics', () => {
   assert.ok(fnBody.includes('deletedRoomTypeCount'), 'Should include deletedRoomTypeCount');
   assert.ok(fnBody.includes('updatedRoomTypeCount'), 'Should include updatedRoomTypeCount');
 });
+
+/* ============================================================
+ * Tests: refresh:item-write and current step priority
+ * ============================================================
+ */
+
+test('scraper-runner: refresh uses refresh:item-write instead of refresh:write for single hotel', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    'utf8'
+  );
+  const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
+  const refreshEnd = code.indexOf('module.exports', refreshStart);
+  const fnBody = code.substring(refreshStart, refreshEnd);
+
+  // Should have refresh:item-write event
+  assert.ok(fnBody.includes("emit('refresh:item-write'"), 'Should use refresh:item-write for single hotel write');
+  // Should include scope: 'item'
+  assert.ok(fnBody.includes("scope: 'item'"), 'refresh:item-write should include scope: item');
+});
+
+test('refresh-data: refresh:item-write maps to refresh step, not write step', async () => {
+  const mod = await loadTaskConsoleModule();
+
+  const event = { type: 'refresh:item-write', message: '正在写入第 1/2 家的更新结果：测试酒店', details: { index: 1, total: 2, hotelName: '测试酒店', scope: 'item' } };
+  // getEventStepKey is not exported, so test via normalizeTaskState
+  const result = mod.normalizeTaskState({
+    task: { taskKind: 'refresh-data', startedAt: new Date().toISOString() },
+    events: [
+      { type: 'task:start', at: new Date().toISOString() },
+      { type: 'refresh:load-data', at: new Date().toISOString() },
+      { type: 'refresh:scan-done', at: new Date().toISOString(), details: { total: 2 } },
+      { type: 'edge:login-required', at: new Date().toISOString() },
+      { type: 'edge:login-done', at: new Date().toISOString() },
+      { type: 'refresh:item-start', at: new Date().toISOString(), message: '正在更新第 1/2 家', details: { index: 1, total: 2 } },
+      event
+    ],
+    inProgress: true
+  });
+
+  // The refresh step should be running
+  const refreshStep = result.steps.find((s) => s.key === 'refresh');
+  assert.ok(refreshStep, 'Should have a refresh step');
+  assert.equal(refreshStep.status, 'running', 'refresh step should be running when item-write is active');
+
+  // The write step should be pending
+  const writeStep = result.steps.find((s) => s.key === 'write');
+  assert.ok(writeStep, 'Should have a write step');
+  assert.equal(writeStep.status, 'pending', 'write step should be pending when items are still being processed');
+});
+
+test('refresh-data: current step stays on refresh after first hotel item-write while second hotel starts', async () => {
+  const mod = await loadTaskConsoleModule();
+
+  const now = new Date().toISOString();
+  const result = mod.normalizeTaskState({
+    task: { taskKind: 'refresh-data', startedAt: now },
+    events: [
+      { type: 'task:start', at: now },
+      { type: 'refresh:load-data', at: now },
+      { type: 'refresh:scan-done', at: now, details: { total: 2 } },
+      { type: 'edge:login-required', at: now },
+      { type: 'edge:login-done', at: now },
+      // Hotel 1
+      { type: 'refresh:item-start', at: now, message: '正在更新第 1/2 家：酒店A', details: { index: 1, total: 2 } },
+      { type: 'refresh:item-write', at: now, message: '正在写入第 1/2 家的更新结果：酒店A', details: { index: 1, total: 2, scope: 'item' } },
+      { type: 'refresh:item-done', at: now, message: '已更新 酒店A', details: { index: 1, total: 2, status: 'updated' } },
+      // Hotel 2 started but not done
+      { type: 'refresh:item-start', at: now, message: '正在更新第 2/2 家：酒店B', details: { index: 2, total: 2 } }
+    ],
+    inProgress: true
+  });
+
+  const refreshStep = result.steps.find((s) => s.key === 'refresh');
+  assert.equal(refreshStep.status, 'running', 'refresh step should be running when hotel 2 is in progress');
+
+  const writeStep = result.steps.find((s) => s.key === 'write');
+  assert.equal(writeStep.status, 'pending', 'write step should be pending when items are still being processed');
+});
+
+test('refresh-data: current step becomes write only after all items are processed', async () => {
+  const mod = await loadTaskConsoleModule();
+
+  const now = new Date().toISOString();
+  const result = mod.normalizeTaskState({
+    task: { taskKind: 'refresh-data', startedAt: now },
+    events: [
+      { type: 'task:start', at: now },
+      { type: 'refresh:load-data', at: now },
+      { type: 'refresh:scan-done', at: now, details: { total: 2 } },
+      { type: 'edge:login-required', at: now },
+      { type: 'edge:login-done', at: now },
+      // Hotel 1
+      { type: 'refresh:item-start', at: now, message: '正在更新第 1/2 家：酒店A', details: { index: 1, total: 2 } },
+      { type: 'refresh:item-write', at: now, message: '正在写入第 1/2 家的更新结果：酒店A', details: { index: 1, total: 2, scope: 'item' } },
+      { type: 'refresh:item-done', at: now, message: '已更新 酒店A', details: { index: 1, total: 2, status: 'updated' } },
+      // Hotel 2
+      { type: 'refresh:item-start', at: now, message: '正在更新第 2/2 家：酒店B', details: { index: 2, total: 2 } },
+      { type: 'refresh:item-write', at: now, message: '正在写入第 2/2 家的更新结果：酒店B', details: { index: 2, total: 2, scope: 'item' } },
+      { type: 'refresh:item-done', at: now, message: '已更新 酒店B', details: { index: 2, total: 2, status: 'updated' } },
+      // Final summary
+      { type: 'refresh:summary', at: now, message: '更新完成', details: { totalHotelCount: 2, updatedHotelCount: 2 } }
+    ],
+    inProgress: true
+  });
+
+  const writeStep = result.steps.find((s) => s.key === 'write');
+  assert.equal(writeStep.status, 'running', 'write step should be running after all items processed and summary emitted');
+});
+
+test('refresh-data: refresh:item-write has correct readable title', async () => {
+  const mod = await loadTaskConsoleModule();
+
+  const now = new Date().toISOString();
+  const result = mod.normalizeTaskState({
+    task: { taskKind: 'refresh-data', startedAt: now },
+    events: [
+      { type: 'task:start', at: now },
+      { type: 'refresh:item-start', at: now, message: '正在更新第 1/2 家：酒店A', details: { index: 1, total: 2 } },
+      { type: 'refresh:item-write', at: now, message: '正在写入第 1/2 家的更新结果：酒店A', details: { index: 1, total: 2, scope: 'item' } }
+    ],
+    inProgress: true
+  });
+
+  // The refresh step title should reflect the item-write message since it's the latest running event
+  const refreshStep = result.steps.find((s) => s.key === 'refresh');
+  assert.ok(refreshStep, 'Should have refresh step');
+  // The title should contain info about the hotel being written
+  assert.ok(refreshStep.title.includes('写入') || refreshStep.title.includes('更新'), `refresh step title should mention writing/updating, got: "${refreshStep.title}"`);
+});
+
+test('collect: normal collect is not affected by refresh:item-write changes', async () => {
+  const mod = await loadTaskConsoleModule();
+
+  const now = new Date().toISOString();
+  // Normal collect task should still work with lastProgressEvent logic
+  const result = mod.normalizeTaskState({
+    task: { taskKind: 'collect', startedAt: now, templateLabel: '测试模板' },
+    events: [
+      { type: 'task:start', at: now },
+      { type: 'edge:login-required', at: now },
+      { type: 'edge:login-done', at: now },
+      { type: 'scrape:start', at: now }
+    ],
+    inProgress: true
+  });
+
+  // Should have the normal step structure
+  const scrapeStep = result.steps.find((s) => s.key === 'scrape');
+  assert.ok(scrapeStep, 'Should have scrape step');
+  assert.equal(scrapeStep.status, 'running', 'scrape step should be running for normal collect');
+});

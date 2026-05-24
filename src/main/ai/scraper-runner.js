@@ -913,7 +913,12 @@ async function refreshExistingCtripHotels(input, context = {}) {
           }
 
           // Write using overwriteExistingGroup strategy
-          emit('refresh:write', `正在写入 ${hotelName} 的更新结果`);
+          emit('refresh:item-write', `正在写入第 ${index + 1}/${totalHotelCount} 家的更新结果：${hotelName}`, {
+            index: index + 1,
+            total: totalHotelCount,
+            hotelName,
+            scope: 'item'
+          });
           const writeResult = await hotelMerge.appendHotelsToStore(refreshedHotels, {
             overwriteExistingGroup: true
           });

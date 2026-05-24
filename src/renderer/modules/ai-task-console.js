@@ -263,11 +263,11 @@ function getEventStepKey(event = {}, taskKind = 'collect') {
   if (isRefresh) {
     if (type === 'refresh:load-data') return 'load-data';
     if (type === 'refresh:scan-done') return 'load-data';
-    if (type === 'refresh:write') return 'write';
-    if (type === 'refresh:summary') return 'write';
-    if (type === 'refresh:item-start' || type === 'refresh:item-done' || type === 'refresh:item-skipped')
+    if (type === 'refresh:item-start' || type === 'refresh:item-write' || type === 'refresh:item-done' || type === 'refresh:item-skipped')
       return 'refresh';
     if (type.startsWith('refresh:')) return 'refresh';
+    if (type === 'refresh:write') return 'write';
+    if (type === 'refresh:summary') return 'write';
     if (type.startsWith('edge:') || toolName === 'open_visible_edge_login') return 'edge';
     if (type.startsWith('write:') || type.startsWith('apply:')) return 'write';
     if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return 'received';
@@ -302,6 +302,7 @@ function getReadableEventTitle(event = {}, taskKind = 'collect') {
   if (type === 'refresh:load-data') return '正在读取当前宾馆数据';
   if (type === 'refresh:scan-done') return event.message || '已扫描当前宾馆数据';
   if (type === 'refresh:item-start') return event.message || '正在更新房型与价格';
+  if (type === 'refresh:item-write') return event.message || '正在写入当前宾馆更新结果';
   if (type === 'refresh:item-done') return event.message || '房型与价格更新完成';
   if (type === 'refresh:item-skipped') return event.message || '跳过该宾馆';
   if (type === 'refresh:write') return '等待写入更新结果';
@@ -358,7 +359,9 @@ function getLastTaskError(events = [], task = {}) {
 
 function getRefreshCurrentStepKey(events = []) {
   const itemStatus = new Map();
-  let hasWrite = false;
+  let total = 0;
+  let hasFinalWrite = false;
+  let hasFinalSummary = false;
   let hasEdge = false;
   let hasLoadData = false;
   let hasReceived = false;
@@ -367,6 +370,13 @@ function getRefreshCurrentStepKey(events = []) {
     const type = String(event.type || '');
     const detail = event.details && typeof event.details === 'object' ? event.details : {};
     const index = Number(detail.index || detail.itemIndex || detail.currentIndex || 0);
+    const eventTotal = Number(detail.total || detail.totalHotelCount || 0);
+
+    if (eventTotal > total) total = eventTotal;
+
+    const message = String(event.message || '');
+    const match = message.match(/第\s*\d+\s*\/\s*(\d+)/);
+    if (match) total = Math.max(total, Number(match[1]));
 
     if (type === 'task:start') {
       hasReceived = true;
@@ -384,19 +394,38 @@ function getRefreshCurrentStepKey(events = []) {
       itemStatus.set(index, 'running');
     }
 
+    if (type === 'refresh:item-write' && index > 0) {
+      itemStatus.set(index, 'running');
+    }
+
     if ((type === 'refresh:item-done' || type === 'refresh:item-skipped') && index > 0) {
       itemStatus.set(index, 'done');
     }
 
-    if (type === 'refresh:write' || type === 'refresh:summary') {
-      hasWrite = true;
+    // Only final-scope write/summary count as reaching the write step
+    if (type === 'refresh:write' && detail.scope === 'final') {
+      hasFinalWrite = true;
+    }
+
+    if (type === 'refresh:summary') {
+      hasFinalSummary = true;
     }
   }
 
-  const hasRunningItem = [...itemStatus.values()].some((status) => status === 'running');
+  const statuses = [...itemStatus.values()];
+  const hasRunningItem = statuses.some((status) => status === 'running');
+  const processedCount = statuses.filter((status) => status === 'done').length;
+  const allItemsProcessed = total > 0 && processedCount >= total;
 
-  if (hasWrite) return 'write';
+  // Most critical: if any hotel is still being processed, must stay on refresh
   if (hasRunningItem) return 'refresh';
+
+  // If items have started but not all finished, stay on refresh
+  if (total > 0 && processedCount > 0 && processedCount < total) return 'refresh';
+
+  // Only reach write when all items are done or final events appear
+  if (hasFinalWrite || hasFinalSummary || allItemsProcessed) return 'write';
+
   if (hasEdge) return 'edge';
   if (hasLoadData) return 'load-data';
   if (hasReceived) return 'received';
@@ -408,7 +437,34 @@ function findRefreshStepEvent(normalizedEvents, key) {
     return findStepEvent(normalizedEvents, key);
   }
 
-  // For refresh step: prefer the last running refresh:item-start event
+  // Helper: check if an item index is still running (no done/skipped yet)
+  const isIndexRunning = (index) => {
+    if (index <= 0) return false;
+    return !normalizedEvents.some((e) => {
+      if (e.key !== 'refresh') return false;
+      const eType = e.raw && e.raw.type;
+      if (eType !== 'refresh:item-done' && eType !== 'refresh:item-skipped') return false;
+      const eDetail = e.raw.details && typeof e.raw.details === 'object' ? e.raw.details : {};
+      return Number(eDetail.index || 0) === index;
+    });
+  };
+
+  // Priority 1: last refresh:item-write that is still running
+  const runningItemWrite = normalizedEvents
+    .slice()
+    .reverse()
+    .find((event) => {
+      if (event.key !== 'refresh') return false;
+      const rawType = event.raw && event.raw.type;
+      if (rawType !== 'refresh:item-write') return false;
+      const detail = event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
+      const index = Number(detail.index || 0);
+      return isIndexRunning(index);
+    });
+
+  if (runningItemWrite) return runningItemWrite;
+
+  // Priority 2: last refresh:item-start that is still running
   const runningItemStart = normalizedEvents
     .slice()
     .reverse()
@@ -416,19 +472,9 @@ function findRefreshStepEvent(normalizedEvents, key) {
       if (event.key !== 'refresh') return false;
       const rawType = event.raw && event.raw.type;
       if (rawType !== 'refresh:item-start') return false;
-      // Check if this item index is still running (no done/skipped yet)
       const detail = event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
       const index = Number(detail.index || 0);
-      if (index <= 0) return false;
-      // Verify no done/skipped for same index
-      const completed = normalizedEvents.some((e) => {
-        if (e.key !== 'refresh') return false;
-        const eType = e.raw && e.raw.type;
-        if (eType !== 'refresh:item-done' && eType !== 'refresh:item-skipped') return false;
-        const eDetail = e.raw.details && typeof e.raw.details === 'object' ? e.raw.details : {};
-        return Number(eDetail.index || 0) === index;
-      });
-      return !completed;
+      return isIndexRunning(index);
     });
 
   if (runningItemStart) return runningItemStart;
