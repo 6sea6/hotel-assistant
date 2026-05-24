@@ -6,8 +6,8 @@
  */
 
 /**
- * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
- * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
+ * @typedef {import('../../shared/contracts').NormalizedTemplateRecord} NormalizedTemplateRecord
  * @typedef {import('../../shared/contracts').AppSettings} AppSettings
  * @typedef {import('../../shared/contracts').AiTaskEvent} AiTaskEvent
  * @typedef {import('../../shared/contracts').AiTaskConsoleState} AiTaskConsoleState
@@ -17,8 +17,8 @@
 
 /**
  * @typedef {object} RendererState
- * @property {HotelRecord[]} hotels
- * @property {TemplateRecord[]} templates
+ * @property {NormalizedHotelRecord[]} hotels
+ * @property {NormalizedTemplateRecord[]} templates
  * @property {AppSettings} settings
  * @property {Record<string, unknown>} currentFilters
  * @property {string} rankingMode
@@ -37,7 +37,7 @@
  * @property {string|null} hotelNameFilterOptionSignature
  * @property {number} hotelRenderResumeTimer
  * @property {number} hotelRenderDelayTimer
- * @property {Function|null} pendingHotelRenderResume
+ * @property {FrameRequestCallback|null} pendingHotelRenderResume
  * @property {boolean} pendingRenderInteractionFirst
  * @property {'total'|'daily'|null} lastEditedPriceField
  * @property {AiTaskEvent[]} aiTaskEvents

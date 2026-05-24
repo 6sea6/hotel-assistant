@@ -9,11 +9,14 @@ const {
 } = require('../../shared/id-utils');
 
 /**
- * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
  * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
- * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
+ * @typedef {import('../../shared/contracts').NormalizedTemplateRecord} NormalizedTemplateRecord
  */
 
+/** @type {(hotel?: Partial<RawHotelRecord>, existingHotel?: Partial<RawHotelRecord>) => NormalizedHotelRecord} */
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 
 // 通知渲染进程的工具函数
@@ -52,9 +55,9 @@ function normalizeTemplateRoomCount(value) {
 }
 
 /**
- * @param {Partial<TemplateRecord>} [template]
- * @param {Partial<TemplateRecord>} [existingTemplate]
- * @returns {TemplateRecord}
+ * @param {Partial<RawTemplateRecord>} [template]
+ * @param {Partial<RawTemplateRecord>} [existingTemplate]
+ * @returns {NormalizedTemplateRecord}
  */
 function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
   const normalized = {
@@ -71,7 +74,7 @@ function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
   normalized.created_at =
     normalized.created_at || existingTemplate.created_at || new Date().toISOString();
 
-  return normalized;
+  return /** @type {NormalizedTemplateRecord} */ (normalized);
 }
 
 /**
@@ -89,10 +92,12 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   const getMainWindow = () => windowService?.getMainWindow?.() || null;
   /**
    * @param {{get: (key: string) => unknown, set: (key: string, value: unknown) => void}} store
-   * @returns {TemplateRecord[]}
+   * @returns {NormalizedTemplateRecord[]}
    */
   const getNormalizedTemplates = (store) => {
-    const templates = /** @type {Array<Partial<TemplateRecord>>} */ (store.get('templates') || []);
+    const templates = /** @type {Array<Partial<RawTemplateRecord>>} */ (
+      store.get('templates') || []
+    );
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
     let shouldWriteBack = false;

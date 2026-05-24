@@ -23,8 +23,27 @@ import {
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
 
+/**
+ * @typedef {import('../../shared/contracts').AppSettings} AppSettings
+ * @typedef {import('../../shared/contracts').EntityId} EntityId
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
+ * @typedef {import('../../shared/contracts').NormalizedTemplateRecord} NormalizedTemplateRecord
+ * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
+ * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
+ * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
+ */
+
+/**
+ * @param {string} id
+ * @returns {FormValueElement|null}
+ */
+const getFormValueElement = (id) => /** @type {FormValueElement|null} */ ($(id));
+
 /* ---- 公共数据加载 ---- */
 
+/**
+ * @returns {Promise<NormalizedHotelRecord[]>}
+ */
 export async function loadHotels() {
   perfStart('loadHotels');
   try {
@@ -38,6 +57,9 @@ export async function loadHotels() {
   }
 }
 
+/**
+ * @returns {Promise<NormalizedTemplateRecord[]>}
+ */
 export async function loadTemplates() {
   try {
     return (await window.electronAPI.getAllTemplates()) || [];
@@ -47,6 +69,9 @@ export async function loadTemplates() {
   }
 }
 
+/**
+ * @returns {Promise<AppSettings>}
+ */
 export async function loadSettings() {
   try {
     return await window.electronAPI.getAllSettings();
@@ -56,6 +81,10 @@ export async function loadSettings() {
   }
 }
 
+/**
+ * @param {{includeSettings?: boolean, invalidateCache?: boolean, verbose?: boolean}} [options]
+ * @returns {Promise<{hotelsCount: number, templatesCount: number, settingsLoaded: boolean}>}
+ */
 export async function reloadAllData(options = {}) {
   const { includeSettings = false, invalidateCache = false, verbose = true } = options;
 
@@ -63,11 +92,12 @@ export async function reloadAllData(options = {}) {
     window.electronAPI.invalidateRendererCache();
   }
 
-  const requests = [window.electronAPI.getAllHotels(), window.electronAPI.getAllTemplates()];
-
-  if (includeSettings) {
-    requests.push(window.electronAPI.getAllSettings());
-  }
+  /** @type {[Promise<NormalizedHotelRecord[]>, Promise<NormalizedTemplateRecord[]>, Promise<AppSettings|null>]} */
+  const requests = [
+    window.electronAPI.getAllHotels(),
+    window.electronAPI.getAllTemplates(),
+    includeSettings ? window.electronAPI.getAllSettings() : Promise.resolve(null)
+  ];
 
   try {
     if (verbose) console.log('[数据重载] 开始重新加载数据...');
@@ -101,16 +131,24 @@ export async function reloadAllData(options = {}) {
 
 /* ---- 模板查找 ---- */
 
+/**
+ * @param {EntityId|null|undefined} templateId
+ * @returns {NormalizedTemplateRecord|undefined}
+ */
 export function findTemplateById(templateId) {
   return state.templates.find((template) => idsEqual(template.id, templateId));
 }
 
 /* ---- 宾馆编辑弹窗 ---- */
 
+/**
+ * @param {EntityId|null} [templateId]
+ * @returns {void}
+ */
 export function openAddHotelModal(templateId = null) {
   const modalTitle = document.getElementById('modalTitle');
-  const hotelForm = document.getElementById('hotelForm');
-  const hotelIdInput = document.getElementById('hotelId');
+  const hotelForm = /** @type {HTMLFormElement|null} */ (document.getElementById('hotelForm'));
+  const hotelIdInput = /** @type {HTMLInputElement|null} */ (document.getElementById('hotelId'));
   const hotelModal = document.getElementById('hotelModal');
 
   if (!modalTitle || !hotelForm || !hotelIdInput || !hotelModal) {
@@ -135,12 +173,16 @@ export function openAddHotelModal(templateId = null) {
   setModalActive('hotelModal', true);
   scheduleHotelModalFocus();
   updateHotelTemplateSelect({
-    selectedValue: templateId || '',
+    selectedValue: String(templateId || ''),
     applyTemplateOnReady: Boolean(templateId)
   });
   refreshCustomSelects();
 }
 
+/**
+ * @param {EntityId} id
+ * @returns {void}
+ */
 export function editHotel(id) {
   const hotel = state.hotels.find((h) => idsEqual(h.id, id));
   if (!hotel) {
@@ -148,13 +190,18 @@ export function editHotel(id) {
     return;
   }
 
+  /**
+   * @param {string} elementId
+   * @param {unknown} value
+   * @param {boolean} [isCheckbox]
+   */
   const setElementValue = (elementId, value, isCheckbox = false) => {
-    const element = document.getElementById(elementId);
+    const element = /** @type {FormValueElement|null} */ (document.getElementById(elementId));
     if (element) {
       if (isCheckbox) {
-        element.checked = value;
+        /** @type {HTMLInputElement} */ (element).checked = /** @type {boolean} */ (value);
       } else {
-        element.value = value;
+        /** @type {any} */ (element).value = value;
       }
     }
   };
@@ -186,7 +233,7 @@ export function editHotel(id) {
 
   setModalActive('hotelModal', true);
   scheduleHotelModalFocus();
-  updateHotelTemplateSelect({ selectedValue: hotel.template_id || '' });
+  updateHotelTemplateSelect({ selectedValue: String(hotel.template_id || '') });
   refreshCustomSelects();
 }
 
@@ -196,8 +243,13 @@ export function closeHotelModal() {
 
 /* ---- 模板选择（宾馆编辑弹窗内） ---- */
 
+/**
+ * @param {{selectedValue?: string, applyTemplateOnReady?: boolean}} [options]
+ */
 function updateHotelTemplateSelect(options = {}) {
-  const select = document.getElementById('hotelTemplateSelect');
+  const select = /** @type {HTMLSelectElement|null} */ (
+    document.getElementById('hotelTemplateSelect')
+  );
   if (!select) return;
 
   const selectedValue = options.selectedValue ?? select.value;
@@ -219,7 +271,7 @@ function updateHotelTemplateSelect(options = {}) {
     for (let index = startIndex; index < endIndex; index++) {
       const template = state.templates[index];
       const option = document.createElement('option');
-      option.value = template.id;
+      option.value = String(template.id ?? '');
       option.textContent = template.name;
       fragment.appendChild(option);
     }
@@ -245,6 +297,9 @@ function updateHotelTemplateSelect(options = {}) {
   requestAnimationFrame(() => renderBatch());
 }
 
+/**
+ * @param {NormalizedTemplateRecord|undefined|null} template
+ */
 function applyTemplateDataToForm(template) {
   if (!template) return;
   if (template.check_in_date) setValue('checkInDate', template.check_in_date);
@@ -257,7 +312,9 @@ function applyTemplateDataToForm(template) {
 }
 
 export function applyTemplateToForm() {
-  const templateSelect = document.getElementById('hotelTemplateSelect');
+  const templateSelect = /** @type {HTMLSelectElement|null} */ (
+    document.getElementById('hotelTemplateSelect')
+  );
   if (!templateSelect) return;
   const templateId = templateSelect.value;
   if (!templateId) return;
@@ -268,18 +325,27 @@ export function applyTemplateToForm() {
 /* ---- 保存宾馆 ---- */
 
 export async function saveHotel() {
+  /**
+   * @param {string} id
+   * @returns {string}
+   */
   const getVal = (id) => {
-    const el = document.getElementById(id);
+    const el = /** @type {FormValueElement|null} */ (document.getElementById(id));
     return el ? el.value : '';
   };
+  /**
+   * @param {string} id
+   * @returns {boolean}
+   */
   const getChk = (id) => {
-    const el = document.getElementById(id);
+    const el = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
     return el ? el.checked : false;
   };
 
   const id = getVal('hotelId');
   const selectedTemplateId = getVal('hotelTemplateSelect');
 
+  /** @type {TemplateInfo|null} */
   let templateInfo = null;
   if (selectedTemplateId) {
     const selectedTemplate = findTemplateById(selectedTemplateId);
@@ -295,6 +361,7 @@ export async function saveHotel() {
     }
   }
 
+  /** @type {Partial<RawHotelRecord>} */
   const hotel = {
     name: getVal('hotelName').trim(),
     address: getVal('hotelAddress').trim(),
@@ -322,7 +389,7 @@ export async function saveHotel() {
   };
 
   if (!hotel.name) {
-    const nameInput = $('hotelName');
+    const nameInput = /** @type {HTMLInputElement|null} */ ($('hotelName'));
     if (nameInput) {
       nameInput.focus();
       nameInput.style.borderColor = '#F53F3F';
@@ -452,7 +519,7 @@ export async function confirmBatchDelete() {
     return;
   }
 
-  const batchDeleteBtn = $('batchDeleteBtn');
+  const batchDeleteBtn = /** @type {HTMLButtonElement|null} */ ($('batchDeleteBtn'));
   if (!batchDeleteBtn) return;
 
   if (batchDeleteBtn.dataset.confirming !== 'true') {
@@ -508,7 +575,7 @@ export function calculateDays() {
   if (checkIn && checkOut) {
     const checkInDate = new Date(checkIn);
     const checkOutDate = new Date(checkOut);
-    const diffTime = Math.abs(checkOutDate - checkInDate);
+    const diffTime = Math.abs(checkOutDate.getTime() - checkInDate.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     setValue('days', diffDays);
     calculateDailyPrice();
@@ -516,8 +583,8 @@ export function calculateDays() {
 }
 
 export function onCheckInChange() {
-  const checkInEl = $('checkInDate');
-  const checkOutEl = $('checkOutDate');
+  const checkInEl = getFormValueElement('checkInDate');
+  const checkOutEl = getFormValueElement('checkOutDate');
   if (!checkInEl || !checkOutEl) return;
   const checkIn = checkInEl.value;
   const checkOut = checkOutEl.value;
@@ -530,8 +597,8 @@ export function onCheckInChange() {
 }
 
 export function onCheckOutChange() {
-  const checkInEl = $('checkInDate');
-  const checkOutEl = $('checkOutDate');
+  const checkInEl = getFormValueElement('checkInDate');
+  const checkOutEl = getFormValueElement('checkOutDate');
   if (!checkInEl || !checkOutEl) return;
   const checkIn = checkInEl.value;
   const checkOut = checkOutEl.value;
@@ -544,9 +611,9 @@ export function onCheckOutChange() {
 }
 
 export function calculateDailyPrice() {
-  const totalPriceEl = $('totalPrice');
-  const daysEl = $('days');
-  const dailyPriceEl = $('dailyPrice');
+  const totalPriceEl = getFormValueElement('totalPrice');
+  const daysEl = getFormValueElement('days');
+  const dailyPriceEl = getFormValueElement('dailyPrice');
   if (!totalPriceEl || !daysEl || !dailyPriceEl) return;
   const totalPrice = parseFloat(totalPriceEl.value) || 0;
   const days = parseInt(daysEl.value) || 1;
@@ -559,9 +626,9 @@ export function calculateDailyPrice() {
 }
 
 export function calculateTotalPrice() {
-  const dailyPriceEl = $('dailyPrice');
-  const daysEl = $('days');
-  const totalPriceEl = $('totalPrice');
+  const dailyPriceEl = getFormValueElement('dailyPrice');
+  const daysEl = getFormValueElement('days');
+  const totalPriceEl = getFormValueElement('totalPrice');
   if (!dailyPriceEl || !daysEl || !totalPriceEl) return;
   const dailyPrice = parseFloat(dailyPriceEl.value) || 0;
   const days = parseInt(daysEl.value) || 1;
@@ -574,9 +641,9 @@ export function calculateTotalPrice() {
 }
 
 export function onDaysChange() {
-  const daysEl = $('days');
-  const totalPriceEl = $('totalPrice');
-  const dailyPriceEl = $('dailyPrice');
+  const daysEl = getFormValueElement('days');
+  const totalPriceEl = getFormValueElement('totalPrice');
+  const dailyPriceEl = getFormValueElement('dailyPrice');
   if (!daysEl || !totalPriceEl || !dailyPriceEl) return;
   const days = parseInt(daysEl.value) || 1;
   if (state.lastEditedPriceField === 'daily') {
@@ -588,6 +655,9 @@ export function onDaysChange() {
   }
 }
 
+/**
+ * @param {FormValueElement} input
+ */
 export function validateScore(input) {
   let value = input.value;
   if (!value || value === '') return;
@@ -595,6 +665,9 @@ export function validateScore(input) {
   if (isNaN(numValue)) return;
 }
 
+/**
+ * @param {FormValueElement} input
+ */
 export function formatScoreOnBlur(input) {
   let value = input.value;
   if (!value || value === '') return;

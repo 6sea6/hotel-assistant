@@ -111,7 +111,7 @@ export function startActionButtonConfirmation(button, options = {}) {
 /* ---- 批量删除按钮 ---- */
 
 export function syncBatchDeleteButton(options = {}) {
-  const batchDeleteBtn = $('batchDeleteBtn');
+  const batchDeleteBtn = /** @type {HTMLButtonElement|null} */ ($('batchDeleteBtn'));
   if (!batchDeleteBtn) return;
 
   const count = options.count ?? state.selectedHotels.size;
@@ -132,7 +132,7 @@ export function syncBatchDeleteButton(options = {}) {
 }
 
 export function resetBatchDeleteConfirmation(options = {}) {
-  const batchDeleteBtn = $('batchDeleteBtn');
+  const batchDeleteBtn = /** @type {HTMLButtonElement|null} */ ($('batchDeleteBtn'));
   if (!batchDeleteBtn) return;
 
   if (batchDeleteBtn.dataset.confirmTimer) {
@@ -147,7 +147,7 @@ export function resetBatchDeleteConfirmation(options = {}) {
 }
 
 export function startBatchDeleteConfirmation() {
-  const batchDeleteBtn = $('batchDeleteBtn');
+  const batchDeleteBtn = /** @type {HTMLButtonElement|null} */ ($('batchDeleteBtn'));
   if (!batchDeleteBtn || state.selectedHotels.size === 0) return;
 
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
@@ -166,14 +166,17 @@ export function startBatchDeleteConfirmation() {
 
 export function ensureHotelModalFocusable() {
   const hotelModal = $('hotelModal');
-  const hotelForm = $('hotelForm');
-  const nameInput = $('hotelName');
+  const hotelForm = /** @type {HTMLFormElement|null} */ ($('hotelForm'));
+  const nameInput = /** @type {HTMLInputElement|null} */ ($('hotelName'));
   if (!hotelModal || !hotelForm || !nameInput) return;
 
   hotelModal.style.zIndex = '3001';
-  hotelForm.querySelectorAll('input, textarea, select').forEach((input) => {
+  const inputs = /** @type {NodeListOf<HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement>} */ (
+    hotelForm.querySelectorAll('input, textarea, select')
+  );
+  inputs.forEach((input) => {
     input.disabled = false;
-    input.readOnly = false;
+    /** @type {any} */ (input).readOnly = false;
     input.style.pointerEvents = 'auto';
     input.style.userSelect = 'text';
     input.style.opacity = '1';

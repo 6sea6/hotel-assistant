@@ -9,9 +9,11 @@ const {
 } = require('../../shared/id-utils');
 
 /**
- * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
  * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
  * @typedef {import('../../shared/contracts').EntityId} EntityId
+ * @typedef {{get: (key: string) => unknown, set: (key: string, value: unknown) => void}} HotelStore
  */
 
 const HOTEL_ALLOWED_FIELD_KEYS = new Set([
@@ -60,9 +62,9 @@ function normalizeTemplateInfo(templateInfo) {
 }
 
 /**
- * @param {Partial<HotelRecord>} [hotel]
- * @param {Partial<HotelRecord>} [existingHotel]
- * @returns {HotelRecord}
+ * @param {Partial<RawHotelRecord>} [hotel]
+ * @param {Partial<RawHotelRecord>} [existingHotel]
+ * @returns {NormalizedHotelRecord}
  */
 function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
   const normalized = {
@@ -107,21 +109,21 @@ function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
     }
   }
 
-  return normalized;
+  return /** @type {NormalizedHotelRecord} */ (normalized);
 }
 
 /**
  * @param {{
  *   ipcMain: {handle: (channel: string, handler: Function) => void},
  *   cache: {invalidate: (key: string) => void},
- *   services: {dataService: {getStore: () => unknown}}
+ *   services: {dataService: {getStore: () => HotelStore}}
  * }} context
  */
 function registerHotelHandlers({ ipcMain, cache, services }) {
   const { dataService } = services;
   /**
-   * @param {unknown} store
-   * @returns {HotelRecord[]}
+   * @param {HotelStore} store
+   * @returns {NormalizedHotelRecord[]}
    */
   const getNormalizedHotels = (store) => {
     const hotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);

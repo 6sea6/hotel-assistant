@@ -11,13 +11,17 @@ const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared
 
 /**
  * @typedef {import('../../shared/contracts').AppSettings} AppSettings
- * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} HotelRecord
  * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
- * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
+ * @typedef {import('../../shared/contracts').NormalizedTemplateRecord} TemplateRecord
  */
 
 const EXPORT_SCHEMA_VERSION = 3;
+/** @type {(hotel?: Partial<RawHotelRecord>, existingHotel?: Partial<RawHotelRecord>) => HotelRecord} */
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
+/** @type {(template?: Partial<RawTemplateRecord>, existingTemplate?: Partial<RawTemplateRecord>) => TemplateRecord} */
 const normalizeTemplatePayload = templateHandlers.normalizeTemplatePayload;
 
 /**
@@ -297,7 +301,7 @@ function processImportedHotels(importedHotels, existingHotels = [], options = {}
 }
 
 /**
- * @param {{get: (key: string) => unknown}} store
+ * @param {{get: (key: string) => unknown, set: (key: string, value: unknown) => void}} store
  * @returns {{
  *   hotels: unknown[],
  *   templates: TemplateRecord[],

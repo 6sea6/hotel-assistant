@@ -33,50 +33,113 @@
  */
 
 /**
- * Saved comparison template.
+ * Template payload before normalization. Used for imports, legacy store data,
+ * renderer form payloads, and external collection input.
  *
- * @typedef {object} TemplateRecord
+ * @typedef {object} RawTemplateRecord
  * @property {EntityId|null} [id]
- * @property {string} [name]
- * @property {string} [destination]
+ * @property {string|null} [name]
+ * @property {string|null} [destination]
  * @property {string|null} [check_in_date]
  * @property {string|null} [check_out_date]
- * @property {number} [room_count]
- * @property {string} [created_at]
+ * @property {number|string|null} [room_count]
+ * @property {string|null} [created_at]
  */
 
 /**
- * Expanded hotel record as used by the renderer and IPC handlers.
+ * Template after normalizeTemplatePayload().
  *
- * @typedef {object} HotelRecord
+ * @typedef {object} NormalizedTemplateRecord
  * @property {EntityId|null} [id]
- * @property {string} [name]
- * @property {string} [address]
- * @property {string} [website]
- * @property {number|null} [total_price]
- * @property {number|null} [daily_price]
+ * @property {string} name
+ * @property {string} destination
+ * @property {string|null} check_in_date
+ * @property {string|null} check_out_date
+ * @property {number} room_count
+ * @property {string} created_at
+ */
+
+/**
+ * Hotel payload before normalization. Used for imports, legacy store data,
+ * renderer form payloads, and external collection input.
+ *
+ * @typedef {object} RawHotelRecord
+ * @property {EntityId|null} [id]
+ * @property {string|null} [name]
+ * @property {string|null} [address]
+ * @property {string|null} [website]
+ * @property {number|string|null} [total_price]
+ * @property {number|string|null} [daily_price]
  * @property {string|null} [check_in_date]
  * @property {string|null} [check_out_date]
- * @property {number|null} [days]
- * @property {number|null} [ctrip_score]
- * @property {string} [destination]
- * @property {string} [distance]
- * @property {string} [subway_station]
- * @property {string} [subway_distance]
- * @property {string} [transport_time]
- * @property {string} [bus_route]
- * @property {string} [room_type]
- * @property {string} [original_room_type]
- * @property {number} [room_count]
- * @property {string} [room_area]
- * @property {string} [notes]
- * @property {0|1|number} [is_favorite]
+ * @property {number|string|null} [days]
+ * @property {number|string|null} [ctrip_score]
+ * @property {string|null} [destination]
+ * @property {string|null} [distance]
+ * @property {string|null} [subway_station]
+ * @property {string|null} [subway_distance]
+ * @property {string|null} [transport_time]
+ * @property {string|null} [bus_route]
+ * @property {string|null} [room_type]
+ * @property {string|null} [original_room_type]
+ * @property {number|string|null} [room_count]
+ * @property {string|null} [room_area]
+ * @property {string|null} [notes]
+ * @property {0|1|number|string|boolean|null} [is_favorite]
  * @property {EntityId|null} [template_id]
  * @property {TemplateInfo|null} [template_info]
- * @property {string} [created_at]
- * @property {string} [updated_at]
- * @property {string} [cancel_policy]
- * @property {string} [window_status]
+ * @property {string|null} [created_at]
+ * @property {string|null} [updated_at]
+ * @property {string|null} [cancel_policy]
+ * @property {string|null} [window_status]
+ */
+
+/**
+ * Hotel after normalizeHotelPayload() and after store expansion.
+ *
+ * @typedef {object} NormalizedHotelRecord
+ * @property {EntityId|null} [id]
+ * @property {string} name
+ * @property {string} address
+ * @property {string} website
+ * @property {number|null} total_price
+ * @property {number|null} daily_price
+ * @property {string|null} check_in_date
+ * @property {string|null} check_out_date
+ * @property {number|null} days
+ * @property {number|null} ctrip_score
+ * @property {string} destination
+ * @property {string} distance
+ * @property {string} subway_station
+ * @property {string} subway_distance
+ * @property {string} transport_time
+ * @property {string} bus_route
+ * @property {string} room_type
+ * @property {string} original_room_type
+ * @property {number} room_count
+ * @property {string} room_area
+ * @property {string} notes
+ * @property {0|1} is_favorite
+ * @property {EntityId|null} template_id
+ * @property {TemplateInfo|null} template_info
+ * @property {string|null} [created_at]
+ * @property {string|null} [updated_at]
+ * @property {string|null} [cancel_policy]
+ * @property {string|null} [window_status]
+ */
+
+/**
+ * Compatibility alias for existing JSDoc call sites that still accept raw or
+ * partially populated hotel data.
+ *
+ * @typedef {RawHotelRecord} HotelRecord
+ */
+
+/**
+ * Compatibility alias for existing JSDoc call sites that still accept raw or
+ * partially populated template data.
+ *
+ * @typedef {RawTemplateRecord} TemplateRecord
  */
 
 /**
@@ -198,7 +261,7 @@
 
 /**
  * @typedef {object} ElectronBatchAPI
- * @property {(hotels: Partial<HotelRecord>[]) => Promise<HotelRecord[]>} updateMultipleHotels
+ * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<NormalizedHotelRecord[]>} updateMultipleHotels
  */
 
 /**
@@ -222,18 +285,18 @@
  *
  * @typedef {object} ElectronAPI
  * @property {{name: string, version: string, releaseDate: string, author: string, platform: string}} appInfo
- * @property {(hotel: Partial<HotelRecord>) => Promise<HotelRecord>} addHotel
- * @property {(hotel: Partial<HotelRecord>) => Promise<HotelRecord|null>} updateHotel
+ * @property {(hotel: Partial<RawHotelRecord>) => Promise<NormalizedHotelRecord>} addHotel
+ * @property {(hotel: Partial<RawHotelRecord>) => Promise<NormalizedHotelRecord|null>} updateHotel
  * @property {(id: EntityId) => Promise<IpcMutationResult>} deleteHotel
  * @property {(ids: EntityId[]) => Promise<IpcMutationResult>} deleteMultipleHotels
- * @property {() => Promise<HotelRecord[]>} getAllHotels
- * @property {(id: EntityId) => Promise<HotelRecord|undefined>} getHotelById
- * @property {(hotels: Partial<HotelRecord>[]) => Promise<HotelRecord[]>} updateMultipleHotels
- * @property {(template: Partial<TemplateRecord>) => Promise<TemplateRecord>} addTemplate
- * @property {(template: Partial<TemplateRecord>) => Promise<TemplateRecord|null>} updateTemplate
- * @property {(template: Partial<TemplateRecord>) => Promise<IpcMutationResult & {template?: TemplateRecord}>} updateTemplateAndSync
+ * @property {() => Promise<NormalizedHotelRecord[]>} getAllHotels
+ * @property {(id: EntityId) => Promise<NormalizedHotelRecord|undefined>} getHotelById
+ * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<NormalizedHotelRecord[]>} updateMultipleHotels
+ * @property {(template: Partial<RawTemplateRecord>) => Promise<NormalizedTemplateRecord>} addTemplate
+ * @property {(template: Partial<RawTemplateRecord>) => Promise<NormalizedTemplateRecord|null>} updateTemplate
+ * @property {(template: Partial<RawTemplateRecord>) => Promise<IpcMutationResult & {template?: NormalizedTemplateRecord}>} updateTemplateAndSync
  * @property {(id: EntityId) => Promise<IpcMutationResult>} deleteTemplate
- * @property {() => Promise<TemplateRecord[]>} getAllTemplates
+ * @property {() => Promise<NormalizedTemplateRecord[]>} getAllTemplates
  * @property {(key: string) => Promise<unknown>} getSetting
  * @property {(key: string, value: unknown) => Promise<IpcResult<unknown>>} setSetting
  * @property {(theme: string) => Promise<IpcResult<unknown>>} applyThemeAppearance

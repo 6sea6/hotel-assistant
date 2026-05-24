@@ -50,14 +50,22 @@ function clearStaleReadyState(select) {
  * rAF 合并定位调度
  * ============================================================ */
 
+/**
+ * @returns {(callback: FrameRequestCallback) => number}
+ */
 function getAnimationFrame() {
   if (typeof requestAnimationFrame === 'function') return requestAnimationFrame;
-  return (callback) => setTimeout(callback, 16);
+  return /** @type {(callback: FrameRequestCallback) => number} */ (
+    (callback) => setTimeout(callback, 16)
+  );
 }
 
+/**
+ * @returns {(handle: number) => void}
+ */
 function getCancelAnimationFrame() {
   if (typeof cancelAnimationFrame === 'function') return cancelAnimationFrame;
-  return clearTimeout;
+  return /** @type {(handle: number) => void} */ (clearTimeout);
 }
 
 function schedulePositionOpenMenu() {
@@ -161,7 +169,7 @@ export function refreshCustomSelects(root = document, options = {}) {
   const selector = auto
     ? `select[data-custom-select="true"], select.${NATIVE_CLASS}, select.input`
     : `select[data-custom-select="true"], select.${NATIVE_CLASS}`;
-  const selects = root.querySelectorAll(selector);
+  const selects = /** @type {NodeListOf<HTMLSelectElement>} */ (root.querySelectorAll(selector));
   selects.forEach((select) => {
     if (select.multiple || (select.size && select.size > 1)) return;
     if (auto && select.dataset.nativeSelect === 'true') return;
