@@ -14,6 +14,7 @@
     "sync-build-assets": "node scripts/sync-build-assets.js",
     "package:smoke": "node scripts/package/smoke-build.js",
     "lint": "eslint . --ext .js",
+    "typecheck": "tsc -p jsconfig.json --noEmit",
     "format": "prettier --write \"*.json\" \"scraper/*.json\" \"scraper/examples/*.json\" \"src/**/*.js\" \"shared/**/*.js\" \"scripts/**/*.js\" \"tests/**/*.js\" \"scraper/src/**/*.js\" \"scraper/tests/**/*.js\" \"src/renderer/styles.css\" \"src/renderer/manual.html\"",
     "format:check": "prettier --check \"*.json\" \"scraper/*.json\" \"scraper/examples/*.json\" \"src/**/*.js\" \"shared/**/*.js\" \"scripts/**/*.js\" \"tests/**/*.js\" \"scraper/src/**/*.js\" \"scraper/tests/**/*.js\" \"src/renderer/styles.css\" \"src/renderer/manual.html\"",
     "test": "npm run test:app && npm run test:scraper",
@@ -35,7 +36,8 @@
     "eslint": "^8.57.1",
     "png-to-ico": "^3.0.1",
     "prettier": "^3.8.3",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "typescript": "^6.0.3"
   },
   "dependencies": {
     "electron-store": "^8.1.0"

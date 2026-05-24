@@ -394,8 +394,11 @@ test('custom-select: selected option has is-selected class', async () => {
 
 test('custom-select: aiTemplateSelect excluded from auto but works with manual enhance', async () => {
   installMockDom();
-  const { enhanceCustomSelect, getCustomSelectInstance, destroyCustomSelect: _destroyCustomSelect } =
-    await loadCustomSelectModule();
+  const {
+    enhanceCustomSelect,
+    getCustomSelectInstance,
+    destroyCustomSelect: _destroyCustomSelect
+  } = await loadCustomSelectModule();
 
   const select = createMockSelect('aiTemplateSelect', [{ value: 't1', text: 'Template 1' }], {
     customSelect: 'false',
@@ -513,7 +516,8 @@ test('custom-select: destroy during scheduled rebuild does not throw', async () 
 
 test('custom-select: clearStaleReadyState allows re-enhancement', async () => {
   installMockDom();
-  const { enhanceCustomSelect, getCustomSelectInstance: _getCustomSelectInstance } = await loadCustomSelectModule();
+  const { enhanceCustomSelect, getCustomSelectInstance: _getCustomSelectInstance } =
+    await loadCustomSelectModule();
 
   const select = createMockSelect('testSelect', [{ value: 'a', text: 'A' }]);
   select.dataset.customSelectReady = 'true'; // stale ready

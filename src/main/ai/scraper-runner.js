@@ -9,7 +9,10 @@ const {
 } = require('../bundled-setup');
 
 const scraperModuleCache = new Map();
-const { TRAILING_URL_PUNCTUATION, INLINE_URL_TEXT_SEPARATOR } = require('../../shared/url-constants');
+const {
+  TRAILING_URL_PUNCTUATION,
+  INLINE_URL_TEXT_SEPARATOR
+} = require('../../shared/url-constants');
 
 function resolveEmbeddedScraperPath(options = {}) {
   return path.resolve(options.currentDir || __dirname, '..', '..', '..', 'scraper');

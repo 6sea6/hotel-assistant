@@ -30,7 +30,10 @@
     "no-empty": ["error", { "allowEmptyCatch": true }],
     "no-inner-declarations": "off",
     "no-useless-escape": "off",
-    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }],
+    "no-unused-vars": [
+      "warn",
+      { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+    ],
     "no-console": "off"
   }
 }

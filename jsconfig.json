@@ -8,10 +8,12 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "skipLibCheck": true
   },
   "include": [
     "src/shared/contracts.js",
+    "src/**/*.d.ts",
     "src/renderer/modules/state.js",
     "src/main/preload.js",
     "src/main/ipc-handlers/hotel-handlers.js",
