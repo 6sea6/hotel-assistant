@@ -9,6 +9,9 @@ const APP_INFO = Object.freeze({
   author: 'Sea'
 });
 
+/** @typedef {import('../shared/contracts').ElectronAPI} ElectronAPI */
+
+/** @type {Map<string, {data: any, time: number}>} */
 const invokeCache = new Map();
 const CACHE_TTL = 2000;
 const MAX_CACHE_SIZE = 50;
@@ -51,6 +54,11 @@ const buildCacheKey = (channel, args) => `${channel}:${args.map(getCacheKeyFragm
 
 const shouldCacheChannel = (channel) => CACHED_CHANNELS.has(channel);
 
+/**
+ * @param {string} channel
+ * @param {...unknown} args
+ * @returns {Promise<any>}
+ */
 const cachedInvoke = async (channel, ...args) => {
   const cacheKey = buildCacheKey(channel, args);
   const cached = invokeCache.get(cacheKey);
@@ -94,7 +102,8 @@ const batchOperations = {
   }
 };
 
-contextBridge.exposeInMainWorld('electronAPI', {
+/** @type {ElectronAPI} */
+const electronAPI = {
   appInfo: {
     name: APP_INFO.name,
     version: APP_INFO.version,
@@ -238,4 +247,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTemplateUpdated: (callback) => {
     ipcRenderer.on('template:updated', (event, data) => callback(data));
   }
-});
+};
+
+contextBridge.exposeInMainWorld('electronAPI', electronAPI);

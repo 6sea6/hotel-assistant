@@ -8,21 +8,40 @@ const {
   normalizeIntegerLikeValue
 } = require('../../shared/id-utils');
 
+/**
+ * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
+ * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ */
+
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 
 // 通知渲染进程的工具函数
+/**
+ * @param {{isDestroyed: () => boolean, webContents: {send: (channel: string, data: unknown) => void}}|null} mainWindow
+ * @param {string} channel
+ * @param {unknown} data
+ */
 const notifyRenderer = (mainWindow, channel, data) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, data);
   }
 };
 
+/**
+ * @param {unknown} value
+ * @returns {number|null}
+ */
 function normalizeNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number|null}
+ */
 function normalizeTemplateRoomCount(value) {
   const parsed = normalizeNullableNumber(value);
   if (parsed === null) {
@@ -32,6 +51,11 @@ function normalizeTemplateRoomCount(value) {
   return Math.max(1, Math.min(3, parsed));
 }
 
+/**
+ * @param {Partial<TemplateRecord>} [template]
+ * @param {Partial<TemplateRecord>} [existingTemplate]
+ * @returns {TemplateRecord}
+ */
 function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
   const normalized = {
     ...existingTemplate,
@@ -50,11 +74,25 @@ function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
   return normalized;
 }
 
+/**
+ * @param {{
+ *   ipcMain: {handle: (channel: string, handler: Function) => void},
+ *   cache: {invalidate: (key: string) => void},
+ *   services: {
+ *     dataService: {getStore: () => any},
+ *     windowService?: {getMainWindow?: () => any}
+ *   }
+ * }} context
+ */
 function registerTemplateHandlers({ ipcMain, cache, services }) {
   const { dataService, windowService } = services;
   const getMainWindow = () => windowService?.getMainWindow?.() || null;
+  /**
+   * @param {{get: (key: string) => unknown, set: (key: string, value: unknown) => void}} store
+   * @returns {TemplateRecord[]}
+   */
   const getNormalizedTemplates = (store) => {
-    const templates = store.get('templates') || [];
+    const templates = /** @type {Array<Partial<TemplateRecord>>} */ (store.get('templates') || []);
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
     let shouldWriteBack = false;

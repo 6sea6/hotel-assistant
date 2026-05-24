@@ -5,6 +5,57 @@
  * 直接读写 state.xxx 即可，无需事件或回调。
  */
 
+/**
+ * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ * @typedef {import('../../shared/contracts').AppSettings} AppSettings
+ * @typedef {import('../../shared/contracts').AiTaskEvent} AiTaskEvent
+ * @typedef {import('../../shared/contracts').AiTaskConsoleState} AiTaskConsoleState
+ * @typedef {import('../../shared/contracts').AiTaskQueueItem} AiTaskQueueItem
+ * @typedef {import('../../shared/contracts').EntityId} EntityId
+ */
+
+/**
+ * @typedef {object} RendererState
+ * @property {HotelRecord[]} hotels
+ * @property {TemplateRecord[]} templates
+ * @property {AppSettings} settings
+ * @property {Record<string, unknown>} currentFilters
+ * @property {string} rankingMode
+ * @property {boolean} isInitialized
+ * @property {boolean} renderScheduled
+ * @property {'card'|'list'} viewMode
+ * @property {Set<EntityId>} selectedHotels
+ * @property {boolean} batchDeleteInProgress
+ * @property {boolean} manualRefreshInProgress
+ * @property {boolean} hotelListEventsBound
+ * @property {boolean} templateListEventsBound
+ * @property {boolean} hotelDetailsEventsBound
+ * @property {number} hotelListRenderVersion
+ * @property {number} hotelTemplateSelectRenderVersion
+ * @property {number} templateFilterRenderVersion
+ * @property {string|null} hotelNameFilterOptionSignature
+ * @property {number} hotelRenderResumeTimer
+ * @property {number} hotelRenderDelayTimer
+ * @property {Function|null} pendingHotelRenderResume
+ * @property {boolean} pendingRenderInteractionFirst
+ * @property {'total'|'daily'|null} lastEditedPriceField
+ * @property {AiTaskEvent[]} aiTaskEvents
+ * @property {AiTaskConsoleState} aiTaskConsole
+ * @property {Array<Record<string, unknown>>} aiProviderPresets
+ * @property {Record<string, unknown>|null} aiProviderConfig
+ * @property {boolean} aiAssistantInitialized
+ * @property {boolean} aiTaskInProgress
+ * @property {AiTaskQueueItem[]} aiTaskQueue
+ * @property {number} aiTaskQueueCounter
+ * @property {string} aiSelectedQueueTaskId
+ * @property {boolean} aiQueueSelectionPinned
+ * @property {boolean} aiReviewInputSyncBound
+ * @property {Record<string, unknown>} aiReview
+ * @property {boolean} [aiTemplatePickerBound]
+ */
+
+/** @type {RendererState} */
 export const state = {
   hotels: [],
   templates: [],

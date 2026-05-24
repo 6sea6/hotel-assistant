@@ -1,5 +1,12 @@
 import { $, escapeHtml, setText } from './dom-helpers.js';
 
+/**
+ * @typedef {import('../../shared/contracts').AiTaskConsoleState} AiTaskConsoleState
+ * @typedef {import('../../shared/contracts').AiTaskEvent} AiTaskEvent
+ * @typedef {import('../../shared/contracts').AiTaskQueueItem} AiTaskQueueItem
+ * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ */
+
 const TOOL_LABELS = {
   get_task_status: '获取任务状态',
   list_templates: '读取模板列表',
@@ -41,6 +48,32 @@ const CANCEL_STEP_DEFINITION = {
   doneTitle: '任务已取消'
 };
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Record<string, unknown>}
+ */
+function getLatestApplyResult(value) {
+  return isRecord(value) && isRecord(value.latestApplyResult) ? value.latestApplyResult : {};
+}
+
+/**
+ * @param {unknown} value
+ * @returns {unknown}
+ */
+function getNestedWriteResult(value) {
+  if (!isRecord(value)) return undefined;
+  const latest = getLatestApplyResult(value);
+  return value.writeResult || latest.writeResult;
+}
+
 // Duplicated from src/shared/url-constants.js — renderer uses ESM, cannot import CJS
 const TRAILING_URL_PUNCTUATION = /[)\]}>，。；;、！？!?.,]+$/;
 const INLINE_URL_TEXT_SEPARATOR = /[,，。；;、！？!?](?=[\u4e00-\u9fff])/;
@@ -59,6 +92,10 @@ export function formatAiTime(value) {
   });
 }
 
+/**
+ * @param {Partial<TemplateRecord>} [template]
+ * @returns {string}
+ */
 export function formatAiTemplateLabel(template = {}) {
   const id = template.id ?? '';
   const labelParts = [
@@ -106,6 +143,10 @@ export function extractCtripUrls(text) {
     });
 }
 
+/**
+ * @param {Record<string, unknown>} [result]
+ * @returns {Record<string, unknown>|null}
+ */
 export function getCollectToolResult(result = {}) {
   if (!Array.isArray(result.toolResults)) return null;
   return (
@@ -118,62 +159,48 @@ export function getCollectToolResult(result = {}) {
   );
 }
 
+/**
+ * @param {unknown} writeResult
+ * @returns {boolean}
+ */
 export function hasWriteResult(writeResult) {
   if (Array.isArray(writeResult)) {
     return writeResult.some((item) => {
-      if (!item) return false;
+      if (!isRecord(item)) return false;
       if (item.operation) return item.operation !== 'skipped';
-      return hasWriteResult(
-        item.result ||
-          item.writeResult ||
-          (item.latestApplyResult && item.latestApplyResult.writeResult)
-      );
+      return hasWriteResult(item.result || getNestedWriteResult(item));
     });
   }
-  if (writeResult && writeResult.batchMode) {
+  if (isRecord(writeResult) && writeResult.batchMode) {
     if (Number(writeResult.appliedCount || 0) > 0) {
       return true;
     }
     return (Array.isArray(writeResult.items) ? writeResult.items : []).some(
-      (item) =>
-        item &&
-        hasWriteResult(
-          item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)
-        )
+      (item) => isRecord(item) && hasWriteResult(getNestedWriteResult(item))
     );
   }
-  return Boolean(writeResult && writeResult.operation !== 'skipped');
+  return Boolean(writeResult && (!isRecord(writeResult) || writeResult.operation !== 'skipped'));
 }
 
 function countWriteOperations(writeResult) {
   if (Array.isArray(writeResult)) {
     return writeResult.reduce((sum, item) => {
-      if (!item) return sum;
+      if (!isRecord(item)) return sum;
       if (item.operation) return item.operation === 'skipped' ? sum : sum + 1;
-      return (
-        sum +
-        countWriteOperations(
-          item.result ||
-            item.writeResult ||
-            (item.latestApplyResult && item.latestApplyResult.writeResult)
-        )
-      );
+      return sum + countWriteOperations(item.result || getNestedWriteResult(item));
     }, 0);
   }
 
-  if (writeResult && writeResult.batchMode) {
+  if (isRecord(writeResult) && writeResult.batchMode) {
     return (Array.isArray(writeResult.items) ? writeResult.items : []).reduce((sum, item) => {
-      if (!item || item.skipped) return sum;
-      return (
-        sum +
-        countWriteOperations(
-          item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)
-        )
-      );
+      if (!isRecord(item) || item.skipped) return sum;
+      return sum + countWriteOperations(getNestedWriteResult(item));
     }, 0);
   }
 
-  return writeResult && writeResult.operation && writeResult.operation !== 'skipped' ? 1 : 0;
+  return isRecord(writeResult) && writeResult.operation && writeResult.operation !== 'skipped'
+    ? 1
+    : 0;
 }
 
 function countEligibleHotels(value = {}) {
@@ -192,23 +219,18 @@ function getBatchWriteStats(collectResult = {}) {
     };
   }
 
-  if (writeResult && writeResult.batchMode) {
+  if (isRecord(writeResult) && writeResult.batchMode) {
     const appliedItems = Array.isArray(writeResult.items)
       ? writeResult.items.filter(
-          (item) =>
-            item &&
-            !item.skipped &&
-            hasWriteResult(
-              item.writeResult || (item.latestApplyResult && item.latestApplyResult.writeResult)
-            )
+          (item) => isRecord(item) && !item.skipped && hasWriteResult(getNestedWriteResult(item))
         )
       : [];
     const hotelCount = Number.isFinite(Number(writeResult.appliedCount))
       ? Math.max(0, Number(writeResult.appliedCount))
       : appliedItems.length;
     const roomTypeCount = appliedItems.reduce((sum, item) => {
-      const latest = item.latestApplyResult || {};
-      const itemResult = item.item || {};
+      const latest = getLatestApplyResult(item);
+      const itemResult = isRecord(item.item) ? item.item : {};
       const fromItem = countEligibleHotels(itemResult);
       if (fromItem > 0) return sum + fromItem;
       const fromLatest = countEligibleHotels(latest);
@@ -224,7 +246,7 @@ function getBatchWriteStats(collectResult = {}) {
 
   if (Array.isArray(writeResult)) {
     const appliedItems = writeResult.filter(
-      (item) => item && hasWriteResult(item.result || item.writeResult || item)
+      (item) => isRecord(item) && hasWriteResult(item.result || getNestedWriteResult(item) || item)
     );
     return {
       hotelCount: appliedItems.length,
@@ -257,6 +279,11 @@ export function getReadableToolLabel(toolName) {
   return TOOL_LABELS[toolName] || `正在执行：${toolName}`;
 }
 
+/**
+ * @param {AiTaskEvent} [event]
+ * @param {import('../../shared/contracts').AiTaskKind} [taskKind]
+ * @returns {string}
+ */
 function getEventStepKey(event = {}, taskKind = 'collect') {
   const type = String(event.type || '');
   const toolName = getToolName(event);
@@ -301,6 +328,11 @@ function getEventStepKey(event = {}, taskKind = 'collect') {
   return '';
 }
 
+/**
+ * @param {AiTaskEvent} [event]
+ * @param {import('../../shared/contracts').AiTaskKind} [taskKind]
+ * @returns {string}
+ */
 function getReadableEventTitle(event = {}, taskKind = 'collect') {
   const type = String(event.type || '');
   const toolName = getToolName(event);
@@ -343,6 +375,11 @@ function getReadableEventTitle(event = {}, taskKind = 'collect') {
     .replace(/^AI\s*采集任务/, '采集任务');
 }
 
+/**
+ * @param {AiTaskEvent} [event]
+ * @param {import('../../shared/contracts').AiTaskKind} [taskKind]
+ * @returns {{key: string, time: string, title: string, detail: Record<string, unknown>|null, toolName: string, raw: AiTaskEvent}}
+ */
 function normalizeEvent(event = {}, taskKind = 'collect') {
   return {
     key: getEventStepKey(event, taskKind),
@@ -360,6 +397,11 @@ function getEventDetailText(event = {}) {
   return String(detail.instruction || detail.reason || detail.action || '').trim();
 }
 
+/**
+ * @param {AiTaskEvent[]} [events]
+ * @param {AiTaskConsoleState} [task]
+ * @returns {string}
+ */
 function getLastTaskError(events = [], task = {}) {
   if (task.error) return task.error;
   const errorEvent = events
@@ -369,6 +411,10 @@ function getLastTaskError(events = [], task = {}) {
   return errorEvent ? errorEvent.message || errorEvent.type : '';
 }
 
+/**
+ * @param {AiTaskEvent[]} [events]
+ * @returns {string}
+ */
 function getRefreshCurrentStepKey(events = []) {
   const itemStatus = new Map();
   let total = 0;
@@ -506,6 +552,10 @@ function findStepEvent(normalizedEvents, key) {
   );
 }
 
+/**
+ * @param {AiTaskEvent} [event]
+ * @returns {{type: string, index: number, total: number}}
+ */
 function parseBatchProgressEvent(event = {}) {
   const type = String(event.type || '');
   const detail = event.details && typeof event.details === 'object' ? event.details : {};
@@ -538,6 +588,11 @@ function parseBatchProgressEvent(event = {}) {
   return parsed;
 }
 
+/**
+ * @param {AiTaskEvent[]} [events]
+ * @param {import('../../shared/contracts').AiTaskKind} [taskKind]
+ * @returns {{total: number, completed: number, running: number, pending: number}|null}
+ */
 function buildProgressStats(events = [], taskKind = 'collect') {
   if (taskKind === 'refresh-data') {
     return buildRefreshProgressStats(events);
@@ -580,6 +635,10 @@ function buildProgressStats(events = [], taskKind = 'collect') {
   };
 }
 
+/**
+ * @param {AiTaskEvent[]} [events]
+ * @returns {{total: number, completed: number, running: number, pending: number}|null}
+ */
 function buildRefreshProgressStats(events = []) {
   let total = 0;
   let updatedCount = 0;
@@ -794,15 +853,23 @@ function syncElapsedTimer(status) {
   }
 }
 
+/**
+ * @param {AiTaskConsoleState} [task]
+ * @returns {Record<string, unknown>}
+ */
 function getTaskCollectResult(task = {}) {
-  return (
+  return /** @type {Record<string, unknown>} */ (
     task.collectResult ||
-    (task.result && task.result.collectResult) ||
-    (getCollectToolResult(task.result || {}) || {}).result ||
-    {}
+      (task.result && task.result.collectResult) ||
+      (getCollectToolResult(task.result || {}) || {}).result ||
+      {}
   );
 }
 
+/**
+ * @param {AiTaskConsoleState} [task]
+ * @returns {Record<string, unknown>}
+ */
 function buildTaskResult(task = {}) {
   const collectResult = getTaskCollectResult(task);
   const taskKind = task.taskKind || 'collect';
@@ -862,7 +929,7 @@ function buildTaskResult(task = {}) {
   const wroteResult = hasWriteResult(collectResult.writeResult);
   const batchSummary = collectResult.batchStats || collectResult.batchSummary || null;
   const batchCount = Number(
-    batchSummary && batchSummary.expandedHotelCount
+    isRecord(batchSummary) && batchSummary.expandedHotelCount
       ? batchSummary.expandedHotelCount
       : Array.isArray(collectResult.items)
         ? collectResult.items.length
@@ -914,6 +981,11 @@ function buildTaskResult(task = {}) {
   };
 }
 
+/**
+ * @param {AiTaskConsoleState} [task]
+ * @param {AiTaskEvent[]} [events]
+ * @returns {{message: string, reason: string, suggestions: string[]}}
+ */
 function buildTaskError(task = {}, events = []) {
   const message = getLastTaskError(events, task) || '系统在采集携程酒店页面时发生异常。';
   const cancelled =
@@ -932,6 +1004,17 @@ function buildTaskError(task = {}, events = []) {
   };
 }
 
+/**
+ * @param {{task?: AiTaskConsoleState, events?: AiTaskEvent[], inProgress?: boolean}} [options]
+ * @returns {{
+ *   status: string,
+ *   taskInfo: {taskId: string, templateName: string, hotelUrl: string, startTime: string, endTime: string},
+ *   steps: Array<Record<string, unknown>>,
+ *   progressStats: {total: number, completed: number, running: number, pending: number}|null,
+ *   result: Record<string, unknown>,
+ *   error: {message: string, reason: string, suggestions: string[]}
+ * }}
+ */
 export function normalizeTaskState({ task = {}, events = [], inProgress = false } = {}) {
   const submitted = Boolean(
     task.submitted || task.hotelUrl || task.result || task.error || events.length
@@ -955,9 +1038,9 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false 
   const steps = buildTaskSteps(task, events, status);
   const _collectResult = getTaskCollectResult(task);
   const taskKind = task.taskKind || 'collect';
+  const taskStatus = isRecord(task.result?.taskStatus) ? task.result.taskStatus : {};
   const taskInfo = {
-    taskId:
-      task.taskId || (task.result && task.result.taskStatus && task.result.taskStatus.id) || '',
+    taskId: task.taskId || (taskStatus.id ? String(taskStatus.id) : ''),
     templateName: task.templateLabel || formatAiTemplateLabel(task.template || {}) || '暂无',
     hotelUrl: task.hotelUrl || '',
     startTime: task.startedAt || '',
@@ -991,6 +1074,11 @@ function getQueueTaskTitle(task = {}) {
   return task.title || task.templateName || task.templateLabel || '未命名任务';
 }
 
+/**
+ * @param {AiTaskQueueItem} [task]
+ * @param {number} [fallbackIndex]
+ * @returns {string}
+ */
 function renderQueueTaskItem(task = {}, fallbackIndex = 0) {
   const displayIndex = task.displayIndex || String(fallbackIndex + 1).padStart(2, '0');
   const statusLabel = getQueueStatusLabel(task);
@@ -1021,6 +1109,13 @@ function renderQueueTaskItem(task = {}, fallbackIndex = 0) {
   `;
 }
 
+/**
+ * @param {string} label
+ * @param {AiTaskQueueItem[]} tasks
+ * @param {string} selectedId
+ * @param {string} [emptyText]
+ * @returns {string}
+ */
 function renderQueueGroup(label, tasks, selectedId, emptyText = '') {
   const rows = (tasks || [])
     .map((task, index) => renderQueueTaskItem({ ...task, selectedId }, index))
@@ -1038,6 +1133,11 @@ function renderQueueGroup(label, tasks, selectedId, emptyText = '') {
   `;
 }
 
+/**
+ * @param {AiTaskQueueItem[]} [queue]
+ * @param {{selectedId?: string}} [options]
+ * @returns {string}
+ */
 function renderTaskQueue(queue = [], options = {}) {
   const selectedId = options.selectedId || '';
   const running = queue.filter((task) => task.status === 'running');
@@ -1356,9 +1456,9 @@ function renderCancelledView(taskState, taskKind = 'collect') {
 }
 
 function updateStartBar() {
-  const button = $('aiStartTaskBtn');
-  const templateSelect = $('aiTemplateSelect');
-  const input = $('aiHotelUrlInput');
+  const button = /** @type {HTMLButtonElement|null} */ ($('aiStartTaskBtn'));
+  const templateSelect = /** @type {HTMLSelectElement|null} */ ($('aiTemplateSelect'));
+  const input = /** @type {HTMLInputElement|HTMLTextAreaElement|null} */ ($('aiHotelUrlInput'));
 
   if (templateSelect) templateSelect.disabled = false;
   if (input) input.disabled = false;
@@ -1369,6 +1469,16 @@ function updateStartBar() {
   button.innerHTML = '加入队列';
 }
 
+/**
+ * @param {{
+ *   aiTaskQueue?: AiTaskQueueItem[],
+ *   aiSelectedQueueTaskId?: string,
+ *   aiTaskConsole?: AiTaskConsoleState,
+ *   aiTaskInProgress?: boolean,
+ *   aiTaskEvents?: AiTaskEvent[]
+ * }} state
+ * @returns {ReturnType<typeof normalizeTaskState>|null}
+ */
 export function renderAiTaskConsole(state) {
   const panel = $('aiCurrentTaskPanel');
   if (!panel) return null;
@@ -1411,7 +1521,7 @@ export function renderAiTaskConsole(state) {
 }
 
 export function updateAiInputCount() {
-  const input = $('aiHotelUrlInput');
+  const input = /** @type {HTMLInputElement|HTMLTextAreaElement|null} */ ($('aiHotelUrlInput'));
   const count = input ? input.value.length : 0;
   const maxLength = input && Number(input.maxLength) > 0 ? Number(input.maxLength) : 4000;
   setText('aiInputCount', `${count} / ${maxLength}`);

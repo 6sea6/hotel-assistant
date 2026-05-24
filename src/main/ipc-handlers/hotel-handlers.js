@@ -8,6 +8,12 @@ const {
   normalizeIntegerLikeValue
 } = require('../../shared/id-utils');
 
+/**
+ * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
+ * @typedef {import('../../shared/contracts').EntityId} EntityId
+ */
+
 const HOTEL_ALLOWED_FIELD_KEYS = new Set([
   ...HOTEL_EDITABLE_FIELDS.map((field) => field.key),
   ...HOTEL_SYSTEM_FIELDS.map((field) => field.key),
@@ -15,17 +21,29 @@ const HOTEL_ALLOWED_FIELD_KEYS = new Set([
   'window_status'
 ]);
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizeStringNumber(value) {
   if (value === null || value === undefined || value === '') return '';
   return String(value).trim();
 }
 
+/**
+ * @param {unknown} value
+ * @returns {number|null}
+ */
 function normalizeNullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * @param {Partial<TemplateInfo>|null|undefined} templateInfo
+ * @returns {TemplateInfo|null}
+ */
 function normalizeTemplateInfo(templateInfo) {
   if (!templateInfo || typeof templateInfo !== 'object' || Array.isArray(templateInfo)) {
     return null;
@@ -41,6 +59,11 @@ function normalizeTemplateInfo(templateInfo) {
   };
 }
 
+/**
+ * @param {Partial<HotelRecord>} [hotel]
+ * @param {Partial<HotelRecord>} [existingHotel]
+ * @returns {HotelRecord}
+ */
 function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
   const normalized = {
     ...existingHotel,
@@ -87,8 +110,19 @@ function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
   return normalized;
 }
 
+/**
+ * @param {{
+ *   ipcMain: {handle: (channel: string, handler: Function) => void},
+ *   cache: {invalidate: (key: string) => void},
+ *   services: {dataService: {getStore: () => unknown}}
+ * }} context
+ */
 function registerHotelHandlers({ ipcMain, cache, services }) {
   const { dataService } = services;
+  /**
+   * @param {unknown} store
+   * @returns {HotelRecord[]}
+   */
   const getNormalizedHotels = (store) => {
     const hotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);
     const usedIds = new Set();

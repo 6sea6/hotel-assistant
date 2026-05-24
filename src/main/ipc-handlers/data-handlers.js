@@ -9,14 +9,29 @@ const templateHandlers = require('./template-handlers');
 const { normalizeAiProviderConfig, redactAiProviderConfig } = require('../ai/provider-presets');
 const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared/id-utils');
 
+/**
+ * @typedef {import('../../shared/contracts').AppSettings} AppSettings
+ * @typedef {import('../../shared/contracts').HotelRecord} HotelRecord
+ * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
+ * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
+ */
+
 const EXPORT_SCHEMA_VERSION = 3;
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 const normalizeTemplatePayload = templateHandlers.normalizeTemplatePayload;
 
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * @param {unknown} settings
+ * @returns {AppSettings}
+ */
 function normalizeImportedSettings(settings) {
   const normalizedSettings = {
     ...APP_CONFIG.STORE_DEFAULTS.settings,
@@ -32,6 +47,10 @@ function normalizeImportedSettings(settings) {
   return normalizedSettings;
 }
 
+/**
+ * @param {AppSettings} settings
+ * @returns {AppSettings}
+ */
 function redactSettingsForExport(settings) {
   const exportedSettings = {
     ...settings
@@ -49,6 +68,10 @@ function redactSettingsForExport(settings) {
   return exportedSettings;
 }
 
+/**
+ * @param {TemplateRecord} template
+ * @returns {TemplateInfo}
+ */
 function buildTemplateInfoFromTemplate(template) {
   return {
     id: template.id,
@@ -60,6 +83,10 @@ function buildTemplateInfoFromTemplate(template) {
   };
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizeComparableText(value) {
   if (value === null || value === undefined) {
     return '';
@@ -68,6 +95,10 @@ function normalizeComparableText(value) {
   return String(value).trim().toLowerCase();
 }
 
+/**
+ * @param {Partial<TemplateRecord>} template
+ * @returns {string}
+ */
 function buildTemplateDuplicateKey(template) {
   const normalizedTemplate = normalizeTemplatePayload(template);
 
@@ -80,6 +111,10 @@ function buildTemplateDuplicateKey(template) {
   ]);
 }
 
+/**
+ * @param {Partial<HotelRecord>} hotel
+ * @returns {string}
+ */
 function buildHotelDuplicateKey(hotel) {
   const normalizedHotel = normalizeHotelPayload(hotel);
 
@@ -100,6 +135,17 @@ function buildHotelDuplicateKey(hotel) {
   ]);
 }
 
+/**
+ * @param {Array<Partial<TemplateRecord>>} importedTemplates
+ * @param {TemplateRecord[]} [existingTemplates]
+ * @param {{skipDuplicates?: boolean, nextIdState?: {value: number}}} [options]
+ * @returns {{
+ *   processedTemplates: TemplateRecord[],
+ *   templateByDuplicateKey: Map<string, TemplateRecord>,
+ *   templateByImportedId: Map<string, TemplateRecord>,
+ *   skippedCount: number
+ * }}
+ */
 function processImportedTemplates(importedTemplates, existingTemplates = [], options = {}) {
   const skipDuplicates = Boolean(options.skipDuplicates);
   const nextIdState = options.nextIdState || { value: Date.now() };
@@ -151,6 +197,12 @@ function processImportedTemplates(importedTemplates, existingTemplates = [], opt
   };
 }
 
+/**
+ * @param {HotelRecord} normalizedHotel
+ * @param {Map<string, TemplateRecord>} templateByImportedId
+ * @param {Map<string, TemplateRecord>} templateByDuplicateKey
+ * @returns {{template_id: import('../../shared/contracts').EntityId|null|undefined, template_info: TemplateInfo|null|undefined}}
+ */
 function resolveImportedHotelTemplate(
   normalizedHotel,
   templateByImportedId,
@@ -179,6 +231,17 @@ function resolveImportedHotelTemplate(
   };
 }
 
+/**
+ * @param {Array<Partial<HotelRecord>>} importedHotels
+ * @param {HotelRecord[]} [existingHotels]
+ * @param {{
+ *   skipDuplicates?: boolean,
+ *   nextIdState?: {value: number},
+ *   templateByImportedId?: Map<string, TemplateRecord>,
+ *   templateByDuplicateKey?: Map<string, TemplateRecord>
+ * }} [options]
+ * @returns {{processedHotels: HotelRecord[], skippedCount: number}}
+ */
 function processImportedHotels(importedHotels, existingHotels = [], options = {}) {
   const skipDuplicates = Boolean(options.skipDuplicates);
   const nextIdState = options.nextIdState || { value: Date.now() };
@@ -233,15 +296,27 @@ function processImportedHotels(importedHotels, existingHotels = [], options = {}
   };
 }
 
+/**
+ * @param {{get: (key: string) => unknown}} store
+ * @returns {{
+ *   hotels: unknown[],
+ *   templates: TemplateRecord[],
+ *   settings: AppSettings,
+ *   exportedAt: string,
+ *   appVersion: string,
+ *   schemaVersion: number,
+ *   meta: Record<string, unknown>
+ * }}
+ */
 function buildExportPayload(store) {
   const exportedAt = new Date().toISOString();
   const hotels = hotelStorage.compactHotels(
     hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload),
     normalizeHotelPayload
   );
-  const templates = (store.get('templates') || []).map((template) =>
-    normalizeTemplatePayload(template)
-  );
+  const templates = /** @type {Array<Partial<TemplateRecord>>} */ (
+    store.get('templates') || []
+  ).map((template) => normalizeTemplatePayload(template));
   const settings = normalizeImportedSettings(store.get('settings'));
   const exportedSettings = redactSettingsForExport(settings);
   const customAppIcon = appIconManager.readCustomIconExportPayload(settings);
@@ -265,6 +340,16 @@ function buildExportPayload(store) {
 
 // 导入来源约定为本应用自己导出的 JSON，因此这里重点做两件事：
 // 1. 兼容旧版本导出的字段与 ID 类型；2. 任一环节失败时恢复导入前快照，避免半写入状态。
+/**
+ * @param {unknown} rawPayload
+ * @returns {{
+ *   hotels: HotelRecord[],
+ *   templates: TemplateRecord[],
+ *   settings: AppSettings,
+ *   customAppIcon: Record<string, unknown>|null,
+ *   meta: Record<string, unknown>
+ * }}
+ */
 function normalizeImportedPayload(rawPayload) {
   if (!isPlainObject(rawPayload)) {
     throw new Error('导入文件格式不正确');
@@ -272,7 +357,9 @@ function normalizeImportedPayload(rawPayload) {
 
   // 基本来源校验：必须包含 hotels 数组或 meta.sourceApp 标识
   const meta = isPlainObject(rawPayload.meta) ? rawPayload.meta : null;
-  const hasHotelsArray = Array.isArray(rawPayload.hotels);
+  const rawHotels = Array.isArray(rawPayload.hotels) ? rawPayload.hotels : null;
+  const rawTemplates = Array.isArray(rawPayload.templates) ? rawPayload.templates : null;
+  const hasHotelsArray = Boolean(rawHotels);
   const isKnownSource = meta && meta.sourceApp === APP_CONFIG.NAME;
 
   if (!hasHotelsArray && !isKnownSource) {
@@ -281,9 +368,9 @@ function normalizeImportedPayload(rawPayload) {
 
   // hotels 内部结构校验
   let normalizedHotels = [];
-  if (hasHotelsArray) {
-    for (let i = 0; i < rawPayload.hotels.length; i++) {
-      const h = rawPayload.hotels[i];
+  if (rawHotels) {
+    for (let i = 0; i < rawHotels.length; i++) {
+      const h = rawHotels[i];
       if (!isPlainObject(h)) {
         throw new Error(`hotels[${i}] 不是有效的对象`);
       }
@@ -303,7 +390,7 @@ function normalizeImportedPayload(rawPayload) {
       }
     }
 
-    normalizedHotels = hotelStorage.expandStoredHotels(rawPayload.hotels, normalizeHotelPayload);
+    normalizedHotels = hotelStorage.expandStoredHotels(rawHotels, normalizeHotelPayload);
 
     for (let i = 0; i < normalizedHotels.length; i++) {
       const h = normalizedHotels[i];
@@ -314,9 +401,9 @@ function normalizeImportedPayload(rawPayload) {
   }
 
   // templates 内部结构校验
-  if (Array.isArray(rawPayload.templates)) {
-    for (let i = 0; i < rawPayload.templates.length; i++) {
-      const t = rawPayload.templates[i];
+  if (rawTemplates) {
+    for (let i = 0; i < rawTemplates.length; i++) {
+      const t = rawTemplates[i];
       if (!isPlainObject(t)) {
         throw new Error(`templates[${i}] 不是有效的对象`);
       }
@@ -328,13 +415,11 @@ function normalizeImportedPayload(rawPayload) {
 
   return {
     hotels: normalizedHotels,
-    templates: Array.isArray(rawPayload.templates)
-      ? rawPayload.templates.map((template) => normalizeTemplatePayload(template))
+    templates: rawTemplates
+      ? rawTemplates.map((template) => normalizeTemplatePayload(template))
       : [],
     settings: normalizeImportedSettings(rawPayload.settings),
-    customAppIcon: isPlainObject(rawPayload.meta?.customAppIcon)
-      ? rawPayload.meta.customAppIcon
-      : null,
+    customAppIcon: meta && isPlainObject(meta.customAppIcon) ? meta.customAppIcon : null,
     meta: meta
       ? meta
       : {
@@ -346,12 +431,25 @@ function normalizeImportedPayload(rawPayload) {
   };
 }
 
+/**
+ * @param {{set: (key: string, value: unknown) => void}} store
+ * @param {{hotels: unknown[], templates: unknown[], settings: AppSettings|Record<string, unknown>}} snapshot
+ */
 function restoreSnapshot(store, snapshot) {
   store.set('hotels', snapshot.hotels);
   store.set('templates', snapshot.templates);
   store.set('settings', snapshot.settings);
 }
 
+/**
+ * @param {{hotels: HotelRecord[], templates: TemplateRecord[], settings: AppSettings}} importedPayload
+ * @returns {{
+ *   hotels: HotelRecord[],
+ *   templates: TemplateRecord[],
+ *   settings: AppSettings,
+ *   importStats: {addedHotelCount: number, skippedHotelCount: number, addedTemplateCount: number, skippedTemplateCount: number}
+ * }}
+ */
 function buildReplaceImportPayload(importedPayload) {
   const nextIdState = { value: Date.now() };
   const templateProcessingResult = processImportedTemplates(importedPayload.templates, [], {
@@ -378,14 +476,24 @@ function buildReplaceImportPayload(importedPayload) {
   };
 }
 
+/**
+ * @param {{hotels: unknown[], templates: unknown[], settings: AppSettings|Record<string, unknown>}} snapshot
+ * @param {{hotels: HotelRecord[], templates: TemplateRecord[], settings: AppSettings}} importedPayload
+ * @returns {{
+ *   hotels: HotelRecord[],
+ *   templates: TemplateRecord[],
+ *   settings: AppSettings,
+ *   importStats: {addedHotelCount: number, skippedHotelCount: number, addedTemplateCount: number, skippedTemplateCount: number}
+ * }}
+ */
 function buildAppendImportPayload(snapshot, importedPayload) {
   const existingHotels = hotelStorage.expandStoredHotels(
     snapshot.hotels || [],
     normalizeHotelPayload
   );
-  const existingTemplates = (snapshot.templates || []).map((template) =>
-    normalizeTemplatePayload(template)
-  );
+  const existingTemplates = /** @type {Array<Partial<TemplateRecord>>} */ (
+    snapshot.templates || []
+  ).map((template) => normalizeTemplatePayload(template));
   const nextIdState = { value: Date.now() };
   const templateProcessingResult = processImportedTemplates(
     importedPayload.templates,
@@ -415,6 +523,16 @@ function buildAppendImportPayload(snapshot, importedPayload) {
   };
 }
 
+/**
+ * @param {{
+ *   ipcMain: {handle: (channel: string, handler: Function) => void},
+ *   cache: {invalidate: (key: string) => void},
+ *   services: {
+ *     dataService: {getStore: () => any, getDataFolderManager: () => any, reinitializeStore: (folder: string) => void},
+ *     windowService?: any
+ *   }
+ * }} context
+ */
 function registerDataHandlers({ ipcMain, cache, services }) {
   const { dataService, windowService } = services;
   const getMainWindow = () => windowService?.getMainWindow?.() || null;

@@ -5,58 +5,112 @@
 const escapeHtmlCache = new Map();
 const ESCAPE_CACHE_MAX_SIZE = 500;
 
+/**
+ * @param {string} id
+ * @returns {HTMLElement|null}
+ */
 export const $ = (id) => document.getElementById(id);
 
+/**
+ * @param {string} id
+ * @param {string} [defaultValue]
+ * @returns {string}
+ */
 export const getValue = (id, defaultValue = '') => {
-  const el = $(id);
+  const el = /** @type {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement|null} */ ($(id));
   return el ? el.value : defaultValue;
 };
 
+/**
+ * @param {string} id
+ * @param {unknown} value
+ */
 export const setValue = (id, value) => {
-  const el = $(id);
-  if (el) el.value = value;
+  const el = /** @type {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement|null} */ ($(id));
+  if (el) el.value = /** @type {string} */ (value);
 };
 
+/**
+ * @param {string} id
+ * @returns {boolean}
+ */
 export const getChecked = (id) => {
-  const el = $(id);
+  const el = /** @type {HTMLInputElement|null} */ ($(id));
   return el ? el.checked : false;
 };
 
+/**
+ * @param {string} id
+ * @param {boolean} checked
+ */
 export const setChecked = (id, checked) => {
-  const el = $(id);
+  const el = /** @type {HTMLInputElement|null} */ ($(id));
   if (el) el.checked = checked;
 };
 
+/**
+ * @param {string} id
+ * @param {string} text
+ */
 export const setText = (id, text) => {
   const el = $(id);
   if (el) el.textContent = text;
 };
 
+/**
+ * @param {string} id
+ * @param {string} html
+ */
 export const setHtml = (id, html) => {
   const el = $(id);
   if (el) el.innerHTML = html;
 };
 
+/**
+ * @param {string} id
+ * @param {string} event
+ * @param {(event: Event) => void} handler
+ */
 export const addEvent = (id, event, handler) => {
   const el = $(id);
   if (el) el.addEventListener(event, handler);
 };
 
+/**
+ * @param {string} id
+ * @param {string} className
+ */
 export const addClass = (id, className) => {
   const el = $(id);
   if (el) el.classList.add(className);
 };
 
+/**
+ * @param {string} id
+ * @param {string} className
+ */
 export const removeClass = (id, className) => {
   const el = $(id);
   if (el) el.classList.remove(className);
 };
 
+/**
+ * @param {string} id
+ * @param {keyof CSSStyleDeclaration} property
+ * @param {string} value
+ */
 export const setStyle = (id, property, value) => {
   const el = $(id);
-  if (el) el.style[property] = value;
+  if (el) {
+    const style = /** @type {any} */ (el.style);
+    style[property] = value;
+  }
 };
 
+/**
+ * @param {string} text
+ * @returns {string}
+ */
 export function escapeHtml(text) {
   if (!text) return '';
   if (escapeHtmlCache.has(text)) {

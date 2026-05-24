@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "baseUrl": ".",
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/shared/contracts.js",
+    "src/renderer/modules/state.js",
+    "src/main/preload.js",
+    "src/main/ipc-handlers/hotel-handlers.js",
+    "src/main/ipc-handlers/template-handlers.js",
+    "src/main/ipc-handlers/data-handlers.js",
+    "src/renderer/modules/ai-task-console.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "coverage",
+    "dist",
+    "dist-*",
+    "build",
+    "output",
+    "state",
+    "scraper-data",
+    "宾馆比较助手"
+  ]
+}
