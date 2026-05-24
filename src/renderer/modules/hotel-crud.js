@@ -2,7 +2,15 @@
  * 宾馆 CRUD —— 保存、删除、收藏、批量删除和表单相关计算。
  */
 
-import { state, rankingCache, TEMPLATE_SELECT_BATCH_SIZE } from './state.js';
+import {
+  state,
+  TEMPLATE_SELECT_BATCH_SIZE,
+  setHotels,
+  setTemplates,
+  setSettings,
+  clearSelectedHotels,
+  markRankingCacheDirty
+} from './state.js';
 import {
   $,
   getValue,
@@ -103,11 +111,11 @@ export async function reloadAllData(options = {}) {
     if (verbose) console.log('[数据重载] 开始重新加载数据...');
 
     const [loadedHotels, loadedTemplates, loadedSettings] = await Promise.all(requests);
-    state.hotels = loadedHotels || [];
-    state.templates = loadedTemplates || [];
+    setHotels(loadedHotels || []);
+    setTemplates(loadedTemplates || []);
 
     if (includeSettings) {
-      state.settings = loadedSettings || state.settings;
+      setSettings(loadedSettings || state.settings);
     }
 
     if (verbose) {
@@ -410,15 +418,15 @@ export async function saveHotel() {
       await window.electronAPI.addHotel(hotel);
     }
 
-    state.hotels = await loadHotels();
-    rankingCache.invalidate();
+    setHotels(await loadHotels());
+    markRankingCacheDirty();
     actions.renderHotelList();
     closeHotelModal();
   } catch (error) {
     console.error('保存宾馆失败:', error);
     try {
-      state.hotels = previousHotels || (await loadHotels());
-      rankingCache.invalidate();
+      setHotels(previousHotels || (await loadHotels()));
+      markRankingCacheDirty();
       actions.renderHotelList();
     } catch (recoveryError) {
       console.error('恢复宾馆数据失败:', recoveryError);
@@ -434,8 +442,10 @@ export async function deleteHotel(id) {
   try {
     const idx = state.hotels.findIndex((h) => idsEqual(h.id, id));
     if (idx !== -1) {
-      state.hotels.splice(idx, 1);
-      rankingCache.invalidate();
+      const nextHotels = state.hotels.slice();
+      nextHotels.splice(idx, 1);
+      setHotels(nextHotels);
+      markRankingCacheDirty();
       actions.renderHotelList();
     }
 
@@ -446,8 +456,8 @@ export async function deleteHotel(id) {
           throw new Error(result?.error || '删除失败');
         }
         const loaded = await loadHotels();
-        state.hotels = loaded || [];
-        rankingCache.invalidate();
+        setHotels(loaded || []);
+        markRankingCacheDirty();
         actions.renderHotelList();
         showNotification('删除成功', 'success');
         perfEnd('deleteHotel');
@@ -455,8 +465,8 @@ export async function deleteHotel(id) {
         perfEnd('deleteHotel');
         console.error('后台删除失败:', err);
         try {
-          state.hotels = await loadHotels();
-          rankingCache.invalidate();
+          setHotels(await loadHotels());
+          markRankingCacheDirty();
           actions.renderHotelList();
         } catch (recoveryErr) {
           console.error('恢复宾馆列表失败:', recoveryErr);
@@ -485,16 +495,16 @@ export async function toggleFavorite(id, currentStatus) {
     (async () => {
       try {
         await window.electronAPI.updateHotel(hotel);
-        state.hotels = await loadHotels();
-        rankingCache.invalidate();
+        setHotels(await loadHotels());
+        markRankingCacheDirty();
         actions.renderHotelList();
         perfEnd('toggleFavorite');
       } catch (err) {
         perfEnd('toggleFavorite');
         console.error('更新收藏状态失败（后台）:', err);
         try {
-          state.hotels = await loadHotels();
-          rankingCache.invalidate();
+          setHotels(await loadHotels());
+          markRankingCacheDirty();
           actions.renderHotelList();
         } catch (recoveryErr) {
           console.error('恢复宾馆列表失败:', recoveryErr);
@@ -543,9 +553,9 @@ export async function confirmBatchDelete() {
       throw new Error('批量删除失败');
     }
 
-    state.hotels = previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id)));
-    state.selectedHotels.clear();
-    rankingCache.invalidate();
+    setHotels(previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id))));
+    clearSelectedHotels();
+    markRankingCacheDirty();
     actions.renderHotelList();
 
     if (document.activeElement instanceof HTMLElement) {
@@ -558,8 +568,8 @@ export async function confirmBatchDelete() {
   } catch (error) {
     console.error('批量删除失败:', error);
     state.batchDeleteInProgress = false;
-    state.hotels = previousHotels || state.hotels;
-    rankingCache.invalidate();
+    setHotels(previousHotels || state.hotels);
+    markRankingCacheDirty();
     actions.renderHotelList();
     resetBatchDeleteConfirmation({ count: state.selectedHotels.size, disabled: false });
     showNotification('删除失败，请重试', 'error');

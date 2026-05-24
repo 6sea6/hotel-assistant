@@ -5,15 +5,29 @@
 import { state, rankingCache } from './state.js';
 import { getValue, idsEqual, hasDisplayValue, normalizeFilterOptionKey } from './dom-helpers.js';
 
+/**
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
+ * @typedef {Record<string, string|number|boolean|null|undefined>} HotelFilters
+ * @typedef {NormalizedHotelRecord & {score?: number}} RankedHotelRecord
+ */
+
+/**
+ * @param {string|null|undefined} distanceStr
+ * @returns {number|null}
+ */
 export function extractDistanceNumber(distanceStr) {
   if (!distanceStr) return null;
-  const match = distanceStr.match(/(\d+\.?\d*)/);
+  const match = String(distanceStr).match(/(\d+\.?\d*)/);
   return match ? parseFloat(match[1]) : null;
 }
 
+/**
+ * @param {string|null|undefined} timeStr
+ * @returns {number|null}
+ */
 export function extractTimeNumber(timeStr) {
   if (!timeStr) return null;
-  const match = timeStr.match(/(\d+)/);
+  const match = String(timeStr).match(/(\d+)/);
   return match ? parseInt(match[1]) : null;
 }
 
@@ -57,6 +71,11 @@ export function computeHotelsHash(hotels) {
   return hash;
 }
 
+/**
+ * @param {NormalizedHotelRecord[]} hotels
+ * @param {HotelFilters} filters
+ * @returns {NormalizedHotelRecord[]}
+ */
 export function applyFiltersToHotels(hotels, filters) {
   const normalizedNameFilter = normalizeFilterOptionKey(filters.name);
 
@@ -65,7 +84,7 @@ export function applyFiltersToHotels(hotels, filters) {
       return false;
     }
 
-    if (filters.score && hotel.ctrip_score < parseFloat(filters.score)) {
+    if (filters.score && hotel.ctrip_score < parseFloat(String(filters.score))) {
       return false;
     }
 
@@ -83,7 +102,7 @@ export function applyFiltersToHotels(hotels, filters) {
     }
 
     if (filters.transportTime && filters.transportTime !== '') {
-      const maxTime = parseInt(filters.transportTime);
+      const maxTime = parseInt(String(filters.transportTime));
       const hotelTime = extractTimeNumber(hotel.transport_time);
       if (hotelTime === null || hotelTime > maxTime) {
         return false;
@@ -98,7 +117,7 @@ export function applyFiltersToHotels(hotels, filters) {
           return false;
         }
       } else {
-        const maxDistance = parseFloat(filters.subwayDistance);
+        const maxDistance = parseFloat(String(filters.subwayDistance));
         if (
           hotelSubwayDistance === null ||
           hotelSubwayDistance === 0 ||
@@ -113,22 +132,26 @@ export function applyFiltersToHotels(hotels, filters) {
   });
 }
 
+/**
+ * @param {NormalizedHotelRecord[]} hotels
+ * @returns {RankedHotelRecord[]}
+ */
 export function rankHotels(hotels) {
   if (hotels.length === 0) return [];
 
   const weights =
     state.rankingMode === 'manual'
       ? {
-          price: parseFloat(getValue('weightPrice', 0.25)),
-          score: parseFloat(getValue('weightScore', 0.35)),
-          distance: parseFloat(getValue('weightDistance', 0.2)),
-          transport: parseFloat(getValue('weightTransport', 0.2))
+          price: parseFloat(getValue('weightPrice', '0.25')),
+          score: parseFloat(getValue('weightScore', '0.35')),
+          distance: parseFloat(getValue('weightDistance', '0.2')),
+          transport: parseFloat(getValue('weightTransport', '0.2'))
         }
       : {
-          price: parseFloat(state.settings.weight_price || 0.25),
-          score: parseFloat(state.settings.weight_score || 0.35),
-          distance: parseFloat(state.settings.weight_distance || 0.2),
-          transport: parseFloat(state.settings.weight_transport || 0.2)
+          price: parseFloat(String(state.settings.weight_price || 0.25)),
+          score: parseFloat(String(state.settings.weight_score || 0.35)),
+          distance: parseFloat(String(state.settings.weight_distance || 0.2)),
+          transport: parseFloat(String(state.settings.weight_transport || 0.2))
         };
 
   const weightsKey = `${weights.price}-${weights.score}-${weights.distance}-${weights.transport}`;
@@ -215,6 +238,10 @@ export function rankHotels(hotels) {
   return result;
 }
 
+/**
+ * @param {Array<NormalizedHotelRecord|RankedHotelRecord>} [sourceHotels]
+ * @returns {{hotelCount: number, roomTypeCount: number}}
+ */
 export function getVisibleHotelSummary(sourceHotels = []) {
   const hotelKeys = new Set();
   const roomTypeKeys = new Set();

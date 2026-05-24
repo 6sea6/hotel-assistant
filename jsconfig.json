@@ -17,6 +17,8 @@
     "src/main/hotel-storage.js",
     "src/renderer/modules/state.js",
     "src/renderer/modules/hotel-crud.js",
+    "src/renderer/modules/hotel-list.js",
+    "src/renderer/modules/hotel-filters.js",
     "src/main/preload.js",
     "src/main/ipc-handlers/hotel-handlers.js",
     "src/main/ipc-handlers/template-handlers.js",

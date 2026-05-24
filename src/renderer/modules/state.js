@@ -13,6 +13,8 @@
  * @typedef {import('../../shared/contracts').AiTaskConsoleState} AiTaskConsoleState
  * @typedef {import('../../shared/contracts').AiTaskQueueItem} AiTaskQueueItem
  * @typedef {import('../../shared/contracts').EntityId} EntityId
+ * @typedef {'card'|'list'} ViewMode
+ * @typedef {Record<string, string|number|boolean|null|undefined>} CurrentFilters
  */
 
 /**
@@ -20,11 +22,11 @@
  * @property {NormalizedHotelRecord[]} hotels
  * @property {NormalizedTemplateRecord[]} templates
  * @property {AppSettings} settings
- * @property {Record<string, unknown>} currentFilters
+ * @property {CurrentFilters} currentFilters
  * @property {string} rankingMode
  * @property {boolean} isInitialized
  * @property {boolean} renderScheduled
- * @property {'card'|'list'} viewMode
+ * @property {ViewMode} viewMode
  * @property {Set<EntityId>} selectedHotels
  * @property {boolean} batchDeleteInProgress
  * @property {boolean} manualRefreshInProgress
@@ -117,6 +119,114 @@ export const state = {
   }
 };
 
+/**
+ * @param {NormalizedHotelRecord[]} hotels
+ * @returns {void}
+ */
+export function setHotels(hotels) {
+  state.hotels = hotels;
+}
+
+/**
+ * @param {NormalizedTemplateRecord[]} templates
+ * @returns {void}
+ */
+export function setTemplates(templates) {
+  state.templates = templates;
+}
+
+/**
+ * @param {AppSettings} settings
+ * @returns {void}
+ */
+export function setSettings(settings) {
+  state.settings = settings;
+}
+
+/**
+ * @param {CurrentFilters} patch
+ * @returns {void}
+ */
+export function updateCurrentFilters(patch) {
+  state.currentFilters = {
+    ...state.currentFilters,
+    ...patch
+  };
+}
+
+/**
+ * @param {CurrentFilters} filters
+ * @returns {void}
+ */
+export function replaceCurrentFilters(filters) {
+  state.currentFilters = filters;
+}
+
+/**
+ * @returns {void}
+ */
+export function clearCurrentFilters() {
+  state.currentFilters = {};
+}
+
+/**
+ * @param {Iterable<EntityId>} ids
+ * @returns {void}
+ */
+export function setSelectedHotels(ids) {
+  state.selectedHotels.clear();
+  for (const id of ids) {
+    state.selectedHotels.add(id);
+  }
+}
+
+/**
+ * @returns {void}
+ */
+export function clearSelectedHotels() {
+  state.selectedHotels.clear();
+}
+
+/**
+ * @param {ViewMode} viewMode
+ * @returns {void}
+ */
+export function setViewMode(viewMode) {
+  state.viewMode = viewMode;
+}
+
+/**
+ * @returns {number}
+ */
+export function bumpHotelListRenderVersion() {
+  state.hotelListRenderVersion += 1;
+  return state.hotelListRenderVersion;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+export function setRenderScheduled(value) {
+  state.renderScheduled = value;
+}
+
+/**
+ * @param {boolean} value
+ * @returns {void}
+ */
+export function setPendingRenderInteractionFirst(value) {
+  state.pendingRenderInteractionFirst = value;
+}
+
+/**
+ * @param {string|null} signature
+ * @returns {void}
+ */
+export function setHotelNameFilterOptionSignature(signature) {
+  state.hotelNameFilterOptionSignature = signature;
+}
+
 /* ---- 常量 ---- */
 export const HOTEL_RENDER_BATCH_SIZE = 36;
 export const LARGE_HOTEL_RENDER_THRESHOLD = 120;
@@ -137,3 +247,10 @@ export const rankingCache = {
     this.weights = null;
   }
 };
+
+/**
+ * @returns {void}
+ */
+export function markRankingCacheDirty() {
+  rankingCache.invalidate();
+}

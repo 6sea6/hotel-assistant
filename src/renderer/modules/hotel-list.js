@@ -4,10 +4,20 @@
 
 import {
   state,
-  rankingCache,
   HOTEL_RENDER_BATCH_SIZE,
   LARGE_HOTEL_RENDER_THRESHOLD,
-  INTERACTION_FIRST_RENDER_DELAY
+  INTERACTION_FIRST_RENDER_DELAY,
+  setHotels,
+  updateCurrentFilters,
+  replaceCurrentFilters,
+  clearCurrentFilters,
+  clearSelectedHotels,
+  setViewMode,
+  markRankingCacheDirty,
+  bumpHotelListRenderVersion,
+  setRenderScheduled,
+  setPendingRenderInteractionFirst,
+  setHotelNameFilterOptionSignature
 } from './state.js';
 import {
   $,
@@ -53,6 +63,16 @@ import { refreshCustomSelects } from './custom-select.js';
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
 
+/**
+ * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
+ */
+
+/**
+ * @param {string} id
+ * @returns {FormValueElement|null}
+ */
+const getFormValueElement = (id) => /** @type {FormValueElement|null} */ ($(id));
+
 function resetRuleDeleteConfirmation() {
   const confirmBtn = $('ruleDeleteConfirmBtn');
   if (!confirmBtn) return;
@@ -82,8 +102,12 @@ export function buildHotelNameFilterOptions(sourceHotels) {
   return options;
 }
 
+/**
+ * @param {{selectedValue?: string}} [options]
+ * @returns {string}
+ */
 export function syncHotelNameFilterOptions(options = {}) {
-  const select = $('filterName');
+  const select = /** @type {HTMLSelectElement|null} */ ($('filterName'));
   if (!select) return options.selectedValue || '';
 
   const selectedValue = options.selectedValue ?? select.value;
@@ -100,7 +124,7 @@ export function syncHotelNameFilterOptions(options = {}) {
     return select.value;
   }
 
-  state.hotelNameFilterOptionSignature = signature;
+  setHotelNameFilterOptionSignature(signature);
 
   select.innerHTML = '<option value="">全部</option>';
   const fragment = document.createDocumentFragment();
@@ -141,19 +165,20 @@ function renderHotelListPreparingState() {
 }
 
 export function renderHotelList(options = {}) {
-  state.hotelListRenderVersion += 1;
-  state.pendingRenderInteractionFirst =
-    state.pendingRenderInteractionFirst || Boolean(options.interactionFirst);
+  bumpHotelListRenderVersion();
+  setPendingRenderInteractionFirst(
+    state.pendingRenderInteractionFirst || Boolean(options.interactionFirst)
+  );
   if (state.renderScheduled) return;
 
   clearPendingHotelRenderTimers();
-  state.renderScheduled = true;
+  setRenderScheduled(true);
 
   const runRender = () => {
-    state.renderScheduled = false;
+    setRenderScheduled(false);
     const taskVersion = state.hotelListRenderVersion;
     const interactionFirst = state.pendingRenderInteractionFirst;
-    state.pendingRenderInteractionFirst = false;
+    setPendingRenderInteractionFirst(false);
     const perfLabel = `renderHotelList:${taskVersion}`;
     perfStart(perfLabel);
     const container = document.getElementById('hotelList');
@@ -167,19 +192,16 @@ export function renderHotelList(options = {}) {
     }
 
     if (interactionFirst && isHotelInputPriorityActive()) {
-      state.renderScheduled = true;
+      setRenderScheduled(true);
       scheduleHotelRenderTask(runRender, 120);
       perfEnd(perfLabel);
       return;
     }
 
-    const currentNameFilter = state.currentFilters.name || '';
+    const currentNameFilter = String(state.currentFilters.name || '');
     const syncedNameFilter = syncHotelNameFilterOptions({ selectedValue: currentNameFilter });
     if (currentNameFilter !== syncedNameFilter) {
-      state.currentFilters = {
-        ...state.currentFilters,
-        name: syncedNameFilter
-      };
+      updateCurrentFilters({ name: syncedNameFilter });
     }
 
     const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
@@ -196,8 +218,8 @@ export function renderHotelList(options = {}) {
     }
 
     const summary = getVisibleHotelSummary(sortedHotels);
-    countElement.textContent = summary.hotelCount;
-    roomTypeCountElement.textContent = summary.roomTypeCount;
+    countElement.textContent = String(summary.hotelCount);
+    roomTypeCountElement.textContent = String(summary.roomTypeCount);
 
     if (sortedHotels.length === 0) {
       const hasActiveFilters = Object.values(state.currentFilters).some(
@@ -672,7 +694,7 @@ export function handleHotelListChange(event) {
 
   if (action === 'toggle-selection') {
     const hotelId = target.dataset.id;
-    const row = target.closest('.hotel-table-row');
+    const row = /** @type {HTMLElement|null} */ (target.closest('.hotel-table-row'));
     if (!hotelId || !row) return;
 
     toggleHotelRowSelection(row, target.checked);
@@ -751,22 +773,27 @@ export function closeHotelDetails() {
 
 /* ---- 选择管理 ---- */
 
+/**
+ * @param {HTMLInputElement} checkbox
+ */
 function toggleSelectAll(checkbox) {
-  const hotelRows = document.querySelectorAll('.hotel-table-row');
+  const hotelRows = /** @type {NodeListOf<HTMLElement>} */ (
+    document.querySelectorAll('.hotel-table-row')
+  );
 
   if (checkbox.checked) {
     hotelRows.forEach((row) => {
       const hotelId = getSelectionKey(row.dataset.id);
       state.selectedHotels.add(hotelId);
       row.classList.add('selected');
-      const cb = row.querySelector('input[type="checkbox"]');
+      const cb = /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'));
       if (cb) cb.checked = true;
     });
   } else {
-    state.selectedHotels.clear();
+    clearSelectedHotels();
     hotelRows.forEach((row) => {
       row.classList.remove('selected');
-      const cb = row.querySelector('input[type="checkbox"]');
+      const cb = /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'));
       if (cb) cb.checked = false;
     });
   }
@@ -775,12 +802,18 @@ function toggleSelectAll(checkbox) {
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
 }
 
+/**
+ * @param {HTMLElement|null} row
+ * @param {boolean} checked
+ */
 function setHotelRowSelection(row, checked) {
   if (!row) return;
   const hotelId = row.dataset.id;
   if (!hotelId) return;
   const hotelKey = getSelectionKey(hotelId);
-  const checkbox = row.querySelector('input[data-action="toggle-selection"]');
+  const checkbox = /** @type {HTMLInputElement|null} */ (
+    row.querySelector('input[data-action="toggle-selection"]')
+  );
   if (checked) {
     state.selectedHotels.add(hotelKey);
   } else {
@@ -790,6 +823,10 @@ function setHotelRowSelection(row, checked) {
   if (checkbox) checkbox.checked = checked;
 }
 
+/**
+ * @param {HTMLElement|null} row
+ * @param {boolean|null} [nextChecked]
+ */
 function toggleHotelRowSelection(row, nextChecked = null) {
   if (!row) return;
   const hotelId = row.dataset.id;
@@ -804,9 +841,11 @@ function toggleHotelRowSelection(row, nextChecked = null) {
 }
 
 function syncSelectAllCheckboxState() {
-  const selectAllCheckbox = $('selectAll');
+  const selectAllCheckbox = /** @type {HTMLInputElement|null} */ ($('selectAll'));
   if (!selectAllCheckbox) return;
-  const hotelRows = document.querySelectorAll('.hotel-table-row');
+  const hotelRows = /** @type {NodeListOf<HTMLElement>} */ (
+    document.querySelectorAll('.hotel-table-row')
+  );
   if (hotelRows.length === 0) {
     selectAllCheckbox.checked = false;
     selectAllCheckbox.indeterminate = false;
@@ -822,7 +861,7 @@ function syncSelectAllCheckboxState() {
 /* ---- 视图切换 ---- */
 
 export function toggleViewMode() {
-  state.viewMode = state.viewMode === 'card' ? 'list' : 'card';
+  setViewMode(state.viewMode === 'card' ? 'list' : 'card');
 
   const viewIcon = document.getElementById('viewIcon');
   const viewText = document.getElementById('viewText');
@@ -839,7 +878,7 @@ export function toggleViewMode() {
     if (viewText) viewText.textContent = '卡片';
     if (batchDeleteBtn) batchDeleteBtn.style.display = 'none';
     if (ruleDeleteBtn) ruleDeleteBtn.style.display = 'inline-flex';
-    state.selectedHotels.clear();
+    clearSelectedHotels();
   }
 
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
@@ -912,7 +951,7 @@ function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels
 
 export function updateRuleDeletePreview() {
   const summaryText = $('ruleDeleteSummaryText');
-  const confirmBtn = $('ruleDeleteConfirmBtn');
+  const confirmBtn = /** @type {HTMLButtonElement|null} */ ($('ruleDeleteConfirmBtn'));
   if (!summaryText || !confirmBtn) {
     return;
   }
@@ -940,9 +979,9 @@ export function openRuleDeleteModal() {
     return;
   }
 
-  const priceInput = $('ruleDeletePrice');
-  const subwayInput = $('ruleDeleteSubwayDistance');
-  const transportInput = $('ruleDeleteTransportTime');
+  const priceInput = getFormValueElement('ruleDeletePrice');
+  const subwayInput = getFormValueElement('ruleDeleteSubwayDistance');
+  const transportInput = getFormValueElement('ruleDeleteTransportTime');
   if (priceInput) priceInput.value = '';
   if (subwayInput) subwayInput.value = '';
   if (transportInput) transportInput.value = '';
@@ -982,7 +1021,7 @@ export async function confirmRuleDelete() {
     return;
   }
 
-  const confirmBtn = $('ruleDeleteConfirmBtn');
+  const confirmBtn = /** @type {HTMLButtonElement|null} */ ($('ruleDeleteConfirmBtn'));
   if (confirmBtn && confirmBtn.dataset.confirming !== 'true') {
     startActionButtonConfirmation(confirmBtn, {
       variantClass: 'btn-danger',
@@ -1011,16 +1050,16 @@ export async function confirmRuleDelete() {
       throw new Error(result?.error || '规则删除失败');
     }
 
-    state.hotels = previousHotels.filter((hotel) => !deleteIdSet.has(getSelectionKey(hotel.id)));
-    rankingCache.invalidate();
+    setHotels(previousHotels.filter((hotel) => !deleteIdSet.has(getSelectionKey(hotel.id))));
+    markRankingCacheDirty();
     renderHotelList();
     closeRuleDeleteModal(true);
     showNotification(`成功删除 ${candidates.length} 个命中规则的宾馆`, 'success');
   } catch (error) {
     console.error('规则删除失败:', error);
     if (previousHotels) {
-      state.hotels = previousHotels;
-      rankingCache.invalidate();
+      setHotels(previousHotels);
+      markRankingCacheDirty();
       renderHotelList();
     }
     showNotification('规则删除失败，请重试', 'error');
@@ -1049,7 +1088,7 @@ export function toggleHotelSelection(hotelId) {
 /* ---- 筛选 UI ---- */
 
 export function applyFilters() {
-  state.currentFilters = {
+  replaceCurrentFilters({
     name: getValue('filterName'),
     priceSort: getValue('priceSort'),
     score: getValue('filterScore'),
@@ -1057,8 +1096,8 @@ export function applyFilters() {
     template: getValue('filterTemplate'),
     transportTime: getValue('filterTransportTime'),
     subwayDistance: getValue('filterSubwayDistance')
-  };
-  rankingCache.invalidate();
+  });
+  markRankingCacheDirty();
   renderHotelList();
 }
 
@@ -1072,11 +1111,11 @@ export function clearFilters() {
     'filterTransportTime',
     'filterSubwayDistance'
   ].forEach((id) => {
-    const el = $(id);
+    const el = getFormValueElement(id);
     if (el) el.value = '';
   });
-  state.currentFilters = {};
-  rankingCache.invalidate();
+  clearCurrentFilters();
+  markRankingCacheDirty();
   renderHotelList();
 }
 
@@ -1086,7 +1125,7 @@ export function changeRankingMode(mode) {
   if (weightSettings) {
     weightSettings.style.display = mode === 'manual' ? 'block' : 'none';
   }
-  rankingCache.invalidate();
+  markRankingCacheDirty();
   renderHotelList();
 }
 
@@ -1095,7 +1134,7 @@ export function updateWeight(type, value) {
   if (valueEl) {
     valueEl.textContent = value;
   }
-  rankingCache.invalidate();
+  markRankingCacheDirty();
   renderHotelList();
 }
 
