@@ -1,27 +1,49 @@
 const { requireSharedCompareAppModule } = require('../shared-compare-app');
+const { assertPlainObject, isPlainObject, safeHandle } = require('../ipc-safe-handler');
 
 function registerAiHandlers({ ipcMain, services }) {
   const getAiService = () =>
     typeof services.getAiService === 'function' ? services.getAiService() : services.aiService;
   const getCtripUrlFilters = () => requireSharedCompareAppModule('ctrip-url-filters.js');
 
-  ipcMain.handle('ai:config:get', () => getAiService().getProviderConfig());
-  ipcMain.handle('ai:config:presets', () => getAiService().getProviderPresets());
-  ipcMain.handle('ai:config:save', (event, config) => getAiService().saveProviderConfig(config));
-  ipcMain.handle('ai:config:test', async (event, config) => getAiService().testConnection(config));
-  ipcMain.handle('ai:chat:send', async (event, payload) => getAiService().sendChat(payload));
-  ipcMain.handle('ai:task:start', async (event, payload) => getAiService().startTask(payload));
-  ipcMain.handle('ai:task:refresh-data', async (event, payload) =>
-    getAiService().refreshHotelData(payload)
+  safeHandle(ipcMain, 'ai:config:get', () => getAiService().getProviderConfig());
+  safeHandle(ipcMain, 'ai:config:presets', () => getAiService().getProviderPresets());
+  safeHandle(ipcMain, 'ai:config:save', (_event, config) =>
+    getAiService().saveProviderConfig(assertPlainObject(config))
   );
-  ipcMain.handle('ai:task:cancel', () => getAiService().cancelTask());
-  ipcMain.handle('ai:task:status', () => getAiService().getTaskStatus());
-  ipcMain.handle('ai:ctrip-list-url:parse', (event, url) =>
-    getCtripUrlFilters().parseCtripListUrl(url)
+  safeHandle(ipcMain, 'ai:config:test', (_event, config) =>
+    getAiService().testConnection(assertPlainObject(config))
   );
-  ipcMain.handle('ai:ctrip-list-url:build', (event, payload = {}) => {
-    const baseUrl = typeof payload === 'string' ? payload : payload.baseUrl || payload.url || '';
-    const settings = payload && typeof payload === 'object' ? payload.settings || {} : {};
+  safeHandle(ipcMain, 'ai:chat:send', (_event, payload) => {
+    if (!isPlainObject(payload)) {
+      return { success: false, error: '无效的 AI 请求参数' };
+    }
+    return getAiService().sendChat(payload);
+  });
+  safeHandle(ipcMain, 'ai:task:start', (_event, payload) => {
+    if (!isPlainObject(payload)) {
+      return { success: false, error: '无效的 AI 请求参数' };
+    }
+    return getAiService().startTask(payload);
+  });
+  safeHandle(ipcMain, 'ai:task:refresh-data', (_event, payload) => {
+    if (!isPlainObject(payload)) {
+      return { success: false, error: '无效的 AI 请求参数' };
+    }
+    return getAiService().refreshHotelData(payload);
+  });
+  safeHandle(ipcMain, 'ai:task:cancel', () => getAiService().cancelTask());
+  safeHandle(ipcMain, 'ai:task:status', () => getAiService().getTaskStatus());
+  safeHandle(ipcMain, 'ai:ctrip-list-url:parse', (_event, url) =>
+    getCtripUrlFilters().parseCtripListUrl(String(url || '').trim())
+  );
+  safeHandle(ipcMain, 'ai:ctrip-list-url:build', (_event, payload = {}) => {
+    const payloadObject = typeof payload === 'string' ? {} : assertPlainObject(payload);
+    const baseUrl =
+      typeof payload === 'string'
+        ? payload.trim()
+        : String(payloadObject.baseUrl || payloadObject.url || '').trim();
+    const settings = isPlainObject(payloadObject.settings) ? payloadObject.settings : {};
     return getCtripUrlFilters().buildCtripListUrl(baseUrl, settings);
   });
 }

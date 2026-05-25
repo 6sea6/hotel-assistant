@@ -199,3 +199,24 @@ test('settings normalization still fills defaults and removes deprecated fields'
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'autoMatchTemplate'), false);
   assert.ok(store.setCalls.some((call) => call.key === 'settings'));
 });
+
+test('settings:set rejects empty setting keys before mutating settings', () => {
+  const store = createStore({
+    settings: { ...APP_CONFIG.STORE_DEFAULTS.settings }
+  });
+  const handlers = registerHandler(registerSettingsHandlers, store, {
+    windowService: {
+      applyWindowIcon() {
+        return { success: true };
+      },
+      applyThemeAppearance() {
+        return { success: true };
+      }
+    }
+  });
+
+  const result = handlers['settings:set'](undefined, '', 'value');
+
+  assert.deepEqual(result, { success: false, error: '无效的设置项' });
+  assert.equal(store.setCalls.length, 0);
+});

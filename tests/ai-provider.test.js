@@ -401,6 +401,66 @@ test('AI IPC keeps compatibility with direct aiService object', () => {
   assert.ok(channels.includes('ai:ctrip-list-url:build'));
 });
 
+test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async () => {
+  const handlers = new Map();
+  const received = [];
+  registerAiHandlers({
+    ipcMain: {
+      handle(channel, handler) {
+        handlers.set(channel, handler);
+      }
+    },
+    services: {
+      aiService: {
+        getProviderConfig() {},
+        getProviderPresets() {},
+        saveProviderConfig(config) {
+          received.push({ channel: 'save', config });
+          return { success: true };
+        },
+        testConnection(config) {
+          received.push({ channel: 'test', config });
+          return { success: true };
+        },
+        sendChat(payload) {
+          received.push({ channel: 'chat', payload });
+          return { success: true };
+        },
+        startTask(payload) {
+          received.push({ channel: 'start', payload });
+          return { success: true };
+        },
+        refreshHotelData(payload) {
+          received.push({ channel: 'refresh', payload });
+          return { success: true };
+        },
+        cancelTask() {},
+        getTaskStatus() {}
+      }
+    }
+  });
+
+  assert.deepEqual(await handlers.get('ai:config:save')(undefined, 'bad'), { success: true });
+  assert.deepEqual(await handlers.get('ai:config:test')(undefined, null), { success: true });
+  assert.deepEqual(await handlers.get('ai:chat:send')(undefined, 'bad'), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
+  assert.deepEqual(await handlers.get('ai:task:start')(undefined, null), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
+  assert.deepEqual(await handlers.get('ai:task:refresh-data')(undefined, []), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
+
+  assert.deepEqual(received, [
+    { channel: 'save', config: {} },
+    { channel: 'test', config: {} }
+  ]);
+});
+
 test('scraper runner resolves the embedded scraper in the app repository', (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'embedded-scraper-'));
   const currentDir = path.join(tempRoot, 'project', 'src', 'main', 'ai');

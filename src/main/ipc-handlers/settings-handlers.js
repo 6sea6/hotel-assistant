@@ -3,6 +3,7 @@ const { dialog } = require('electron');
 const { APP_CONFIG } = require('../config');
 const appIconManager = require('../app-icon-manager');
 const { normalizeAiProviderConfig } = require('../ai/provider-presets');
+const { safeHandle } = require('../ipc-safe-handler');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
 
 const THEME_ALIAS_MAP = Object.freeze({
@@ -80,158 +81,189 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
   };
 
   // 获取设置
-  ipcMain.handle('settings:get', (event, key) => {
+  safeHandle(ipcMain, 'settings:get', (_event, key) => {
+    const settingKey = typeof key === 'string' ? key : '';
     const { settings } = getSettingsObject();
-    return Object.prototype.hasOwnProperty.call(settings, key) ? settings[key] : null;
+    return Object.prototype.hasOwnProperty.call(settings, settingKey) ? settings[settingKey] : null;
   });
 
   // 设置设置
-  ipcMain.handle('settings:set', (event, key, value) => {
-    const { store, settings } = getSettingsObject();
-    settings[key] = value;
+  safeHandle(
+    ipcMain,
+    'settings:set',
+    (_event, key, value) => {
+      if (typeof key !== 'string' || !key.trim()) {
+        return { success: false, error: '无效的设置项' };
+      }
 
-    if (key === 'app_icon_path') {
-      settings.app_icon_file_name = value
-        ? settings.app_icon_file_name ||
-          path.basename(appIconManager.resolveStoredIconPath(value) || value)
-        : '';
-    }
+      const { store, settings } = getSettingsObject();
+      settings[key] = value;
 
-    const normalizedSettings = normalizeSettings(settings);
-    store.set('settings', normalizedSettings);
-    cache.invalidate('settings');
-
-    if (windowService) {
       if (key === 'app_icon_path') {
-        windowService.applyWindowIcon(normalizedSettings.app_icon_path);
+        const iconPath = value ? String(value) : '';
+        settings.app_icon_file_name = value
+          ? settings.app_icon_file_name ||
+            path.basename(appIconManager.resolveStoredIconPath(iconPath) || iconPath)
+          : '';
       }
-      if (key === 'theme') {
-        windowService.applyThemeAppearance(normalizedSettings.theme);
-      }
-    }
 
-    return { success: true };
-  });
+      const normalizedSettings = normalizeSettings(settings);
+      store.set('settings', normalizedSettings);
+      cache.invalidate('settings');
+
+      if (windowService) {
+        if (key === 'app_icon_path') {
+          windowService.applyWindowIcon(normalizedSettings.app_icon_path);
+        }
+        if (key === 'theme') {
+          windowService.applyThemeAppearance(normalizedSettings.theme);
+        }
+      }
+
+      return { success: true };
+    },
+    { fallbackError: '设置保存失败' }
+  );
 
   // 获取所有设置
-  ipcMain.handle('settings:getAll', () => {
+  safeHandle(ipcMain, 'settings:getAll', () => {
     const { settings } = getSettingsObject();
     return settings;
   });
 
-  ipcMain.handle('settings:applyThemeAppearance', (event, theme) => {
-    if (!windowService) {
-      return { success: false, error: 'windowService 不可用' };
-    }
+  safeHandle(
+    ipcMain,
+    'settings:applyThemeAppearance',
+    (_event, theme) => {
+      if (!windowService) {
+        return { success: false, error: 'windowService 不可用' };
+      }
 
-    return {
-      success: true,
-      ...windowService.applyThemeAppearance(theme)
-    };
-  });
+      return {
+        success: true,
+        ...windowService.applyThemeAppearance(normalizeThemeSetting(theme))
+      };
+    },
+    { fallbackError: '主题应用失败' }
+  );
 
-  ipcMain.handle('settings:getIconState', () => {
+  safeHandle(ipcMain, 'settings:getIconState', () => {
     const { settings } = getSettingsObject();
     return windowService.getIconState(settings.app_icon_path || '');
   });
 
-  ipcMain.handle('settings:chooseAppIcon', async () => {
-    const { store, settings } = getSettingsObject();
-    const mainWindow = windowService?.getMainWindow?.() || null;
+  safeHandle(
+    ipcMain,
+    'settings:chooseAppIcon',
+    async () => {
+      const { store, settings } = getSettingsObject();
+      const mainWindow = windowService?.getMainWindow?.() || null;
 
-    const result = await dialog.showOpenDialog(mainWindow || undefined, {
-      title: '选择应用图标',
-      properties: ['openFile'],
-      filters: [
-        { name: '图标文件', extensions: ['ico', 'png', 'jpg', 'jpeg', 'bmp', 'webp'] },
-        { name: '全部文件', extensions: ['*'] }
-      ]
-    });
+      const result = await dialog.showOpenDialog(mainWindow || undefined, {
+        title: '选择应用图标',
+        properties: ['openFile'],
+        filters: [
+          { name: '图标文件', extensions: ['ico', 'png', 'jpg', 'jpeg', 'bmp', 'webp'] },
+          { name: '全部文件', extensions: ['*'] }
+        ]
+      });
 
-    if (result.canceled || !result.filePaths.length) {
-      return { success: false, canceled: true };
-    }
-
-    const selectedPath = result.filePaths[0];
-    const previousIconSnapshot = appIconManager.captureManagedIconSnapshot(settings);
-
-    try {
-      const persistedIcon = appIconManager.persistCustomIcon(
-        selectedPath,
-        path.basename(selectedPath)
-      );
-      const applied = windowService.applyWindowIcon(persistedIcon.path);
-      if (!applied.success) {
-        throw new Error(applied.error || '图标应用失败');
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, canceled: true };
       }
 
-      settings.app_icon_path = persistedIcon.path;
-      settings.app_icon_file_name = persistedIcon.fileName;
+      const selectedPath = result.filePaths[0];
+      const previousIconSnapshot = appIconManager.captureManagedIconSnapshot(settings);
+
+      try {
+        const persistedIcon = appIconManager.persistCustomIcon(
+          selectedPath,
+          path.basename(selectedPath)
+        );
+        const applied = windowService.applyWindowIcon(persistedIcon.path);
+        if (!applied.success) {
+          throw new Error(applied.error || '图标应用失败');
+        }
+
+        settings.app_icon_path = persistedIcon.path;
+        settings.app_icon_file_name = persistedIcon.fileName;
+        store.set('settings', normalizeSettings(settings));
+        cache.invalidate('settings');
+
+        return {
+          success: true,
+          path: persistedIcon.path,
+          activePath: persistedIcon.activePath,
+          originalPath: selectedPath,
+          fileName: persistedIcon.fileName,
+          state: windowService.getIconState(persistedIcon.path)
+        };
+      } catch (error) {
+        appIconManager.restoreManagedIconSnapshot(previousIconSnapshot);
+        if (settings.app_icon_path) {
+          windowService.applyWindowIcon(settings.app_icon_path);
+        } else {
+          windowService.applyWindowIcon('');
+        }
+
+        return {
+          success: false,
+          error: error.message || '图标应用失败'
+        };
+      }
+    },
+    { fallbackError: '图标应用失败' }
+  );
+
+  safeHandle(
+    ipcMain,
+    'settings:resetAppIcon',
+    () => {
+      const { store, settings } = getSettingsObject();
+      settings.app_icon_path = '';
+      settings.app_icon_file_name = '';
+      appIconManager.removeManagedIcon();
       store.set('settings', normalizeSettings(settings));
       cache.invalidate('settings');
 
-      return {
-        success: true,
-        path: persistedIcon.path,
-        activePath: persistedIcon.activePath,
-        originalPath: selectedPath,
-        fileName: persistedIcon.fileName,
-        state: windowService.getIconState(persistedIcon.path)
-      };
-    } catch (error) {
-      appIconManager.restoreManagedIconSnapshot(previousIconSnapshot);
-      if (settings.app_icon_path) {
-        windowService.applyWindowIcon(settings.app_icon_path);
-      } else {
-        windowService.applyWindowIcon('');
+      const applied = windowService.applyWindowIcon('');
+      if (!applied.success) {
+        return { success: false, error: applied.error || '恢复默认图标失败' };
       }
 
       return {
-        success: false,
-        error: error.message || '图标应用失败'
+        success: true,
+        state: windowService.getIconState('')
       };
-    }
-  });
-
-  ipcMain.handle('settings:resetAppIcon', () => {
-    const { store, settings } = getSettingsObject();
-    settings.app_icon_path = '';
-    settings.app_icon_file_name = '';
-    appIconManager.removeManagedIcon();
-    store.set('settings', normalizeSettings(settings));
-    cache.invalidate('settings');
-
-    const applied = windowService.applyWindowIcon('');
-    if (!applied.success) {
-      return { success: false, error: applied.error || '恢复默认图标失败' };
-    }
-
-    return {
-      success: true,
-      state: windowService.getIconState('')
-    };
-  });
+    },
+    { fallbackError: '恢复默认图标失败' }
+  );
 
   // 一次性恢复所有设置为默认值（含图标重置），避免多次 IPC 往返
-  ipcMain.handle('settings:resetAll', () => {
-    const { store } = getSettingsObject();
+  safeHandle(
+    ipcMain,
+    'settings:resetAll',
+    () => {
+      const { store } = getSettingsObject();
 
-    const defaultSettings = { ...APP_CONFIG.STORE_DEFAULTS.settings };
-    appIconManager.removeManagedIcon();
-    store.set('settings', normalizeSettings(defaultSettings));
-    cache.invalidate('settings');
+      const defaultSettings = { ...APP_CONFIG.STORE_DEFAULTS.settings };
+      appIconManager.removeManagedIcon();
+      store.set('settings', normalizeSettings(defaultSettings));
+      cache.invalidate('settings');
 
-    const applied = windowService.applyWindowIcon('');
-    if (windowService) {
-      windowService.applyThemeAppearance(defaultSettings.theme);
-    }
+      const applied = windowService.applyWindowIcon('');
+      if (windowService) {
+        windowService.applyThemeAppearance(defaultSettings.theme);
+      }
 
-    return {
-      success: applied.success !== false,
-      settings: defaultSettings,
-      iconState: windowService.getIconState('')
-    };
-  });
+      return {
+        success: applied.success !== false,
+        settings: defaultSettings,
+        iconState: windowService.getIconState('')
+      };
+    },
+    { fallbackError: '恢复默认设置失败' }
+  );
 }
 
 module.exports = registerSettingsHandlers;

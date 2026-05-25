@@ -86,5 +86,26 @@ test('in-app manual content is extracted into a separate renderer resource', () 
     preload,
     /getManualContent:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('manual:getContent'\)/
   );
-  assert.match(otherHandlers, /ipcMain\.handle\('manual:getContent'/);
+  assert.match(otherHandlers, /safeHandle\([\s\S]*?ipcMain,[\s\S]*?'manual:getContent'/);
+});
+
+test('settings, AI, and other IPC handlers use the safe handler wrapper', () => {
+  const mainDir = path.join(__dirname, '..', 'src', 'main');
+  const safeHandler = fs.readFileSync(path.join(mainDir, 'ipc-safe-handler.js'), 'utf8');
+  const settingsHandlers = fs.readFileSync(
+    path.join(mainDir, 'ipc-handlers', 'settings-handlers.js'),
+    'utf8'
+  );
+  const aiHandlers = fs.readFileSync(path.join(mainDir, 'ipc-handlers', 'ai-handlers.js'), 'utf8');
+  const otherHandlers = fs.readFileSync(
+    path.join(mainDir, 'ipc-handlers', 'other-handlers.js'),
+    'utf8'
+  );
+
+  assert.match(safeHandler, /function isTrustedSender/);
+  assert.match(safeHandler, /senderFrame/);
+  assert.match(settingsHandlers, /safeHandle\([\s\S]*?ipcMain,[\s\S]*?'settings:set'/);
+  assert.match(aiHandlers, /safeHandle\(ipcMain,\s*'ai:task:start'/);
+  assert.match(otherHandlers, /safeHandle\(ipcMain,\s*'open:external'/);
+  assert.match(otherHandlers, /safeHandle\(ipcMain,\s*'window:getState'/);
 });

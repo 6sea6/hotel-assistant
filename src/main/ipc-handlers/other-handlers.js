@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { APP_CONFIG, getPaths } = require('../config');
+const { safeHandle } = require('../ipc-safe-handler');
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'ctrip.com',
@@ -44,22 +45,29 @@ function registerOtherHandlers({ ipcMain }) {
   const { shell, BrowserWindow } = require('electron');
   const getSenderWindow = (event) => BrowserWindow.fromWebContents(event.sender);
 
-  ipcMain.handle('manual:getContent', () => fs.readFileSync(getPaths().RENDERER_MANUAL, 'utf8'));
+  safeHandle(
+    ipcMain,
+    'manual:getContent',
+    () => fs.readFileSync(getPaths().RENDERER_MANUAL, 'utf8'),
+    {
+      fallbackError: '读取使用说明失败'
+    }
+  );
 
   // 打开携程
-  ipcMain.handle('open:ctrip', () =>
+  safeHandle(ipcMain, 'open:ctrip', () =>
     openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.CTRIP)
   );
 
   // 打开飞猪
-  ipcMain.handle('open:fliggy', () =>
+  safeHandle(ipcMain, 'open:fliggy', () =>
     openAllowedExternalUrl(shell, APP_CONFIG.EXTERNAL_LINKS.FLIGGY)
   );
 
   // 打开外部链接
-  ipcMain.handle('open:external', (_event, url) => openAllowedExternalUrl(shell, url));
+  safeHandle(ipcMain, 'open:external', (_event, url) => openAllowedExternalUrl(shell, url));
 
-  ipcMain.handle('window:minimize', (event) => {
+  safeHandle(ipcMain, 'window:minimize', (event) => {
     const currentWindow = getSenderWindow(event);
     if (currentWindow && !currentWindow.isDestroyed()) {
       currentWindow.minimize();
@@ -67,7 +75,7 @@ function registerOtherHandlers({ ipcMain }) {
     return { success: true };
   });
 
-  ipcMain.handle('window:toggleMaximize', (event) => {
+  safeHandle(ipcMain, 'window:toggleMaximize', (event) => {
     const currentWindow = getSenderWindow(event);
     if (!currentWindow || currentWindow.isDestroyed()) {
       return { success: false, isMaximized: false };
@@ -85,7 +93,7 @@ function registerOtherHandlers({ ipcMain }) {
     };
   });
 
-  ipcMain.handle('window:close', (event) => {
+  safeHandle(ipcMain, 'window:close', (event) => {
     const currentWindow = getSenderWindow(event);
     if (currentWindow && !currentWindow.isDestroyed()) {
       currentWindow.close();
@@ -93,7 +101,7 @@ function registerOtherHandlers({ ipcMain }) {
     return { success: true };
   });
 
-  ipcMain.handle('window:getState', (event) => {
+  safeHandle(ipcMain, 'window:getState', (event) => {
     const currentWindow = getSenderWindow(event);
     return {
       success: true,
