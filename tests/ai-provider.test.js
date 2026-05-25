@@ -29,6 +29,13 @@ const {
   restoreWriteRollbackSnapshot
 } = require('../src/main/ai/scraper-runner');
 
+function createTrustedIpcEvent() {
+  return {
+    senderFrame: { url: 'file:///trusted/index.html' },
+    sender: {}
+  };
+}
+
 test('AI provider presets include MiMo and normalize config', () => {
   const presets = getAiProviderPresets();
   const mimo = presets.find((preset) => preset.id === 'mimo');
@@ -369,7 +376,7 @@ test('AI IPC registers direct task start endpoint', () => {
   assert.ok(handlers.has('ai:ctrip-list-url:build'));
   assert.equal(aiServiceAccessCount, 0);
 
-  handlers.get('ai:config:presets')();
+  handlers.get('ai:config:presets')(createTrustedIpcEvent());
   assert.equal(aiServiceAccessCount, 1);
 });
 
@@ -440,17 +447,19 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     }
   });
 
-  assert.deepEqual(await handlers.get('ai:config:save')(undefined, 'bad'), { success: true });
-  assert.deepEqual(await handlers.get('ai:config:test')(undefined, null), { success: true });
-  assert.deepEqual(await handlers.get('ai:chat:send')(undefined, 'bad'), {
+  const event = createTrustedIpcEvent();
+
+  assert.deepEqual(await handlers.get('ai:config:save')(event, 'bad'), { success: true });
+  assert.deepEqual(await handlers.get('ai:config:test')(event, null), { success: true });
+  assert.deepEqual(await handlers.get('ai:chat:send')(event, 'bad'), {
     success: false,
     error: '无效的 AI 请求参数'
   });
-  assert.deepEqual(await handlers.get('ai:task:start')(undefined, null), {
+  assert.deepEqual(await handlers.get('ai:task:start')(event, null), {
     success: false,
     error: '无效的 AI 请求参数'
   });
-  assert.deepEqual(await handlers.get('ai:task:refresh-data')(undefined, []), {
+  assert.deepEqual(await handlers.get('ai:task:refresh-data')(event, []), {
     success: false,
     error: '无效的 AI 请求参数'
   });

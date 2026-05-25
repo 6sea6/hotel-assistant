@@ -25,6 +25,15 @@ function createEvent(url) {
   };
 }
 
+function createSenderUrlEvent(url) {
+  return {
+    senderFrame: null,
+    sender: {
+      getURL: () => url
+    }
+  };
+}
+
 test('safeHandle returns successful handler result without wrapping it', async () => {
   const ipcMain = createIpcMain();
   safeHandle(ipcMain, 'demo:ok', async (_event, value) => ({ value }));
@@ -61,6 +70,20 @@ test('safeHandle rejects untrusted sender frames before running handler', async 
   assert.deepEqual(result, { success: false, error: '非法 IPC 来源' });
 });
 
+test('safeHandle rejects missing sender metadata by default', async () => {
+  const ipcMain = createIpcMain();
+  let called = false;
+  safeHandle(ipcMain, 'demo:missing-source', () => {
+    called = true;
+    return { success: true };
+  });
+
+  const result = await ipcMain.handlers.get('demo:missing-source')({ sender: {} });
+
+  assert.equal(called, false);
+  assert.deepEqual(result, { success: false, error: '非法 IPC 来源' });
+});
+
 test('safeHandle can skip sender validation for compatibility handlers', async () => {
   const ipcMain = createIpcMain();
   safeHandle(ipcMain, 'demo:compat', () => 'ok', { requireTrustedSender: false });
@@ -72,11 +95,33 @@ test('safeHandle can skip sender validation for compatibility handlers', async (
   assert.equal(result, 'ok');
 });
 
-test('isTrustedSender allows app and file senders and keeps missing frame compatible', () => {
+test('isTrustedSender only allows app and file senders', () => {
   assert.equal(isTrustedSender(createEvent('file:///C:/app/index.html')), true);
   assert.equal(isTrustedSender(createEvent('app://renderer/index.html')), true);
+  assert.equal(isTrustedSender(createSenderUrlEvent('file:///C:/app/index.html')), true);
+  assert.equal(isTrustedSender(createSenderUrlEvent('app://renderer/index.html')), true);
+  assert.equal(isTrustedSender(createEvent('http://evil.example/index.html')), false);
   assert.equal(isTrustedSender(createEvent('https://evil.example/index.html')), false);
-  assert.equal(isTrustedSender({ sender: {} }), true);
+  assert.equal(isTrustedSender(createEvent('javascript:alert(1)')), false);
+  assert.equal(isTrustedSender({ sender: {} }), false);
+  assert.equal(
+    isTrustedSender({
+      sender: {
+        getURL: () => ''
+      }
+    }),
+    false
+  );
+  assert.equal(
+    isTrustedSender({
+      sender: {
+        getURL: () => {
+          throw new Error('unavailable');
+        }
+      }
+    }),
+    false
+  );
 });
 
 test('toErrorMessage normalizes Error, string, and unknown values', () => {

@@ -64,6 +64,13 @@ function createCache() {
   };
 }
 
+function createTrustedIpcEvent() {
+  return {
+    senderFrame: { url: 'file:///trusted/index.html' },
+    sender: {}
+  };
+}
+
 function registerHandler(register, store, extraServices = {}) {
   const ipcMain = createIpcMain();
   register({
@@ -91,7 +98,7 @@ test('normalized hotels are read without redundant store writeback', () => {
   });
   const handlers = registerHandler(hotelHandlers, store);
 
-  const hotels = handlers['hotel:getAll']();
+  const hotels = handlers['hotel:getAll'](createTrustedIpcEvent());
 
   assert.equal(hotels.length, 1);
   assert.equal(store.setCalls.length, 0);
@@ -107,7 +114,7 @@ test('hotel normalization still repairs missing and duplicate ids', () => {
   });
   const handlers = registerHandler(hotelHandlers, store);
 
-  const hotels = handlers['hotel:getAll']();
+  const hotels = handlers['hotel:getAll'](createTrustedIpcEvent());
   const ids = hotels.map((hotel) => String(hotel.id));
 
   assert.equal(new Set(ids).size, hotels.length);
@@ -132,7 +139,7 @@ test('normalized templates are read without redundant store writeback', () => {
     windowService: { getMainWindow: () => null }
   });
 
-  const templates = handlers['template:getAll']();
+  const templates = handlers['template:getAll'](createTrustedIpcEvent());
 
   assert.equal(templates.length, 1);
   assert.equal(store.setCalls.length, 0);
@@ -150,7 +157,7 @@ test('template normalization still fills defaults and repairs ids', () => {
     windowService: { getMainWindow: () => null }
   });
 
-  const templates = handlers['template:getAll']();
+  const templates = handlers['template:getAll'](createTrustedIpcEvent());
   const ids = templates.map((template) => String(template.id));
 
   assert.equal(new Set(ids).size, templates.length);
@@ -171,7 +178,7 @@ test('normalized settings are read without redundant store writeback', () => {
     }
   });
 
-  const settings = handlers['settings:getAll']();
+  const settings = handlers['settings:getAll'](createTrustedIpcEvent());
 
   assert.equal(settings.theme, APP_CONFIG.STORE_DEFAULTS.settings.theme);
   assert.equal(store.setCalls.length, 0);
@@ -191,7 +198,7 @@ test('settings normalization still fills defaults and removes deprecated fields'
     }
   });
 
-  const settings = handlers['settings:getAll']();
+  const settings = handlers['settings:getAll'](createTrustedIpcEvent());
 
   assert.equal(settings.theme, 'oak-brown');
   assert.equal(settings.app_icon_file_name, '');
@@ -215,7 +222,7 @@ test('settings:set rejects empty setting keys before mutating settings', () => {
     }
   });
 
-  const result = handlers['settings:set'](undefined, '', 'value');
+  const result = handlers['settings:set'](createTrustedIpcEvent(), '', 'value');
 
   assert.deepEqual(result, { success: false, error: '无效的设置项' });
   assert.equal(store.setCalls.length, 0);

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
+const { isTrustedSender } = require('../src/main/ipc-safe-handler');
 const { isAllowedExternalUrl } = require('../src/main/ipc-handlers/other-handlers');
 
 const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
@@ -135,4 +136,13 @@ test('core IPC handlers use the safe handler wrapper', () => {
   ]) {
     assert.doesNotMatch(source, /ipcMain\.handle\(/, `${name} handlers should use safeHandle`);
   }
+});
+
+test('IPC sender validation rejects missing and remote origins', () => {
+  assert.equal(isTrustedSender({ senderFrame: { url: 'file:///app/index.html' } }), true);
+  assert.equal(isTrustedSender({ senderFrame: { url: 'app://renderer/index.html' } }), true);
+  assert.equal(isTrustedSender({ senderFrame: { url: 'http://evil.example/index.html' } }), false);
+  assert.equal(isTrustedSender({ senderFrame: { url: 'https://evil.example/index.html' } }), false);
+  assert.equal(isTrustedSender({ senderFrame: { url: 'javascript:alert(1)' } }), false);
+  assert.equal(isTrustedSender({ sender: {} }), false);
 });

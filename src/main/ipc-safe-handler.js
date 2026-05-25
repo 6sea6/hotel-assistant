@@ -34,8 +34,7 @@ function getSenderUrl(event) {
 }
 
 /**
- * Conservatively accepts local app/file renderers and keeps old tests/mocks
- * working when Electron does not provide senderFrame metadata.
+ * Trust only renderer frames that expose an explicit local app URL.
  *
  * @param {Partial<IpcMainInvokeEvent>|null|undefined} event
  * @returns {boolean}
@@ -43,8 +42,7 @@ function getSenderUrl(event) {
 function isTrustedSender(event) {
   const senderUrl = getSenderUrl(event);
   if (!senderUrl) {
-    // TODO: tighten this once every IPC test and production call has senderFrame metadata.
-    return true;
+    return false;
   }
 
   let parsed;
