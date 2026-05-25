@@ -18,11 +18,15 @@ async function loadTaskConsoleModule() {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-refresh-task-console-'));
     const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
     fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
-    fs.copyFileSync(path.join(sourceDir, 'dom-helpers.js'), path.join(tempRoot, 'dom-helpers.js'));
-    fs.copyFileSync(
-      path.join(sourceDir, 'ai-task-console.js'),
-      path.join(tempRoot, 'ai-task-console.js')
-    );
+    [
+      'ai-task-console.js',
+      'ai-task-events.js',
+      'ai-task-formatters.js',
+      'ai-task-progress.js',
+      'dom-helpers.js'
+    ].forEach((fileName) => {
+      fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+    });
     taskConsoleModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-task-console.js')).href;
     process.on('exit', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -40,6 +44,9 @@ async function loadAiAssistantModules() {
       'actions.js',
       'ai-assistant.js',
       'ai-task-console.js',
+      'ai-task-events.js',
+      'ai-task-formatters.js',
+      'ai-task-progress.js',
       'custom-select.js',
       'dom-helpers.js',
       'notification.js',
@@ -139,7 +146,7 @@ test('ai-assistant.js: refresh task does not require template or URL', async () 
 
 test('ai-task-console.js: REFRESH_STEP_DEFINITIONS exists and has no transit step', async () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-events.js'),
     'utf8'
   );
   assert.ok(code.includes('REFRESH_STEP_DEFINITIONS'), 'Should define REFRESH_STEP_DEFINITIONS');
@@ -192,7 +199,7 @@ test('ai-task-console.js: getEventStepKey handles refresh events without transit
   const { normalizeTaskState: _normalizeTaskState } = await loadTaskConsoleModule();
   // Verify by reading source that refresh events map to refresh steps
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-events.js'),
     'utf8'
   );
   assert.ok(code.includes('refresh:load-data'), 'Should map refresh:load-data event');
@@ -424,7 +431,7 @@ test('hotel-merge.js: overwriteHotelsToStore replaces entire group', () => {
 
 test('normal collect: BASE_STEP_DEFINITIONS still has transit step', async () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-events.js'),
     'utf8'
   );
   const baseMatch = code.match(/BASE_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/);
@@ -471,7 +478,7 @@ test('normal collect: enqueueAiCollectTask still requires template and URL', asy
 
 test('refresh-data: REFRESH_STEP_DEFINITIONS does not contain transit', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-events.js'),
     'utf8'
   );
   const refreshStepsMatch = code.match(/REFRESH_STEP_DEFINITIONS\s*=\s*\[([\s\S]*?)\]/);
@@ -586,32 +593,19 @@ test('refresh-data: renderProgressStats shows 4 cards with correct labels', asyn
  * Test: refresh-data does NOT insert login step
  * ============================================================ */
 
-test('refresh-data: getStepDefinitions does not insert LOGIN_STEP_DEFINITION', () => {
-  const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
-    'utf8'
-  );
-  // Find the getStepDefinitions function
-  const fnStart = code.indexOf('function getStepDefinitions');
-  const fnEnd = code.indexOf('function buildTaskSteps');
-  assert.ok(fnStart > 0, 'Should find getStepDefinitions');
-  const fnBody = code.substring(fnStart, fnEnd);
-
-  // In the refresh-data branch, check that LOGIN_STEP_DEFINITION is NOT inserted
-  const refreshBranchMatch = fnBody.match(
-    /if\s*\(\s*taskKind\s*===\s*'refresh-data'\s*\)[\s\S]*?return\s+definitions;/
-  );
-  assert.ok(refreshBranchMatch, 'Should find refresh-data branch');
-  const refreshBranch = refreshBranchMatch[0];
-  assert.ok(
-    !refreshBranch.includes('LOGIN_STEP_DEFINITION'),
+test('refresh-data: getStepDefinitions does not insert LOGIN_STEP_DEFINITION', async () => {
+  const { getStepDefinitions } = await loadTaskConsoleModule();
+  const definitions = getStepDefinitions([{ key: 'login' }], 'refresh-data');
+  assert.equal(
+    definitions.some((step) => step.key === 'login'),
+    false,
     'refresh-data should NOT insert LOGIN_STEP_DEFINITION'
   );
 });
 
 test('refresh-data: edge events map to edge step, not login step', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-events.js'),
     'utf8'
   );
   // Find getEventStepKey
@@ -681,22 +675,11 @@ test('collect: buildProgressStats still works with batch: events', async () => {
   assert.equal(taskState.progressStats.pending, 0, 'Pending should be 0');
 });
 
-test('collect: getStepDefinitions still inserts LOGIN_STEP_DEFINITION when login events present', () => {
-  const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
-    'utf8'
-  );
-  // Find the collect branch in getStepDefinitions (after refresh-data branch)
-  const fnStart = code.indexOf('function getStepDefinitions');
-  const fnEnd = code.indexOf('function buildTaskSteps');
-  const fnBody = code.substring(fnStart, fnEnd);
-
-  // The collect branch should still check hasLoginStep and insert LOGIN_STEP_DEFINITION
-  assert.ok(fnBody.includes('hasLoginStep'), 'Collect branch should check hasLoginStep');
-  // Verify that in the collect (non-refresh) section, LOGIN_STEP_DEFINITION is inserted
-  const collectSection = fnBody.substring(fnBody.lastIndexOf('hasLoginStep'));
+test('collect: getStepDefinitions still inserts LOGIN_STEP_DEFINITION when login events present', async () => {
+  const { getStepDefinitions } = await loadTaskConsoleModule();
+  const definitions = getStepDefinitions([{ key: 'login' }], 'collect');
   assert.ok(
-    collectSection.includes('LOGIN_STEP_DEFINITION'),
+    definitions.some((step) => step.key === 'login'),
     'Collect branch should still insert LOGIN_STEP_DEFINITION'
   );
 });
@@ -723,7 +706,7 @@ test('refresh-data: renderProgressStats aria-label is "更新数据进度统计"
 
 test('refresh-data: getReadableEventTitle returns correct titles', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-events.js'),
     'utf8'
   );
   // Check refresh-specific event titles
@@ -806,7 +789,7 @@ test('scraper-runner: refresh uses refresh:item-write instead of refresh:write f
 
   // Should have refresh:item-write event
   assert.ok(
-    fnBody.includes("emit('refresh:item-write'"),
+    /emit\(\s*'refresh:item-write'/.test(fnBody),
     'Should use refresh:item-write for single hotel write'
   );
   // Should include scope: 'item'

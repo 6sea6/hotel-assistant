@@ -15,11 +15,15 @@ async function loadTaskConsoleModule() {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-ai-task-console-'));
     const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
     fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
-    fs.copyFileSync(path.join(sourceDir, 'dom-helpers.js'), path.join(tempRoot, 'dom-helpers.js'));
-    fs.copyFileSync(
-      path.join(sourceDir, 'ai-task-console.js'),
-      path.join(tempRoot, 'ai-task-console.js')
-    );
+    [
+      'ai-task-console.js',
+      'ai-task-events.js',
+      'ai-task-formatters.js',
+      'ai-task-progress.js',
+      'dom-helpers.js'
+    ].forEach((fileName) => {
+      fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+    });
     taskConsoleModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-task-console.js')).href;
     process.on('exit', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -38,6 +42,9 @@ async function loadAiAssistantModules() {
       'actions.js',
       'ai-assistant.js',
       'ai-task-console.js',
+      'ai-task-events.js',
+      'ai-task-formatters.js',
+      'ai-task-progress.js',
       'custom-select.js',
       'dom-helpers.js',
       'notification.js',
