@@ -1,4 +1,10 @@
-const { isPlainObject, safeHandle } = require('../ipc-safe-handler');
+const { safeHandle } = require('../ipc-safe-handler');
+const {
+  assertEntityId,
+  assertOptionalStringField,
+  assertPlainObjectPayload,
+  assertStringField
+} = require('../ipc-validators');
 const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
 const { createHotelRepository } = require('../repositories/hotel-repository');
 const { idsEqual } = require('../../shared/id-utils');
@@ -27,11 +33,14 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
   // 添加酒店
   safeHandle(ipcMain, 'hotel:add', (_event, hotel) => {
-    if (!isPlainObject(hotel)) {
-      return { success: false, error: '无效的宾馆数据' };
-    }
+    const payloadError = assertPlainObjectPayload(hotel, '无效的宾馆数据');
+    if (payloadError) return payloadError;
+    const hotelPayload = /** @type {Partial<RawHotelRecord>} */ (hotel);
+    const hotelRecord = /** @type {Record<string, unknown>} */ (hotel);
+    const nameError = assertStringField(hotelRecord, 'name', '宾馆名称不能为空');
+    if (nameError) return nameError;
 
-    const newHotel = getHotelRepo().add(hotel);
+    const newHotel = getHotelRepo().add(hotelPayload);
     cache.invalidate('hotels');
     console.log('[hotel:add] 添加宾馆:', newHotel.name, 'ID:', newHotel.id);
     return newHotel;
@@ -39,15 +48,23 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
   // 更新单个酒店
   safeHandle(ipcMain, 'hotel:update', (_event, hotel) => {
-    if (!isPlainObject(hotel)) {
-      return { success: false, error: '无效的宾馆数据' };
-    }
+    const payloadError = assertPlainObjectPayload(hotel, '无效的宾馆数据');
+    if (payloadError) return payloadError;
+    const hotelPayload = /** @type {Partial<RawHotelRecord>} */ (hotel);
+    const hotelRecord = /** @type {Record<string, unknown>} */ (hotel);
+    const idPayloadError = assertEntityId(hotelPayload.id, '无效的宾馆 ID');
+    if (idPayloadError) return idPayloadError;
+    const nameError = assertOptionalStringField(hotelRecord, 'name', '宾馆名称不能为空', {
+      allowEmpty: false
+    });
+    if (nameError) return nameError;
+
     const repo = getHotelRepo();
-    if (!repo.hasValidId(hotel.id)) {
+    if (!repo.hasValidId(hotelPayload.id)) {
       return { success: false, error: '无效的宾馆 ID' };
     }
 
-    const updatedHotel = repo.update(hotel);
+    const updatedHotel = repo.update(hotelPayload);
     if (updatedHotel) {
       cache.invalidate('hotels');
       return updatedHotel;
@@ -57,21 +74,38 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
   // 批量更新酒店
   safeHandle(ipcMain, 'hotel:updateMultiple', (_event, hotels) => {
-    if (!Array.isArray(hotels) || hotels.some((hotel) => !isPlainObject(hotel))) {
+    if (!Array.isArray(hotels)) {
       return { success: false, error: '无效的批量宾馆数据' };
     }
+    for (const hotel of hotels) {
+      const payloadError = assertPlainObjectPayload(hotel, '无效的批量宾馆数据');
+      if (payloadError) return payloadError;
+      const hotelPayload = /** @type {Partial<RawHotelRecord>} */ (hotel);
+      const hotelRecord = /** @type {Record<string, unknown>} */ (hotel);
+      const idPayloadError = assertEntityId(hotelPayload.id, '无效的批量宾馆数据');
+      if (idPayloadError) return idPayloadError;
+      const nameError = assertOptionalStringField(hotelRecord, 'name', '宾馆名称不能为空', {
+        allowEmpty: false
+      });
+      if (nameError) return nameError;
+    }
+
     const repo = getHotelRepo();
-    if (hotels.some((hotel) => !repo.hasValidId(hotel.id))) {
+    const hotelPayloads = /** @type {Array<Partial<RawHotelRecord>>} */ (hotels);
+    if (hotelPayloads.some((hotel) => !repo.hasValidId(hotel.id))) {
       return { success: false, error: '无效的批量宾馆数据' };
     }
 
-    const results = repo.updateMany(hotels);
+    const results = repo.updateMany(hotelPayloads);
     cache.invalidate('hotels');
     return results;
   });
 
   // 删除酒店
   safeHandle(ipcMain, 'hotel:delete', (_event, id) => {
+    const idPayloadError = assertEntityId(id, '无效的宾馆 ID');
+    if (idPayloadError) return idPayloadError;
+
     const repo = getHotelRepo();
     if (!repo.hasValidId(id)) {
       return { success: false, error: '无效的宾馆 ID' };
@@ -91,7 +125,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   });
 
   safeHandle(ipcMain, 'hotel:deleteMultiple', (_event, ids = []) => {
-    if (!Array.isArray(ids)) {
+    if (!Array.isArray(ids) || ids.some((id) => assertEntityId(id))) {
       return { success: false, error: '未选择有效的宾馆' };
     }
 

@@ -175,6 +175,10 @@ test('hotel handlers reject invalid renderer payloads before normalization', () 
     success: false,
     error: '无效的宾馆数据'
   });
+  assert.deepEqual(handlers['hotel:add'](createEvent(), { name: '   ' }), {
+    success: false,
+    error: '宾馆名称不能为空'
+  });
   assert.deepEqual(handlers['hotel:update'](createEvent(), { name: '无 ID' }), {
     success: false,
     error: '无效的宾馆 ID'
@@ -195,6 +199,23 @@ test('hotel:updateMultiple rejects non-object items instead of silently skipping
     success: false,
     error: '无效的批量宾馆数据'
   });
+});
+
+test('hotel delete handlers reject invalid id payloads before mutation', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '测试酒店', room_type: '大床房' }]
+  });
+  const { handlers } = registerHandlers(registerHotelHandlers, store);
+
+  assert.deepEqual(handlers['hotel:delete'](createEvent(), { id: 1 }), {
+    success: false,
+    error: '无效的宾馆 ID'
+  });
+  assert.deepEqual(handlers['hotel:deleteMultiple'](createEvent(), [1, null]), {
+    success: false,
+    error: '未选择有效的宾馆'
+  });
+  assert.equal(store.setCalls.length, 0);
 });
 
 test('template handlers reject invalid renderer payloads before normalization', async () => {
@@ -251,6 +272,19 @@ test('data import restores snapshot when JSON parsing fails', async (t) => {
   assert.deepEqual(store.get('hotels'), [{ id: 1, name: '原酒店', room_type: '大床房' }]);
   assert.deepEqual(store.get('templates'), [{ id: 1, name: '原模板', destination: '武汉' }]);
   assert.deepEqual(store.get('settings'), previousSettings);
+});
+
+test('data:import rejects invalid import mode before opening dialog', async () => {
+  const store = createStore();
+  const { handlers } = registerHandlers(registerDataHandlers, store);
+  dialogState.open = {
+    canceled: false,
+    filePaths: [path.join(os.tmpdir(), 'should-not-open.json')]
+  };
+
+  const result = await handlers['data:import'](createEvent(), { mode: 'replace' });
+
+  assert.deepEqual(result, { success: false, error: '无效的导入模式' });
 });
 
 test('data:changePath returns samePath when selected folder resolves to current data folder', async (t) => {

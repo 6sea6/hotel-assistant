@@ -6,6 +6,7 @@ const appIconManager = require('../app-icon-manager');
 const hotelStorage = require('../hotel-storage');
 const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
 const { assertString, safeHandle, toErrorMessage } = require('../ipc-safe-handler');
+const { assertAllowedValue } = require('../ipc-validators');
 const {
   buildAppendImportPayload,
   buildExportPayload,
@@ -63,9 +64,12 @@ function registerDataHandlers({ ipcMain, cache, services }) {
 
   // 导入数据
   safeHandle(ipcMain, 'data:import', async (_event, requestedMode = 'replace') => {
+    const modeError = assertAllowedValue(requestedMode, ['replace', 'append'], '无效的导入模式');
+    if (modeError) return modeError;
+
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false };
-    const importMode = requestedMode === 'append' ? 'append' : 'replace';
+    const importMode = requestedMode;
     const result = await dialog.showOpenDialog(mainWindow, {
       filters: [
         { name: 'JSON', extensions: [APP_CONFIG.FILE_EXTENSIONS.JSON] },

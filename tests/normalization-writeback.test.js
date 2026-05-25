@@ -227,3 +227,28 @@ test('settings:set rejects empty setting keys before mutating settings', () => {
   assert.deepEqual(result, { success: false, error: '无效的设置项' });
   assert.equal(store.setCalls.length, 0);
 });
+
+test('settings:set rejects unknown setting keys before mutating settings', () => {
+  const store = createStore({
+    settings: { ...APP_CONFIG.STORE_DEFAULTS.settings }
+  });
+  const handlers = registerHandler(registerSettingsHandlers, store, {
+    windowService: {
+      applyWindowIcon() {
+        return { success: true };
+      },
+      applyThemeAppearance() {
+        return { success: true };
+      }
+    }
+  });
+
+  const result = handlers['settings:set'](
+    createTrustedIpcEvent(),
+    'unexpectedFilesystemPath',
+    'C:/tmp'
+  );
+
+  assert.deepEqual(result, { success: false, error: '不支持的设置项' });
+  assert.equal(store.setCalls.length, 0);
+});

@@ -4,6 +4,7 @@ const { APP_CONFIG } = require('../config');
 const appIconManager = require('../app-icon-manager');
 const { normalizeAiProviderConfig } = require('../ai/provider-presets');
 const { safeHandle } = require('../ipc-safe-handler');
+const { assertAllowedValue } = require('../ipc-validators');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
 
 const THEME_ALIAS_MAP = Object.freeze({
@@ -23,6 +24,11 @@ const SUPPORTED_THEMES = new Set([
   'diehard-pink',
   'grape-purple',
   'colorful-mode'
+]);
+
+const SUPPORTED_SETTING_KEYS = Object.freeze([
+  ...Object.keys(APP_CONFIG.STORE_DEFAULTS.settings),
+  'showManualOnStartup'
 ]);
 
 function registerSettingsHandlers({ ipcMain, cache, services }) {
@@ -95,11 +101,14 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       if (typeof key !== 'string' || !key.trim()) {
         return { success: false, error: '无效的设置项' };
       }
+      const settingKey = key.trim();
+      const keyError = assertAllowedValue(settingKey, SUPPORTED_SETTING_KEYS, '不支持的设置项');
+      if (keyError) return keyError;
 
       const { store, settings } = getSettingsObject();
-      settings[key] = value;
+      settings[settingKey] = value;
 
-      if (key === 'app_icon_path') {
+      if (settingKey === 'app_icon_path') {
         const iconPath = value ? String(value) : '';
         settings.app_icon_file_name = value
           ? settings.app_icon_file_name ||
@@ -112,10 +121,10 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       cache.invalidate('settings');
 
       if (windowService) {
-        if (key === 'app_icon_path') {
+        if (settingKey === 'app_icon_path') {
           windowService.applyWindowIcon(normalizedSettings.app_icon_path);
         }
-        if (key === 'theme') {
+        if (settingKey === 'theme') {
           windowService.applyThemeAppearance(normalizedSettings.theme);
         }
       }

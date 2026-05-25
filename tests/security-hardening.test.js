@@ -4,7 +4,10 @@ const path = require('node:path');
 const test = require('node:test');
 
 const { isTrustedSender } = require('../src/main/ipc-safe-handler');
-const { isAllowedExternalUrl } = require('../src/main/ipc-handlers/other-handlers');
+const {
+  isAllowedExternalUrl,
+  openAllowedExternalUrl
+} = require('../src/main/ipc-handlers/other-handlers');
 
 const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
 const inlineHandlerPattern =
@@ -52,6 +55,29 @@ test('external links are restricted to explicit HTTPS business domains', () => {
   assert.equal(isAllowedExternalUrl('javascript:alert(1)'), false);
   assert.equal(isAllowedExternalUrl('https://ctrip.com.evil.example/'), false);
   assert.equal(isAllowedExternalUrl('https://example.com/'), false);
+});
+
+test('open:external rejects file javascript http and non-whitelisted links', async () => {
+  const opened = [];
+  const shell = {
+    openExternal(url) {
+      opened.push(url);
+    }
+  };
+
+  for (const url of [
+    'file:///C:/Windows/notepad.exe',
+    'javascript:alert(1)',
+    'http://www.ctrip.com/',
+    'https://example.com/'
+  ]) {
+    assert.deepEqual(await openAllowedExternalUrl(shell, url), {
+      success: false,
+      error: '不允许打开该外部链接'
+    });
+  }
+
+  assert.deepEqual(opened, []);
 });
 
 test('BrowserWindow uses sandboxed isolated renderer preferences', () => {

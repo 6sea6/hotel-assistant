@@ -1,6 +1,7 @@
 const fs = require('fs');
 const { APP_CONFIG, getPaths } = require('../config');
 const { safeHandle } = require('../ipc-safe-handler');
+const { assertHttpsUrl } = require('../ipc-validators');
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'ctrip.com',
@@ -29,6 +30,9 @@ function isAllowedExternalUrl(rawUrl) {
 }
 
 async function openAllowedExternalUrl(shell, rawUrl) {
+  const urlError = assertHttpsUrl(rawUrl, '不允许打开该外部链接');
+  if (urlError) return urlError;
+
   const parsed = parseAllowedExternalUrl(rawUrl);
   if (!parsed) {
     return {

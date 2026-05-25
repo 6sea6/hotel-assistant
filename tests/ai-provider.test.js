@@ -463,11 +463,102 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     success: false,
     error: '无效的 AI 请求参数'
   });
+  assert.deepEqual(await handlers.get('ai:task:start')(event, { url: 123 }), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
+  assert.deepEqual(
+    await handlers.get('ai:task:start')(event, {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      targetCount: 'many'
+    }),
+    {
+      success: false,
+      error: '无效的 AI 请求参数'
+    }
+  );
+  assert.deepEqual(
+    await handlers.get('ai:task:start')(event, {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      listFilters: 'bad'
+    }),
+    {
+      success: false,
+      error: '无效的 AI 请求参数'
+    }
+  );
+  assert.deepEqual(
+    await handlers.get('ai:task:start')(event, {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      excludeHotelTypes: [123]
+    }),
+    {
+      success: false,
+      error: '无效的 AI 请求参数'
+    }
+  );
 
   assert.deepEqual(received, [
     { channel: 'save', config: {} },
     { channel: 'test', config: {} }
   ]);
+});
+
+test('AI IPC validates Ctrip list URL parser and builder inputs', async () => {
+  const handlers = new Map();
+  registerAiHandlers({
+    ipcMain: {
+      handle(channel, handler) {
+        handlers.set(channel, handler);
+      }
+    },
+    services: {
+      aiService: {
+        getProviderConfig() {},
+        getProviderPresets() {},
+        saveProviderConfig() {},
+        testConnection() {},
+        sendChat() {},
+        startTask() {},
+        refreshHotelData() {},
+        cancelTask() {},
+        getTaskStatus() {}
+      }
+    }
+  });
+  const event = createTrustedIpcEvent();
+
+  assert.deepEqual(await handlers.get('ai:ctrip-list-url:parse')(event, 42), {
+    success: false,
+    error: '无效的携程列表页链接'
+  });
+  assert.deepEqual(
+    await handlers.get('ai:ctrip-list-url:parse')(event, 'http://hotels.ctrip.com/'),
+    {
+      success: false,
+      error: '无效的携程列表页链接'
+    }
+  );
+  assert.deepEqual(
+    await handlers.get('ai:ctrip-list-url:build')(event, {
+      baseUrl: 'file:///tmp/list.html',
+      settings: {}
+    }),
+    {
+      success: false,
+      error: '无效的携程列表页链接'
+    }
+  );
+  assert.deepEqual(
+    await handlers.get('ai:ctrip-list-url:build')(event, {
+      baseUrl: 'https://hotels.ctrip.com/hotels/list',
+      settings: 'bad'
+    }),
+    {
+      success: false,
+      error: '无效的携程列表页参数'
+    }
+  );
 });
 
 test('scraper runner resolves the embedded scraper in the app repository', (t) => {
