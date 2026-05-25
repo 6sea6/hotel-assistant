@@ -13,6 +13,13 @@ const {
   normalizeImportedPayload,
   restoreSnapshot
 } = require('../services/data-transfer-service');
+const {
+  buildTargetDataFolder,
+  deleteOldDataFolder,
+  isSameResolvedPath,
+  migrateDataFolder,
+  prepareTargetFolder
+} = require('../services/data-folder-migration-service');
 
 /**
  * @param {{
@@ -198,15 +205,20 @@ function registerDataHandlers({ ipcMain, cache, services }) {
 
     // 新的数据文件夹路径（在选择目录下创建"宾馆比较助手"文件夹）
     const paths = getPaths();
-    const newDataFolder = path.join(selectedDir, paths.DATA_FOLDER_NAME);
+    const newDataFolder = buildTargetDataFolder(selectedDir, paths);
 
     // 如果新路径和当前路径相同，不做任何操作
-    if (path.resolve(newDataFolder) === path.resolve(currentDataFolder)) {
+    if (isSameResolvedPath(newDataFolder, currentDataFolder)) {
       return { success: false, samePath: true };
     }
 
     // 检查新位置是否已存在数据文件夹
-    if (fs.existsSync(newDataFolder)) {
+    const targetPreparation = prepareTargetFolder({
+      fs,
+      targetFolder: newDataFolder,
+      overwrite: false
+    });
+    if (targetPreparation.exists) {
       const choice = dialog.showMessageBoxSync(mainWindow, {
         type: 'question',
         buttons: ['覆盖', '取消'],
@@ -219,21 +231,21 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         return { success: false, canceled: true };
       }
       // 删除已存在的文件夹
-      fs.rmSync(newDataFolder, { recursive: true, force: true });
+      prepareTargetFolder({
+        fs,
+        targetFolder: newDataFolder,
+        overwrite: true
+      });
     }
 
     try {
-      // 确保当前数据文件夹存在
-      dataFolderManager.ensureDataFolder(currentDataFolder);
-
-      // 递归复制整个数据目录，避免把 assets 这类子目录当成文件复制。
-      fs.cpSync(currentDataFolder, newDataFolder, { recursive: true, force: true });
-
-      // 更新指针文件，指向新位置
-      dataFolderManager.saveDataFolderPath(newDataFolder);
-
-      // 重新初始化 store
-      dataService.reinitializeStore(newDataFolder);
+      const migrationResult = migrateDataFolder({
+        fs,
+        dataFolderManager,
+        dataService,
+        currentDataFolder,
+        targetDataFolder: newDataFolder
+      });
 
       // 清除缓存
       cache.invalidate('');
@@ -250,12 +262,12 @@ function registerDataHandlers({ ipcMain, cache, services }) {
 
       if (deleteOld === 0) {
         // 删除旧文件夹
-        fs.rmSync(currentDataFolder, { recursive: true, force: true });
+        deleteOldDataFolder({ fs, oldPath: currentDataFolder });
       }
 
       return {
         success: true,
-        path: dataService.getStore().path,
+        path: migrationResult.path,
         oldPath: currentDataFolder,
         deleted: deleteOld === 0
       };

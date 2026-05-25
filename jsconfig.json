@@ -46,6 +46,7 @@
     "src/main/repositories/template-repository.js",
     "src/main/services/template-sync-service.js",
     "src/main/services/data-transfer-service.js",
+    "src/main/services/data-folder-migration-service.js",
     "src/main/ipc-handlers/settings-handlers.js",
     "src/main/ipc-handlers/ai-handlers.js",
     "src/main/ipc-handlers/other-handlers.js",

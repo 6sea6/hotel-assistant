@@ -8,7 +8,9 @@ const Module = require('node:module');
 const originalLoad = Module._load;
 const dialogState = {
   open: { canceled: true, filePaths: [] },
-  save: { canceled: true, filePath: '' }
+  save: { canceled: true, filePath: '' },
+  messageBoxCalls: [],
+  messageBoxResponses: []
 };
 const shellCalls = [];
 
@@ -28,8 +30,12 @@ Module._load = function loadWithElectronStub(request, parent, isMain) {
         async showSaveDialog() {
           return dialogState.save;
         },
-        showMessageBoxSync() {
-          return 1;
+        showMessageBoxSync(...args) {
+          const options = args[1] || args[0] || {};
+          dialogState.messageBoxCalls.push(options);
+          return dialogState.messageBoxResponses.length
+            ? dialogState.messageBoxResponses.shift()
+            : 1;
         }
       },
       shell: {
@@ -126,6 +132,41 @@ function registerHandlers(register, store, extraServices = {}) {
   return { handlers: ipcMain.handlers, cache };
 }
 
+function createChangePathDataService(currentDataFolder, options = {}) {
+  const calls = [];
+  const store = createStore({
+    path: path.join(currentDataFolder, 'hotel-data.json')
+  });
+  const dataFolderManager = {
+    getDataFolderPath() {
+      return currentDataFolder;
+    },
+    ensureDataFolder(folder) {
+      calls.push(['ensureDataFolder', folder]);
+    },
+    saveDataFolderPath(folder) {
+      calls.push(['saveDataFolderPath', folder]);
+    }
+  };
+  const dataService = {
+    getStore() {
+      return store;
+    },
+    getDataFolderManager() {
+      return dataFolderManager;
+    },
+    reinitializeStore(folder) {
+      calls.push(['reinitializeStore', folder]);
+      if (options.throwOnReinitialize) {
+        throw new Error('reload failed');
+      }
+      store.path = path.join(folder, 'hotel-data.json');
+    }
+  };
+
+  return { calls, dataService, store };
+}
+
 test('hotel handlers reject invalid renderer payloads before normalization', () => {
   const store = createStore({ hotels: [] });
   const { handlers } = registerHandlers(registerHotelHandlers, store);
@@ -210,4 +251,133 @@ test('data import restores snapshot when JSON parsing fails', async (t) => {
   assert.deepEqual(store.get('hotels'), [{ id: 1, name: '原酒店', room_type: '大床房' }]);
   assert.deepEqual(store.get('templates'), [{ id: 1, name: '原模板', destination: '武汉' }]);
   assert.deepEqual(store.get('settings'), previousSettings);
+});
+
+test('data:changePath returns samePath when selected folder resolves to current data folder', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-change-path-same-'));
+  const selectedDir = path.join(tempRoot, 'selected');
+  const currentDataFolder = path.join(selectedDir, '宾馆比较助手');
+  fs.mkdirSync(currentDataFolder, { recursive: true });
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const { dataService } = createChangePathDataService(currentDataFolder);
+  const { handlers } = registerHandlers(registerDataHandlers, createStore(), { dataService });
+  dialogState.open = { canceled: false, filePaths: [selectedDir] };
+  dialogState.messageBoxCalls = [];
+  dialogState.messageBoxResponses = [];
+
+  const result = await handlers['data:changePath'](createEvent());
+
+  assert.deepEqual(result, { success: false, samePath: true });
+  assert.equal(dialogState.messageBoxCalls.length, 0);
+});
+
+test('data:changePath keeps existing target when user cancels overwrite', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-change-path-cancel-'));
+  const currentDataFolder = path.join(tempRoot, 'current');
+  const selectedDir = path.join(tempRoot, 'selected');
+  const targetDataFolder = path.join(selectedDir, '宾馆比较助手');
+  fs.mkdirSync(currentDataFolder, { recursive: true });
+  fs.mkdirSync(targetDataFolder, { recursive: true });
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const { calls, dataService } = createChangePathDataService(currentDataFolder);
+  const { handlers } = registerHandlers(registerDataHandlers, createStore(), { dataService });
+  dialogState.open = { canceled: false, filePaths: [selectedDir] };
+  dialogState.messageBoxCalls = [];
+  dialogState.messageBoxResponses = [1];
+
+  const result = await handlers['data:changePath'](createEvent());
+
+  assert.deepEqual(result, { success: false, canceled: true });
+  assert.equal(fs.existsSync(targetDataFolder), true);
+  assert.deepEqual(calls, []);
+  assert.equal(dialogState.messageBoxCalls[0].title, '文件夹已存在');
+});
+
+test('data:changePath migrates data and keeps old folder when user declines deletion', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-change-path-success-'));
+  const currentDataFolder = path.join(tempRoot, 'current');
+  const selectedDir = path.join(tempRoot, 'selected');
+  const targetDataFolder = path.join(selectedDir, '宾馆比较助手');
+  fs.mkdirSync(currentDataFolder, { recursive: true });
+  fs.mkdirSync(selectedDir, { recursive: true });
+  fs.writeFileSync(path.join(currentDataFolder, 'hotel-data.json'), '{"hotels":[]}', 'utf8');
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const { calls, dataService } = createChangePathDataService(currentDataFolder);
+  const { handlers, cache } = registerHandlers(registerDataHandlers, createStore(), {
+    dataService
+  });
+  dialogState.open = { canceled: false, filePaths: [selectedDir] };
+  dialogState.messageBoxCalls = [];
+  dialogState.messageBoxResponses = [1];
+
+  const result = await handlers['data:changePath'](createEvent());
+
+  assert.deepEqual(result, {
+    success: true,
+    path: path.join(targetDataFolder, 'hotel-data.json'),
+    oldPath: currentDataFolder,
+    deleted: false
+  });
+  assert.deepEqual(calls, [
+    ['ensureDataFolder', currentDataFolder],
+    ['saveDataFolderPath', targetDataFolder],
+    ['reinitializeStore', targetDataFolder]
+  ]);
+  const migratedFolderName = fs.readdirSync(selectedDir)[0];
+  assert.equal(fs.existsSync(path.join(selectedDir, migratedFolderName, 'hotel-data.json')), true);
+  assert.equal(fs.existsSync(currentDataFolder), true);
+  assert.deepEqual(cache.invalidated, ['']);
+  assert.equal(dialogState.messageBoxCalls.at(-1).title, '迁移完成');
+});
+
+test('data:changePath deletes old folder after successful migration when requested', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-change-path-delete-'));
+  const currentDataFolder = path.join(tempRoot, 'current');
+  const selectedDir = path.join(tempRoot, 'selected');
+  fs.mkdirSync(currentDataFolder, { recursive: true });
+  fs.mkdirSync(selectedDir, { recursive: true });
+  fs.writeFileSync(path.join(currentDataFolder, 'hotel-data.json'), '{"hotels":[]}', 'utf8');
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const { dataService } = createChangePathDataService(currentDataFolder);
+  const { handlers } = registerHandlers(registerDataHandlers, createStore(), { dataService });
+  dialogState.open = { canceled: false, filePaths: [selectedDir] };
+  dialogState.messageBoxCalls = [];
+  dialogState.messageBoxResponses = [0];
+
+  const result = await handlers['data:changePath'](createEvent());
+
+  assert.equal(result.success, true);
+  assert.equal(result.deleted, true);
+  const migratedFolderName = fs.readdirSync(selectedDir)[0];
+  assert.equal(fs.existsSync(path.join(selectedDir, migratedFolderName, 'hotel-data.json')), true);
+  assert.equal(fs.existsSync(currentDataFolder), false);
+});
+
+test('data:changePath returns a safe error result when migration fails', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-change-path-fail-'));
+  const currentDataFolder = path.join(tempRoot, 'current');
+  const selectedDir = path.join(tempRoot, 'selected');
+  fs.mkdirSync(currentDataFolder, { recursive: true });
+  fs.mkdirSync(selectedDir, { recursive: true });
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const { dataService } = createChangePathDataService(currentDataFolder, {
+    throwOnReinitialize: true
+  });
+  const { handlers, cache } = registerHandlers(registerDataHandlers, createStore(), {
+    dataService
+  });
+  dialogState.open = { canceled: false, filePaths: [selectedDir] };
+  dialogState.messageBoxCalls = [];
+  dialogState.messageBoxResponses = [];
+
+  const result = await handlers['data:changePath'](createEvent());
+
+  assert.deepEqual(result, { success: false, error: 'reload failed' });
+  assert.deepEqual(cache.invalidated, []);
+  assert.equal(dialogState.messageBoxCalls.length, 0);
 });
