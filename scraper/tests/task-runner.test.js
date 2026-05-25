@@ -679,12 +679,14 @@ test('batch events include item index and total counts', async () => {
       },
       {
         workingDirectory: tempDir,
+        taskId: 'task',
         onEvent: (event) => events.push(event)
       }
     );
 
     const starts = events.filter((event) => event.type === 'batch:item-start');
     const dones = events.filter((event) => event.type === 'batch:item-done');
+    const taskErrors = events.filter((event) => event.type === 'batch:item-error');
     assert.deepEqual(
       starts.map((event) => [event.details.index, event.details.total]),
       [
@@ -699,6 +701,31 @@ test('batch events include item index and total counts', async () => {
         [2, 2]
       ]
     );
+    assert.deepEqual(
+      starts.map((event) => [
+        event.details.taskId,
+        event.details.hotelId,
+        event.details.url,
+        event.details.source
+      ]),
+      [
+        ['task-1', 'event1', hotelInputs[0].url, 'detail-input'],
+        ['task-2', 'event2', hotelInputs[1].url, 'detail-input']
+      ]
+    );
+    assert.deepEqual(
+      dones.map((event) => [
+        event.details.taskId,
+        event.details.hotelId,
+        event.details.url,
+        event.details.source
+      ]),
+      [
+        ['task-1', 'event1', hotelInputs[0].url, 'detail-input'],
+        ['task-2', 'event2', hotelInputs[1].url, 'detail-input']
+      ]
+    );
+    assert.equal(taskErrors.length, 0);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -921,6 +948,63 @@ test('batch concurrency greater than one records serial fallback placeholder', a
     assert.equal(result.performance.concurrency, 3);
     assert.equal(result.performance.effectiveConcurrency, 1);
     assert.equal(result.performance.parallelRequestedButDisabled, true);
+    assert.ok(records.some((record) => record.event === 'parallel_requested_but_disabled'));
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch-concurrency argument records serial fallback placeholder', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-arg-concurrency-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=arg-concurrency1',
+      hotelId: 'arg-concurrency1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=arg-concurrency2',
+      hotelId: 'arg-concurrency2',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+
+  try {
+    const records = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'batch-concurrency': 2
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(calls.scrape, 2);
+    assert.equal(result.performance.concurrency, 2);
+    assert.equal(result.performance.effectiveConcurrency, 1);
+    assert.equal(result.performance.parallelRequestedButDisabled, true);
+    assert.deepEqual(
+      result.items.map((item) => item.index),
+      [1, 2]
+    );
     assert.ok(records.some((record) => record.event === 'parallel_requested_but_disabled'));
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
