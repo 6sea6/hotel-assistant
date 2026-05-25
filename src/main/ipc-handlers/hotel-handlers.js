@@ -1,13 +1,7 @@
-const hotelStorage = require('../hotel-storage');
 const { HOTEL_EDITABLE_FIELDS, HOTEL_SYSTEM_FIELDS } = require('../config');
 const { isPlainObject, safeHandle } = require('../ipc-safe-handler');
-const { hasNormalizedValueChanged } = require('../normalization-utils');
-const {
-  allocateUniqueId,
-  getIdKey,
-  idsEqual,
-  normalizeIntegerLikeValue
-} = require('../../shared/id-utils');
+const { createHotelRepository } = require('../repositories/hotel-repository');
+const { idsEqual, normalizeIntegerLikeValue } = require('../../shared/id-utils');
 
 /**
  * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
@@ -114,15 +108,6 @@ function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
 }
 
 /**
- * @param {unknown} id
- * @returns {boolean}
- */
-function hasValidId(id) {
-  const idKey = getIdKey(id);
-  return Boolean(idKey && idKey !== 'undefined' && idKey !== 'null');
-}
-
-/**
  * @param {{
  *   ipcMain: Pick<import('electron').IpcMain, 'handle'>,
  *   cache: {invalidate: (key: string) => void},
@@ -131,39 +116,11 @@ function hasValidId(id) {
  */
 function registerHotelHandlers({ ipcMain, cache, services }) {
   const { dataService } = services;
-  /**
-   * @param {HotelStore} store
-   * @returns {NormalizedHotelRecord[]}
-   */
-  const getNormalizedHotels = (store) => {
-    const hotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);
-    const usedIds = new Set();
-    const nextIdState = { value: Date.now() };
-    let shouldWriteBack = false;
-    const normalizedHotels = hotels.map((hotel) => {
-      const normalizedHotel = normalizeHotelPayload(hotel);
-      if (hasNormalizedValueChanged(hotel, normalizedHotel)) {
-        shouldWriteBack = true;
-      }
-
-      const normalizedIdKey = getIdKey(normalizedHotel.id);
-
-      if (!normalizedIdKey || usedIds.has(normalizedIdKey)) {
-        normalizedHotel.id = allocateUniqueId(normalizedHotel.id, usedIds, nextIdState);
-        shouldWriteBack = true;
-      } else {
-        usedIds.add(normalizedIdKey);
-      }
-
-      return normalizedHotel;
+  const getHotelRepo = () =>
+    createHotelRepository({
+      store: dataService.getStore(),
+      normalizeHotelPayload
     });
-
-    if (shouldWriteBack) {
-      hotelStorage.setExpandedHotelsToStore(store, normalizedHotels, normalizeHotelPayload);
-    }
-
-    return normalizedHotels;
-  };
 
   // 添加酒店
   safeHandle(ipcMain, 'hotel:add', (_event, hotel) => {
@@ -171,18 +128,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
       return { success: false, error: '无效的宾馆数据' };
     }
 
-    const store = dataService.getStore();
-    const hotels = getNormalizedHotels(store);
-    const usedIds = new Set(hotels.map((item) => String(item.id)));
-    const nextIdState = { value: Date.now() };
-    const newHotel = normalizeHotelPayload({
-      id: allocateUniqueId(null, usedIds, nextIdState),
-      ...hotel,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    });
-    hotels.push(newHotel);
-    hotelStorage.setExpandedHotelsToStore(store, hotels, normalizeHotelPayload);
+    const newHotel = getHotelRepo().add(hotel);
     cache.invalidate('hotels');
     console.log('[hotel:add] 添加宾馆:', newHotel.name, 'ID:', newHotel.id);
     return newHotel;
@@ -193,25 +139,15 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     if (!isPlainObject(hotel)) {
       return { success: false, error: '无效的宾馆数据' };
     }
-    if (!hasValidId(hotel.id)) {
+    const repo = getHotelRepo();
+    if (!repo.hasValidId(hotel.id)) {
       return { success: false, error: '无效的宾馆 ID' };
     }
 
-    const store = dataService.getStore();
-    const hotels = getNormalizedHotels(store);
-    const index = hotels.findIndex((h) => String(h.id) === String(hotel.id));
-
-    if (index !== -1) {
-      hotels[index] = normalizeHotelPayload(
-        {
-          ...hotel,
-          updated_at: new Date().toISOString()
-        },
-        hotels[index]
-      );
-      hotelStorage.setExpandedHotelsToStore(store, hotels, normalizeHotelPayload);
+    const updatedHotel = repo.update(hotel);
+    if (updatedHotel) {
       cache.invalidate('hotels');
-      return hotels[index];
+      return updatedHotel;
     }
     return null;
   });
@@ -221,53 +157,33 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     if (!Array.isArray(hotels) || hotels.some((hotel) => !isPlainObject(hotel))) {
       return { success: false, error: '无效的批量宾馆数据' };
     }
-    if (hotels.some((hotel) => !hasValidId(hotel.id))) {
+    const repo = getHotelRepo();
+    if (hotels.some((hotel) => !repo.hasValidId(hotel.id))) {
       return { success: false, error: '无效的批量宾馆数据' };
     }
 
-    const store = dataService.getStore();
-    const allHotels = getNormalizedHotels(store);
-    const results = [];
-
-    for (const hotel of hotels) {
-      const index = allHotels.findIndex((h) => String(h.id) === String(hotel.id));
-      if (index !== -1) {
-        allHotels[index] = normalizeHotelPayload(
-          {
-            ...hotel,
-            updated_at: new Date().toISOString()
-          },
-          allHotels[index]
-        );
-        results.push(allHotels[index]);
-      }
-    }
-
-    hotelStorage.setExpandedHotelsToStore(store, allHotels, normalizeHotelPayload);
+    const results = repo.updateMany(hotels);
     cache.invalidate('hotels');
     return results;
   });
 
   // 删除酒店
   safeHandle(ipcMain, 'hotel:delete', (_event, id) => {
-    const idKey = getIdKey(id);
-    if (!idKey || idKey === 'undefined' || idKey === 'null') {
+    const repo = getHotelRepo();
+    if (!repo.hasValidId(id)) {
       return { success: false, error: '无效的宾馆 ID' };
     }
 
-    const store = dataService.getStore();
-    const hotels = getNormalizedHotels(store);
-    const afterHotels = hotels.filter((h) => !idsEqual(h.id, id));
-
-    if (afterHotels.length === hotels.length) {
+    const hotelId = /** @type {EntityId} */ (id);
+    const result = repo.deleteById(hotelId);
+    if (result.deletedCount === 0) {
       return { success: false, error: '未找到要删除的宾馆' };
     }
 
-    hotelStorage.setExpandedHotelsToStore(store, afterHotels, normalizeHotelPayload);
     cache.invalidate('hotels');
     return {
       success: true,
-      deletedCount: hotels.length - afterHotels.length
+      deletedCount: result.deletedCount
     };
   });
 
@@ -276,41 +192,32 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
       return { success: false, error: '未选择有效的宾馆' };
     }
 
-    const idSet = new Set(
-      ids.map(getIdKey).filter((id) => id && id !== 'undefined' && id !== 'null')
-    );
-
-    if (idSet.size === 0) {
+    const repo = getHotelRepo();
+    const validIds = /** @type {EntityId[]} */ (ids.filter((id) => repo.hasValidId(id)));
+    if (validIds.length === 0) {
       return { success: false, error: '未选择有效的宾馆' };
     }
 
-    const store = dataService.getStore();
-    const before = getNormalizedHotels(store);
-    const after = before.filter((h) => !idSet.has(String(h.id)));
-
-    if (after.length === before.length) {
+    const result = repo.deleteMany(validIds);
+    if (result.deletedCount === 0) {
       return { success: false, error: '未找到要删除的宾馆' };
     }
 
-    hotelStorage.setExpandedHotelsToStore(store, after, normalizeHotelPayload);
     cache.invalidate('hotels');
     return {
       success: true,
-      deletedCount: before.length - after.length
+      deletedCount: result.deletedCount
     };
   });
 
   // 获取所有酒店
   safeHandle(ipcMain, 'hotel:getAll', () => {
-    const store = dataService.getStore();
-    return getNormalizedHotels(store);
+    return getHotelRepo().getAll();
   });
 
   // 根据ID获取酒店
   safeHandle(ipcMain, 'hotel:getById', (_event, id) => {
-    const store = dataService.getStore();
-    const hotels = getNormalizedHotels(store);
-    return hotels.find((h) => idsEqual(h.id, id));
+    return getHotelRepo().getById(/** @type {EntityId} */ (id));
   });
 }
 
