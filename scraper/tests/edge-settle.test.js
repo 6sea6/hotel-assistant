@@ -15,6 +15,18 @@ function installMock(modulePath, exports) {
 function clearModules(paths) {
   for (const modulePath of paths) {
     delete require.cache[modulePath];
+    if (modulePath.endsWith('network-capture.js')) {
+      for (const relatedModulePath of [
+        '../src/scraper/edge-capture-modules/network-response-classifier',
+        '../src/scraper/edge-capture-modules/response-body-reader',
+        '../src/scraper/edge-capture-modules/response-parser',
+        '../src/scraper/edge-capture-modules/dom-extract-script',
+        '../src/scraper/edge-capture-modules/login-detection',
+        '../src/scraper/edge-capture-modules/edge-retry-policy'
+      ]) {
+        delete require.cache[require.resolve(relatedModulePath)];
+      }
+    }
   }
 }
 
@@ -309,7 +321,7 @@ test('edge page ready performs a short confirmation after navigate ready signal'
     }
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -348,7 +360,7 @@ test('edge page ready performs a short confirmation after navigate ready signal'
 
 test('edge settle retries once after transient execution context destruction', async () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -926,7 +938,7 @@ test('settle step retries transient execution context destruction locally', asyn
 
 test('edge settle waits for execution context stability before settling', async () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -985,7 +997,7 @@ test('edge response parse retries room response body reads before dropping room 
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1054,7 +1066,7 @@ test('edge response parse stops reading non-room responses after room API fast p
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1133,7 +1145,7 @@ test('edge response parse reads latest duplicate room response first and skips s
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1213,7 +1225,7 @@ test('edge response parse falls back to older duplicate room response when lates
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1293,7 +1305,7 @@ test('edge response parse reports response entry, duplicate URL, and body byte d
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1397,7 +1409,7 @@ test('edge response parse skips raw text fallback when structured room data comp
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1480,7 +1492,7 @@ test('edge response parse keeps raw text fallback when structured room data is i
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1553,7 +1565,7 @@ test('edge response parse skips raw fallback when structured data matches occupa
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1609,7 +1621,7 @@ test('edge DOM extract keeps API rooms and uses short timeout after room API suc
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1677,7 +1689,7 @@ test('edge DOM extract uses lightweight mode when room API capture is complete',
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1752,7 +1764,7 @@ test('edge DOM extract keeps full timeout when API produced no room candidates',
     writeEdgeDebugArtifact() {}
   });
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1778,7 +1790,7 @@ test('edge DOM extract keeps full timeout when API produced no room candidates',
 
 test('edge response parse times out stuck response body reads instead of hanging task', async () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
 
   try {
     const {
@@ -1821,7 +1833,7 @@ test('edge response parse times out stuck response body reads instead of hanging
 
 test('edge network wait count prefers room-related responses without dropping parse metadata', async () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
-  delete require.cache[networkCapturePath];
+  clearModules([networkCapturePath]);
   const {
     getEdgeNetworkWaitCount,
     getEdgeNetworkWaitOptions,

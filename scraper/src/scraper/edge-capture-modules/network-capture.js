@@ -6,8 +6,7 @@ const {
   findRoomBlocksFromHtml,
   safeJsonParse
 } = require('../html-parser');
-const { collectRoomCandidatesFromPayload } = require('../structured-extractor');
-const { extractSpiderErrorCode, shouldInspectNetworkResponse } = require('../api-replay');
+const { shouldInspectNetworkResponse } = require('../api-replay');
 const { killProcessTree, findEdgeExecutable } = require('../process-utils');
 const {
   normalizeEdgeSessionOptions,
@@ -16,12 +15,40 @@ const {
   waitForDebuggerEndpoint,
   evaluateInSession,
   waitForSessionCondition,
-  waitForStableCount,
-  createCdpAbortError
+  waitForStableCount
 } = require('../cdp-utils');
 const { writeEdgeDebugArtifact } = require('./debug');
 const { isReusableEdgeHotelTarget } = require('./target-reuse');
 const { settleRoomListInEdgeSession } = require('./session-settle');
+const {
+  buildEdgeResponseReadPlan,
+  getEdgeNetworkWaitCount,
+  getEdgeNetworkWaitOptions,
+  getPrioritizedEdgeResponseEntries,
+  isRoomListNetworkResponse,
+  shouldSkipEdgeResponseAfterRoomSuccess
+} = require('./network-response-classifier');
+const {
+  EDGE_CDP_COMMAND_TIMEOUT_MS,
+  EDGE_CDP_SHORT_TIMEOUT_MS,
+  EDGE_CDP_CLEANUP_TIMEOUT_MS,
+  EDGE_CDP_CONNECTION_CLOSE_TIMEOUT_MS,
+  EDGE_SETTLE_EVALUATE_TIMEOUT_MS,
+  assertEdgeNotAborted,
+  buildCdpSendOptions,
+  isAbortLikeError,
+  isTransientEdgeExecutionContextError,
+  sleep
+} = require('./edge-retry-policy');
+const {
+  buildEdgeDomExtractExpression,
+  buildLightweightEdgeDomExtractExpression
+} = require('./dom-extract-script');
+const {
+  detectCtripLoginPromptFromText,
+  detectCtripLoginPromptInSession
+} = require('./login-detection');
+const { isEdgeRoomFastPathComplete, parseEdgeNetworkResponses } = require('./response-parser');
 
 function shouldAttemptSupplementalCapture(roomBlocks, selectedRoom, template, options = {}) {
   if (options.htmlPath) {
@@ -119,87 +146,6 @@ function createNoopPerf() {
   };
 }
 
-function isRoomListNetworkResponse(url = '') {
-  const normalizedUrl = String(url || '').toLowerCase();
-  if (!normalizedUrl) {
-    return false;
-  }
-
-  return (
-    /gethotelroomlist|gethotelroompopinfo|hotelroom|roomlist|roomprice|roompriceinfo/.test(
-      normalizedUrl
-    ) ||
-    (normalizedUrl.includes('/restapi/soa2/') &&
-      normalizedUrl.includes('hotel') &&
-      normalizedUrl.includes('room'))
-  );
-}
-
-function getEdgeNetworkWaitCount(roomRequestMeta, requestMeta) {
-  if (roomRequestMeta && roomRequestMeta.size > 0) {
-    return roomRequestMeta.size;
-  }
-
-  return requestMeta && requestMeta.size ? requestMeta.size : 0;
-}
-
-function getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta) {
-  const roomResponseCount = roomRequestMeta && roomRequestMeta.size ? roomRequestMeta.size : 0;
-  const hasRoomResponses = roomResponseCount > 0;
-  const hasMultipleRoomResponses = roomResponseCount >= 2;
-  return {
-    stableMs: hasMultipleRoomResponses ? 300 : hasRoomResponses ? 650 : 1200,
-    maxWaitMs: 4500,
-    intervalMs: hasMultipleRoomResponses ? 100 : hasRoomResponses ? 150 : 200,
-    networkWaitCount: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
-    roomResponseSeen: hasRoomResponses,
-    roomResponseCount,
-    waitMode: hasMultipleRoomResponses
-      ? 'multiple_room_responses'
-      : hasRoomResponses
-        ? 'single_room_response'
-        : 'all_tracked_responses'
-  };
-}
-
-function getPrioritizedEdgeResponseEntries(requestMeta) {
-  const entries = [
-    ...(requestMeta && typeof requestMeta.entries === 'function' ? requestMeta.entries() : [])
-  ];
-  const roomEntries = entries.filter(([, meta]) => isRoomListNetworkResponse(meta && meta.url));
-  const otherEntries = entries.filter(([, meta]) => !isRoomListNetworkResponse(meta && meta.url));
-  return [...roomEntries, ...otherEntries];
-}
-
-function buildEdgeResponseReadPlan(entries) {
-  const roomGroups = new Map();
-  const roomGroupOrder = [];
-  const otherEntries = [];
-  for (const entry of Array.isArray(entries) ? entries : []) {
-    const [, meta] = entry;
-    if (!isRoomListNetworkResponse(meta && meta.url)) {
-      otherEntries.push(entry);
-      continue;
-    }
-    const urlKey = String((meta && meta.url) || '');
-    if (!roomGroups.has(urlKey)) {
-      roomGroups.set(urlKey, []);
-      roomGroupOrder.push(urlKey);
-    }
-    roomGroups.get(urlKey).push(entry);
-  }
-
-  const roomEntries = [];
-  for (const urlKey of roomGroupOrder) {
-    const group = roomGroups.get(urlKey) || [];
-    for (let index = group.length - 1; index >= 0; index -= 1) {
-      roomEntries.push(group[index]);
-    }
-  }
-
-  return [...roomEntries, ...otherEntries];
-}
-
 const EDGE_BLOCKED_RESOURCE_PATTERNS = [
   '*://*/*.png*',
   '*://*/*.jpg*',
@@ -223,77 +169,9 @@ function getEdgeBlockedResourcePatterns() {
   return [...EDGE_BLOCKED_RESOURCE_PATTERNS];
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-const EDGE_CDP_COMMAND_TIMEOUT_MS = 8000;
-const EDGE_CDP_SHORT_TIMEOUT_MS = 3000;
-const EDGE_CDP_CLEANUP_TIMEOUT_MS = 1200;
-const EDGE_CDP_CONNECTION_CLOSE_TIMEOUT_MS = 250;
 const EDGE_DOM_EXTRACT_TIMEOUT_MS = 6000;
 const EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS = 1800;
 const EDGE_DOM_EXTRACT_API_COMPLETE_TIMEOUT_MS = 900;
-const EDGE_SETTLE_EVALUATE_TIMEOUT_MS = 6000;
-const EDGE_RESPONSE_PARSE_MAX_MS = 12000;
-const EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET = 8;
-
-function buildCdpSendOptions(signal, timeoutMs = EDGE_CDP_COMMAND_TIMEOUT_MS) {
-  return {
-    timeoutMs,
-    signal: signal || null
-  };
-}
-
-function createEdgeAbortError(method) {
-  if (typeof createCdpAbortError === 'function') {
-    return createCdpAbortError(method);
-  }
-  const error = new Error(`CDP ${method} aborted`);
-  error.name = 'AbortError';
-  error.code = 'CDP_ABORTED';
-  return error;
-}
-
-function assertEdgeNotAborted(signal, method = 'edge_capture') {
-  if (signal && signal.aborted) {
-    throw createEdgeAbortError(method);
-  }
-}
-
-function isAbortLikeError(error) {
-  return Boolean(error && (error.name === 'AbortError' || error.code === 'CDP_ABORTED'));
-}
-
-function isTimeoutLikeError(error) {
-  return Boolean(
-    error &&
-    (error.code === 'EDGE_RESPONSE_BODY_TIMEOUT' ||
-      error.code === 'CDP_TIMEOUT' ||
-      /timed out/i.test(error.message || ''))
-  );
-}
-
-function createEdgeResponseBodyTimeoutError(timeoutMs) {
-  const error = new Error(`Network.getResponseBody timed out after ${timeoutMs}ms`);
-  error.code = 'EDGE_RESPONSE_BODY_TIMEOUT';
-  return error;
-}
-
-function withTimeout(promise, timeoutMs) {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return promise;
-  }
-  let timer = null;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(createEdgeResponseBodyTimeoutError(timeoutMs)), timeoutMs);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  });
-}
 
 async function configureEdgeStaticResourceBlocking(connection, sessionId, options = {}) {
   if (!connection || typeof connection.send !== 'function' || !sessionId) {
@@ -410,82 +288,6 @@ async function waitForEdgeNavigateSignal({
   }
 }
 
-function shouldSkipEdgeResponseAfterRoomSuccess(meta = {}, state = {}) {
-  if (!state.fastPathComplete) {
-    return false;
-  }
-
-  return !isRoomListNetworkResponse(meta.url || '');
-}
-
-function shouldUseEdgeRawTextFallback({
-  isRoomResponse,
-  roomBlocks,
-  structuredCandidates,
-  template
-}) {
-  if (!isRoomResponse) {
-    return true;
-  }
-  if (!Array.isArray(structuredCandidates) || structuredCandidates.length === 0) {
-    return true;
-  }
-  const hasTemplateSignal = Boolean(
-    template &&
-    (template.room_type ||
-      template.roomType ||
-      template.room_count ||
-      template.roomCount ||
-      template.occupancy)
-  );
-  if (!hasTemplateSignal) {
-    return true;
-  }
-
-  const normalizedTemplate = {
-    ...template,
-    room_type: template.room_type || template.roomType || '',
-    room_count: template.room_count || template.roomCount || template.occupancy
-  };
-
-  return !isEdgeRoomFastPathComplete([...roomBlocks, ...structuredCandidates], normalizedTemplate);
-}
-
-function detectCtripLoginPromptFromText(text = '') {
-  const normalizedText = String(text || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!normalizedText) {
-    return {
-      detected: false,
-      reason: ''
-    };
-  }
-
-  const priceLoginPattern =
-    /登录看低价|解锁优惠|登录后(?:查看|享|可|才)?[^。；，,.]{0,16}(?:低价|价格|优惠|房价)/;
-  if (priceLoginPattern.test(normalizedText)) {
-    return {
-      detected: true,
-      reason: '携程页面提示登录后才能查看价格或优惠。'
-    };
-  }
-
-  const loginDialogPattern =
-    /扫码登录|手机号登录|账号密码登录|验证码登录|携程账号登录|登录携程|会员登录|立即登录|请登录后|登录后继续/;
-  if (loginDialogPattern.test(normalizedText)) {
-    return {
-      detected: true,
-      reason: '携程页面出现登录弹窗或登录入口。'
-    };
-  }
-
-  return {
-    detected: false,
-    reason: ''
-  };
-}
-
 const EDGE_PAGE_READY_EXPRESSION = `(() => {
   const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
   return document.readyState === 'complete' && /(房型|展示额外|更多房型|登录看低价|¥|每晚)/.test(bodyText);
@@ -560,13 +362,6 @@ async function waitForEdgePageReadyAfterNavigate({
     phase.error(error, signalFields);
     throw error;
   }
-}
-
-function isTransientEdgeExecutionContextError(error) {
-  const message = error && error.message ? error.message : String(error || '');
-  return /Execution context was destroyed|Cannot find context with specified id|Cannot find context/i.test(
-    message
-  );
 }
 
 async function waitForEdgeExecutionContextStable({
@@ -743,56 +538,6 @@ function emitEdgeEvent(options = {}, type, message, details = {}) {
   options.onEvent(type, message, details);
 }
 
-async function detectCtripLoginPromptInSession(connection, sessionId, options = {}) {
-  const result = await evaluateInSession(
-    connection,
-    sessionId,
-    `(() => {
-      const readText = (element) => element ? String(element.innerText || element.textContent || '') : '';
-      const selectors = [
-        '[role="dialog"]',
-        '[class*="login"]',
-        '[class*="Login"]',
-        '[class*="modal"]',
-        '[class*="Modal"]',
-        '[class*="popup"]',
-        '[class*="Popup"]',
-        '[class*="mask"]',
-        '[class*="Mask"]'
-      ];
-      const snippets = [];
-      for (const selector of selectors) {
-        try {
-          for (const element of Array.from(document.querySelectorAll(selector)).slice(0, 12)) {
-            const text = readText(element).replace(/\\s+/g, ' ').trim();
-            if (text && !snippets.includes(text)) snippets.push(text.slice(0, 600));
-          }
-        } catch (_error) {}
-      }
-      const bodyText = readText(document.body).replace(/\\s+/g, ' ').trim();
-      return JSON.stringify({
-        title: document.title || '',
-        url: location.href || '',
-        modalText: snippets.join('\\n').slice(0, 1800),
-        bodyText: bodyText.slice(0, 2400)
-      });
-    })()`,
-    {
-      timeoutMs: 2500,
-      signal: options.signal || null
-    }
-  );
-  const payload = typeof result === 'string' ? safeJsonParse(result) : result;
-  const combinedText = [
-    payload && payload.title,
-    payload && payload.modalText,
-    payload && payload.bodyText
-  ]
-    .filter(Boolean)
-    .join('\n');
-  return detectCtripLoginPromptFromText(combinedText);
-}
-
 async function waitForEdgeNetworkStability({
   perf,
   url,
@@ -846,348 +591,6 @@ async function waitForEdgeNetworkStability({
   }
 }
 
-function isEdgeRoomFastPathComplete(roomBlocks, template) {
-  const mergedBlocks = mergeRoomCandidates(roomBlocks);
-  const selectedRoom = selectBestRoom(mergedBlocks, template);
-  const eligibleRooms = selectMatchingRooms(mergedBlocks, template);
-  return Boolean(
-    selectedRoom &&
-    selectedRoom.price !== null &&
-    selectedRoom.price !== undefined &&
-    eligibleRooms.length > 0
-  );
-}
-
-function decodeEdgeResponseBody(responseBody) {
-  const rawBody = responseBody && responseBody.body ? responseBody.body : '';
-  if (!rawBody) {
-    return '';
-  }
-  return responseBody.base64Encoded ? Buffer.from(rawBody, 'base64').toString('utf8') : rawBody;
-}
-
-function buildResponseEntryDiagnostics(entries) {
-  const seenUrls = new Set();
-  let duplicateResponseUrlCount = 0;
-  let roomResponseEntryCount = 0;
-  for (const [, meta] of entries) {
-    const url = meta && meta.url ? String(meta.url) : '';
-    if (url) {
-      if (seenUrls.has(url)) {
-        duplicateResponseUrlCount += 1;
-      } else {
-        seenUrls.add(url);
-      }
-    }
-    if (isRoomListNetworkResponse(url)) {
-      roomResponseEntryCount += 1;
-    }
-  }
-  return {
-    responseParseEntryCount: entries.length,
-    roomResponseEntryCount,
-    nonRoomResponseEntryCount: Math.max(0, entries.length - roomResponseEntryCount),
-    uniqueResponseUrlCount: seenUrls.size,
-    duplicateResponseUrlCount
-  };
-}
-
-async function readEdgeResponseBodyWithRetry({
-  connection,
-  sessionId,
-  requestId,
-  isRoomResponse,
-  timeoutMs,
-  maxAttempts,
-  signal = null
-}) {
-  const startedAt = Date.now();
-  const attemptLimit = Math.max(1, Number(maxAttempts) || (isRoomResponse ? 2 : 1));
-  const attemptTimeoutMs =
-    Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : isRoomResponse ? 1200 : 700;
-  let lastError = null;
-  let timeoutCount = 0;
-  let retryCount = 0;
-  for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
-    assertEdgeNotAborted(signal, 'Network.getResponseBody');
-    try {
-      const responseBody = await withTimeout(
-        connection.send(
-          'Network.getResponseBody',
-          { requestId },
-          sessionId,
-          buildCdpSendOptions(signal, attemptTimeoutMs)
-        ),
-        attemptTimeoutMs
-      );
-      const body = decodeEdgeResponseBody(responseBody);
-      if (body) {
-        return {
-          body,
-          retryCount,
-          timeoutCount,
-          elapsedMs: Date.now() - startedAt,
-          error: null
-        };
-      }
-    } catch (error) {
-      if (isAbortLikeError(error)) {
-        throw error;
-      }
-      lastError = error;
-      if (isTimeoutLikeError(error)) {
-        timeoutCount += 1;
-      }
-    }
-
-    if (attempt < attemptLimit) {
-      retryCount += 1;
-      assertEdgeNotAborted(signal, 'Network.getResponseBody');
-      await sleep(attempt * 150);
-    }
-  }
-
-  return {
-    body: '',
-    retryCount,
-    timeoutCount,
-    elapsedMs: Date.now() - startedAt,
-    error: lastError
-  };
-}
-
-async function parseEdgeNetworkResponses({
-  connection,
-  sessionId,
-  requestMeta,
-  template,
-  roomBlocks,
-  spiderErrorCodes,
-  debugHotelId,
-  roomApiDebugIndex = 0,
-  responseBodyTimeoutMs = null,
-  roomResponseBodyMaxAttempts = 2,
-  signal = null,
-  responseParseMaxMs = EDGE_RESPONSE_PARSE_MAX_MS,
-  nonRoomResponseBodyTimeoutBudget = EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET
-}) {
-  const startedAt = Date.now();
-  const maxElapsedMs =
-    Number.isFinite(responseParseMaxMs) && responseParseMaxMs > 0
-      ? responseParseMaxMs
-      : EDGE_RESPONSE_PARSE_MAX_MS;
-  const nonRoomTimeoutBudget =
-    Number.isFinite(nonRoomResponseBodyTimeoutBudget) && nonRoomResponseBodyTimeoutBudget >= 0
-      ? nonRoomResponseBodyTimeoutBudget
-      : EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET;
-  const entries = getPrioritizedEdgeResponseEntries(requestMeta);
-  const readPlan = buildEdgeResponseReadPlan(entries);
-  const entryDiagnostics = buildResponseEntryDiagnostics(entries);
-  const roomEntryCount = entryDiagnostics.roomResponseEntryCount;
-  const stats = {
-    ...entryDiagnostics,
-    parsedResponseCount: 0,
-    roomResponseCount: 0,
-    skippedResponseCount: 0,
-    duplicateRoomResponseSkippedCount: 0,
-    roomResponseUrlFallbackCount: 0,
-    fallbackFullParseUsed: roomEntryCount === 0,
-    responseParseCandidateCount: 0,
-    responseBodyRetryCount: 0,
-    responseBodyTimeoutCount: 0,
-    responseBodyReadCount: 0,
-    responseBodyReadElapsedMs: 0,
-    responseBodyReadMaxMs: 0,
-    responseBodyTotalBytes: 0,
-    responseBodyMaxBytes: 0,
-    responseBodyParseElapsedMs: 0,
-    responseBodyParseMaxMs: 0,
-    slowestResponseBodyMs: 0,
-    slowestResponseBodyKind: '',
-    slowestResponseBodyBytes: 0,
-    roomResponseBodyReadCount: 0,
-    nonRoomResponseBodyReadCount: 0,
-    roomResponseBodyErrorCount: 0,
-    roomResponseBodyTimeoutCount: 0,
-    roomResponseBodyEmptyCount: 0,
-    roomResponseBodyParseErrorCount: 0,
-    nonRoomResponseBodyTimeoutCount: 0,
-    rawFallbackUsedCount: 0,
-    rawFallbackSkippedCount: 0,
-    rawFallbackCandidateCount: 0,
-    structuredCandidateCount: 0,
-    responseParseElapsedMs: 0,
-    responseParseStoppedReason: '',
-    roomApiDebugIndex
-  };
-  const state = {
-    fastPathComplete: false
-  };
-  const attemptedRoomResponseUrls = new Set();
-  const successfulRoomResponseUrls = new Set();
-
-  for (let entryIndex = 0; entryIndex < readPlan.length; entryIndex += 1) {
-    const [requestId, meta] = readPlan[entryIndex];
-    assertEdgeNotAborted(signal, 'edge_response_parse');
-    if (Date.now() - startedAt >= maxElapsedMs && stats.roomResponseCount > 0) {
-      stats.responseParseStoppedReason = 'max_elapsed_after_room_response';
-      break;
-    }
-    if (shouldSkipEdgeResponseAfterRoomSuccess(meta, state)) {
-      stats.skippedResponseCount += readPlan.length - entryIndex;
-      stats.responseParseStoppedReason = 'room_fast_path_complete';
-      break;
-    }
-    try {
-      const isRoomResponse = isRoomListNetworkResponse(meta.url);
-      const roomResponseUrl = isRoomResponse ? String(meta.url || '') : '';
-      if (isRoomResponse && successfulRoomResponseUrls.has(roomResponseUrl)) {
-        stats.duplicateRoomResponseSkippedCount += 1;
-        stats.skippedResponseCount += 1;
-        continue;
-      }
-      if (isRoomResponse && attemptedRoomResponseUrls.has(roomResponseUrl)) {
-        stats.roomResponseUrlFallbackCount += 1;
-      }
-      if (isRoomResponse) {
-        attemptedRoomResponseUrls.add(roomResponseUrl);
-      }
-      if (
-        !isRoomResponse &&
-        stats.roomResponseCount > 0 &&
-        stats.nonRoomResponseBodyTimeoutCount >= nonRoomTimeoutBudget
-      ) {
-        stats.responseParseStoppedReason = 'non_room_timeout_budget';
-        break;
-      }
-      const bodyResult = await readEdgeResponseBodyWithRetry({
-        connection,
-        sessionId,
-        requestId,
-        isRoomResponse,
-        timeoutMs:
-          Number.isFinite(responseBodyTimeoutMs) && responseBodyTimeoutMs > 0
-            ? responseBodyTimeoutMs
-            : isRoomResponse
-              ? 1200
-              : 350,
-        maxAttempts: isRoomResponse ? roomResponseBodyMaxAttempts : 1,
-        signal
-      });
-      const bodyReadElapsedMs = Number(bodyResult.elapsedMs) || 0;
-      stats.responseBodyReadElapsedMs += bodyReadElapsedMs;
-      stats.responseBodyReadMaxMs = Math.max(stats.responseBodyReadMaxMs, bodyReadElapsedMs);
-      stats.responseBodyRetryCount += bodyResult.retryCount;
-      stats.responseBodyTimeoutCount += bodyResult.timeoutCount;
-      if (isRoomResponse) {
-        stats.roomResponseBodyTimeoutCount += bodyResult.timeoutCount;
-      } else {
-        stats.nonRoomResponseBodyTimeoutCount += bodyResult.timeoutCount;
-      }
-      if (bodyResult.error) {
-        if (isRoomResponse) {
-          stats.roomResponseBodyErrorCount += 1;
-        }
-        continue;
-      }
-      if (!bodyResult.body) {
-        if (isRoomResponse) {
-          stats.roomResponseBodyEmptyCount += 1;
-        }
-        continue;
-      }
-      const responseBodyBytes = Buffer.byteLength(bodyResult.body, 'utf8');
-      if (bodyReadElapsedMs > stats.slowestResponseBodyMs) {
-        stats.slowestResponseBodyMs = bodyReadElapsedMs;
-        stats.slowestResponseBodyKind = isRoomResponse ? 'room' : 'non_room';
-        stats.slowestResponseBodyBytes = responseBodyBytes;
-      }
-      stats.responseBodyReadCount += 1;
-      stats.responseBodyTotalBytes += responseBodyBytes;
-      stats.responseBodyMaxBytes = Math.max(stats.responseBodyMaxBytes, responseBodyBytes);
-      if (isRoomResponse) {
-        stats.roomResponseBodyReadCount += 1;
-      } else {
-        stats.nonRoomResponseBodyReadCount += 1;
-      }
-      const parseStartedAt = Date.now();
-      const parsed = safeJsonParse(bodyResult.body);
-      const parseElapsedMs = Date.now() - parseStartedAt;
-      stats.responseBodyParseElapsedMs += parseElapsedMs;
-      stats.responseBodyParseMaxMs = Math.max(stats.responseBodyParseMaxMs, parseElapsedMs);
-      if (!parsed) {
-        if (isRoomResponse) {
-          stats.roomResponseBodyParseErrorCount += 1;
-        }
-        continue;
-      }
-      stats.parsedResponseCount += 1;
-      if (isRoomResponse) {
-        stats.roomResponseCount += 1;
-        successfulRoomResponseUrls.add(roomResponseUrl);
-      }
-      if (/getHotelRoomList|getHotelRoomPopInfo/i.test(meta.url)) {
-        stats.roomApiDebugIndex += 1;
-        writeEdgeDebugArtifact(
-          `${debugHotelId}-api-${String(stats.roomApiDebugIndex).padStart(2, '0')}.json`,
-          {
-            url: meta.url,
-            mimeType: meta.mimeType || '',
-            body: parsed
-          }
-        );
-      }
-      const spiderErrorCode = extractSpiderErrorCode(parsed);
-      if (spiderErrorCode !== null) spiderErrorCodes.add(spiderErrorCode);
-      const beforeCount = roomBlocks.length;
-      const structuredCandidates = collectRoomCandidatesFromPayload(parsed, template);
-      stats.structuredCandidateCount += structuredCandidates.length;
-      const shouldUseRawFallback = shouldUseEdgeRawTextFallback({
-        isRoomResponse,
-        roomBlocks,
-        structuredCandidates,
-        template
-      });
-      const fallbackTextCandidates = shouldUseRawFallback
-        ? findRoomBlocksFromStructuredText(bodyResult.body).map((candidate) => ({
-            ...candidate,
-            source: candidate.source || 'edge-cdp-raw'
-          }))
-        : [];
-      if (shouldUseRawFallback) {
-        stats.rawFallbackUsedCount += 1;
-        stats.rawFallbackCandidateCount += fallbackTextCandidates.length;
-      } else {
-        stats.rawFallbackSkippedCount += 1;
-      }
-      roomBlocks.push(...structuredCandidates, ...fallbackTextCandidates);
-      const extractedCount = roomBlocks.length - beforeCount;
-      stats.responseParseCandidateCount += Math.max(0, extractedCount);
-      if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
-        console.log(
-          `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${bodyResult.body.includes('套房')}, has 开放: ${bodyResult.body.includes('开放')}`
-        );
-      }
-      if (isRoomResponse && isEdgeRoomFastPathComplete(roomBlocks, template)) {
-        state.fastPathComplete = true;
-      }
-    } catch (error) {
-      if (isAbortLikeError(error)) {
-        throw error;
-      }
-      /* skip */
-    }
-  }
-
-  stats.fastPathComplete = state.fastPathComplete;
-  stats.responseParseElapsedMs = Date.now() - startedAt;
-  if (roomEntryCount > 0 && !state.fastPathComplete) {
-    stats.fallbackFullParseUsed = true;
-  }
-
-  return stats;
-}
-
 function getEdgeDomExtractTimeoutMs(roomBlocks, options = {}) {
   if (options && options.apiCaptureComplete) {
     return EDGE_DOM_EXTRACT_API_COMPLETE_TIMEOUT_MS;
@@ -1200,207 +603,6 @@ function getEdgeDomExtractTimeoutMs(roomBlocks, options = {}) {
 function isEdgeDomExtractTimeoutError(error) {
   const message = error && error.message ? String(error.message) : String(error || '');
   return /Runtime\.evaluate timed out|timed out after \d+ms/i.test(message);
-}
-
-function buildEdgeDomExtractExpression() {
-  return `(async () => {
-        const roomPattern = /(家庭房|家庭间|双床房|双床间|大床房|大床间|三人间|三人房|三床房|套房|单人间|标准间|高级房|高级间|豪华房|豪华间|商务房|商务间|景观房|景观间|亲子房|亲子间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间)/;
-        const pricePattern = /(¥|登录看低价|解锁优惠|券后|每晚|起)/;
-        const titlePattern = /[\\u4e00-\\u9fa5A-Za-z0-9（）()·\\-]{2,40}(?:大床房|大床间|双床房|双床间|家庭房|家庭间|三床房|三人房|三人间|景观房|景观间|商务房|商务间|豪华房|豪华间|特惠房|特惠间|标准房|标准间|高级房|高级间|精品房|精品间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间|亲子房|亲子间|套房)/g;
-        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        const isVisible = (element) => {
-          if (!element || !(element instanceof Element)) return false;
-          const style = window.getComputedStyle(element);
-          if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        };
-        const clickElement = (element) => {
-          if (!element || !isVisible(element)) return false;
-          try { element.click(); } catch(_e) {}
-          try {
-            const rect = element.getBoundingClientRect();
-            ['mousedown', 'mouseup', 'click'].forEach((eventType) => {
-              element.dispatchEvent(new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: rect.left + rect.width / 2,
-                clientY: rect.top + rect.height / 2
-              }));
-            });
-          } catch(_e) {}
-          return true;
-        };
-        const readBodyText = () => (document.body && document.body.innerText) ? document.body.innerText : '';
-        const toNormalizedText = (text) => String(text || '')
-          .replace(/\u00a0/g, ' ')
-          .replace(/[ \t]+/g, ' ')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-        const extractRoomSection = (text) => {
-          const normalized = toNormalizedText(text);
-          if (!normalized) {
-            return '';
-          }
-          const startMarkers = ['选择房间', '房型摘要', '可住人数 今日价格', '立即确认', '登录看低价'];
-          const endMarkers = ['地点', '服务及设施', '酒店政策', '酒店简介', '订房必读', '附近的酒店', '住客点评', '位置周边'];
-          let startIndex = -1;
-          for (const marker of startMarkers) {
-            const markerIndex = normalized.indexOf(marker);
-            if (markerIndex !== -1 && (startIndex === -1 || markerIndex < startIndex)) {
-              startIndex = markerIndex;
-            }
-          }
-          if (startIndex === -1) {
-            return normalized.slice(0, 18000);
-          }
-          let endIndex = normalized.length;
-          for (const marker of endMarkers) {
-            const markerIndex = normalized.indexOf(marker, startIndex + 1);
-            if (markerIndex !== -1 && markerIndex < endIndex) {
-              endIndex = markerIndex;
-            }
-          }
-          return normalized.slice(startIndex, Math.min(endIndex, startIndex + 18000));
-        };
-        const extractTitleWindows = (text) => {
-          const normalized = toNormalizedText(text);
-          const windows = [];
-          const seenWindows = new Set();
-          const matches = [...normalized.matchAll(titlePattern)];
-          for (let index = 0; index < matches.length; index += 1) {
-            const current = matches[index];
-            const next = matches[index + 1];
-            const start = Math.max(0, (current.index || 0) - 80);
-            const end = next
-              ? Math.min(normalized.length, (next.index || 0) + 120)
-              : Math.min(normalized.length, start + 900);
-            const snippet = normalized.slice(start, end).trim();
-            if (!snippet || seenWindows.has(snippet)) {
-              continue;
-            }
-            seenWindows.add(snippet);
-            windows.push(snippet);
-            if (windows.length >= 40) {
-              break;
-            }
-          }
-          return windows;
-        };
-        const texts = [];
-        const seen = new Set();
-        const snapshots = [];
-        const addSnapshot = (text) => {
-          const normalized = extractRoomSection(text);
-          if (!normalized || snapshots.includes(normalized)) return;
-          snapshots.push(normalized);
-        };
-        addSnapshot(readBodyText());
-
-        const triggerTexts = ['展示额外', '更多房型', '房间详情', '房型详情'];
-        const triggerElements = Array.from(document.querySelectorAll('button, a, div, span'));
-        const clickedTriggers = new Set();
-        for (const element of triggerElements) {
-          if (!isVisible(element)) continue;
-          const text = (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
-          if (!text || !triggerTexts.some((item) => text.includes(item))) continue;
-          const dedupeKey = text.slice(0, 40);
-          if (clickedTriggers.has(dedupeKey)) continue;
-          clickedTriggers.add(dedupeKey);
-          if (!clickElement(element)) continue;
-          await sleep(280);
-          addSnapshot(readBodyText());
-          try {
-            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-          } catch(_e) {}
-          await sleep(120);
-        }
-
-        const nodes = document.querySelectorAll('div, li, section, article');
-        for (const node of nodes) {
-          if (!isVisible(node)) continue;
-          const text = toNormalizedText(node.innerText || '');
-          if (!text || text.length < 4) continue;
-          if (!roomPattern.test(text) || !pricePattern.test(text)) continue;
-          const normalized = text.length > 1800 ? extractRoomSection(text) : text;
-          if (seen.has(normalized)) continue;
-          seen.add(normalized);
-          texts.push(normalized);
-          if (texts.length >= 80) break;
-        }
-        const bodyText = readBodyText();
-        for (const snippet of extractTitleWindows(bodyText)) {
-          if (seen.has(snippet)) continue;
-          seen.add(snippet);
-          texts.push(snippet);
-          if (texts.length >= 120) break;
-        }
-        const relevantBodyText = extractRoomSection(bodyText);
-        return JSON.stringify({
-          bodyText: relevantBodyText,
-          bodyHtml: '',
-          snippets: texts,
-          snapshots
-        });
-        })()`;
-}
-
-function buildLightweightEdgeDomExtractExpression() {
-  return `(async () => {
-        const titlePattern = /[\\u4e00-\\u9fa5A-Za-z0-9（）()·\\-]{2,40}(?:大床房|大床间|双床房|双床间|家庭房|家庭间|三床房|三人房|三人间|景观房|景观间|商务房|商务间|豪华房|豪华间|特惠房|特惠间|标准房|标准间|高级房|高级间|精品房|精品间|影音房|影音间|电竞房|电竞间|榻榻米房|榻榻米间|棋牌房|棋牌间|亲子房|亲子间|套房)/g;
-        const toNormalizedText = (text) => String(text || '')
-          .replace(/\u00a0/g, ' ')
-          .replace(/[ \t]+/g, ' ')
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-        const extractRoomSection = (text) => {
-          const normalized = toNormalizedText(text);
-          if (!normalized) return '';
-          const startMarkers = ['选择房间', '房型摘要', '可住人数 今日价格', '立即确认', '登录看低价'];
-          const endMarkers = ['地点', '服务及设施', '酒店政策', '酒店简介', '订房必读', '附近的酒店', '住客点评', '位置周边'];
-          let startIndex = -1;
-          for (const marker of startMarkers) {
-            const markerIndex = normalized.indexOf(marker);
-            if (markerIndex !== -1 && (startIndex === -1 || markerIndex < startIndex)) {
-              startIndex = markerIndex;
-            }
-          }
-          if (startIndex === -1) return normalized.slice(0, 12000);
-          let endIndex = normalized.length;
-          for (const marker of endMarkers) {
-            const markerIndex = normalized.indexOf(marker, startIndex + 1);
-            if (markerIndex !== -1 && markerIndex < endIndex) {
-              endIndex = markerIndex;
-            }
-          }
-          return normalized.slice(startIndex, Math.min(endIndex, startIndex + 12000));
-        };
-        const bodyText = document.body && document.body.innerText ? document.body.innerText : '';
-        const relevantBodyText = extractRoomSection(bodyText);
-        const snippets = [];
-        const seen = new Set();
-        const matches = [...relevantBodyText.matchAll(titlePattern)];
-        for (let index = 0; index < matches.length && snippets.length < 40; index += 1) {
-          const match = matches[index];
-          const next = matches[index + 1];
-          const start = Math.max(0, match.index - 80);
-          const end = next && next.index > match.index
-            ? Math.min(relevantBodyText.length, next.index + 80)
-            : Math.min(relevantBodyText.length, match.index + 420);
-          const snippet = toNormalizedText(relevantBodyText.slice(start, end));
-          if (snippet && !seen.has(snippet)) {
-            seen.add(snippet);
-            snippets.push(snippet);
-          }
-        }
-        return JSON.stringify({
-          bodyText: relevantBodyText,
-          bodyHtml: '',
-          snippets,
-          snapshots: []
-        });
-      })()`;
 }
 
 async function extractEdgeDomRoomCandidates({
