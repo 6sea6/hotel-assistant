@@ -36,6 +36,8 @@
     "src/renderer/modules/ai-task-formatters.js",
     "src/renderer/modules/ai-task-events.js",
     "src/renderer/modules/ai-task-progress.js",
+    "src/renderer/modules/ai-task-state.js",
+    "src/renderer/modules/ai-task-renderers.js",
     "src/main/preload.js",
     "src/main/ipc-handlers/hotel-handlers.js",
     "src/main/ipc-handlers/template-handlers.js",

@@ -23,6 +23,8 @@ async function loadTaskConsoleModule() {
       'ai-task-events.js',
       'ai-task-formatters.js',
       'ai-task-progress.js',
+      'ai-task-renderers.js',
+      'ai-task-state.js',
       'dom-helpers.js'
     ].forEach((fileName) => {
       fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
@@ -47,6 +49,8 @@ async function loadAiAssistantModules() {
       'ai-task-events.js',
       'ai-task-formatters.js',
       'ai-task-progress.js',
+      'ai-task-renderers.js',
+      'ai-task-state.js',
       'custom-select.js',
       'dom-helpers.js',
       'notification.js',
@@ -163,7 +167,7 @@ test('ai-task-console.js: REFRESH_STEP_DEFINITIONS exists and has no transit ste
 
 test('ai-task-console.js: refresh running view shows "正在更新数据"', async () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
   assert.ok(code.includes('正在更新数据'), 'Should show "正在更新数据"');
@@ -172,7 +176,7 @@ test('ai-task-console.js: refresh running view shows "正在更新数据"', asyn
 
 test('ai-task-console.js: refresh completed view shows "更新完成"', async () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
   // Check for refresh success view
@@ -181,7 +185,7 @@ test('ai-task-console.js: refresh completed view shows "更新完成"', async ()
 
 test('ai-task-console.js: refresh result analysis shows update statistics', async () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-state.js'),
     'utf8'
   );
   assert.ok(
@@ -580,7 +584,7 @@ test('refresh-data: renderProgressStats shows 4 cards with correct labels', asyn
 
   // Read source to verify renderProgressStats logic
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
   assert.ok(code.includes('宾馆总数'), 'Should have "宾馆总数" label for refresh');
@@ -690,7 +694,7 @@ test('collect: getStepDefinitions still inserts LOGIN_STEP_DEFINITION when login
 
 test('refresh-data: renderProgressStats aria-label is "更新数据进度统计"', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
   assert.ok(

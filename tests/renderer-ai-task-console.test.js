@@ -20,6 +20,8 @@ async function loadTaskConsoleModule() {
       'ai-task-events.js',
       'ai-task-formatters.js',
       'ai-task-progress.js',
+      'ai-task-renderers.js',
+      'ai-task-state.js',
       'dom-helpers.js'
     ].forEach((fileName) => {
       fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
@@ -45,6 +47,8 @@ async function loadAiAssistantModules() {
       'ai-task-events.js',
       'ai-task-formatters.js',
       'ai-task-progress.js',
+      'ai-task-renderers.js',
+      'ai-task-state.js',
       'custom-select.js',
       'dom-helpers.js',
       'notification.js',
@@ -531,7 +535,7 @@ test('normalizeTaskState derives running batch progress stats from events', asyn
 
 test('batch progress stat icons use svg and animate the running icon', () => {
   const moduleSource = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
   const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles.css'), 'utf8');
@@ -1076,7 +1080,7 @@ test('list prefilter styles inherit global personalization theme variables', () 
 test('task console section headings do not show English eyebrow labels', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'index.html'), 'utf8');
   const taskConsoleSource = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-console.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
 
