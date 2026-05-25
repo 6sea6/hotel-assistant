@@ -474,6 +474,10 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
   assert.equal(typeof packageJson.scripts.lint, 'string');
   assert.equal(typeof packageJson.scripts.coverage, 'string');
   assert.equal(typeof packageJson.scripts['package:smoke'], 'string');
+  assert.equal(
+    packageJson.scripts['smoke:data-migration'],
+    'node scripts/smoke/data-folder-migration-smoke.js'
+  );
   assert.match(workflow, /on:\s*\n\s+push:/);
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /npm install/);
