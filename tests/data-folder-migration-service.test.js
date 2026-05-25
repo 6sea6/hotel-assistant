@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const {
   buildTargetDataFolder,
+  copyDataFolderRecursive,
   deleteOldDataFolder,
   isSameResolvedPath,
   migrateDataFolder,
@@ -14,6 +15,13 @@ const {
 function createFsStub(options = {}) {
   const { exists = false, throwOnCopy = false } = options;
   const calls = [];
+  const dirent = (name, directory = false) => ({
+    name,
+    isDirectory() {
+      return directory;
+    }
+  });
+  const entriesByPath = options.entriesByPath || {};
 
   return {
     calls,
@@ -24,8 +32,17 @@ function createFsStub(options = {}) {
     rmSync(target, rmOptions) {
       calls.push(['rmSync', target, rmOptions]);
     },
-    cpSync(source, target, cpOptions) {
-      calls.push(['cpSync', source, target, cpOptions]);
+    mkdirSync(target, mkdirOptions) {
+      calls.push(['mkdirSync', target, mkdirOptions]);
+    },
+    readdirSync(target, readdirOptions) {
+      calls.push(['readdirSync', target, readdirOptions]);
+      return (entriesByPath[target] || []).map((entry) =>
+        typeof entry === 'string' ? dirent(entry) : dirent(entry.name, entry.directory)
+      );
+    },
+    copyFileSync(source, target) {
+      calls.push(['copyFileSync', source, target]);
       if (throwOnCopy) {
         throw new Error('copy failed');
       }
@@ -40,6 +57,38 @@ test('buildTargetDataFolder joins the selected directory with DATA_FOLDER_NAME',
     buildTargetDataFolder(selectedDir, { DATA_FOLDER_NAME: '宾馆比较助手' }),
     path.join(selectedDir, '宾馆比较助手')
   );
+});
+
+test('copyDataFolderRecursive copies nested folders without fs.cpSync', () => {
+  const sourceFolder = path.join(os.tmpdir(), 'copy-source');
+  const targetFolder = path.join(os.tmpdir(), 'copy-target');
+  const nestedSource = path.join(sourceFolder, 'nested');
+  const nestedTarget = path.join(targetFolder, 'nested');
+  const fsStub = createFsStub({
+    entriesByPath: {
+      [sourceFolder]: [{ name: 'nested', directory: true }, 'hotel-data.json'],
+      [nestedSource]: ['中文文件.txt']
+    }
+  });
+
+  copyDataFolderRecursive({ fs: fsStub, sourceFolder, targetFolder });
+
+  assert.deepEqual(fsStub.calls, [
+    ['mkdirSync', targetFolder, { recursive: true }],
+    ['readdirSync', sourceFolder, { withFileTypes: true }],
+    ['mkdirSync', nestedTarget, { recursive: true }],
+    ['readdirSync', nestedSource, { withFileTypes: true }],
+    [
+      'copyFileSync',
+      path.join(nestedSource, '中文文件.txt'),
+      path.join(nestedTarget, '中文文件.txt')
+    ],
+    [
+      'copyFileSync',
+      path.join(sourceFolder, 'hotel-data.json'),
+      path.join(targetFolder, 'hotel-data.json')
+    ]
+  ]);
 });
 
 test('isSameResolvedPath compares resolved paths', () => {
@@ -99,12 +148,12 @@ test('prepareTargetFolder removes existing target folders when overwrite is enab
 test('migrateDataFolder copies data, saves pointer, and reinitializes store in order', () => {
   const currentDataFolder = path.join(os.tmpdir(), 'current-data');
   const targetDataFolder = path.join(os.tmpdir(), 'target-data');
-  const calls = [];
-  const fsStub = {
-    cpSync(source, target, options) {
-      calls.push(['cpSync', source, target, options]);
+  const fsStub = createFsStub({
+    entriesByPath: {
+      [currentDataFolder]: ['hotel-data.json']
     }
-  };
+  });
+  const { calls } = fsStub;
   const dataFolderManager = {
     ensureDataFolder(folder) {
       calls.push(['ensureDataFolder', folder]);
@@ -133,7 +182,13 @@ test('migrateDataFolder copies data, saves pointer, and reinitializes store in o
 
   assert.deepEqual(calls, [
     ['ensureDataFolder', currentDataFolder],
-    ['cpSync', currentDataFolder, targetDataFolder, { recursive: true, force: true }],
+    ['mkdirSync', targetDataFolder, { recursive: true }],
+    ['readdirSync', currentDataFolder, { withFileTypes: true }],
+    [
+      'copyFileSync',
+      path.join(currentDataFolder, 'hotel-data.json'),
+      path.join(targetDataFolder, 'hotel-data.json')
+    ],
     ['saveDataFolderPath', targetDataFolder],
     ['reinitializeStore', targetDataFolder],
     ['getStore']
@@ -144,13 +199,13 @@ test('migrateDataFolder copies data, saves pointer, and reinitializes store in o
 test('migrateDataFolder lets copy errors bubble up without saving the pointer', () => {
   const currentDataFolder = path.join(os.tmpdir(), 'current-data');
   const targetDataFolder = path.join(os.tmpdir(), 'target-data');
-  const calls = [];
-  const fsStub = {
-    cpSync() {
-      calls.push(['cpSync']);
-      throw new Error('copy failed');
+  const fsStub = createFsStub({
+    throwOnCopy: true,
+    entriesByPath: {
+      [currentDataFolder]: ['hotel-data.json']
     }
-  };
+  });
+  const { calls } = fsStub;
   const dataFolderManager = {
     ensureDataFolder(folder) {
       calls.push(['ensureDataFolder', folder]);
@@ -180,7 +235,16 @@ test('migrateDataFolder lets copy errors bubble up without saving the pointer', 
       }),
     /copy failed/
   );
-  assert.deepEqual(calls, [['ensureDataFolder', currentDataFolder], ['cpSync']]);
+  assert.deepEqual(calls, [
+    ['ensureDataFolder', currentDataFolder],
+    ['mkdirSync', targetDataFolder, { recursive: true }],
+    ['readdirSync', currentDataFolder, { withFileTypes: true }],
+    [
+      'copyFileSync',
+      path.join(currentDataFolder, 'hotel-data.json'),
+      path.join(targetDataFolder, 'hotel-data.json')
+    ]
+  ]);
 });
 
 test('deleteOldDataFolder removes the old folder recursively', () => {

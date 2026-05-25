@@ -4,7 +4,8 @@ const path = require('path');
  * services: data folder migration file-system operations shared by data IPC handlers and tests.
  *
  * @typedef {{DATA_FOLDER_NAME: string}} DataFolderPaths
- * @typedef {{existsSync?: (target: string) => boolean, rmSync: (target: string, options: {recursive: boolean, force: boolean}) => void, cpSync?: (source: string, target: string, options: {recursive: boolean, force: boolean}) => void}} MigrationFs
+ * @typedef {{name: string, isDirectory: () => boolean}} MigrationDirent
+ * @typedef {{existsSync?: (target: string) => boolean, rmSync: (target: string, options: {recursive: boolean, force: boolean}) => void, mkdirSync?: (target: string, options: {recursive: boolean}) => void, readdirSync?: (target: string, options: {withFileTypes: true}) => MigrationDirent[], copyFileSync?: (source: string, target: string) => void}} MigrationFs
  * @typedef {{ensureDataFolder: (folder: string) => void, saveDataFolderPath: (folder: string) => void}} MigrationDataFolderManager
  * @typedef {{reinitializeStore: (folder: string) => void, getStore: () => {path?: string}}} MigrationDataService
  * @typedef {{path: string|undefined}} MigrationResult
@@ -49,6 +50,36 @@ function prepareTargetFolder({ fs: fsModule, targetFolder, overwrite }) {
 }
 
 /**
+ * @param {{fs: MigrationFs, sourceFolder: string, targetFolder: string}} options
+ * @returns {void}
+ */
+function copyDataFolderRecursive({ fs: fsModule, sourceFolder, targetFolder }) {
+  if (
+    typeof fsModule.mkdirSync !== 'function' ||
+    typeof fsModule.readdirSync !== 'function' ||
+    typeof fsModule.copyFileSync !== 'function'
+  ) {
+    throw new Error('文件复制能力不可用');
+  }
+
+  fsModule.mkdirSync(targetFolder, { recursive: true });
+  for (const entry of fsModule.readdirSync(sourceFolder, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceFolder, entry.name);
+    const targetPath = path.join(targetFolder, entry.name);
+    if (entry.isDirectory()) {
+      copyDataFolderRecursive({
+        fs: fsModule,
+        sourceFolder: sourcePath,
+        targetFolder: targetPath
+      });
+      continue;
+    }
+
+    fsModule.copyFileSync(sourcePath, targetPath);
+  }
+}
+
+/**
  * @param {{
  *   fs: MigrationFs,
  *   dataFolderManager: MigrationDataFolderManager,
@@ -66,10 +97,11 @@ function migrateDataFolder({
   targetDataFolder
 }) {
   dataFolderManager.ensureDataFolder(currentDataFolder);
-  if (typeof fsModule.cpSync !== 'function') {
-    throw new Error('文件复制能力不可用');
-  }
-  fsModule.cpSync(currentDataFolder, targetDataFolder, { recursive: true, force: true });
+  copyDataFolderRecursive({
+    fs: fsModule,
+    sourceFolder: currentDataFolder,
+    targetFolder: targetDataFolder
+  });
   dataFolderManager.saveDataFolderPath(targetDataFolder);
   dataService.reinitializeStore(targetDataFolder);
 
@@ -88,6 +120,7 @@ function deleteOldDataFolder({ fs: fsModule, oldPath }) {
 
 module.exports = {
   buildTargetDataFolder,
+  copyDataFolderRecursive,
   deleteOldDataFolder,
   isSameResolvedPath,
   migrateDataFolder,

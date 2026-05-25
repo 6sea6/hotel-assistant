@@ -160,26 +160,11 @@ process.stdout.write(JSON.stringify(output));
   };
 }
 
-test('migrateDataFolder probes Chinese data folder migration behavior', (t) => {
+test('migrateDataFolder copies a Chinese data folder tree with nested files', (t) => {
   const tempRoot = makeTempRoot();
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
 
   const probeResult = runChineseMigrationProbe(tempRoot);
-  const exactMigrationSucceeded =
-    probeResult.status === 0 &&
-    probeResult.parsed?.targetExists === true &&
-    probeResult.parsed?.hotelDataMatches === true &&
-    probeResult.parsed?.iconExists === true &&
-    probeResult.parsed?.nestedText === '迁移成功';
-
-  if (process.platform === 'win32' && !exactMigrationSucceeded) {
-    // TODO: Investigate Windows/Node fs.cpSync behavior for Chinese source and target paths.
-    assert.ok(
-      probeResult.status !== 0 || probeResult.parsed?.targetExists === false,
-      probeResult.stderr || probeResult.stdout
-    );
-    return;
-  }
 
   assert.equal(probeResult.status, 0, probeResult.stderr || probeResult.stdout);
   assert.ok(probeResult.parsed);
@@ -292,7 +277,13 @@ test('migrateDataFolder does not save the pointer or reinitialize when copy fail
 
   const { calls, dataFolderManager, dataService } = createMigrationDeps();
   const throwingFs = {
-    cpSync() {
+    mkdirSync(target, options) {
+      fs.mkdirSync(target, options);
+    },
+    readdirSync(target, options) {
+      return fs.readdirSync(target, options);
+    },
+    copyFileSync() {
       throw new Error('copy failed');
     }
   };

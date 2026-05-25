@@ -10,7 +10,6 @@ const {
 } = require('../../src/main/services/data-folder-migration-service');
 
 const KEEP_TEMP = process.env.KEEP_MIGRATION_SMOKE === 'true';
-const STRICT_UNICODE = process.env.STRICT_MIGRATION_SMOKE === 'true';
 
 function writeFixture(sourceDir) {
   fs.mkdirSync(path.join(sourceDir, 'nested'), { recursive: true });
@@ -243,9 +242,7 @@ function main() {
       console.log(
         '[data-folder-migration-smoke] WARNING: Chinese path migration did not complete with an exact target path in this runtime.'
       );
-      if (STRICT_UNICODE) {
-        exitCode = 1;
-      }
+      exitCode = 1;
     }
 
     console.log(
