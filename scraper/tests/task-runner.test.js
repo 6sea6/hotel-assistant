@@ -4,7 +4,24 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const taskRunnerRelatedModules = [
+  '../src/task-runner',
+  '../src/task-context',
+  '../src/task-events',
+  '../src/task-writeback',
+  '../src/batch-result-builder',
+  '../src/single-detail-runner',
+  '../src/batch-orchestrator'
+].map((modulePath) => require.resolve(modulePath));
+
+function clearTaskRunnerModules() {
+  for (const modulePath of taskRunnerRelatedModules) {
+    delete require.cache[modulePath];
+  }
+}
+
 function installMock(modulePath, exports) {
+  clearTaskRunnerModules();
   const resolvedPath = require.resolve(modulePath);
   require.cache[resolvedPath] = {
     id: resolvedPath,
@@ -18,6 +35,9 @@ function installMock(modulePath, exports) {
 function clearModules(paths) {
   for (const modulePath of paths) {
     delete require.cache[modulePath];
+  }
+  if (paths.some((modulePath) => taskRunnerRelatedModules.includes(modulePath))) {
+    clearTaskRunnerModules();
   }
 }
 
@@ -34,6 +54,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
     appendedHotels: [],
     buildReviewInput: 0,
     buildReviewInputSummary: 0,
+    order: [],
     scrape: 0,
     scrapeOptions: [],
     transit: 0
@@ -45,6 +66,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
       appendHotelsToStore: (hotels) => {
         calls.appendHotelsToStore += 1;
         calls.appendedHotels.push(hotels);
+        calls.order.push('append');
         return { operation: 'append', count: hotels.length };
       },
       findTemplateInStore: () => ({
@@ -103,6 +125,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
           options.onScrapeOptions(scrapeOptions, url);
         }
         const hotelInput = hotelInputs.find((item) => item.url === url) || hotelInputs[0];
+        calls.order.push(`scrape:${hotelInput.hotelId}`);
         if (typeof options.scrapeResultForHotelInput === 'function') {
           return options.scrapeResultForHotelInput(hotelInput, url, scrapeOptions);
         }
@@ -139,6 +162,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
     installMock('../src/amap', {
       getTransitInfo: async () => {
         calls.transit += 1;
+        calls.order.push('transit');
         return {
           route: { durationMinutes: 20 },
           nearestSubway: { name: '测试站', distanceKm: 0.6 }
@@ -618,6 +642,286 @@ test('reportLevel off batch skips item reports and can still write app data', as
     assert.equal(latestRun.items, undefined);
     assert.equal(latestRun.eligibleHotels, undefined);
     assert.equal(latestRun.performance, undefined);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch events include item index and total counts', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-batch-events-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=event1',
+      hotelId: 'event1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=event2',
+      hotelId: 'event2',
+      source: 'detail-input'
+    }
+  ];
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+
+  try {
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent: (event) => events.push(event)
+      }
+    );
+
+    const starts = events.filter((event) => event.type === 'batch:item-start');
+    const dones = events.filter((event) => event.type === 'batch:item-done');
+    assert.deepEqual(
+      starts.map((event) => [event.details.index, event.details.total]),
+      [
+        [1, 2],
+        [2, 2]
+      ]
+    );
+    assert.deepEqual(
+      dones.map((event) => [event.details.index, event.details.total]),
+      [
+        [1, 2],
+        [2, 2]
+      ]
+    );
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch result items are sorted by input index', () => {
+  const { buildBatchItems } = require('../src/batch-result-builder');
+
+  const items = buildBatchItems(
+    [
+      { inputIndex: 3, success: true, hotelName: 'third' },
+      { inputIndex: 1, success: true, hotelName: 'first' }
+    ],
+    [{ index: 2, url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=failed', error: 'boom' }]
+  );
+
+  assert.deepEqual(
+    items.map((item) => item.index),
+    [1, 2, 3]
+  );
+  assert.deepEqual(
+    items.map((item) => item.success),
+    [true, false, true]
+  );
+});
+
+test('batch app writeback runs only after all serial detail items finish', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-write-order-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=order1',
+      hotelId: 'order1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=order2',
+      hotelId: 'order2',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'write-app-data': true,
+        'unsafe-allow-unreviewed-write': true
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    const appendIndex = calls.order.indexOf('append');
+    assert.notEqual(appendIndex, -1);
+    assert.ok(appendIndex > calls.order.lastIndexOf('scrape:order2'));
+    assert.equal(calls.appendHotelsToStore, 1);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch continues after one detail item fails', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-partial-fail-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=fail1',
+      hotelId: 'fail1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=ok2',
+      hotelId: 'ok2',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      if (hotelInput.hotelId === 'fail1') {
+        throw new Error('simulated scrape failure');
+      }
+      return {
+        hotel_name: '继续成功酒店',
+        address: '继续成功地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 188 }],
+        raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: ''
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    }
+  });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(calls.scrape, 2);
+    assert.equal(result.success, true);
+    assert.equal(result.batchMode, true);
+    assert.equal(result.failedItems.length, 1);
+    assert.equal(result.failedItems[0].index, 1);
+    assert.equal(result.items.length, 2);
+    assert.deepEqual(
+      result.items.map((item) => [item.index, item.success]),
+      [
+        [1, false],
+        [2, true]
+      ]
+    );
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runHotelImportTask aborts before collection when signal is already cancelled', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const controller = new AbortController();
+  controller.abort();
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    await assert.rejects(
+      () =>
+        runHotelImportTask(
+          {
+            url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=cancelled'
+          },
+          {
+            signal: controller.signal
+          }
+        ),
+      /任务已取消/
+    );
+  } finally {
+    clearModules([taskRunnerPath]);
+  }
+});
+
+test('batch concurrency greater than one records serial fallback placeholder', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-concurrency-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=concurrency1',
+      hotelId: 'concurrency1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=concurrency2',
+      hotelId: 'concurrency2',
+      source: 'detail-input'
+    }
+  ];
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+
+  try {
+    const records = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        concurrency: 3,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(result.performance.concurrency, 3);
+    assert.equal(result.performance.effectiveConcurrency, 1);
+    assert.equal(result.performance.parallelRequestedButDisabled, true);
+    assert.ok(records.some((record) => record.event === 'parallel_requested_but_disabled'));
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
