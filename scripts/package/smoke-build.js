@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createBuilderConfig } = require('./create-builder-config');
+const { prepareFullBundle } = require('./prepare-full-bundle');
 const { verifyPackageLayout } = require('./verify-package-layout');
 const { removeIfExists, runCommand } = require('./utils');
 
@@ -31,17 +32,24 @@ function main() {
   }
 
   const projectRoot = path.resolve(__dirname, '..', '..');
+  const scraperDir = path.join(projectRoot, 'scraper');
   const outputDir = path.join(projectRoot, 'dist-smoke');
   let builderConfig = null;
+  let preparedBundle = null;
 
   try {
     runNodeScriptIfPresent(path.join(projectRoot, 'scripts', 'sync-build-assets.js'), projectRoot);
     removeIfExists(outputDir);
 
+    preparedBundle = prepareFullBundle({
+      projectRoot,
+      scraperDir
+    });
+
     builderConfig = createBuilderConfig({
       projectRoot,
-      mode: '1',
-      outputDir
+      outputDir,
+      extraResources: preparedBundle.manifest.extraResources
     });
 
     builderConfig.buildConfig.win = {
@@ -61,8 +69,7 @@ function main() {
     });
 
     verifyPackageLayout({
-      tempBuildDir: outputDir,
-      mode: '1'
+      tempBuildDir: outputDir
     });
 
     console.log('Windows packaging smoke test passed.');
@@ -72,6 +79,9 @@ function main() {
     }
     if (process.env.KEEP_SMOKE_BUILD !== 'true') {
       removeIfExists(outputDir);
+    }
+    if (preparedBundle && preparedBundle.bundleRoot) {
+      removeIfExists(preparedBundle.bundleRoot);
     }
   }
 }

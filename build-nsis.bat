@@ -4,7 +4,6 @@ chcp 936 >nul
 
 cd /d "%~dp0"
 
-set "BUILD_MODE=%BUILD_MODE%"
 set "NO_PAUSE=%NO_PAUSE%"
 set "EXIT_CODE=0"
 
@@ -25,21 +24,9 @@ if errorlevel 1 (
     goto END
 )
 
-echo [1/2] 选择打包模式
 echo.
-echo   1. 基础版安装包
-echo   2. 完整版安装包（包含采集模块资源）
-echo.
-if "%BUILD_MODE%"=="1" goto BUILD
-if "%BUILD_MODE%"=="2" goto BUILD
-set /p BUILD_MODE=请选择打包模式（1/2，默认 1）：
-if not defined BUILD_MODE set "BUILD_MODE=1"
-if not "%BUILD_MODE%"=="1" if not "%BUILD_MODE%"=="2" set "BUILD_MODE=1"
-
-:BUILD
-echo.
-echo [2/2] 开始打包...
-node scripts\package\run-build.js --mode %BUILD_MODE%
+echo [1/1] 开始打包...
+node scripts\package\run-build.js
 if errorlevel 1 (
     echo [错误] 打包失败。
     set "EXIT_CODE=1"

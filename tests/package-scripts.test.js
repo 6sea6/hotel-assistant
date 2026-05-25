@@ -34,11 +34,11 @@ function writePackageFixture(nodeModulesDir, packageName, packageJson = {}) {
   return packageDir;
 }
 
-test('package manifest keeps base and full bundle resource contracts stable', () => {
+test('package manifest keeps full bundle resource contracts stable', () => {
   const manifest = getBundleManifest('E:/temp/bundle-root');
 
-  assert.equal(getSetupArtifactName('1', '7.8.0'), '宾馆比较终极版-基础版-7.8.0.exe');
-  assert.equal(getSetupArtifactName('2', '7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
+  assert.equal(getSetupArtifactName('7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
+  assert.equal('baseOnlyAbsentResources' in manifest.expectations, false);
   assert.deepEqual(manifest.expectations.fullOnlyResources, [
     path.join('scraper', 'src', 'cli.js'),
     path.join('scraper', 'src', 'runtime', 'perf.js'),
@@ -151,7 +151,7 @@ test('scraper dependency packages are declared only in the workspace package', (
   });
 });
 
-test('createBuilderConfig only injects full-bundle extra resources in full mode', (t) => {
+test('createBuilderConfig always injects full-bundle extra resources', (t) => {
   const tempRoot = makeTempRoot();
   const tempOutputDir = path.join(tempRoot, 'dist-verify');
   const extraResources = [{ from: 'temp-bundle', to: 'scraper' }];
@@ -160,30 +160,19 @@ test('createBuilderConfig only injects full-bundle extra resources in full mode'
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  const baseConfig = createBuilderConfig({
+  const builderConfig = createBuilderConfig({
     projectRoot: path.resolve(__dirname, '..'),
-    mode: '1',
-    outputDir: tempOutputDir,
-    extraResources
-  });
-  const fullConfig = createBuilderConfig({
-    projectRoot: path.resolve(__dirname, '..'),
-    mode: '2',
     outputDir: tempOutputDir,
     extraResources
   });
 
   t.after(() => {
-    fs.rmSync(baseConfig.tempDir, { recursive: true, force: true });
+    fs.rmSync(builderConfig.tempDir, { recursive: true, force: true });
   });
 
-  assert.equal(baseConfig.buildConfig.directories.output, tempOutputDir);
+  assert.equal(builderConfig.buildConfig.directories.output, tempOutputDir);
   assert.equal(
-    baseConfig.buildConfig.extraResources.some((entry) => entry.from === 'temp-bundle'),
-    false
-  );
-  assert.equal(
-    fullConfig.buildConfig.extraResources.some((entry) => entry.from === 'temp-bundle'),
+    builderConfig.buildConfig.extraResources.some((entry) => entry.from === 'temp-bundle'),
     true
   );
 });
@@ -362,9 +351,8 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   );
 });
 
-test('verifyPackageLayout distinguishes base and full resource layouts', (t) => {
+test('verifyPackageLayout requires full resource layout', (t) => {
   const tempRoot = makeTempRoot();
-  const baseResourcesDir = path.join(tempRoot, 'base', 'win-unpacked', 'resources');
   const fullResourcesDir = path.join(tempRoot, 'full', 'win-unpacked', 'resources');
 
   const writeFile = (rootDir, relativePath) => {
@@ -382,26 +370,19 @@ test('verifyPackageLayout distinguishes base and full resource layouts', (t) => 
     path.join('shared', 'compare-app', 'data-folder.js'),
     path.join('shared', 'compare-app', 'hotel-groups.js')
   ].forEach((relativePath) => {
-    writeFile(baseResourcesDir, relativePath);
     writeFile(fullResourcesDir, relativePath);
   });
+
+  assert.throws(
+    () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }),
+    /缺少打包资源/
+  );
 
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach((relativePath) => {
     writeFile(fullResourcesDir, relativePath);
   });
 
-  assert.doesNotThrow(() =>
-    verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'base'), mode: '1' })
-  );
-  assert.doesNotThrow(() =>
-    verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full'), mode: '2' })
-  );
-
-  writeFile(baseResourcesDir, path.join('scraper', 'src', 'cli.js'));
-  assert.throws(
-    () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'base'), mode: '1' }),
-    /不应存在的打包资源/
-  );
+  assert.doesNotThrow(() => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }));
 });
 
 test('full package manifest requires runtime perf logger modules', () => {
@@ -473,6 +454,9 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
 
   assert.equal(typeof packageJson.scripts.lint, 'string');
   assert.equal(typeof packageJson.scripts.coverage, 'string');
+  assert.equal(packageJson.scripts.build, 'node scripts/package/run-build.js');
+  assert.equal(packageJson.scripts['build:win'], 'node scripts/package/run-build.js');
+  assert.equal(packageJson.scripts['build:nsis'], 'node scripts/package/run-build.js');
   assert.equal(typeof packageJson.scripts['package:smoke'], 'string');
   assert.equal(
     packageJson.scripts['smoke:data-migration'],
@@ -522,10 +506,11 @@ test('run-build script uses Chinese UI text and does not contain English menu st
     'utf-8'
   );
 
-  assert.match(runBuildScript, /选择打包模式/);
-  assert.match(runBuildScript, /基础版安装包/);
-  assert.match(runBuildScript, /完整版安装包/);
-  assert.match(runBuildScript, /请选择打包模式/);
+  assert.doesNotMatch(runBuildScript, /选择打包模式/);
+  assert.doesNotMatch(runBuildScript, /基础版安装包/);
+  assert.doesNotMatch(runBuildScript, /请选择打包模式/);
+  assert.doesNotMatch(runBuildScript, /readline/);
+  assert.doesNotMatch(runBuildScript, /--mode/);
   assert.match(runBuildScript, /宾馆比较终极版打包工具/);
   assert.match(runBuildScript, /正在同步构建资源/);
   assert.match(runBuildScript, /正在准备完整版采集模块资源/);
@@ -556,6 +541,7 @@ test('build-nsis.bat uses Chinese UI with GBK codepage and CRLF line endings', (
   assert.doesNotMatch(asciiPart, /Hotel Comparison Packager/);
   assert.doesNotMatch(asciiPart, /Choose build mode/);
   assert.doesNotMatch(asciiPart, /Base package/);
+  assert.doesNotMatch(asciiPart, /BUILD_MODE/);
   assert.doesNotMatch(asciiPart, /Build completed/);
   assert.doesNotMatch(asciiPart, /Packaging failed/);
   assert.doesNotMatch(asciiPart, /Select mode/);

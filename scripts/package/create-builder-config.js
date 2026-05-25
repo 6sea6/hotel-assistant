@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { ensureDir } = require('./utils');
 
-function createBuilderConfig({ projectRoot, mode, outputDir, extraResources = [] }) {
+function createBuilderConfig({ projectRoot, outputDir, extraResources = [] }) {
   const packageJsonPath = path.join(projectRoot, 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
   const buildConfig = {
@@ -13,7 +13,7 @@ function createBuilderConfig({ projectRoot, mode, outputDir, extraResources = []
     },
     extraResources: [
       ...((packageJson.build && packageJson.build.extraResources) || []),
-      ...(mode === '2' ? extraResources : [])
+      ...extraResources
     ]
   };
 

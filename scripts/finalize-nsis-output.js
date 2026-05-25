@@ -6,11 +6,8 @@ function fail(message) {
   process.exit(1);
 }
 
-function getFinalSetupName(buildMode, version) {
-  if (buildMode === '2') {
-    return `宾馆比较终极版-完整版-${version}.exe`;
-  }
-  return `宾馆比较终极版-基础版-${version}.exe`;
+function getFinalSetupName(version) {
+  return `宾馆比较终极版-完整版-${version}.exe`;
 }
 
 function findSetupExecutable(tempBuildDir) {
@@ -32,11 +29,9 @@ function findSetupExecutable(tempBuildDir) {
 }
 
 function main() {
-  const [tempBuildDir, distDir, appVersion, buildMode] = process.argv.slice(2);
-  if (!tempBuildDir || !distDir || !appVersion || !buildMode) {
-    fail(
-      'Usage: node scripts/finalize-nsis-output.js <tempBuildDir> <distDir> <appVersion> <buildMode>'
-    );
+  const [tempBuildDir, distDir, appVersion] = process.argv.slice(2);
+  if (!tempBuildDir || !distDir || !appVersion) {
+    fail('Usage: node scripts/finalize-nsis-output.js <tempBuildDir> <distDir> <appVersion>');
   }
 
   if (!fs.existsSync(tempBuildDir)) {
@@ -50,7 +45,7 @@ function main() {
 
   fs.mkdirSync(distDir, { recursive: true });
 
-  const finalSetupName = getFinalSetupName(buildMode, appVersion);
+  const finalSetupName = getFinalSetupName(appVersion);
   const targetSetupPath = path.join(distDir, finalSetupName);
   const lastSetupFilePath = path.join(distDir, 'last-successful-setup.txt');
 

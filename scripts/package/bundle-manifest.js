@@ -5,10 +5,8 @@ const {
   PROMPT_CONTRACT
 } = require('../../shared/compare-app/prompt-contract');
 
-function getSetupArtifactName(mode, version) {
-  return mode === '2'
-    ? `宾馆比较终极版-完整版-${version}.exe`
-    : `宾馆比较终极版-基础版-${version}.exe`;
+function getSetupArtifactName(version) {
+  return `宾馆比较终极版-完整版-${version}.exe`;
 }
 
 function getBundleManifest(bundleRoot) {
@@ -70,7 +68,6 @@ function getBundleManifest(bundleRoot) {
         ),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, PROMPT_CONTRACT.unifiedPromptFileName)
       ],
-      baseOnlyAbsentResources: [path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js')],
       neverResources: [
         path.join(DEFAULT_COMPARE_APP_FILES.appFolderName, DEFAULT_COMPARE_APP_FILES.storeFileName),
         path.join(BUNDLE_RESOURCE_MAP.runtimeWorkDirName, 'state', 'edge-profile'),

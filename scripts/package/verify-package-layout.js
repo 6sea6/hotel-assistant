@@ -16,7 +16,7 @@ function assertMissing(baseDir, relativePath) {
   }
 }
 
-function verifyPackageLayout({ tempBuildDir, mode }) {
+function verifyPackageLayout({ tempBuildDir }) {
   const resourcesDir = path.join(tempBuildDir, 'win-unpacked', 'resources');
   if (!fs.existsSync(resourcesDir)) {
     throw new Error(`未找到 unpacked resources 目录: ${resourcesDir}`);
@@ -30,19 +30,13 @@ function verifyPackageLayout({ tempBuildDir, mode }) {
     assertMissing(resourcesDir, relativePath)
   );
 
-  if (mode === '2') {
-    manifest.expectations.fullOnlyResources.forEach((relativePath) =>
-      assertExists(resourcesDir, relativePath)
-    );
-  } else {
-    manifest.expectations.baseOnlyAbsentResources.forEach((relativePath) =>
-      assertMissing(resourcesDir, relativePath)
-    );
-  }
+  manifest.expectations.fullOnlyResources.forEach((relativePath) =>
+    assertExists(resourcesDir, relativePath)
+  );
 
   return {
     resourcesDir,
-    mode
+    mode: '2'
   };
 }
 

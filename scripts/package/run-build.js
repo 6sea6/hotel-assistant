@@ -1,27 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const readline = require('readline');
 const { createBuilderConfig } = require('./create-builder-config');
 const { getSetupArtifactName } = require('./bundle-manifest');
 const { prepareFullBundle } = require('./prepare-full-bundle');
 const { verifyPackageLayout } = require('./verify-package-layout');
 const { removeIfExists, resolveWindowsCommand, runCommand } = require('./utils');
-
-function getArgValue(argv, ...keys) {
-  for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index];
-    if (keys.includes(value)) {
-      return argv[index + 1] || '';
-    }
-    for (const key of keys) {
-      if (value.startsWith(`${key}=`)) {
-        return value.slice(key.length + 1);
-      }
-    }
-  }
-  return '';
-}
 
 function runElectronBuilder({ projectRoot, configPath }) {
   const electronBuilderBin = path.join(
@@ -39,11 +23,11 @@ function runElectronBuilder({ projectRoot, configPath }) {
   );
 }
 
-function copyFinalInstaller({ projectRoot, tempBuildDir, version, mode }) {
+function copyFinalInstaller({ projectRoot, tempBuildDir, version }) {
   const distDir = path.join(projectRoot, 'dist');
   fs.mkdirSync(distDir, { recursive: true });
 
-  const setupName = getSetupArtifactName(mode, version);
+  const setupName = getSetupArtifactName(version);
   const targetPath = path.join(distDir, setupName);
   const lastSetupFilePath = path.join(distDir, 'last-successful-setup.txt');
   const sourceEntry = fs
@@ -74,29 +58,12 @@ function copyFinalInstaller({ projectRoot, tempBuildDir, version, mode }) {
   return targetPath;
 }
 
-function promptBuildMode(version) {
+function printHeader(version) {
   const divider = '='.repeat(48);
   console.log(divider);
   console.log(`  宾馆比较终极版打包工具 v${version}`);
   console.log(divider);
   console.log('');
-  console.log('[1/2] 选择打包模式');
-  console.log('');
-  console.log('  1. 基础版安装包');
-  console.log('  2. 完整版安装包（包含采集模块资源）');
-  console.log('');
-
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-    rl.question('请选择打包模式（1/2，默认 1）：', (answer) => {
-      rl.close();
-      const trimmed = answer.trim();
-      resolve(trimmed === '2' ? '2' : '1');
-    });
-  });
 }
 
 function ensureNodeModules(projectRoot) {
@@ -140,21 +107,18 @@ function syncBuildAssets(projectRoot) {
 }
 
 async function main() {
-  const argv = process.argv.slice(2);
-  const argMode = getArgValue(argv, '--mode', '-m') || argv[0] || '';
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.resolve(projectRoot, 'scraper');
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   const version = packageJson.version;
   const tempBuildDir = path.join(projectRoot, `dist-verify-build-${process.pid}-${Date.now()}`);
 
-  const mode = argMode || (await promptBuildMode(version));
-
   let preparedBundle = null;
   let builderConfig = null;
 
   try {
-    console.log('\n[2/2] 开始打包\n');
+    printHeader(version);
+    console.log('[1/1] 开始打包\n');
 
     console.log('正在检查依赖...');
     ensureNodeModules(projectRoot);
@@ -162,20 +126,17 @@ async function main() {
     console.log('正在同步构建资源...');
     syncBuildAssets(projectRoot);
 
-    if (mode === '2') {
-      console.log('正在准备完整版采集模块资源...');
-      preparedBundle = prepareFullBundle({
-        projectRoot,
-        scraperDir
-      });
-    }
+    console.log('正在准备完整版采集模块资源...');
+    preparedBundle = prepareFullBundle({
+      projectRoot,
+      scraperDir
+    });
 
     console.log('正在生成打包配置...');
     builderConfig = createBuilderConfig({
       projectRoot,
-      mode,
       outputDir: tempBuildDir,
-      extraResources: preparedBundle ? preparedBundle.manifest.extraResources : []
+      extraResources: preparedBundle.manifest.extraResources
     });
 
     console.log('正在运行 electron-builder...');
@@ -186,15 +147,13 @@ async function main() {
 
     console.log('正在校验安装包资源...');
     verifyPackageLayout({
-      tempBuildDir,
-      mode
+      tempBuildDir
     });
 
     const finalInstaller = copyFinalInstaller({
       projectRoot,
       tempBuildDir,
-      version,
-      mode
+      version
     });
 
     const refreshScript = path.join(projectRoot, 'scripts', 'refresh-shell-icons.ps1');
