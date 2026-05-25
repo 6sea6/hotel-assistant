@@ -89,9 +89,21 @@ test('in-app manual content is extracted into a separate renderer resource', () 
   assert.match(otherHandlers, /safeHandle\([\s\S]*?ipcMain,[\s\S]*?'manual:getContent'/);
 });
 
-test('settings, AI, and other IPC handlers use the safe handler wrapper', () => {
+test('core IPC handlers use the safe handler wrapper', () => {
   const mainDir = path.join(__dirname, '..', 'src', 'main');
   const safeHandler = fs.readFileSync(path.join(mainDir, 'ipc-safe-handler.js'), 'utf8');
+  const hotelHandlers = fs.readFileSync(
+    path.join(mainDir, 'ipc-handlers', 'hotel-handlers.js'),
+    'utf8'
+  );
+  const templateHandlers = fs.readFileSync(
+    path.join(mainDir, 'ipc-handlers', 'template-handlers.js'),
+    'utf8'
+  );
+  const dataHandlers = fs.readFileSync(
+    path.join(mainDir, 'ipc-handlers', 'data-handlers.js'),
+    'utf8'
+  );
   const settingsHandlers = fs.readFileSync(
     path.join(mainDir, 'ipc-handlers', 'settings-handlers.js'),
     'utf8'
@@ -104,8 +116,23 @@ test('settings, AI, and other IPC handlers use the safe handler wrapper', () => 
 
   assert.match(safeHandler, /function isTrustedSender/);
   assert.match(safeHandler, /senderFrame/);
+  assert.match(hotelHandlers, /safeHandle\(ipcMain,\s*'hotel:add'/);
+  assert.match(templateHandlers, /safeHandle\(ipcMain,\s*'template:updateAndSync'/);
+  assert.match(dataHandlers, /safeHandle\(ipcMain,\s*'data:import'/);
+  assert.match(dataHandlers, /safeHandle\(ipcMain,\s*'ranking:exportImage'/);
   assert.match(settingsHandlers, /safeHandle\([\s\S]*?ipcMain,[\s\S]*?'settings:set'/);
   assert.match(aiHandlers, /safeHandle\(ipcMain,\s*'ai:task:start'/);
   assert.match(otherHandlers, /safeHandle\(ipcMain,\s*'open:external'/);
   assert.match(otherHandlers, /safeHandle\(ipcMain,\s*'window:getState'/);
+
+  for (const [name, source] of [
+    ['hotel', hotelHandlers],
+    ['template', templateHandlers],
+    ['data', dataHandlers],
+    ['settings', settingsHandlers],
+    ['ai', aiHandlers],
+    ['other', otherHandlers]
+  ]) {
+    assert.doesNotMatch(source, /ipcMain\.handle\(/, `${name} handlers should use safeHandle`);
+  }
 });

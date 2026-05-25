@@ -1,5 +1,6 @@
 const hotelHandlers = require('./hotel-handlers');
 const hotelStorage = require('../hotel-storage');
+const { isPlainObject, safeHandle, toErrorMessage } = require('../ipc-safe-handler');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
 const {
   allocateUniqueId,
@@ -78,8 +79,17 @@ function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
 }
 
 /**
+ * @param {unknown} id
+ * @returns {boolean}
+ */
+function hasValidId(id) {
+  const idKey = getIdKey(id);
+  return Boolean(idKey && idKey !== 'undefined' && idKey !== 'null');
+}
+
+/**
  * @param {{
- *   ipcMain: {handle: (channel: string, handler: Function) => void},
+ *   ipcMain: Pick<import('electron').IpcMain, 'handle'>,
  *   cache: {invalidate: (key: string) => void},
  *   services: {
  *     dataService: {getStore: () => any},
@@ -127,7 +137,11 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   };
 
   // 添加模板
-  ipcMain.handle('template:add', (event, template) => {
+  safeHandle(ipcMain, 'template:add', (_event, template) => {
+    if (!isPlainObject(template)) {
+      return { success: false, error: '无效的模板数据' };
+    }
+
     const store = dataService.getStore();
     const templates = getNormalizedTemplates(store);
     const usedIds = new Set(templates.map((item) => String(item.id)));
@@ -144,7 +158,14 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   });
 
   // 更新模板
-  ipcMain.handle('template:update', (event, template) => {
+  safeHandle(ipcMain, 'template:update', (_event, template) => {
+    if (!isPlainObject(template)) {
+      return { success: false, error: '无效的模板数据' };
+    }
+    if (!hasValidId(template.id)) {
+      return { success: false, error: '无效的模板 ID' };
+    }
+
     const store = dataService.getStore();
     const templates = getNormalizedTemplates(store);
     const index = templates.findIndex((t) => idsEqual(t.id, template.id));
@@ -158,7 +179,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   });
 
   // 删除模板
-  ipcMain.handle('template:delete', (event, id) => {
+  safeHandle(ipcMain, 'template:delete', (_event, id) => {
     const idKey = getIdKey(id);
     if (!idKey || idKey === 'undefined' || idKey === 'null') {
       return { success: false, error: '无效的模板 ID' };
@@ -202,13 +223,20 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
   });
 
   // 获取所有模板
-  ipcMain.handle('template:getAll', () => {
+  safeHandle(ipcMain, 'template:getAll', () => {
     const store = dataService.getStore();
     return getNormalizedTemplates(store);
   });
 
   // 模板更新后同步酒店数据并通知渲染进程
-  ipcMain.handle('template:updateAndSync', async (event, template) => {
+  safeHandle(ipcMain, 'template:updateAndSync', async (_event, template) => {
+    if (!isPlainObject(template)) {
+      return { success: false, error: '无效的模板数据' };
+    }
+    if (!hasValidId(template.id)) {
+      return { success: false, error: '无效的模板 ID' };
+    }
+
     try {
       console.log('[模板同步] 开始更新模板:', template.name, 'ID:', template.id);
 
@@ -292,7 +320,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       return { success: true, template: syncedTemplate, affectedCount: updatedCount };
     } catch (error) {
       console.error('模板更新失败:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrorMessage(error) };
     }
   });
 }

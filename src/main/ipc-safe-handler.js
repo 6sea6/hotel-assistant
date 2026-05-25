@@ -1,5 +1,5 @@
 /**
- * @typedef {import('electron').IpcMain} IpcMain
+ * @typedef {Pick<import('electron').IpcMain, 'handle'>} IpcMainHandleRegistry
  * @typedef {import('electron').IpcMainInvokeEvent} IpcMainInvokeEvent
  * @typedef {import('../shared/contracts').IpcResult<unknown>} IpcResult
  *
@@ -127,7 +127,7 @@ function assertString(value, fallback = '') {
  * Successful handler results are returned unchanged to preserve existing IPC
  * contracts.
  *
- * @param {IpcMain} ipcMain
+ * @param {IpcMainHandleRegistry} ipcMain
  * @param {string} channel
  * @param {SafeIpcHandler} handler
  * @param {SafeHandleOptions} [options]

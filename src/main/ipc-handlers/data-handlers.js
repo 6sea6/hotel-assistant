@@ -7,6 +7,7 @@ const hotelStorage = require('../hotel-storage');
 const hotelHandlers = require('./hotel-handlers');
 const templateHandlers = require('./template-handlers');
 const { normalizeAiProviderConfig, redactAiProviderConfig } = require('../ai/provider-presets');
+const { assertString, isPlainObject, safeHandle, toErrorMessage } = require('../ipc-safe-handler');
 const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared/id-utils');
 
 /**
@@ -23,14 +24,6 @@ const EXPORT_SCHEMA_VERSION = 3;
 const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 /** @type {(template?: Partial<RawTemplateRecord>, existingTemplate?: Partial<RawTemplateRecord>) => TemplateRecord} */
 const normalizeTemplatePayload = templateHandlers.normalizeTemplatePayload;
-
-/**
- * @param {unknown} value
- * @returns {value is Record<string, unknown>}
- */
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
 
 /**
  * @param {unknown} settings
@@ -542,7 +535,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
   const getMainWindow = () => windowService?.getMainWindow?.() || null;
 
   // 导出数据
-  ipcMain.handle('data:export', async () => {
+  safeHandle(ipcMain, 'data:export', async () => {
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false };
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -568,7 +561,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
   });
 
   // 导入数据
-  ipcMain.handle('data:import', async (event, requestedMode = 'replace') => {
+  safeHandle(ipcMain, 'data:import', async (_event, requestedMode = 'replace') => {
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false };
     const importMode = requestedMode === 'append' ? 'append' : 'replace';
@@ -636,14 +629,19 @@ function registerDataHandlers({ ipcMain, cache, services }) {
           windowService.applyWindowIcon(previousSnapshot.settings.app_icon_path || '');
         }
         console.error('导入数据失败:', error);
-        return { success: false, error: error.message };
+        return { success: false, error: toErrorMessage(error) };
       }
     }
     return { success: false };
   });
 
   // 导出排名图片
-  ipcMain.handle('ranking:exportImage', async (event, imageBuffer) => {
+  safeHandle(ipcMain, 'ranking:exportImage', async (_event, imageBuffer) => {
+    const imageData = assertString(imageBuffer).trim();
+    if (!imageData) {
+      return { success: false, error: '无效的图片数据' };
+    }
+
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false };
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -655,33 +653,36 @@ function registerDataHandlers({ ipcMain, cache, services }) {
       ]
     });
     if (result.filePath) {
-      fs.writeFileSync(result.filePath, Buffer.from(imageBuffer, 'base64'));
+      fs.writeFileSync(result.filePath, Buffer.from(imageData, 'base64'));
       return { success: true, path: result.filePath };
     }
     return { success: false };
   });
 
   // 获取数据存储路径
-  ipcMain.handle('data:getPath', () => {
+  safeHandle(ipcMain, 'data:getPath', () => {
     const store = dataService.getStore();
     return store.path;
   });
 
   // 获取数据文件夹路径
-  ipcMain.handle('data:getFolderPath', () => {
+  safeHandle(ipcMain, 'data:getFolderPath', () => {
     const dataFolderManager = dataService.getDataFolderManager();
     return dataFolderManager.getDataFolderPath();
   });
 
   // 在文件管理器中显示数据文件
-  ipcMain.handle('data:showInFolder', () => {
+  safeHandle(ipcMain, 'data:showInFolder', () => {
     const store = dataService.getStore();
+    if (!store.path) {
+      throw new Error('数据文件路径不存在');
+    }
     shell.showItemInFolder(store.path);
     return { success: true };
   });
 
   // 更改数据存储位置（完整迁移整个文件夹）
-  ipcMain.handle('data:changePath', async () => {
+  safeHandle(ipcMain, 'data:changePath', async () => {
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false, error: '主窗口未找到' };
 
@@ -766,7 +767,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
       };
     } catch (error) {
       console.error('迁移数据失败:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: toErrorMessage(error) };
     }
   });
 }

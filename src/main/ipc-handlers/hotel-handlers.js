@@ -1,5 +1,6 @@
 const hotelStorage = require('../hotel-storage');
 const { HOTEL_EDITABLE_FIELDS, HOTEL_SYSTEM_FIELDS } = require('../config');
+const { isPlainObject, safeHandle } = require('../ipc-safe-handler');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
 const {
   allocateUniqueId,
@@ -113,8 +114,17 @@ function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
 }
 
 /**
+ * @param {unknown} id
+ * @returns {boolean}
+ */
+function hasValidId(id) {
+  const idKey = getIdKey(id);
+  return Boolean(idKey && idKey !== 'undefined' && idKey !== 'null');
+}
+
+/**
  * @param {{
- *   ipcMain: {handle: (channel: string, handler: Function) => void},
+ *   ipcMain: Pick<import('electron').IpcMain, 'handle'>,
  *   cache: {invalidate: (key: string) => void},
  *   services: {dataService: {getStore: () => HotelStore}}
  * }} context
@@ -156,7 +166,11 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   };
 
   // 添加酒店
-  ipcMain.handle('hotel:add', (event, hotel) => {
+  safeHandle(ipcMain, 'hotel:add', (_event, hotel) => {
+    if (!isPlainObject(hotel)) {
+      return { success: false, error: '无效的宾馆数据' };
+    }
+
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
     const usedIds = new Set(hotels.map((item) => String(item.id)));
@@ -175,7 +189,14 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   });
 
   // 更新单个酒店
-  ipcMain.handle('hotel:update', (event, hotel) => {
+  safeHandle(ipcMain, 'hotel:update', (_event, hotel) => {
+    if (!isPlainObject(hotel)) {
+      return { success: false, error: '无效的宾馆数据' };
+    }
+    if (!hasValidId(hotel.id)) {
+      return { success: false, error: '无效的宾馆 ID' };
+    }
+
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
     const index = hotels.findIndex((h) => String(h.id) === String(hotel.id));
@@ -196,7 +217,14 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   });
 
   // 批量更新酒店
-  ipcMain.handle('hotel:updateMultiple', (event, hotels) => {
+  safeHandle(ipcMain, 'hotel:updateMultiple', (_event, hotels) => {
+    if (!Array.isArray(hotels) || hotels.some((hotel) => !isPlainObject(hotel))) {
+      return { success: false, error: '无效的批量宾馆数据' };
+    }
+    if (hotels.some((hotel) => !hasValidId(hotel.id))) {
+      return { success: false, error: '无效的批量宾馆数据' };
+    }
+
     const store = dataService.getStore();
     const allHotels = getNormalizedHotels(store);
     const results = [];
@@ -221,7 +249,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   });
 
   // 删除酒店
-  ipcMain.handle('hotel:delete', (event, id) => {
+  safeHandle(ipcMain, 'hotel:delete', (_event, id) => {
     const idKey = getIdKey(id);
     if (!idKey || idKey === 'undefined' || idKey === 'null') {
       return { success: false, error: '无效的宾馆 ID' };
@@ -243,7 +271,11 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     };
   });
 
-  ipcMain.handle('hotel:deleteMultiple', (event, ids = []) => {
+  safeHandle(ipcMain, 'hotel:deleteMultiple', (_event, ids = []) => {
+    if (!Array.isArray(ids)) {
+      return { success: false, error: '未选择有效的宾馆' };
+    }
+
     const idSet = new Set(
       ids.map(getIdKey).filter((id) => id && id !== 'undefined' && id !== 'null')
     );
@@ -269,13 +301,13 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   });
 
   // 获取所有酒店
-  ipcMain.handle('hotel:getAll', () => {
+  safeHandle(ipcMain, 'hotel:getAll', () => {
     const store = dataService.getStore();
     return getNormalizedHotels(store);
   });
 
   // 根据ID获取酒店
-  ipcMain.handle('hotel:getById', (event, id) => {
+  safeHandle(ipcMain, 'hotel:getById', (_event, id) => {
     const store = dataService.getStore();
     const hotels = getNormalizedHotels(store);
     return hotels.find((h) => idsEqual(h.id, id));
