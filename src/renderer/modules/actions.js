@@ -15,6 +15,7 @@
 /**
  * @typedef {{includeSettings?: boolean, invalidateCache?: boolean, verbose?: boolean}} ReloadAllDataOptions
  * @typedef {{interactionFirst?: boolean}} RenderHotelListOptions
+ * @typedef {{reason?: string, changedIds?: Array<EntityId|null|undefined>|Set<EntityId|null|undefined>, forceFull?: boolean, interactionFirst?: boolean}} RequestHotelListRenderOptions
  * @typedef {{selectedValue?: string, interactionFirst?: boolean}} UpdateTemplateFilterOptions
  * @typedef {{showSuccess?: boolean, interactionFirst?: boolean}} RefreshCurrentPageOptions
  */
@@ -24,6 +25,7 @@
  *
  * @typedef {object} ActionsRegistry
  * @property {(options?: RenderHotelListOptions) => void} renderHotelList
+ * @property {(options?: RequestHotelListRenderOptions) => void} [requestHotelListRender]
  * @property {(id: EntityId) => void} showHotelDetails
  * @property {(id: EntityId) => void} editHotel
  * @property {(id: EntityId) => Promise<void>} deleteHotel

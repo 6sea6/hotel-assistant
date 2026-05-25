@@ -23,6 +23,15 @@ import { refreshCustomSelects } from './custom-select.js';
  * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
  */
 
+function requestTemplateSyncedHotelRender() {
+  if (typeof actions.requestHotelListRender === 'function') {
+    actions.requestHotelListRender({ reason: 'template-sync', forceFull: true });
+    return;
+  }
+
+  actions.renderHotelList();
+}
+
 /* ---- 打开/关闭模板弹窗 ---- */
 
 export function openTemplateManager() {
@@ -200,7 +209,7 @@ export async function saveTemplate() {
         await actions.reloadAllData();
         updateTemplateFilter();
         renderTemplateList();
-        actions.renderHotelList();
+        requestTemplateSyncedHotelRender();
       } else {
         throw new Error(result.error || '更新失败');
       }
@@ -218,7 +227,7 @@ export async function saveTemplate() {
       await actions.reloadAllData();
       updateTemplateFilter();
       renderTemplateList();
-      actions.renderHotelList();
+      requestTemplateSyncedHotelRender();
     } catch (recoveryError) {
       console.error('恢复数据状态失败:', recoveryError);
     }
@@ -239,7 +248,7 @@ export async function deleteTemplate(id) {
     updateTemplateFilter();
     renderTemplateList();
     markRankingCacheDirty();
-    actions.renderHotelList();
+    requestTemplateSyncedHotelRender();
     showNotification(
       `模板已删除${result.affectedHotelCount ? `，同步清理 ${result.affectedHotelCount} 家宾馆的模板关联` : ''}`,
       'success'
@@ -323,7 +332,7 @@ export function setupTemplateSyncListener() {
       updateTemplateFilter();
       refreshCustomSelects();
       renderTemplateList();
-      actions.renderHotelList();
+      requestTemplateSyncedHotelRender();
       console.log('[事件监听] 模板同步完成:', data);
     } catch (error) {
       console.error('[事件监听] 模板同步后刷新失败:', error);

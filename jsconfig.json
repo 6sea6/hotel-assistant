@@ -21,6 +21,7 @@
     "src/renderer/modules/ui-utils.js",
     "src/renderer/modules/dom-helpers.js",
     "src/renderer/modules/render-scheduler.js",
+    "src/renderer/modules/hotel-render-decision.js",
     "src/renderer/modules/window-controls.js",
     "src/renderer/modules/ranking-image.js",
     "src/renderer/modules/notification.js",

@@ -47,6 +47,19 @@ import { refreshCustomSelects } from './custom-select.js';
  */
 const getFormValueElement = (id) => /** @type {FormValueElement|null} */ ($(id));
 
+/**
+ * @param {{reason?: string, changedIds?: Array<EntityId|null|undefined>|Set<EntityId|null|undefined>, forceFull?: boolean, interactionFirst?: boolean}} [options]
+ * @returns {void}
+ */
+function requestHotelRender(options = {}) {
+  if (typeof actions.requestHotelListRender === 'function') {
+    actions.requestHotelListRender(options);
+    return;
+  }
+
+  actions.renderHotelList({ interactionFirst: options.interactionFirst });
+}
+
 /* ---- 公共数据加载 ---- */
 
 /**
@@ -420,14 +433,18 @@ export async function saveHotel() {
 
     setHotels(await loadHotels());
     markRankingCacheDirty();
-    actions.renderHotelList();
+    requestHotelRender({
+      reason: id ? 'hotel-update' : 'hotel-add',
+      changedIds: id ? [id] : [],
+      forceFull: !id
+    });
     closeHotelModal();
   } catch (error) {
     console.error('保存宾馆失败:', error);
     try {
       setHotels(previousHotels || (await loadHotels()));
       markRankingCacheDirty();
-      actions.renderHotelList();
+      requestHotelRender({ reason: 'fallback', forceFull: true });
     } catch (recoveryError) {
       console.error('恢复宾馆数据失败:', recoveryError);
     }
@@ -446,7 +463,7 @@ export async function deleteHotel(id) {
       nextHotels.splice(idx, 1);
       setHotels(nextHotels);
       markRankingCacheDirty();
-      actions.renderHotelList();
+      requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
     }
 
     (async () => {
@@ -458,7 +475,7 @@ export async function deleteHotel(id) {
         const loaded = await loadHotels();
         setHotels(loaded || []);
         markRankingCacheDirty();
-        actions.renderHotelList();
+        requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
         showNotification('删除成功', 'success');
         perfEnd('deleteHotel');
       } catch (err) {
@@ -467,7 +484,7 @@ export async function deleteHotel(id) {
         try {
           setHotels(await loadHotels());
           markRankingCacheDirty();
-          actions.renderHotelList();
+          requestHotelRender({ reason: 'fallback', forceFull: true });
         } catch (recoveryErr) {
           console.error('恢复宾馆列表失败:', recoveryErr);
         }
@@ -490,14 +507,14 @@ export async function toggleFavorite(id, currentStatus) {
 
     perfStart('toggleFavorite');
     hotel.is_favorite = currentStatus ? 0 : 1;
-    actions.renderHotelList();
+    requestHotelRender({ reason: 'favorite', changedIds: [id] });
 
     (async () => {
       try {
         await window.electronAPI.updateHotel(hotel);
         setHotels(await loadHotels());
         markRankingCacheDirty();
-        actions.renderHotelList();
+        requestHotelRender({ reason: 'favorite', changedIds: [id] });
         perfEnd('toggleFavorite');
       } catch (err) {
         perfEnd('toggleFavorite');
@@ -505,7 +522,7 @@ export async function toggleFavorite(id, currentStatus) {
         try {
           setHotels(await loadHotels());
           markRankingCacheDirty();
-          actions.renderHotelList();
+          requestHotelRender({ reason: 'fallback', forceFull: true });
         } catch (recoveryErr) {
           console.error('恢复宾馆列表失败:', recoveryErr);
         }
@@ -556,7 +573,7 @@ export async function confirmBatchDelete() {
     setHotels(previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id))));
     clearSelectedHotels();
     markRankingCacheDirty();
-    actions.renderHotelList();
+    requestHotelRender({ reason: 'batch-delete', forceFull: true });
 
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -570,7 +587,7 @@ export async function confirmBatchDelete() {
     state.batchDeleteInProgress = false;
     setHotels(previousHotels || state.hotels);
     markRankingCacheDirty();
-    actions.renderHotelList();
+    requestHotelRender({ reason: 'batch-delete', forceFull: true });
     resetBatchDeleteConfirmation({ count: state.selectedHotels.size, disabled: false });
     showNotification('删除失败，请重试', 'error');
   }

@@ -57,11 +57,13 @@ import {
   extractDistanceNumber,
   extractTimeNumber
 } from './hotel-filters.js';
+import { getHotelListRenderDecision } from './hotel-render-decision.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
+export { shouldFullRerender } from './hotel-render-decision.js';
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
@@ -164,6 +166,176 @@ function renderHotelListPreparingState() {
   `;
 }
 
+function getSortedVisibleHotels() {
+  const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
+
+  if (state.currentFilters.priceSort) {
+    return [...filteredHotels].sort((a, b) => {
+      const priceA = a.total_price || 0;
+      const priceB = b.total_price || 0;
+      return state.currentFilters.priceSort === 'asc' ? priceA - priceB : priceB - priceA;
+    });
+  }
+
+  return rankHotels(filteredHotels);
+}
+
+function updateVisibleHotelSummary(sortedHotels) {
+  const countElement = document.getElementById('hotelCount');
+  const roomTypeCountElement = document.getElementById('roomTypeCount');
+  if (!countElement || !roomTypeCountElement) return false;
+
+  const summary = getVisibleHotelSummary(sortedHotels);
+  countElement.textContent = String(summary.hotelCount);
+  roomTypeCountElement.textContent = String(summary.roomTypeCount);
+  return true;
+}
+
+function getRenderedHotelNodes(container) {
+  const selector = state.viewMode === 'list' ? '.hotel-table-row[data-id]' : '.hotel-card[data-id]';
+  return Array.from(container.querySelectorAll(selector));
+}
+
+function findRenderedHotelNode(container, id) {
+  const idKey = getSelectionKey(id);
+  return getRenderedHotelNodes(container).find((node) => idsEqual(node.dataset.id, idKey)) || null;
+}
+
+function updateRenderedRankLabels(container) {
+  const nodes = getRenderedHotelNodes(container);
+  nodes.forEach((node, index) => {
+    const rank = index + 1;
+    const isTop3 = rank <= 3;
+    const rankElement =
+      state.viewMode === 'list'
+        ? node.querySelector('.rank-badge')
+        : node.querySelector('.hotel-rank');
+    if (!rankElement) return;
+
+    rankElement.textContent = `#${rank}`;
+    rankElement.classList.toggle('top3', isTop3);
+  });
+}
+
+function hasFavoriteFilterActive() {
+  return state.currentFilters.favorite !== undefined && state.currentFilters.favorite !== '';
+}
+
+/**
+ * @param {Array<string|number>} changedIds
+ * @param {{reason?: string}} [options]
+ * @returns {boolean}
+ */
+export function patchHotelCards(changedIds, options = {}) {
+  const container = $('hotelList');
+  if (!container || !Array.isArray(changedIds) || changedIds.length === 0) {
+    return false;
+  }
+
+  if (options.reason === 'favorite' && hasFavoriteFilterActive()) {
+    return false;
+  }
+
+  const currentNameFilter = String(state.currentFilters.name || '');
+  const syncedNameFilter = syncHotelNameFilterOptions({ selectedValue: currentNameFilter });
+  if (currentNameFilter !== syncedNameFilter) {
+    updateCurrentFilters({ name: syncedNameFilter });
+    return false;
+  }
+
+  const sortedHotels = getSortedVisibleHotels();
+  if (sortedHotels.length === 0) {
+    return false;
+  }
+  if (!updateVisibleHotelSummary(sortedHotels)) {
+    return false;
+  }
+
+  const renderedNodes = getRenderedHotelNodes(container);
+  if (renderedNodes.length !== sortedHotels.length && options.reason !== 'hotel-delete') {
+    return false;
+  }
+
+  if (options.reason === 'hotel-delete') {
+    let removedAny = false;
+    for (const id of changedIds) {
+      const existingNode = findRenderedHotelNode(container, id);
+      if (existingNode) {
+        existingNode.remove();
+        removedAny = true;
+      }
+    }
+
+    const nextNodes = getRenderedHotelNodes(container);
+    if (nextNodes.length !== sortedHotels.length) {
+      return false;
+    }
+
+    if (removedAny) {
+      bumpHotelListRenderVersion();
+    }
+    updateRenderedRankLabels(container);
+    syncSelectAllCheckboxState();
+    resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
+    return true;
+  }
+
+  const patchPlan = [];
+  for (const id of changedIds) {
+    const visibleIndex = sortedHotels.findIndex((hotel) => idsEqual(hotel.id, id));
+    if (visibleIndex < 0) return false;
+
+    const existingNode = findRenderedHotelNode(container, id);
+    if (!existingNode) return false;
+
+    const currentIndex = renderedNodes.indexOf(existingNode);
+    if (currentIndex !== visibleIndex) return false;
+
+    patchPlan.push({
+      existingNode,
+      hotel: sortedHotels[visibleIndex],
+      index: visibleIndex
+    });
+  }
+
+  bumpHotelListRenderVersion();
+  for (const item of patchPlan) {
+    const replacement =
+      state.viewMode === 'list'
+        ? createHotelListRow(item.hotel, item.index)
+        : createHotelCard(item.hotel, item.index);
+    item.existingNode.replaceWith(replacement);
+  }
+
+  cleanupHotelActionArtifacts(container);
+  syncSelectAllCheckboxState();
+  resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
+  return true;
+}
+
+/**
+ * @param {{reason?: string, changedIds?: Array<string|number|null|undefined>|Set<string|number|null|undefined>, forceFull?: boolean, interactionFirst?: boolean}} [options]
+ * @returns {void}
+ */
+export function requestHotelListRender(options = {}) {
+  const decision = getHotelListRenderDecision({
+    reason: options.reason,
+    changedIds: options.changedIds,
+    forceFull: options.forceFull,
+    renderScheduled: state.renderScheduled,
+    hasPendingRenderResume: Boolean(state.pendingHotelRenderResume)
+  });
+
+  if (
+    decision.mode === 'patch' &&
+    patchHotelCards(decision.changedIds, { reason: decision.reason })
+  ) {
+    return;
+  }
+
+  renderHotelList({ interactionFirst: options.interactionFirst });
+}
+
 export function renderHotelList(options = {}) {
   bumpHotelListRenderVersion();
   setPendingRenderInteractionFirst(
@@ -204,22 +376,8 @@ export function renderHotelList(options = {}) {
       updateCurrentFilters({ name: syncedNameFilter });
     }
 
-    const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
-
-    let sortedHotels;
-    if (state.currentFilters.priceSort) {
-      sortedHotels = [...filteredHotels].sort((a, b) => {
-        const priceA = a.total_price || 0;
-        const priceB = b.total_price || 0;
-        return state.currentFilters.priceSort === 'asc' ? priceA - priceB : priceB - priceA;
-      });
-    } else {
-      sortedHotels = rankHotels(filteredHotels);
-    }
-
-    const summary = getVisibleHotelSummary(sortedHotels);
-    countElement.textContent = String(summary.hotelCount);
-    roomTypeCountElement.textContent = String(summary.roomTypeCount);
+    const sortedHotels = getSortedVisibleHotels();
+    updateVisibleHotelSummary(sortedHotels);
 
     if (sortedHotels.length === 0) {
       const hasActiveFilters = Object.values(state.currentFilters).some(
@@ -882,7 +1040,7 @@ export function toggleViewMode() {
   }
 
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
-  renderHotelList();
+  requestHotelListRender({ reason: 'view-mode-change', forceFull: true });
 }
 
 function getCurrentCardHotels() {
@@ -1052,7 +1210,7 @@ export async function confirmRuleDelete() {
 
     setHotels(previousHotels.filter((hotel) => !deleteIdSet.has(getSelectionKey(hotel.id))));
     markRankingCacheDirty();
-    renderHotelList();
+    requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     closeRuleDeleteModal(true);
     showNotification(`成功删除 ${candidates.length} 个命中规则的宾馆`, 'success');
   } catch (error) {
@@ -1060,7 +1218,7 @@ export async function confirmRuleDelete() {
     if (previousHotels) {
       setHotels(previousHotels);
       markRankingCacheDirty();
-      renderHotelList();
+      requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     }
     showNotification('规则删除失败，请重试', 'error');
   } finally {
@@ -1098,7 +1256,7 @@ export function applyFilters() {
     subwayDistance: getValue('filterSubwayDistance')
   });
   markRankingCacheDirty();
-  renderHotelList();
+  requestHotelListRender({ reason: 'filter-change', forceFull: true });
 }
 
 export function clearFilters() {
@@ -1116,7 +1274,7 @@ export function clearFilters() {
   });
   clearCurrentFilters();
   markRankingCacheDirty();
-  renderHotelList();
+  requestHotelListRender({ reason: 'filter-change', forceFull: true });
 }
 
 export function changeRankingMode(mode) {
@@ -1126,7 +1284,7 @@ export function changeRankingMode(mode) {
     weightSettings.style.display = mode === 'manual' ? 'block' : 'none';
   }
   markRankingCacheDirty();
-  renderHotelList();
+  requestHotelListRender({ reason: 'ranking-change', forceFull: true });
 }
 
 export function updateWeight(type, value) {
@@ -1135,9 +1293,10 @@ export function updateWeight(type, value) {
     valueEl.textContent = value;
   }
   markRankingCacheDirty();
-  renderHotelList();
+  requestHotelListRender({ reason: 'ranking-change', forceFull: true });
 }
 
 /* ---- 注册到 actions ---- */
 actions.renderHotelList = renderHotelList;
+actions.requestHotelListRender = requestHotelListRender;
 actions.showHotelDetails = showHotelDetails;
