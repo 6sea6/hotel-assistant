@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const hotelStorage = require('../src/main/hotel-storage');
-const { normalizeHotelPayload } = require('../src/main/ipc-handlers/hotel-handlers');
+const { normalizeHotelPayload } = require('../src/main/domain/hotel-normalizer');
 const { createHotelRepository } = require('../src/main/repositories/hotel-repository');
 
 function createStore(initialData = {}) {

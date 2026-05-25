@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { normalizeHotelPayload } = require('../src/main/ipc-handlers/hotel-handlers');
+const { normalizeHotelPayload } = require('../src/main/domain/hotel-normalizer');
 const { createHotelRepository } = require('../src/main/repositories/hotel-repository');
 const {
   clearTemplateFromHotels,

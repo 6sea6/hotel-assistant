@@ -4,8 +4,8 @@ const path = require('path');
 const { APP_CONFIG, getPaths } = require('../config');
 const appIconManager = require('../app-icon-manager');
 const hotelStorage = require('../hotel-storage');
-const hotelHandlers = require('./hotel-handlers');
-const templateHandlers = require('./template-handlers');
+const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
+const { normalizeTemplatePayload } = require('../domain/template-normalizer');
 const { normalizeAiProviderConfig, redactAiProviderConfig } = require('../ai/provider-presets');
 const { assertString, isPlainObject, safeHandle, toErrorMessage } = require('../ipc-safe-handler');
 const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared/id-utils');
@@ -20,11 +20,6 @@ const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared
  */
 
 const EXPORT_SCHEMA_VERSION = 3;
-/** @type {(hotel?: Partial<RawHotelRecord>, existingHotel?: Partial<RawHotelRecord>) => HotelRecord} */
-const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
-/** @type {(template?: Partial<RawTemplateRecord>, existingTemplate?: Partial<RawTemplateRecord>) => TemplateRecord} */
-const normalizeTemplatePayload = templateHandlers.normalizeTemplatePayload;
-
 /**
  * @param {unknown} settings
  * @returns {AppSettings}

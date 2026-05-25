@@ -40,6 +40,8 @@
     "src/renderer/modules/ai-task-renderers.js",
     "src/main/ipc-safe-handler.js",
     "src/main/ipc-handler-registry.js",
+    "src/main/domain/hotel-normalizer.js",
+    "src/main/domain/template-normalizer.js",
     "src/main/repositories/hotel-repository.js",
     "src/main/repositories/template-repository.js",
     "src/main/services/template-sync-service.js",

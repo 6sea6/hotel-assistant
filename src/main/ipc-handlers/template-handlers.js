@@ -1,12 +1,13 @@
-const hotelHandlers = require('./hotel-handlers');
 const { isPlainObject, safeHandle, toErrorMessage } = require('../ipc-safe-handler');
+const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
+const { normalizeTemplatePayload } = require('../domain/template-normalizer');
 const { createHotelRepository } = require('../repositories/hotel-repository');
 const { createTemplateRepository } = require('../repositories/template-repository');
 const {
   clearTemplateFromHotels,
   syncTemplateToHotels
 } = require('../services/template-sync-service');
-const { idsEqual, normalizeIntegerLikeValue } = require('../../shared/id-utils');
+const { idsEqual } = require('../../shared/id-utils');
 
 /**
  * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
@@ -16,9 +17,6 @@ const { idsEqual, normalizeIntegerLikeValue } = require('../../shared/id-utils')
  * @typedef {import('../../shared/contracts').NormalizedTemplateRecord} NormalizedTemplateRecord
  * @typedef {import('../../shared/contracts').EntityId} EntityId
  */
-
-/** @type {(hotel?: Partial<RawHotelRecord>, existingHotel?: Partial<RawHotelRecord>) => NormalizedHotelRecord} */
-const normalizeHotelPayload = hotelHandlers.normalizeHotelPayload;
 
 // 通知渲染进程的工具函数
 /**
@@ -31,52 +29,6 @@ const notifyRenderer = (mainWindow, channel, data) => {
     mainWindow.webContents.send(channel, data);
   }
 };
-
-/**
- * @param {unknown} value
- * @returns {number|null}
- */
-function normalizeNullableNumber(value) {
-  if (value === null || value === undefined || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/**
- * @param {unknown} value
- * @returns {number|null}
- */
-function normalizeTemplateRoomCount(value) {
-  const parsed = normalizeNullableNumber(value);
-  if (parsed === null) {
-    return null;
-  }
-
-  return Math.max(1, Math.min(3, parsed));
-}
-
-/**
- * @param {Partial<RawTemplateRecord>} [template]
- * @param {Partial<RawTemplateRecord>} [existingTemplate]
- * @returns {NormalizedTemplateRecord}
- */
-function normalizeTemplatePayload(template = {}, existingTemplate = {}) {
-  const normalized = {
-    ...existingTemplate,
-    ...template
-  };
-
-  normalized.id = normalizeIntegerLikeValue(normalized.id) ?? normalized.id;
-  normalized.name = String(normalized.name || '').trim();
-  normalized.destination = String(normalized.destination || '').trim();
-  normalized.check_in_date = normalized.check_in_date || null;
-  normalized.check_out_date = normalized.check_out_date || null;
-  normalized.room_count = normalizeTemplateRoomCount(normalized.room_count) || 2;
-  normalized.created_at =
-    normalized.created_at || existingTemplate.created_at || new Date().toISOString();
-
-  return /** @type {NormalizedTemplateRecord} */ (normalized);
-}
 
 /**
  * @param {{

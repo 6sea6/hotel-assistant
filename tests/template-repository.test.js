@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { normalizeTemplatePayload } = require('../src/main/ipc-handlers/template-handlers');
+const { normalizeTemplatePayload } = require('../src/main/domain/template-normalizer');
 const { createTemplateRepository } = require('../src/main/repositories/template-repository');
 
 function createStore(initialData = {}) {
