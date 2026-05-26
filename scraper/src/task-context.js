@@ -34,6 +34,27 @@ function assertNotCancelled(signal) {
   }
 }
 
+function isCancellationError(error, signal = null) {
+  if (signal && signal.aborted) {
+    return true;
+  }
+
+  if (!error) {
+    return false;
+  }
+
+  if (error.name === 'AbortError') {
+    return true;
+  }
+
+  if (error.code === 'CDP_ABORTED' || error.code === 'ERR_CANCELED') {
+    return true;
+  }
+
+  const message = error && error.message ? error.message : String(error);
+  return /任务已取消|aborted|signal aborted|cancelled|canceled/i.test(message);
+}
+
 async function withWorkingDirectory(workingDirectory, task) {
   const normalizedWorkingDirectory = workingDirectory ? path.resolve(workingDirectory) : '';
   if (!normalizedWorkingDirectory) {
@@ -111,6 +132,7 @@ module.exports = {
   buildTemplateSnapshot,
   createTransitCache,
   durationSince,
+  isCancellationError,
   isReportDisabled,
   normalizeBatchConcurrency,
   normalizeTaskArgs,

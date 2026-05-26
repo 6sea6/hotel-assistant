@@ -6,6 +6,7 @@ const {
   assertNotCancelled,
   createTransitCache,
   durationSince,
+  isCancellationError,
   isReportDisabled,
   normalizeBatchConcurrency,
   resolveBatchCaptureStrategy
@@ -51,6 +52,8 @@ class BatchOrchestrator {
   }
 
   async runConcurrent({ concurrency, batchOptions }) {
+    // Concurrency is intentionally a public placeholder for now. The batch pipeline still
+    // runs sequentially so scraper sessions, writeback ordering, and report fields stay stable.
     return this.runSequential({ concurrency, batchOptions });
   }
 
@@ -113,7 +116,10 @@ class BatchOrchestrator {
     try {
       emit('batch:start', '正在批量采集携程酒店页面', {
         summary: describeExpandedInput(expandedInputs),
-        concurrency
+        concurrency,
+        requestedConcurrency: concurrency,
+        effectiveConcurrency: 1,
+        parallelRequestedButDisabled: concurrency > 1
       });
 
       if (concurrency > 1) {
@@ -321,6 +327,10 @@ class BatchOrchestrator {
         uncollectedItem
       };
     } catch (error) {
+      if (isCancellationError(error, signal)) {
+        throw error;
+      }
+
       const failedItem = {
         index,
         url: hotelInput.url,

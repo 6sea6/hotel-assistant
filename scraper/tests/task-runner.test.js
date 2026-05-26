@@ -979,6 +979,85 @@ test('batch continues after one detail item fails', async () => {
   }
 });
 
+test('batch rethrows cancellation from the last detail item instead of partial success', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-batch-cancel-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=cancel-ok1',
+      hotelId: 'cancel-ok1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=cancel-ok2',
+      hotelId: 'cancel-ok2',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=cancel-last',
+      hotelId: 'cancel-last',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      if (hotelInput.hotelId === 'cancel-last') {
+        const error = new Error('任务已取消');
+        error.name = 'AbortError';
+        throw error;
+      }
+      return {
+        hotel_name: `取消前成功酒店${hotelInput.hotelId}`,
+        address: `取消前成功地址${hotelInput.hotelId}`,
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 188 }],
+        raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: ''
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    }
+  });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    await assert.rejects(
+      () =>
+        runHotelImportTask(
+          {
+            url: hotelInputs.map((item) => item.url),
+            latestRun: latestRunPath,
+            'report-level': 'off'
+          },
+          {
+            workingDirectory: tempDir
+          }
+        ),
+      /任务已取消/
+    );
+
+    assert.equal(calls.scrape, 3);
+    assert.equal(fs.existsSync(latestRunPath), false);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('runHotelImportTask aborts before collection when signal is already cancelled', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
@@ -1079,6 +1158,7 @@ test('batch-concurrency argument records serial fallback placeholder', async () 
 
   try {
     const records = [];
+    const events = [];
     const { runHotelImportTask } = require('../src/task-runner');
     const result = await runHotelImportTask(
       {
@@ -1095,6 +1175,9 @@ test('batch-concurrency argument records serial fallback placeholder', async () 
             records.push(record);
             return record;
           }
+        },
+        onEvent(event) {
+          events.push(event);
         }
       }
     );
@@ -1108,6 +1191,15 @@ test('batch-concurrency argument records serial fallback placeholder', async () 
       [1, 2]
     );
     assert.ok(records.some((record) => record.event === 'parallel_requested_but_disabled'));
+    assert.deepEqual(
+      calls.order.filter((item) => item.startsWith('scrape:') || item === 'transit'),
+      ['scrape:arg-concurrency1', 'transit', 'scrape:arg-concurrency2', 'transit']
+    );
+    const batchStartEvent = events.find((event) => event.type === 'batch:start');
+    assert.ok(batchStartEvent);
+    assert.equal(batchStartEvent.details.requestedConcurrency, 2);
+    assert.equal(batchStartEvent.details.effectiveConcurrency, 1);
+    assert.equal(batchStartEvent.details.parallelRequestedButDisabled, true);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
