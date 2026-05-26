@@ -34,6 +34,10 @@ const {
 const { createScrapeEventForwarder, createTaskEmitter } = require('./task-events');
 const { runPreparedSingleDetailImport } = require('./single-detail-runner');
 const { runBatchHotelImportTask } = require('./batch-orchestrator');
+const {
+  cleanupBatchEdgeWorkerProfileClones,
+  prepareBatchEdgeWorkerProfileClones
+} = require('./batch-edge-worker-pool');
 const { buildBatchOutputPayload } = require('./batch-result-builder');
 
 function buildFailureResult(error, latestRunPath, startedAt) {
@@ -165,6 +169,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       ensureDir(outputDir);
 
       let autoEdgePid = null;
+      let preparedEdgeWorkerProfileDirs = [];
       const autoEdge = Boolean(args['auto-edge']);
 
       try {
@@ -193,15 +198,23 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             }
           });
 
-          const edgeResult = await perf.runPhase('browser_launch', { taskId }, async () =>
-            launchAndWaitForEdge({
+          const edgeResult = await perf.runPhase('browser_launch', { taskId }, async () => {
+            const batchConcurrency = normalizeBatchConcurrency(args, options);
+            if (batchConcurrency > 1) {
+              preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
+                effectiveTemplate,
+                concurrency: batchConcurrency,
+                existingWorkerCount: 1
+              });
+            }
+            return launchAndWaitForEdge({
               userDataDir: effectiveTemplate.edge_user_data_dir,
               profileDirectory: effectiveTemplate.edge_profile_directory,
               port: effectiveTemplate.edge_debugging_port || 9222,
               url: 'about:blank',
               headless: effectiveTemplate.edge_headless
-            })
-          );
+            });
+          });
           autoEdgePid = edgeResult.pid;
           if (!effectiveTemplate.edge_debugging_port) {
             effectiveTemplate.edge_debugging_port = edgeResult.port;
@@ -237,13 +250,6 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         }
 
         if (expandedInputs.inputMode !== 'detail' || expandedInputs.hotelInputs.length !== 1) {
-          if (autoEdge && autoEdgePid && normalizeBatchConcurrency(args, options) > 1) {
-            closeAutoEdge(autoEdgePid);
-            autoEdgePid = null;
-            effectiveTemplate.edge_debugging_port = null;
-            effectiveTemplate.edge_debugger_url = '';
-          }
-
           return await runBatchHotelImportTask({
             args,
             startedAt,
@@ -261,7 +267,17 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             options,
             perf,
             reportLevel,
-            scrapeEventForwarder
+            scrapeEventForwarder,
+            preparedEdgeWorkerProfileDirs,
+            existingEdgeWorker:
+              autoEdge && autoEdgePid && normalizeBatchConcurrency(args, options) > 1
+                ? {
+                    pid: autoEdgePid,
+                    port: effectiveTemplate.edge_debugging_port,
+                    userDataDir: effectiveTemplate.edge_user_data_dir,
+                    profileDirectory: effectiveTemplate.edge_profile_directory
+                  }
+                : null
           });
         }
 
@@ -316,6 +332,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             closeAutoEdge(autoEdgePid);
           });
         }
+        cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
       }
     })
   );

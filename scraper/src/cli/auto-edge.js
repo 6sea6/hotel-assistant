@@ -54,6 +54,7 @@ async function launchAndWaitForEdge(options) {
   const port = Number(options.port || 9222);
   const headless = toBoolean(options.headless, true);
   const url = options.url || 'about:blank';
+  const timeoutMs = Number(options.timeoutMs || 15000);
 
   fs.mkdirSync(userDataDir, { recursive: true });
 
@@ -92,7 +93,7 @@ async function launchAndWaitForEdge(options) {
   child.unref();
   scheduleProcessWindowHide(child.pid);
 
-  const wsUrl = await waitForDebuggerEndpoint(port);
+  const wsUrl = await waitForDebuggerEndpoint(port, timeoutMs);
   console.error(
     `[auto-edge] 后台 Edge 已启动 (PID: ${child.pid}, 端口: ${port}, headless: ${headless})`
   );

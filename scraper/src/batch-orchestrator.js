@@ -70,7 +70,9 @@ class BatchOrchestrator {
       edgeWorkerPool = await createBatchEdgeWorkerPool({
         args: this.context.args,
         effectiveTemplate: this.context.effectiveTemplate,
-        concurrency: effectiveConcurrency
+        concurrency: effectiveConcurrency,
+        existingWorker: this.context.existingEdgeWorker || null,
+        preparedUserDataDirs: this.context.preparedEdgeWorkerProfileDirs || []
       });
     } catch (error) {
       return this.runSequential({

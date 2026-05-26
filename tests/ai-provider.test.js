@@ -798,6 +798,54 @@ test('direct AI task start runs the hotel task runner without provider config', 
   );
 });
 
+test('direct AI task reloads the data store after scraper writeback', async () => {
+  const dataFolderPath = 'E:/实验/1/宾馆比较助手';
+  const store = {
+    get() {
+      return {};
+    },
+    set() {}
+  };
+  const reinitializeCalls = [];
+  const service = createAiService({
+    dataService: {
+      getStore() {
+        return store;
+      },
+      getDataFolderPath() {
+        return dataFolderPath;
+      },
+      reinitializeStore(folder) {
+        reinitializeCalls.push(folder);
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return {
+          isDestroyed: () => false,
+          webContents: {
+            send() {}
+          }
+        };
+      }
+    },
+    hotelTaskRunner: async () => ({
+      success: true,
+      hotelName: '测试酒店',
+      eligibleCount: 1,
+      eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
+      writeResult: { operation: 'inserted' }
+    })
+  });
+
+  await service.startTask({
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+    templateId: '100'
+  });
+
+  assert.deepEqual(reinitializeCalls, [dataFolderPath]);
+});
+
 test('direct AI task cancellation emits cancel status instead of task error', async () => {
   const events = [];
   let capturedContext = null;

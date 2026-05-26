@@ -8,6 +8,10 @@ const {
 const { requestChatCompletion } = require('../ai/provider-client');
 const { loadScraperRunner } = require('../ai/scraper-lazy-loader');
 const { AI_TOOL_DEFINITIONS, executeAiTool } = require('../ai/tools');
+const {
+  flushHotelRepositoryCache,
+  resetHotelRepositoryCache
+} = require('../repositories/hotel-repository');
 
 const AI_CONFIG_SETTING_KEY = 'ai_provider_config';
 const MAX_TOOL_ITERATIONS = 5;
@@ -76,6 +80,45 @@ function compactToolResult(toolName, result) {
   }
 
   return result;
+}
+
+function hasExternalWriteResult(value) {
+  if (!value) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => hasExternalWriteResult(item));
+  }
+  if (typeof value !== 'object') {
+    return false;
+  }
+
+  if (Number(value.appliedCount) > 0) {
+    return true;
+  }
+  if (value.operation && value.operation !== 'skipped') {
+    return true;
+  }
+  if (hasExternalWriteResult(value.writeResult)) {
+    return true;
+  }
+  if (hasExternalWriteResult(value.latestApplyResult)) {
+    return true;
+  }
+  if (hasExternalWriteResult(value.collectResult)) {
+    return true;
+  }
+  if (hasExternalWriteResult(value.result)) {
+    return true;
+  }
+  if (hasExternalWriteResult(value.items)) {
+    return true;
+  }
+  if (hasExternalWriteResult(value.toolResults)) {
+    return true;
+  }
+
+  return false;
 }
 
 function normalizeChatMessages(messages = []) {
@@ -163,6 +206,37 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
     }
     const scraperRunner = await loadScraperRunner();
     return scraperRunner.collectAndWriteCtripHotel;
+  }
+
+  function getOptionalStore() {
+    return dataService && typeof dataService.getStore === 'function'
+      ? dataService.getStore()
+      : null;
+  }
+
+  function flushStoreBeforeExternalWrite() {
+    const store = getOptionalStore();
+    if (store) {
+      flushHotelRepositoryCache(store);
+    }
+  }
+
+  function reloadStoreAfterExternalWrite(result) {
+    if (!hasExternalWriteResult(result)) {
+      return;
+    }
+
+    const previousStore = getOptionalStore();
+    if (previousStore) {
+      resetHotelRepositoryCache(previousStore);
+    }
+    if (
+      dataService &&
+      typeof dataService.reinitializeStore === 'function' &&
+      typeof dataService.getDataFolderPath === 'function'
+    ) {
+      dataService.reinitializeStore(dataService.getDataFolderPath());
+    }
   }
 
   function saveProviderConfig(nextConfig = {}) {
@@ -297,6 +371,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
   async function startTask(payload = {}) {
     const result = await runTask(async ({ taskId, signal, onTaskEvent }) => {
       const runner = await getHotelTaskRunner();
+      flushStoreBeforeExternalWrite();
       return runner(
         {
           url: payload.url,
@@ -330,6 +405,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         }
       );
     });
+    reloadStoreAfterExternalWrite(result);
     const compactResult = compactTaskResult(result);
 
     return {
@@ -432,6 +508,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
               })
             )
         });
+        reloadStoreAfterExternalWrite(result);
         const compactResult = compactToolResult(toolName, result);
         toolResults.push({
           name: toolName,
@@ -475,6 +552,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
   async function refreshHotelData(payload = {}) {
     const result = await runTask(async ({ taskId, signal, onTaskEvent }) => {
       const scraperRunner = await loadScraperRunner();
+      flushStoreBeforeExternalWrite();
       return scraperRunner.refreshExistingCtripHotels(
         {
           amapKey: payload.amapKey
@@ -487,6 +565,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         }
       );
     });
+    reloadStoreAfterExternalWrite(result);
     const compactResult = compactRefreshResult(result);
 
     return {
