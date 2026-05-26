@@ -123,6 +123,13 @@ function validateAiTaskPayload(payload) {
     });
     if (numberError) return numberError;
   }
+  const concurrencyError = assertNumberField(taskPayload, 'batchConcurrency', AI_REQUEST_ERROR, {
+    optional: true,
+    integer: true,
+    min: 1,
+    max: 2
+  });
+  if (concurrencyError) return concurrencyError;
   for (const field of ['priceMin', 'reviewCountMin', 'ctripScoreMin']) {
     const numberError = assertNumberField(taskPayload, field, AI_REQUEST_ERROR, {
       optional: true,

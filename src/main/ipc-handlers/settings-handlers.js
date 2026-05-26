@@ -40,6 +40,8 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       : APP_CONFIG.STORE_DEFAULTS.settings.theme;
   };
 
+  const normalizeCollectBatchConcurrency = (value) => (Number(value) === 2 ? 2 : 1);
+
   const normalizeSettings = (settings = {}) => {
     const normalizedSettings = {
       ...APP_CONFIG.STORE_DEFAULTS.settings,
@@ -51,6 +53,9 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       normalizedSettings.ai_provider_config
     );
     normalizedSettings.amapApiKey = String(normalizedSettings.amapApiKey || '').trim();
+    normalizedSettings.collectBatchConcurrency = normalizeCollectBatchConcurrency(
+      normalizedSettings.collectBatchConcurrency
+    );
 
     const managedReference = appIconManager.toManagedIconReference(
       normalizedSettings.app_icon_path

@@ -109,7 +109,8 @@
  *   freeCancel?: boolean,
  *   reviewCountMin?: number|null,
  *   ctripScoreMin?: number|null,
- *   enableCollectPerfLog?: boolean
+ *   enableCollectPerfLog?: boolean,
+ *   batchConcurrency?: number
  * }} AiTaskPayload
  */
 
@@ -282,6 +283,7 @@
  *   aiCtripScoreMin?: number|string,
  *   amapApiKey?: string,
  *   enableCollectPerfLog?: boolean,
+ *   collectBatchConcurrency?: number|string,
  *   app_icon_path?: string,
  *   app_icon_file_name?: string,
  *   ai_provider_config?: Record<string, unknown>|null

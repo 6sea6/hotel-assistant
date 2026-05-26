@@ -198,6 +198,10 @@ function getCtripHotelInputUrls(input = {}) {
   return extractUrlsFromText(rawValues).filter(isCtripHotelUrl);
 }
 
+function normalizeBatchConcurrency(value) {
+  return Number(value) === 2 ? 2 : 1;
+}
+
 function buildScraperArgs(input, workDir) {
   const args = {
     url: input.url,
@@ -252,6 +256,10 @@ function buildScraperArgs(input, workDir) {
     String(input.amapKey).trim() !== ''
   ) {
     args.amapKey = String(input.amapKey).trim();
+  }
+  const batchConcurrency = normalizeBatchConcurrency(input.batchConcurrency);
+  if (batchConcurrency > 1) {
+    args['batch-concurrency'] = batchConcurrency;
   }
   [
     'priceMin',
@@ -1035,6 +1043,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
 
 module.exports = {
   assertSafeWriteResult,
+  buildScraperArgs,
   createWriteRollbackSnapshot,
   collectAndWriteCtripHotel,
   getVisibleLoginRetryNeed,

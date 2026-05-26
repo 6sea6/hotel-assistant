@@ -27,6 +27,7 @@ const {
   assertNotCancelled,
   buildEdgeSessionOptions,
   buildTemplateSnapshot,
+  normalizeBatchConcurrency,
   normalizeTaskArgs,
   withWorkingDirectory
 } = require('./task-context');
@@ -236,6 +237,13 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         }
 
         if (expandedInputs.inputMode !== 'detail' || expandedInputs.hotelInputs.length !== 1) {
+          if (autoEdge && autoEdgePid && normalizeBatchConcurrency(args, options) > 1) {
+            closeAutoEdge(autoEdgePid);
+            autoEdgePid = null;
+            effectiveTemplate.edge_debugging_port = null;
+            effectiveTemplate.edge_debugger_url = '';
+          }
+
           return await runBatchHotelImportTask({
             args,
             startedAt,

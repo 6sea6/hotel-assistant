@@ -942,6 +942,55 @@ test('AI collect task payload includes saved AMap API key', async () => {
   assert.equal(capturedPayload.amapKey, 'amap-custom-key');
 });
 
+test('AI collect task payload includes saved batch concurrency setting', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {
+    collectBatchConcurrency: 2
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.batchConcurrency, 2);
+});
+
 test('AI collect enqueue uses saved list prefilter settings instead of stale list URL filters', async () => {
   const inputUrl =
     'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=16~5*16*5&locale=zh-CN';
@@ -1024,6 +1073,8 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.match(settingsHtml, /amapApiKeyInput/);
   assert.match(settingsHtml, /高德 API Key/);
   assert.match(settingsHtml, /save-amap-api-key/);
+  assert.match(settingsHtml, /collectBatchConcurrency/);
+  assert.match(settingsHtml, /并发采集数/);
   assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
   assert.match(currentTaskHeaderHtml, /前筛设置/);
   assert.match(prefilterHtml, /列表页前筛/);

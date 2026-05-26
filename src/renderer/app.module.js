@@ -71,6 +71,7 @@ import {
   changeTheme,
   toggleIncludeFourPersonRoomsForThreePersonTemplate,
   toggleEnableCollectPerfLog,
+  saveCollectBatchConcurrencySetting,
   saveAmapApiKeySetting,
   saveAiListPrefilterSetting,
   openListPrefilterSettings,
@@ -316,6 +317,7 @@ function setupStaticFormListeners() {
     toggleIncludeFourPersonRoomsForThreePersonTemplate
   );
   addEvent('enableCollectPerfLog', 'change', toggleEnableCollectPerfLog);
+  addEvent('collectBatchConcurrency', 'change', saveCollectBatchConcurrencySetting);
   [
     'aiCtripPriceMin',
     'aiCtripPriceMax',

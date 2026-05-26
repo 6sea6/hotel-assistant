@@ -439,6 +439,13 @@ function readListFilterForm() {
 }
 
 /**
+ * @returns {1|2}
+ */
+function readCollectBatchConcurrency() {
+  return Number(state.settings.collectBatchConcurrency) === 2 ? 2 : 1;
+}
+
+/**
  * @param {AiTaskQueueItem} task
  * @returns {AiTaskPayload}
  */
@@ -461,7 +468,8 @@ function buildTaskPayload(task) {
     freeCancel: task.listUrlFilters ? task.listUrlFilters.freeCancel : undefined,
     reviewCountMin: task.listUrlFilters ? task.listUrlFilters.reviewCountMin : undefined,
     ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined,
-    enableCollectPerfLog: Boolean(state.settings.enableCollectPerfLog)
+    enableCollectPerfLog: Boolean(state.settings.enableCollectPerfLog),
+    batchConcurrency: readCollectBatchConcurrency()
   };
 }
 

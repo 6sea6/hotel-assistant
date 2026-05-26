@@ -21,6 +21,7 @@ const {
 } = require('../src/main/ai/provider-client');
 const { AI_TOOL_DEFINITIONS, sanitizeSettings } = require('../src/main/ai/tools');
 const {
+  buildScraperArgs,
   createWriteRollbackSnapshot,
   getVisibleLoginRetryNeed,
   isTaskCancelled,
@@ -591,6 +592,19 @@ test('scraper runner perfLogDir resolves to program root logs/perf', () => {
   assert.ok(perfLogDir.endsWith(path.join('logs', 'perf')));
 });
 
+test('scraper runner maps batch concurrency to scraper arguments', () => {
+  const args = buildScraperArgs(
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      templateId: '100',
+      batchConcurrency: 2
+    },
+    path.join(os.tmpdir(), 'hotel-scraper-workdir')
+  );
+
+  assert.equal(args['batch-concurrency'], 2);
+});
+
 test('scraper runner perfLogDir is independent of workDir', () => {
   const perfLogDir = resolveRootPerfLogDir();
   const fakeWorkDir = path.join(os.tmpdir(), 'some-work-dir', 'scraper-data');
@@ -748,6 +762,7 @@ test('direct AI task start runs the hotel task runner without provider config', 
     desiredHotelCount: 5,
     excludeHotelTypes: ['民宿'],
     amapKey: 'custom-amap-key',
+    batchConcurrency: 2,
     listUrlFilters: {
       priceMin: 50,
       priceMax: 200,
@@ -764,6 +779,7 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(calls[0].input.desiredHotelCount, 5);
   assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
   assert.equal(calls[0].input.amapKey, 'custom-amap-key');
+  assert.equal(calls[0].input.batchConcurrency, 2);
   assert.deepEqual(calls[0].input.listUrlFilters, {
     priceMin: 50,
     priceMax: 200,

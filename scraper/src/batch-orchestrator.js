@@ -25,6 +25,9 @@ const {
   writeBatchLatestRunSummary,
   writeBatchReportArtifact
 } = require('./batch-artifact-writer');
+const { createBatchEdgeWorkerPool } = require('./batch-edge-worker-pool');
+
+const MAX_BATCH_CONCURRENCY = 2;
 
 class BatchOrchestrator {
   constructor(context, options = {}) {
@@ -52,9 +55,44 @@ class BatchOrchestrator {
   }
 
   async runConcurrent({ concurrency, batchOptions }) {
-    // Concurrency is intentionally a public placeholder for now. The batch pipeline still
-    // runs sequentially so scraper sessions, writeback ordering, and report fields stay stable.
-    return this.runSequential({ concurrency, batchOptions });
+    const total = this.context.expandedInputs.hotelInputs.length;
+    const effectiveConcurrency = Math.max(
+      1,
+      Math.min(concurrency, total, batchOptions.maxConcurrency || MAX_BATCH_CONCURRENCY)
+    );
+
+    if (effectiveConcurrency <= 1) {
+      return this.runSequential({ concurrency, batchOptions });
+    }
+
+    let edgeWorkerPool = null;
+    try {
+      edgeWorkerPool = await createBatchEdgeWorkerPool({
+        args: this.context.args,
+        effectiveTemplate: this.context.effectiveTemplate,
+        concurrency: effectiveConcurrency
+      });
+    } catch (error) {
+      return this.runSequential({
+        concurrency,
+        batchOptions,
+        parallelRequestedButDisabled: true,
+        parallelDisabledReason: error && error.message ? error.message : String(error)
+      });
+    }
+
+    try {
+      return await this.runConcurrentWorkers({
+        concurrency,
+        effectiveConcurrency,
+        batchOptions,
+        edgeWorkers: edgeWorkerPool ? edgeWorkerPool.workers : []
+      });
+    } finally {
+      if (edgeWorkerPool) {
+        await edgeWorkerPool.close();
+      }
+    }
   }
 
   createBatchRuntime({ concurrency }) {
@@ -89,7 +127,12 @@ class BatchOrchestrator {
     };
   }
 
-  createPerformance({ concurrency }) {
+  createPerformance({
+    concurrency,
+    effectiveConcurrency = 1,
+    parallelRequestedButDisabled = concurrency > 1 && effectiveConcurrency === 1,
+    parallelDisabledReason = ''
+  }) {
     const { expandedInputs } = this.context;
     return {
       totalMs: 0,
@@ -103,12 +146,18 @@ class BatchOrchestrator {
         null,
       items: [],
       concurrency,
-      effectiveConcurrency: 1,
-      parallelRequestedButDisabled: concurrency > 1
+      effectiveConcurrency,
+      parallelRequestedButDisabled,
+      parallelDisabledReason
     };
   }
 
-  async runSequential({ concurrency, batchOptions }) {
+  async runSequential({
+    concurrency,
+    batchOptions,
+    parallelRequestedButDisabled = concurrency > 1,
+    parallelDisabledReason = ''
+  }) {
     const { emit, signal, outputDir, expandedInputs, reportLevel = 'normal' } = this.context;
     const reportDisabled = isReportDisabled(reportLevel);
     const { batchPerf, batchStats, batchPhase } = this.createBatchRuntime({ concurrency });
@@ -119,15 +168,17 @@ class BatchOrchestrator {
         concurrency,
         requestedConcurrency: concurrency,
         effectiveConcurrency: 1,
-        parallelRequestedButDisabled: concurrency > 1
+        parallelRequestedButDisabled,
+        parallelDisabledReason
       });
 
-      if (concurrency > 1) {
+      if (parallelRequestedButDisabled) {
         batchPerf.event('parallel_requested_but_disabled', {
           phase: 'batch_total',
           status: 'fallback_serial',
           requested_concurrency: concurrency,
-          effective_concurrency: 1
+          effective_concurrency: 1,
+          reason: parallelDisabledReason
         });
       }
 
@@ -136,7 +187,12 @@ class BatchOrchestrator {
       if (!reportDisabled) {
         ensureDir(batchItemsDir);
       }
-      const performance = this.createPerformance({ concurrency });
+      const performance = this.createPerformance({
+        concurrency,
+        effectiveConcurrency: 1,
+        parallelRequestedButDisabled,
+        parallelDisabledReason
+      });
       const transitCache = createTransitCache();
       const itemResults = [];
 
@@ -176,6 +232,97 @@ class BatchOrchestrator {
     }
   }
 
+  async runConcurrentWorkers({
+    concurrency,
+    effectiveConcurrency,
+    batchOptions,
+    edgeWorkers = []
+  }) {
+    const { emit, signal, outputDir, expandedInputs, reportLevel = 'normal' } = this.context;
+    const reportDisabled = isReportDisabled(reportLevel);
+    const { batchPerf, batchStats, batchPhase } = this.createBatchRuntime({ concurrency });
+
+    try {
+      emit('batch:start', '正在批量采集携程酒店页面', {
+        summary: describeExpandedInput(expandedInputs),
+        concurrency,
+        requestedConcurrency: concurrency,
+        effectiveConcurrency,
+        parallelRequestedButDisabled: false
+      });
+
+      const batchStartedAt = Date.now();
+      const batchItemsDir = path.join(outputDir, 'batch-items');
+      if (!reportDisabled) {
+        ensureDir(batchItemsDir);
+      }
+      const performance = this.createPerformance({
+        concurrency,
+        effectiveConcurrency,
+        parallelRequestedButDisabled: false
+      });
+      const transitCache = createTransitCache();
+      const itemResults = [];
+      let nextIndex = 0;
+      let stopped = false;
+
+      const workers = Array.from({ length: effectiveConcurrency }, (_item, index) => {
+        return edgeWorkers[index] || { id: index + 1 };
+      });
+
+      const runWorker = async (worker) => {
+        while (!stopped) {
+          assertNotCancelled(signal);
+          const zeroBasedIndex = nextIndex;
+          nextIndex += 1;
+          if (zeroBasedIndex >= expandedInputs.hotelInputs.length) {
+            return;
+          }
+
+          try {
+            const itemResult = await this.runBatchItem({
+              index: zeroBasedIndex + 1,
+              total: expandedInputs.hotelInputs.length,
+              batchItemsDir,
+              batchOptions,
+              batchPerf,
+              batchStats,
+              reportDisabled,
+              signal,
+              transitCache,
+              worker
+            });
+            itemResults[zeroBasedIndex] = itemResult;
+          } catch (error) {
+            stopped = true;
+            throw error;
+          }
+        }
+      };
+
+      const settled = await Promise.allSettled(workers.map(runWorker));
+      const rejected = settled.find((result) => result.status === 'rejected');
+      if (rejected) {
+        throw rejected.reason;
+      }
+
+      return await this.finalizeBatchResult({
+        batchStartedAt,
+        batchPerf,
+        batchStats,
+        batchPhase,
+        itemResults: itemResults.filter(Boolean),
+        performance,
+        reportDisabled
+      });
+    } catch (error) {
+      batchPhase.error(error, {
+        hotelCount: expandedInputs.hotelInputs.length
+      });
+      throw error;
+    }
+  }
+
   async runBatchItem({
     index,
     total,
@@ -185,7 +332,8 @@ class BatchOrchestrator {
     batchStats,
     reportDisabled,
     signal,
-    transitCache
+    transitCache,
+    worker = null
   }) {
     const {
       args,
@@ -205,6 +353,8 @@ class BatchOrchestrator {
 
     assertNotCancelled(signal);
     const hotelInput = expandedInputs.hotelInputs[index - 1];
+    const itemEffectiveTemplate =
+      worker && worker.effectiveTemplate ? worker.effectiveTemplate : effectiveTemplate;
     emitBatchItemStart(emit, { index, total, taskId, hotelInput });
 
     const childOutputPath = reportDisabled
@@ -225,7 +375,7 @@ class BatchOrchestrator {
         outputDir,
         template,
         matchedTemplate,
-        effectiveTemplate,
+        effectiveTemplate: itemEffectiveTemplate,
         compareAppSettings,
         effectiveDestination,
         hotelInput,

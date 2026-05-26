@@ -670,6 +670,14 @@
             <small class="help-text">开启后会在数据目录下记录采集各阶段耗时 JSONL，用于排查慢任务和异常阶段；普通使用建议关闭。</small>
           </div>
           <div class="form-group">
+            <label for="collectBatchConcurrency">并发采集数</label>
+            <select id="collectBatchConcurrency" class="input" data-custom-select="true">
+              <option value="1">1 - 串行采集</option>
+              <option value="2">2 - 并发采集</option>
+            </select>
+            <small class="help-text">默认使用 1。选择 2 会额外打开一个临时 Edge 会话；如果携程登录态或网络不稳定，可以切回 1。</small>
+          </div>
+          <div class="form-group">
             <label for="amapApiKeyInput">高德 API Key</label>
             <div class="data-path-container">
               <input type="password" id="amapApiKeyInput" class="input" placeholder="留空使用程序默认高德 Key" autocomplete="off">

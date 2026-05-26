@@ -43,6 +43,14 @@ const SUPPORTED_THEMES = new Set([
   'colorful-mode'
 ]);
 
+/**
+ * @param {unknown} value
+ * @returns {1|2}
+ */
+function normalizeCollectBatchConcurrency(value) {
+  return Number(value) === 2 ? 2 : 1;
+}
+
 /* ---- 设置弹窗 ---- */
 
 export async function openSettings() {
@@ -91,8 +99,13 @@ export function applySettings() {
     'enableCollectPerfLog',
     'enableCollectPerfLogText'
   );
+  setValue(
+    'collectBatchConcurrency',
+    String(normalizeCollectBatchConcurrency(state.settings.collectBatchConcurrency))
+  );
   setValue('amapApiKeyInput', state.settings.amapApiKey || '');
   applyListPrefilterSettings();
+  refreshCustomSelects();
 
   const weightMappings = [
     { key: 'weight_price', id: 'weightPrice', valueId: 'priceWeightValue' },
@@ -408,6 +421,26 @@ export async function toggleEnableCollectPerfLog() {
     if (textEl) {
       textEl.textContent = !isEnabled ? '开启' : '关闭';
     }
+  }
+}
+
+export async function saveCollectBatchConcurrencySetting() {
+  const input = getFormValueElement('collectBatchConcurrency');
+  const previousValue = normalizeCollectBatchConcurrency(state.settings.collectBatchConcurrency);
+  const nextValue = normalizeCollectBatchConcurrency(input ? input.value : previousValue);
+
+  try {
+    await window.electronAPI.setSetting('collectBatchConcurrency', nextValue);
+    state.settings.collectBatchConcurrency = nextValue;
+    setValue('collectBatchConcurrency', String(nextValue));
+    refreshCustomSelects();
+    showNotification(nextValue === 2 ? '已开启并发采集' : '已切换为串行采集', 'success');
+  } catch (error) {
+    console.error('保存并发采集设置失败:', error);
+    state.settings.collectBatchConcurrency = previousValue;
+    setValue('collectBatchConcurrency', String(previousValue));
+    refreshCustomSelects();
+    showNotification('保存并发采集设置失败，请重试', 'error');
   }
 }
 

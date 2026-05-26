@@ -210,6 +210,10 @@ function sanitizeSettings(settings = {}) {
   return sanitized;
 }
 
+function normalizeCollectBatchConcurrency(value) {
+  return Number(value) === 2 ? 2 : 1;
+}
+
 async function executeAiTool(name, rawArguments, context) {
   const args = parseToolArguments(rawArguments);
   const { dataService, getTaskStatus, runTask } = context;
@@ -235,6 +239,9 @@ async function executeAiTool(name, rawArguments, context) {
           collectArgs.amapKey = settings.amapApiKey;
         }
         collectArgs.enableCollectPerfLog = Boolean(settings.enableCollectPerfLog);
+        collectArgs.batchConcurrency = normalizeCollectBatchConcurrency(
+          settings.collectBatchConcurrency
+        );
         return collectAndWriteCtripHotel(collectArgs, {
           dataFolderPath: dataService.getDataFolderPath(),
           signal,

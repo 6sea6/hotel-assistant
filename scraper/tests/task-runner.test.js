@@ -12,7 +12,8 @@ const taskRunnerRelatedModules = [
   '../src/batch-artifact-writer',
   '../src/batch-result-builder',
   '../src/single-detail-runner',
-  '../src/batch-orchestrator'
+  '../src/batch-orchestrator',
+  '../src/batch-edge-worker-pool'
 ].map((modulePath) => require.resolve(modulePath));
 
 function clearTaskRunnerModules() {
@@ -111,9 +112,14 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
   );
   mockedPaths.push(
     installMock('../src/cli/auto-edge', {
-      closeAutoEdge: () => undefined,
+      closeAutoEdge: (pid) => {
+        calls.order.push(`close-edge:${pid}`);
+      },
       hasReusableEdgeProfile: () => true,
-      launchAndWaitForEdge: async () => ({ pid: 12345, port: 9222 }),
+      launchAndWaitForEdge: async (edgeOptions = {}) => ({
+        pid: Number(edgeOptions.port || 9222) + 10000,
+        port: Number(edgeOptions.port || 9222)
+      }),
       runInteractiveEdgeLoginPrep: async () => undefined
     })
   );
@@ -1084,7 +1090,7 @@ test('runHotelImportTask aborts before collection when signal is already cancell
   }
 });
 
-test('batch concurrency greater than one records serial fallback placeholder', async () => {
+test('batch concurrency greater than one runs with bounded parallel workers', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1100,12 +1106,50 @@ test('batch concurrency greater than one records serial fallback placeholder', a
       url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=concurrency2',
       hotelId: 'concurrency2',
       source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=concurrency3',
+      hotelId: 'concurrency3',
+      source: 'detail-input'
     }
   ];
-  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+  let activeScrapes = 0;
+  let maxActiveScrapes = 0;
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: async (hotelInput) => {
+      activeScrapes += 1;
+      maxActiveScrapes = Math.max(maxActiveScrapes, activeScrapes);
+      await new Promise((resolve) =>
+        setTimeout(resolve, hotelInput.hotelId === 'concurrency1' ? 30 : 5)
+      );
+      activeScrapes -= 1;
+      return {
+        hotel_name: `并发酒店${hotelInput.hotelId}`,
+        address: `并发地址${hotelInput.hotelId}`,
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 188 }],
+        raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: ''
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    }
+  });
 
   try {
     const records = [];
+    const events = [];
     const { runHotelImportTask } = require('../src/task-runner');
     const result = await runHotelImportTask(
       {
@@ -1122,21 +1166,37 @@ test('batch concurrency greater than one records serial fallback placeholder', a
             records.push(record);
             return record;
           }
+        },
+        onEvent(event) {
+          events.push(event);
         }
       }
     );
 
     assert.equal(result.performance.concurrency, 3);
-    assert.equal(result.performance.effectiveConcurrency, 1);
-    assert.equal(result.performance.parallelRequestedButDisabled, true);
-    assert.ok(records.some((record) => record.event === 'parallel_requested_but_disabled'));
+    assert.equal(result.performance.effectiveConcurrency, 2);
+    assert.equal(result.performance.parallelRequestedButDisabled, false);
+    assert.equal(maxActiveScrapes, 2);
+    assert.deepEqual(
+      result.items.map((item) => item.index),
+      [1, 2, 3]
+    );
+    assert.equal(
+      records.some((record) => record.event === 'parallel_requested_but_disabled'),
+      false
+    );
+    const batchStartEvent = events.find((event) => event.type === 'batch:start');
+    assert.ok(batchStartEvent);
+    assert.equal(batchStartEvent.details.requestedConcurrency, 3);
+    assert.equal(batchStartEvent.details.effectiveConcurrency, 2);
+    assert.equal(batchStartEvent.details.parallelRequestedButDisabled, false);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
-test('batch-concurrency argument records serial fallback placeholder', async () => {
+test('batch-concurrency argument enables parallel collection while preserving result order', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1154,7 +1214,39 @@ test('batch-concurrency argument records serial fallback placeholder', async () 
       source: 'detail-input'
     }
   ];
-  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+  let activeScrapes = 0;
+  let maxActiveScrapes = 0;
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: async (hotelInput) => {
+      activeScrapes += 1;
+      maxActiveScrapes = Math.max(maxActiveScrapes, activeScrapes);
+      await new Promise((resolve) =>
+        setTimeout(resolve, hotelInput.hotelId === 'arg-concurrency1' ? 25 : 5)
+      );
+      activeScrapes -= 1;
+      return {
+        hotel_name: `参数并发酒店${hotelInput.hotelId}`,
+        address: `参数并发地址${hotelInput.hotelId}`,
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 188 }],
+        raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: ''
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    }
+  });
 
   try {
     const records = [];
@@ -1184,22 +1276,22 @@ test('batch-concurrency argument records serial fallback placeholder', async () 
 
     assert.equal(calls.scrape, 2);
     assert.equal(result.performance.concurrency, 2);
-    assert.equal(result.performance.effectiveConcurrency, 1);
-    assert.equal(result.performance.parallelRequestedButDisabled, true);
+    assert.equal(result.performance.effectiveConcurrency, 2);
+    assert.equal(result.performance.parallelRequestedButDisabled, false);
+    assert.equal(maxActiveScrapes, 2);
     assert.deepEqual(
       result.items.map((item) => item.index),
       [1, 2]
     );
-    assert.ok(records.some((record) => record.event === 'parallel_requested_but_disabled'));
-    assert.deepEqual(
-      calls.order.filter((item) => item.startsWith('scrape:') || item === 'transit'),
-      ['scrape:arg-concurrency1', 'transit', 'scrape:arg-concurrency2', 'transit']
+    assert.equal(
+      records.some((record) => record.event === 'parallel_requested_but_disabled'),
+      false
     );
     const batchStartEvent = events.find((event) => event.type === 'batch:start');
     assert.ok(batchStartEvent);
     assert.equal(batchStartEvent.details.requestedConcurrency, 2);
-    assert.equal(batchStartEvent.details.effectiveConcurrency, 1);
-    assert.equal(batchStartEvent.details.parallelRequestedButDisabled, true);
+    assert.equal(batchStartEvent.details.effectiveConcurrency, 2);
+    assert.equal(batchStartEvent.details.parallelRequestedButDisabled, false);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1300,6 +1392,87 @@ test('batch explicit captureStrategy is preserved when auto-edge is enabled', as
       calls.scrapeOptions.map((item) => item.captureStrategy),
       ['html_first', 'html_first']
     );
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch auto-edge concurrency assigns separate worker debugging ports', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-edge-concurrency-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge-concurrent-1',
+      hotelId: 'edge-concurrent-1',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge-concurrent-2',
+      hotelId: 'edge-concurrent-2',
+      source: 'detail-input'
+    }
+  ];
+  let activeScrapes = 0;
+  let maxActiveScrapes = 0;
+  const observedPorts = [];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    onScrapeOptions: (scrapeOptions) => {
+      observedPorts.push(scrapeOptions.edgeSession && scrapeOptions.edgeSession.debuggingPort);
+    },
+    scrapeResultForHotelInput: async (hotelInput) => {
+      activeScrapes += 1;
+      maxActiveScrapes = Math.max(maxActiveScrapes, activeScrapes);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeScrapes -= 1;
+      return {
+        hotel_name: `Edge 并发酒店${hotelInput.hotelId}`,
+        address: `Edge 并发地址${hotelInput.hotelId}`,
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 188 }],
+        raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: ''
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    }
+  });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'edge-user-data-dir': path.join(tempDir, 'edge-profile'),
+        'report-level': 'off',
+        'batch-concurrency': 2
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.performance.effectiveConcurrency, 2);
+    assert.equal(maxActiveScrapes, 2);
+    assert.equal(new Set(observedPorts).size, 2);
+    assert.ok(calls.order.some((item) => item.startsWith('close-edge:')));
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
