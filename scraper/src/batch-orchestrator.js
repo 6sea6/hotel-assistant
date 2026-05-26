@@ -1,7 +1,6 @@
 const path = require('path');
 const { buildListResultsSummary, describeExpandedInput } = require('./ctrip-list');
-const { buildRunSummary, writeLatestRunFile } = require('./cli/run-summary');
-const { cleanupOutputArtifacts, ensureDir, slugify, writeJsonFile } = require('./utils');
+const { ensureDir, slugify } = require('./utils');
 const { setup_perf_logger, PerfTimer, BatchStats } = require('./runtime/perf');
 const {
   assertNotCancelled,
@@ -9,8 +8,7 @@ const {
   durationSince,
   isReportDisabled,
   normalizeBatchConcurrency,
-  resolveBatchCaptureStrategy,
-  shouldCleanupOutputArtifactsForRun
+  resolveBatchCaptureStrategy
 } = require('./task-context');
 const { emitBatchItemDone, emitBatchItemError, emitBatchItemStart } = require('./task-events');
 const { SingleDetailRunner } = require('./single-detail-runner');
@@ -19,7 +17,13 @@ const {
   buildBatchResult,
   buildUncollectedHotelPerfRecord
 } = require('./batch-result-builder');
-const { writeBatchHotelRecords } = require('./task-writeback');
+const {
+  cleanupBatchArtifacts,
+  prepareBatchCollections,
+  writeBatchAppData,
+  writeBatchLatestRunSummary,
+  writeBatchReportArtifact
+} = require('./batch-artifact-writer');
 
 class BatchOrchestrator {
   constructor(context, options = {}) {
@@ -371,48 +375,32 @@ class BatchOrchestrator {
       reportLevel = 'normal'
     } = this.context;
 
-    const orderedItemResults = [...itemResults].sort((left, right) => left.index - right.index);
-    const childResults = orderedItemResults
-      .map((item) => item.childResult)
-      .filter((childResult) => childResult);
-    const resultPayloads = orderedItemResults
-      .map((item) => item.childPayload)
-      .filter((childPayload) => childPayload);
-    const failedItems = orderedItemResults
-      .map((item) => item.failedItem)
-      .filter((failedItem) => failedItem);
-    const savedHtmlFiles = orderedItemResults.flatMap((item) =>
-      Array.isArray(item.savedHtmlFiles) ? item.savedHtmlFiles : []
-    );
-    const uncollectedItems = orderedItemResults
-      .map((item) => item.uncollectedItem)
-      .filter((uncollectedItem) => uncollectedItem);
+    const {
+      childResults,
+      resultPayloads,
+      failedItems,
+      savedHtmlFiles,
+      uncollectedItems,
+      performanceItems,
+      itemMs,
+      allHotels
+    } = prepareBatchCollections({
+      itemResults,
+      reportDisabled
+    });
 
-    performance.itemMs = orderedItemResults.reduce(
-      (sum, item) => sum + Number(item.durationMs || 0),
-      0
-    );
-    performance.items = orderedItemResults
-      .map((item) => item.performanceItem)
-      .filter((performanceItem) => performanceItem);
+    performance.itemMs = itemMs;
+    performance.items = performanceItems;
 
-    const allHotels = reportDisabled
-      ? childResults.flatMap((result) =>
-          Array.isArray(result.eligibleHotels) ? result.eligibleHotels : []
-        )
-      : resultPayloads.flatMap((payload) => (Array.isArray(payload.hotels) ? payload.hotels : []));
-
-    let writeResult = null;
-    if (args['write-app-data']) {
-      emit('write:start', '正在批量写入宾馆比较数据');
-      const writeStartedAt = Date.now();
-      writeResult = await batchPerf.runPhase(
-        'save_data',
-        { hotelCount: allHotels.length, taskKind: 'batch_apply' },
-        async () => writeBatchHotelRecords({ allHotels, resultPayloads, reportDisabled })
-      );
-      performance.writeMs = durationSince(writeStartedAt);
-    }
+    const writeResult = await writeBatchAppData({
+      args,
+      emit,
+      batchPerf,
+      allHotels,
+      resultPayloads,
+      reportDisabled,
+      performance
+    });
 
     const outputPath = reportDisabled
       ? ''
@@ -424,25 +412,18 @@ class BatchOrchestrator {
             )
         );
 
-    const snapshotFiles = reportDisabled
-      ? savedHtmlFiles
-      : resultPayloads.flatMap((payload) => {
-          const pageSnapshot =
-            payload && payload.scrape_debug && payload.scrape_debug.page_snapshot;
-          return pageSnapshot && Array.isArray(pageSnapshot.saved_html_files)
-            ? pageSnapshot.saved_html_files
-            : [];
-        });
-    let cleanupResult = { deletedFiles: [], skipped: true };
-    if (shouldCleanupOutputArtifactsForRun(reportLevel, args)) {
-      const cleanupStartedAt = Date.now();
-      cleanupResult = await batchPerf.runPhase(
-        'close_resource',
-        { hotelCount: allHotels.length },
-        async () => cleanupOutputArtifacts(outputDir, outputPath, snapshotFiles)
-      );
-      performance.cleanupMs = durationSince(cleanupStartedAt);
-    }
+    const cleanupResult = await cleanupBatchArtifacts({
+      args,
+      batchPerf,
+      outputDir,
+      outputPath,
+      reportLevel,
+      reportDisabled,
+      resultPayloads,
+      savedHtmlFiles,
+      allHotels,
+      performance
+    });
     performance.totalMs = durationSince(batchStartedAt);
 
     const listResultsSummary = reportDisabled
@@ -474,29 +455,14 @@ class BatchOrchestrator {
       );
       performance.buildReportMs = durationSince(buildReportStartedAt);
 
-      const outputWriteStartedAt = Date.now();
-      const writeReportPhase = batchPerf.phase('write_report', {
-        hotelCount: allHotels.length,
-        reportLevel
+      writeBatchReportArtifact({
+        batchPerf,
+        outputPath,
+        outputPayload,
+        performance,
+        reportLevel,
+        allHotels
       });
-      const isFullReport = reportLevel === 'full';
-      const measure = writeJsonFile(outputPath, outputPayload, {
-        pretty: isFullReport,
-        measure: true
-      });
-      if (measure) {
-        performance.reportBytes = measure.bytes;
-        performance.reportStringifyMs = measure.stringifyMs;
-        performance.reportWriteMs = measure.writeMs;
-        performance.reportTotalWriteMs = measure.totalMs;
-      }
-      writeReportPhase.end('success', {
-        report_bytes: measure ? measure.bytes : 0,
-        report_stringify_ms: measure ? measure.stringifyMs : 0,
-        report_file_write_ms: measure ? measure.writeMs : 0,
-        report_total_write_ms: measure ? measure.totalMs : 0
-      });
-      performance.outputWriteMs = durationSince(outputWriteStartedAt);
     }
 
     const result = buildBatchResult({
@@ -515,14 +481,11 @@ class BatchOrchestrator {
       reportLevel
     });
 
-    await batchPerf.runPhase('write_latest_run', { hotelCount: allHotels.length }, async () => {
-      writeLatestRunFile(
-        latestRunPath,
-        buildRunSummary({
-          ...result,
-          eligibleHotels: allHotels
-        })
-      );
+    await writeBatchLatestRunSummary({
+      batchPerf,
+      latestRunPath,
+      result,
+      allHotels
     });
     emit('task:done', '批量采集任务完成', {
       inputMode: expandedInputs.inputMode,

@@ -9,6 +9,7 @@ const taskRunnerRelatedModules = [
   '../src/task-context',
   '../src/task-events',
   '../src/task-writeback',
+  '../src/batch-artifact-writer',
   '../src/batch-result-builder',
   '../src/single-detail-runner',
   '../src/batch-orchestrator'
@@ -751,6 +752,107 @@ test('batch result items are sorted by input index', () => {
     items.map((item) => item.success),
     [true, false, true]
   );
+});
+
+test('batch artifact writer derives ordered collections from itemResults', () => {
+  const { prepareBatchCollections } = require('../src/batch-artifact-writer');
+
+  const collections = prepareBatchCollections({
+    reportDisabled: false,
+    itemResults: [
+      {
+        index: 2,
+        hotelInput: { hotelId: 'second' },
+        childResult: { inputIndex: 2, success: true, eligibleHotels: [{ name: 'ignored' }] },
+        childPayload: { hotels: [{ name: 'Hotel 2' }] },
+        savedHtmlFiles: ['second.html'],
+        failedItem: null,
+        durationMs: 7,
+        performanceItem: { index: 2 },
+        uncollectedItem: null
+      },
+      {
+        index: 1,
+        hotelInput: { hotelId: 'first' },
+        childResult: null,
+        childPayload: null,
+        savedHtmlFiles: [],
+        failedItem: { index: 1, url: 'https://example.test/1', error: 'boom' },
+        durationMs: 0,
+        performanceItem: null,
+        uncollectedItem: null
+      }
+    ]
+  });
+
+  assert.deepEqual(
+    collections.orderedItemResults.map((item) => item.index),
+    [1, 2]
+  );
+  assert.deepEqual(collections.childResults, [
+    { inputIndex: 2, success: true, eligibleHotels: [{ name: 'ignored' }] }
+  ]);
+  assert.deepEqual(collections.resultPayloads, [{ hotels: [{ name: 'Hotel 2' }] }]);
+  assert.deepEqual(collections.failedItems, [
+    { index: 1, url: 'https://example.test/1', error: 'boom' }
+  ]);
+  assert.deepEqual(collections.allHotels, [{ name: 'Hotel 2' }]);
+  assert.equal(collections.itemMs, 7);
+});
+
+test('batch report writer propagates report failures before latest-run is written', async () => {
+  const {
+    writeBatchLatestRunSummary,
+    writeBatchReportArtifact
+  } = require('../src/batch-artifact-writer');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-report-fail-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const phases = [];
+  const batchPerf = {
+    runPhase: async (phaseName, _meta, action) => {
+      phases.push(phaseName);
+      return action();
+    },
+    phase: (phaseName) => {
+      phases.push(phaseName);
+      return {
+        end(status) {
+          phases.push(`${phaseName}:${status}`);
+        }
+      };
+    }
+  };
+
+  try {
+    assert.throws(
+      () =>
+        writeBatchReportArtifact({
+          batchPerf,
+          outputPath: path.join(tempDir, 'report.json'),
+          outputPayload: { success: true },
+          performance: {},
+          reportLevel: 'normal',
+          allHotels: [],
+          writeJsonFileImpl: () => {
+            throw new Error('report disk failure');
+          }
+        }),
+      /report disk failure/
+    );
+
+    assert.equal(fs.existsSync(latestRunPath), false);
+    assert.deepEqual(phases, ['write_report']);
+
+    await writeBatchLatestRunSummary({
+      batchPerf,
+      latestRunPath,
+      result: { success: true, eligibleCount: 0 },
+      allHotels: []
+    });
+    assert.equal(fs.existsSync(latestRunPath), true);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('batch app writeback runs only after all serial detail items finish', async () => {
