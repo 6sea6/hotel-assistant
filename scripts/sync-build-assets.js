@@ -5,6 +5,7 @@ const sharp = require('sharp');
 
 const pngToIcoModule = require('png-to-ico');
 const pngToIco = pngToIcoModule.default || pngToIcoModule;
+const { APP_INFO } = require('../src/shared/app-info.generated');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const BUILD_DIR = path.join(PROJECT_ROOT, 'build');
@@ -152,8 +153,8 @@ async function main() {
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'));
   const productName = packageJson?.build?.productName || packageJson.name || '宾馆比较助手';
-  const version = packageJson.version || '';
-  const author = packageJson.author || '';
+  const version = APP_INFO.version || packageJson.version || '';
+  const author = APP_INFO.author || packageJson.author || '';
 
   fs.mkdirSync(BUILD_DIR, { recursive: true });
 

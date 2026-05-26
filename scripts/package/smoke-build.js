@@ -38,6 +38,7 @@ function main() {
   let preparedBundle = null;
 
   try {
+    runNodeScriptIfPresent(path.join(projectRoot, 'scripts', 'sync-app-info.js'), projectRoot);
     runNodeScriptIfPresent(path.join(projectRoot, 'scripts', 'sync-build-assets.js'), projectRoot);
     removeIfExists(outputDir);
 

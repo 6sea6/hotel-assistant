@@ -13,6 +13,7 @@
   },
   "include": [
     "src/shared/contracts.js",
+    "src/shared/app-info.generated.js",
     "src/**/*.d.ts",
     "src/renderer/app.module.js",
     "src/renderer/modules/actions.js",

@@ -1,13 +1,15 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Sandboxed preload cannot load arbitrary local Node modules. Keep the small
-// renderer-facing app metadata here and expose all privileged work via IPC.
+// <app-info-generated>
+// APP_INFO is synchronized from src/shared/app-info.generated.js by scripts/sync-app-info.js.
+// Keep this literal here because sandboxed preload cannot require local project modules.
 const APP_INFO = Object.freeze({
   name: '宾馆比较助手',
-  version: '8.8',
+  version: '8.8.0',
   releaseDate: '2026-05-23',
   author: 'Sea'
 });
+// </app-info-generated>
 
 /** @typedef {import('../shared/contracts').ElectronAPI} ElectronAPI */
 

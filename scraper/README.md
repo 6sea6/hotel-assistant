@@ -2,11 +2,11 @@
 
 ## 后续 AI 入口
 
-后续 AI 接手本工作区时，先阅读根目录的 `00-后续AI统一提示词.md`。本 README 只负责运行方式、技术说明和排查手册，不再单独维护一套业务填写规则。
+后续 AI 接手本工作区时，先阅读本目录的 `00-后续AI统一提示词.md`。本 README 只负责运行方式、技术说明和排查手册，不再单独维护一套业务填写规则。
 
-工作目录：`E:\实验\1\scraper`。采集器已内置在 Electron 宾馆比较助手项目中，默认通过应用内任务入口或本目录 CLI 读取比较助手规则和数据。
+工作目录：本 README 所在的 `scraper` 目录。采集器已内置在 Electron 宾馆比较助手项目中，默认通过应用内任务入口或本目录 CLI 读取比较助手规则和数据。
 
-当前测试/开发环境默认直接使用项目内置 `scraper` 目录作为采集器工作目录，不要先探测 `E:\实验\hotel-comparison-app\...` 这类打包路径。只有当打包版采集规则说明文件与 exe/采集器资源真实存在时，才切换到安装包环境的执行说明。
+当前测试/开发环境默认直接使用项目内置 `scraper` 目录作为采集器工作目录。只有当打包版采集规则说明文件与 exe/采集器资源真实存在时，才切换到安装包环境的执行说明。
 
 ## 能力范围
 
@@ -22,7 +22,7 @@
 模板数据源优先级如下：
 
 1. 环境变量 `HOTEL_COMPARE_APP_DATA_DIR`
-2. 本地开发模式下同级工作区 `E:\实验\1\宾馆比较助手`
+2. 本地开发模式下同级工作区中的 `宾馆比较助手` 数据目录
 3. `%APPDATA%/hotel-app-pointer.json` 指向的数据目录
 4. 安装版程序目录下的 `宾馆比较助手`
 5. `%APPDATA%/宾馆比较助手`
@@ -30,7 +30,7 @@
 如果你希望强制采集器读取某个特定数据目录，先设置：
 
 ```powershell
-$env:HOTEL_COMPARE_APP_DATA_DIR = "E:\实验\1\宾馆比较助手"
+$env:HOTEL_COMPARE_APP_DATA_DIR = "<你的宾馆比较助手数据目录>"
 ```
 
 ## 安装
@@ -89,13 +89,7 @@ node src/edge-session.js --login --userDataDir ./state/edge-profile --profileDir
 node src/cli.js --url "携程链接" --templateName 模板名 --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
-也可以用 bat 一键完成（bat 内部调用的就是上面的 Node.js 命令）：
-
-```bat
-一键启动Edge并采集.bat "携程链接" 模板名
-```
-
-这里的模板名改为显式必填；如果你不想用模板，请改用 `node src/cli.js` 直接传 `--checkIn`、`--checkOut`、`--roomCount` 等参数。
+这里的模板名改为显式必填；如果你不想用模板，请直接传 `--checkIn`、`--checkOut`、`--roomCount` 等参数。
 
 > **Edge 登录态说明**：携程对大量酒店隐藏价格（显示"登录看低价"），不带登录态拿不到价格。Edge 登录态通过 `state/edge-profile/` 持久保存。现在首次运行 `--auto-edge` 时，如果检测到这是一个全新的 profile，会自动先弹出一次可见 Edge 登录准备窗口；登录完成后关闭窗口即可，后续 `--auto-edge` 会在后台自动复用该登录态并在每次采集结束后关闭会话。
 
@@ -113,7 +107,7 @@ node src/cli.js --url "携程链接" --templateName 模板名 --auto-edge --edge
 
 如果执行任务的 AI 只能可靠地遵守固定步骤，就只按下面流程操作：
 
-1. 如果用户已经明确给出模板名，优先直接运行 CLI；只有模板名不确定时，才读取 `E:\实验\1\宾馆比较助手\hotel-data.json` 的 `templates` 数组确认模板。
+1. 如果用户已经明确给出模板名，优先直接运行 CLI；只有模板名不确定时，才读取当前比较助手数据目录中的 `hotel-data.json` 的 `templates` 数组确认模板。
 2. 只运行上面的推荐命令，不自行组合其他采集路径；如果在 PowerShell 里写成单行，命令之间用 `;`，不要用 `&&`。
 3. 采集后只读取 `output/latest-run.json` 判断是否成功，不看终端回显。
 如果打包版流程临时写了 `_run.js` 等脚本，清理时统一在 Node.js 进程内用 `fs.unlinkSync()` 或 `fs.rmSync({ recursive: true, force: true })`；不要在 PowerShell 或 cmd 层用 `Remove-Item`、`del`。
@@ -147,7 +141,7 @@ node src/cli.js --template examples/template.实验.json --auto-edge --edge-user
 ### 完整 Node.js 参数
 
 ```bash
-node src/cli.js --url "携程链接" --templateName bw \
+node src/cli.js --url "携程链接" --templateName "模板名" \
   --edge-user-data-dir ./state/edge-profile \
   --edge-profile-directory Default \
   --edge-debugging-port 9222 \
@@ -336,13 +330,12 @@ output/
   raw-pages/           # HTML 快照（调试用）
 state/
   edge-profile/        # Edge 用户数据（含登录态，不要删除）
-一键启动Edge并采集.bat  # 唯一推荐的 bat 入口
 README.md
 ```
 
 ## 交接要求
 
-后续 AI 接手时，应先阅读根目录的 `00-后续AI统一提示词.md`，再把本 README 当作运行手册使用。执行采集任务时按以下流程：
+后续 AI 接手时，应先阅读本目录的 `00-后续AI统一提示词.md`，再把本 README 当作运行手册使用。执行采集任务时按以下流程：
 
 1. 用户给携程链接 + 模板名
 2. 用 `node src/cli.js --url ... --templateName ... --edge-*` 采集（用 Node.js 运行，不要用 PowerShell 直接传 URL）

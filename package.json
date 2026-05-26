@@ -11,6 +11,7 @@
     "build": "node scripts/package/run-build.js",
     "build:win": "node scripts/package/run-build.js",
     "build:nsis": "node scripts/package/run-build.js",
+    "sync-app-info": "node scripts/sync-app-info.js",
     "sync-build-assets": "node scripts/sync-build-assets.js",
     "package:smoke": "node scripts/package/smoke-build.js",
     "smoke:data-migration": "node scripts/smoke/data-folder-migration-smoke.js",

@@ -10,6 +10,10 @@ const { createBuilderConfig } = require('../scripts/package/create-builder-confi
 const { prepareFullBundle } = require('../scripts/package/prepare-full-bundle');
 const { verifyPackageLayout } = require('../scripts/package/verify-package-layout');
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function makeTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-package-scripts-'));
 }
@@ -94,6 +98,73 @@ test('package manifest keeps full bundle resource contracts stable', () => {
     manifest.extraResources[0].filter.includes('!**/*token*'),
     false,
     'bundle resource filter must not use broad !**/*token* that would exclude parse5 tokenizer'
+  );
+});
+
+test('app version metadata is generated from package.json and reused by docs and build scripts', () => {
+  const projectRoot = path.resolve(__dirname, '..');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+  const { APP_INFO } = require('../src/shared/app-info.generated');
+  const { APP_CONFIG } = require('../src/main/config');
+  const preload = fs.readFileSync(path.join(projectRoot, 'src', 'main', 'preload.js'), 'utf-8');
+  const readme = fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf-8');
+  const indexHtml = fs.readFileSync(
+    path.join(projectRoot, 'src', 'renderer', 'index.html'),
+    'utf-8'
+  );
+  const manualHtml = fs.readFileSync(
+    path.join(projectRoot, 'src', 'renderer', 'manual.html'),
+    'utf-8'
+  );
+  const syncAppInfoScript = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'sync-app-info.js'),
+    'utf-8'
+  );
+  const syncBuildAssetsScript = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'sync-build-assets.js'),
+    'utf-8'
+  );
+  const runBuildScript = fs.readFileSync(
+    path.join(projectRoot, 'scripts', 'package', 'run-build.js'),
+    'utf-8'
+  );
+  const versionPattern = escapeRegExp(packageJson.version);
+
+  assert.equal(APP_INFO.version, packageJson.version);
+  assert.equal(APP_CONFIG.VERSION, packageJson.version);
+  assert.match(preload, new RegExp(`version:\\s*'${versionPattern}'`));
+  assert.match(readme, new RegExp(`# 宾馆比较助手 v${versionPattern}`));
+  assert.doesNotMatch(readme, /v8\.0\b/);
+  assert.match(indexHtml, new RegExp(`id="aboutVersionText">v${versionPattern}<`));
+  assert.match(manualHtml, new RegExp(`id="manualVersionText">v${versionPattern}<`));
+  assert.match(syncAppInfoScript, /app-info\.generated\.js/);
+  assert.match(syncAppInfoScript, /packageJson\.version/);
+  assert.match(syncBuildAssetsScript, /app-info\.generated/);
+  assert.match(runBuildScript, /sync-app-info\.js/);
+});
+
+test('project documentation avoids stale local-only instructions', () => {
+  const projectRoot = path.resolve(__dirname, '..');
+  const docs = {
+    readme: fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf-8'),
+    devReadme: fs.readFileSync(path.join(projectRoot, 'README_DEV.md'), 'utf-8'),
+    scraperReadme: fs.readFileSync(path.join(projectRoot, 'scraper', 'README.md'), 'utf-8'),
+    scraperPrompt: fs.readFileSync(
+      path.join(projectRoot, 'scraper', '00-后续AI统一提示词.md'),
+      'utf-8'
+    )
+  };
+  const combinedDocs = Object.values(docs).join('\n');
+
+  assert.doesNotMatch(combinedDocs, /一键启动Edge并采集\.bat/);
+  assert.doesNotMatch(combinedDocs, /根目录的 `00-后续AI统一提示词\.md`/);
+  assert.doesNotMatch(combinedDocs, /E:\\实验\\1/);
+  assert.doesNotMatch(combinedDocs, /E:\\实验\\hotel-comparison-app/);
+  assert.doesNotMatch(docs.scraperReadme, /--templateName bw\b/);
+  assert.equal(
+    (docs.devReadme.match(/^## 采集性能日志$/gm) || []).length,
+    1,
+    'README_DEV should keep one merged performance-log section'
   );
 });
 

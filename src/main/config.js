@@ -1,4 +1,5 @@
 const path = require('path');
+const { APP_INFO } = require('../shared/app-info.generated');
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
 const { BASE_COMPARE_APP_SETTINGS, DEFAULT_COMPARE_APP_FILES } =
   requireSharedCompareAppModule('constants.js');
@@ -208,10 +209,10 @@ const TEMPLATE_INFO_FIELDS = [
 
 // 应用常量
 const APP_CONFIG = {
-  NAME: '宾馆比较助手',
-  VERSION: '8.8',
-  RELEASE_DATE: '2026-05-23',
-  AUTHOR: 'Sea',
+  NAME: APP_INFO.name,
+  VERSION: APP_INFO.version,
+  RELEASE_DATE: APP_INFO.releaseDate,
+  AUTHOR: APP_INFO.author,
   APP_USER_MODEL_ID: 'com.hotel.comparison.desktop',
 
   // 窗口配置

@@ -106,17 +106,25 @@ function syncBuildAssets(projectRoot) {
   });
 }
 
+function syncAppInfo(projectRoot) {
+  runCommand(process.execPath, [path.join(projectRoot, 'scripts', 'sync-app-info.js')], {
+    cwd: projectRoot
+  });
+}
+
 async function main() {
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.resolve(projectRoot, 'scraper');
-  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
-  const version = packageJson.version;
   const tempBuildDir = path.join(projectRoot, `dist-verify-build-${process.pid}-${Date.now()}`);
 
   let preparedBundle = null;
   let builderConfig = null;
 
   try {
+    syncAppInfo(projectRoot);
+    const { APP_INFO } = require('../../src/shared/app-info.generated');
+    const version = APP_INFO.version;
+
     printHeader(version);
     console.log('[1/1] 开始打包\n');
 
