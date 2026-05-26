@@ -1,6 +1,6 @@
 {
   "name": "hotel-comparison-app",
-  "version": "8.8.0",
+  "version": "8.8.1",
   "description": "宾馆比较终极版应用程序",
   "main": "src/main/main.js",
   "workspaces": [

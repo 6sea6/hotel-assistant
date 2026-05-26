@@ -25,7 +25,7 @@ function buildAppInfo(packageJson) {
   return {
     name: '宾馆比较助手',
     version: packageJson.version,
-    releaseDate: '2026-05-23',
+    releaseDate: '2026-05-27',
     author: packageJson.author || 'Sea'
   };
 }
@@ -85,7 +85,11 @@ function updateReadmeVersion(readmeSource, appInfo) {
 function updateRendererVersionFallbacks(htmlSource, appInfo) {
   return htmlSource
     .replace(/id="aboutVersionText">v[\d.]+</g, `id="aboutVersionText">v${appInfo.version}<`)
-    .replace(/id="manualVersionText">v[\d.]+</g, `id="manualVersionText">v${appInfo.version}<`);
+    .replace(/id="manualVersionText">v[\d.]+</g, `id="manualVersionText">v${appInfo.version}<`)
+    .replace(
+      /id="aboutUpdateDateText">[\d-]+</g,
+      `id="aboutUpdateDateText">${appInfo.releaseDate}<`
+    );
 }
 
 function writeIfChanged(filePath, content) {
