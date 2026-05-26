@@ -774,6 +774,37 @@ function buildSkippedBottomExpandStats(aggregate) {
   });
 }
 
+function getRoomApiFastSettleThreshold(options = {}) {
+  const value = Number(options.roomApiFastSettleThreshold);
+  if (Number.isFinite(value) && value > 0) {
+    return Math.max(1, Math.trunc(value));
+  }
+  return 4;
+}
+
+function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
+  if (options.roomApiFastSettle === false || stepPhase !== 'edge_settle_main_scroll') {
+    return false;
+  }
+
+  if (typeof options.getRoomTrackedUrlCount !== 'function') {
+    return false;
+  }
+
+  return Number(options.getRoomTrackedUrlCount() || 0) >= getRoomApiFastSettleThreshold(options);
+}
+
+function buildRoomApiFastPathSkippedStats(aggregate, stepPhase) {
+  const documentHeight = aggregate.documentHeightAfter || aggregate.documentHeightBefore || 0;
+  return normalizeStepStats({
+    skippedBottomExpandCount: stepPhase === 'edge_settle_bottom_expand' ? 1 : 0,
+    documentHeightBefore: documentHeight,
+    documentHeightAfter: documentHeight,
+    bodyTextLength: aggregate.bodyTextLength || 0,
+    roomKeywordCount: aggregate.roomKeywordCount || 0
+  });
+}
+
 function getTransientSettleRetryReason(error) {
   const message = error && error.message ? String(error.message) : String(error || '');
   if (/Execution context was destroyed|Cannot find context with specified id/i.test(message)) {
@@ -895,6 +926,8 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     documentHeightAfter: 0,
     bodyTextLength: 0,
     roomKeywordCount: 0,
+    apiFastPathSkippedStepCount: 0,
+    apiFastPathSettleActive: false,
     steps: {}
   };
 
@@ -1093,6 +1126,28 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
 
   for (const step of steps) {
     assertNotAborted();
+    if (aggregate.apiFastPathSettleActive) {
+      const trackedUrlCount = getTrackedUrlCount();
+      const roomTrackedUrlCount =
+        typeof options.getRoomTrackedUrlCount === 'function'
+          ? Number(options.getRoomTrackedUrlCount() || 0)
+          : null;
+      const phaseTimer = perf.phase(step.phase, {
+        ...baseFields,
+        tracked_url_count_before: trackedUrlCount
+      });
+      const stats = buildRoomApiFastPathSkippedStats(aggregate, step.phase);
+      aggregate.steps[step.phase] = stats;
+      aggregate.apiFastPathSkippedStepCount += 1;
+      mergeStepStats(aggregate, stats);
+      phaseTimer.end('skipped', {
+        ...toPerfFields(stats, trackedUrlCount, trackedUrlCount),
+        room_tracked_url_count: roomTrackedUrlCount,
+        skip_reason: 'room_api_fast_path'
+      });
+      continue;
+    }
+
     if (
       step.phase === 'edge_settle_bottom_expand' &&
       shouldSkipBottomExpandAfterStableSettle(aggregate)
@@ -1125,6 +1180,12 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     });
     aggregate.steps[step.phase] = stats;
     mergeStepStats(aggregate, stats);
+    if (typeof options.onSettleStepComplete === 'function') {
+      options.onSettleStepComplete(step.phase, stats);
+    }
+    if (shouldSkipRemainingSettleAfterRoomApi(step.phase, options)) {
+      aggregate.apiFastPathSettleActive = true;
+    }
   }
 
   aggregate.totalMs = Date.now() - startedAt;

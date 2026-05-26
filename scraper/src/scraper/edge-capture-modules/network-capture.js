@@ -441,6 +441,7 @@ async function settleRoomListWithEdgeRetry({
   navigateSignal,
   trackedUrls,
   getTrackedUrlCount,
+  getRoomTrackedUrlCount,
   settleRoomList = settleRoomListInEdgeSession,
   waitForPageReady = waitForEdgePageReadyAfterNavigate,
   waitForContextStable = waitForEdgeExecutionContextStable,
@@ -461,6 +462,7 @@ async function settleRoomListWithEdgeRetry({
       perf,
       fields,
       getTrackedUrlCount,
+      getRoomTrackedUrlCount,
       signal,
       evaluateTimeoutMs: EDGE_SETTLE_EVALUATE_TIMEOUT_MS
     });
@@ -525,6 +527,7 @@ function buildSettlePhaseFields(settleStats, settleResult = {}) {
     settle_likely_container_count: settleStats.likelyContainerCount || 0,
     settle_fallback_container_count: settleStats.fallbackContainerCount || 0,
     settle_skipped_bottom_expand_count: settleStats.skippedBottomExpandCount || 0,
+    settle_api_fast_path_skipped_step_count: settleStats.apiFastPathSkippedStepCount || 0,
     settle_retry_count: settleResult.retryCount || 0,
     settle_retry_reason: settleResult.retryReason || ''
   };
@@ -1020,6 +1023,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           navigateSignal,
           trackedUrls,
           getTrackedUrlCount: () => trackedUrls.size,
+          getRoomTrackedUrlCount: () => roomRequestMeta.size,
           signal
         });
         settleStats = settleResult.stats;
@@ -1193,6 +1197,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           navigateSignal,
           trackedUrls,
           getTrackedUrlCount: () => trackedUrls.size,
+          getRoomTrackedUrlCount: () => roomRequestMeta.size,
           signal
         });
         settleStats = settleResult.stats;
