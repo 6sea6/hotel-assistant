@@ -1,6 +1,6 @@
 const hotelStorage = require('../hotel-storage');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
-const { allocateUniqueId, getIdKey, idsEqual } = require('../../shared/id-utils');
+const { allocateUniqueId, getIdKey } = require('../../shared/id-utils');
 
 /**
  * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
@@ -24,9 +24,150 @@ const { allocateUniqueId, getIdKey, idsEqual } = require('../../shared/id-utils'
  * @property {(ids: EntityId[]) => HotelDeleteResult} deleteMany
  * @property {(hotels: Array<Partial<RawHotelRecord>|NormalizedHotelRecord>) => NormalizedHotelRecord[]} replaceAll
  * @property {() => unknown[]} getCompactedForExport
+ * @property {() => void} flush
+ * @property {() => void} invalidateCache
  * @property {NormalizeHotelPayload} normalize
  * @property {(id: unknown) => boolean} hasValidId
+ *
+ * @typedef {object} HotelRepositoryState
+ * @property {boolean} loaded
+ * @property {NormalizedHotelRecord[]} hotelsCache
+ * @property {Map<string, number>} idIndex
+ * @property {boolean} dirty
+ * @property {ReturnType<typeof setTimeout>|null} flushTimer
+ * @property {RepositoryStore|null} store
+ * @property {NormalizeHotelPayload|null} normalizeHotelPayload
  */
+
+/** @type {WeakMap<RepositoryStore, HotelRepositoryState>} */
+const repositoryStates = new WeakMap();
+/** @type {Set<HotelRepositoryState>} */
+const repositoryStateSet = new Set();
+
+/**
+ * @returns {HotelRepositoryState}
+ */
+function createRepositoryState() {
+  return {
+    loaded: false,
+    hotelsCache: [],
+    idIndex: new Map(),
+    dirty: false,
+    flushTimer: null,
+    store: null,
+    normalizeHotelPayload: null
+  };
+}
+
+/**
+ * @param {RepositoryStore} store
+ * @returns {HotelRepositoryState}
+ */
+function getRepositoryState(store) {
+  let state = repositoryStates.get(store);
+  if (!state) {
+    state = createRepositoryState();
+    repositoryStates.set(store, state);
+    repositoryStateSet.add(state);
+  }
+  return state;
+}
+
+/**
+ * @param {HotelRepositoryState} state
+ * @returns {void}
+ */
+function clearFlushTimer(state) {
+  if (state.flushTimer) {
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  }
+}
+
+/**
+ * @param {HotelRepositoryState} state
+ * @returns {void}
+ */
+function flushRepositoryState(state) {
+  clearFlushTimer(state);
+  if (!state.dirty || !state.store || !state.normalizeHotelPayload) {
+    return;
+  }
+
+  hotelStorage.setExpandedHotelsToStore(
+    state.store,
+    state.hotelsCache,
+    state.normalizeHotelPayload
+  );
+  state.dirty = false;
+}
+
+/**
+ * @param {HotelRepositoryState} state
+ * @returns {void}
+ */
+function resetRepositoryState(state) {
+  clearFlushTimer(state);
+  state.loaded = false;
+  state.hotelsCache = [];
+  state.idIndex = new Map();
+  state.dirty = false;
+}
+
+/**
+ * Flush pending hotel writes for a store before external export, import, or folder migration code
+ * reads the persisted file directly.
+ *
+ * @param {RepositoryStore} store
+ * @returns {void}
+ */
+function flushHotelRepositoryCache(store) {
+  const state = repositoryStates.get(store);
+  if (state) {
+    flushRepositoryState(state);
+  }
+}
+
+/**
+ * Flush all pending hotel repository writes before the Electron app quits.
+ *
+ * @returns {void}
+ */
+function flushAllHotelRepositoryCaches() {
+  repositoryStateSet.forEach((state) => {
+    flushRepositoryState(state);
+  });
+}
+
+/**
+ * Discard cached hotels after external code has replaced the store contents or reinitialized the
+ * data path. Callers should flush first when they need to preserve pending edits.
+ *
+ * @param {RepositoryStore} store
+ * @returns {void}
+ */
+function resetHotelRepositoryCache(store) {
+  const state = repositoryStates.get(store);
+  if (state) {
+    resetRepositoryState(state);
+  }
+}
+
+/**
+ * @param {NormalizedHotelRecord} hotel
+ * @returns {NormalizedHotelRecord}
+ */
+function cloneHotel(hotel) {
+  return { ...hotel };
+}
+
+/**
+ * @param {NormalizedHotelRecord[]} hotels
+ * @returns {NormalizedHotelRecord[]}
+ */
+function cloneHotels(hotels) {
+  return hotels.map(cloneHotel);
+}
 
 /**
  * @param {unknown} id
@@ -42,11 +183,29 @@ function hasValidId(id) {
  * @returns {HotelRepository}
  */
 function createHotelRepository({ store, normalizeHotelPayload }) {
+  const state = getRepositoryState(store);
+  state.store = store;
+  state.normalizeHotelPayload = normalizeHotelPayload;
+
   const writeAll = (hotels) => {
     hotelStorage.setExpandedHotelsToStore(store, hotels, normalizeHotelPayload);
   };
 
-  const getAll = () => {
+  const rebuildIndex = () => {
+    state.idIndex = new Map();
+    state.hotelsCache.forEach((hotel, index) => {
+      const idKey = getIdKey(hotel.id);
+      if (idKey) {
+        state.idIndex.set(idKey, index);
+      }
+    });
+  };
+
+  const loadOnce = () => {
+    if (state.loaded) {
+      return;
+    }
+
     const hotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);
     const usedIds = new Set();
     const nextIdState = { value: Date.now() };
@@ -69,21 +228,56 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       return normalizedHotel;
     });
 
-    if (shouldWriteBack) {
-      writeAll(normalizedHotels);
-    }
+    state.hotelsCache = normalizedHotels;
+    rebuildIndex();
+    state.loaded = true;
 
-    return normalizedHotels;
+    if (shouldWriteBack) {
+      writeAll(state.hotelsCache);
+      state.dirty = false;
+    }
+  };
+
+  const flush = () => {
+    flushRepositoryState(state);
+  };
+
+  const scheduleFlush = () => {
+    state.dirty = true;
+    clearFlushTimer(state);
+    state.flushTimer = setTimeout(() => {
+      state.flushTimer = null;
+      if (state.dirty) {
+        writeAll(state.hotelsCache);
+        state.dirty = false;
+      }
+    }, 300);
+
+    if (
+      state.flushTimer &&
+      typeof state.flushTimer === 'object' &&
+      typeof state.flushTimer.unref === 'function'
+    ) {
+      state.flushTimer.unref();
+    }
+  };
+
+  const getAll = () => {
+    loadOnce();
+    return cloneHotels(state.hotelsCache);
   };
 
   return {
     getAll,
     getById(id) {
-      return getAll().find((hotel) => idsEqual(hotel.id, id));
+      loadOnce();
+      const idKey = getIdKey(id);
+      const index = idKey ? state.idIndex.get(idKey) : undefined;
+      return index === undefined ? undefined : cloneHotel(state.hotelsCache[index]);
     },
     add(payload) {
-      const hotels = getAll();
-      const usedIds = new Set(hotels.map((item) => String(item.id)));
+      loadOnce();
+      const usedIds = new Set(state.hotelsCache.map((item) => getIdKey(item.id)).filter(Boolean));
       const nextIdState = { value: Date.now() };
       const newHotel = normalizeHotelPayload({
         ...payload,
@@ -91,80 +285,111 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
-      hotels.push(newHotel);
-      writeAll(hotels);
-      return newHotel;
+      state.hotelsCache.push(newHotel);
+      rebuildIndex();
+      scheduleFlush();
+      return cloneHotel(newHotel);
     },
     update(payload) {
-      const hotels = getAll();
-      const index = hotels.findIndex((hotel) => idsEqual(hotel.id, payload.id));
-      if (index === -1) {
+      loadOnce();
+      const idKey = getIdKey(payload.id);
+      const index = idKey ? state.idIndex.get(idKey) : undefined;
+      if (index === undefined) {
         return null;
       }
 
-      hotels[index] = normalizeHotelPayload(
+      state.hotelsCache[index] = normalizeHotelPayload(
         {
           ...payload,
           updated_at: new Date().toISOString()
         },
-        hotels[index]
+        state.hotelsCache[index]
       );
-      writeAll(hotels);
-      return hotels[index];
+      rebuildIndex();
+      scheduleFlush();
+      return cloneHotel(state.hotelsCache[index]);
     },
     updateMany(payloads) {
-      const allHotels = getAll();
+      loadOnce();
       const results = [];
 
       for (const payload of payloads) {
-        const index = allHotels.findIndex((hotel) => idsEqual(hotel.id, payload.id));
-        if (index !== -1) {
-          allHotels[index] = normalizeHotelPayload(
+        const idKey = getIdKey(payload.id);
+        const index = idKey ? state.idIndex.get(idKey) : undefined;
+        if (index !== undefined) {
+          state.hotelsCache[index] = normalizeHotelPayload(
             {
               ...payload,
               updated_at: new Date().toISOString()
             },
-            allHotels[index]
+            state.hotelsCache[index]
           );
-          results.push(allHotels[index]);
+          results.push(cloneHotel(state.hotelsCache[index]));
         }
       }
 
-      writeAll(allHotels);
+      if (results.length > 0) {
+        rebuildIndex();
+        scheduleFlush();
+      }
       return results;
     },
     deleteById(id) {
-      const hotels = getAll();
-      const afterHotels = hotels.filter((hotel) => !idsEqual(hotel.id, id));
-      if (afterHotels.length !== hotels.length) {
-        writeAll(afterHotels);
+      loadOnce();
+      const idKey = getIdKey(id);
+      const index = idKey ? state.idIndex.get(idKey) : undefined;
+      if (index === undefined) {
+        return {
+          deletedCount: 0,
+          hotels: cloneHotels(state.hotelsCache)
+        };
       }
+
+      state.hotelsCache.splice(index, 1);
+      rebuildIndex();
+      scheduleFlush();
       return {
-        deletedCount: hotels.length - afterHotels.length,
-        hotels: afterHotels
+        deletedCount: 1,
+        hotels: cloneHotels(state.hotelsCache)
       };
     },
     deleteMany(ids) {
+      loadOnce();
       const idSet = new Set(
         ids.map(getIdKey).filter((id) => id && id !== 'undefined' && id !== 'null')
       );
-      const before = getAll();
-      const after = before.filter((hotel) => !idSet.has(String(hotel.id)));
-      if (after.length !== before.length) {
-        writeAll(after);
+      const beforeLength = state.hotelsCache.length;
+      state.hotelsCache = state.hotelsCache.filter((hotel) => {
+        const idKey = getIdKey(hotel.id);
+        return !idKey || !idSet.has(idKey);
+      });
+      const deletedCount = beforeLength - state.hotelsCache.length;
+      rebuildIndex();
+      if (deletedCount > 0) {
+        scheduleFlush();
       }
       return {
-        deletedCount: before.length - after.length,
-        hotels: after
+        deletedCount,
+        hotels: cloneHotels(state.hotelsCache)
       };
     },
     replaceAll(hotels) {
       const normalizedHotels = hotels.map((hotel) => normalizeHotelPayload(hotel));
-      writeAll(normalizedHotels);
-      return normalizedHotels;
+      state.hotelsCache = normalizedHotels;
+      state.loaded = true;
+      rebuildIndex();
+      state.dirty = true;
+      flush();
+      return cloneHotels(state.hotelsCache);
     },
     getCompactedForExport() {
-      return hotelStorage.compactHotels(getAll(), normalizeHotelPayload);
+      loadOnce();
+      flush();
+      return hotelStorage.compactHotels(state.hotelsCache, normalizeHotelPayload);
+    },
+    flush,
+    invalidateCache() {
+      resetRepositoryState(state);
     },
     normalize: normalizeHotelPayload,
     hasValidId
@@ -173,5 +398,8 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
 
 module.exports = {
   createHotelRepository,
+  flushAllHotelRepositoryCaches,
+  flushHotelRepositoryCache,
+  resetHotelRepositoryCache,
   hasValidId
 };

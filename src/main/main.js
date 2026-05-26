@@ -1,5 +1,6 @@
 const { app } = require('electron');
 const { APP_CONFIG } = require('./config');
+const { flushAllHotelRepositoryCaches } = require('./repositories/hotel-repository');
 
 if (process.platform === 'win32' && app.isPackaged && typeof app.setAppUserModelId === 'function') {
   app.setAppUserModelId(APP_CONFIG.APP_USER_MODEL_ID);
@@ -68,4 +69,8 @@ if (!gotSingleInstanceLock) {
 // 所有窗口关闭事件
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  flushAllHotelRepositoryCaches();
 });

@@ -274,6 +274,28 @@ test('data import restores snapshot when JSON parsing fails', async (t) => {
   assert.deepEqual(store.get('settings'), previousSettings);
 });
 
+test('data:export flushes pending hotel repository changes before reading store', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-data-export-flush-'));
+  const exportPath = path.join(tempRoot, 'hotel-data.json');
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const store = createStore({ hotels: [] });
+  const { handlers: hotelHandlers } = registerHandlers(registerHotelHandlers, store);
+  const { handlers: dataHandlers } = registerHandlers(registerDataHandlers, store);
+
+  const added = hotelHandlers['hotel:add'](createEvent(), {
+    name: '待导出酒店',
+    room_type: '大床房'
+  });
+  dialogState.save = { canceled: false, filePath: exportPath };
+
+  const result = await dataHandlers['data:export'](createEvent());
+  const exportedPayload = JSON.parse(fs.readFileSync(exportPath, 'utf8'));
+
+  assert.equal(result.success, true);
+  assert.equal(exportedPayload.hotels[0].shared.name, added.name);
+});
+
 test('data:import rejects invalid import mode before opening dialog', async () => {
   const store = createStore();
   const { handlers } = registerHandlers(registerDataHandlers, store);

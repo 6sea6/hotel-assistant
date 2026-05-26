@@ -5,6 +5,10 @@ const { APP_CONFIG, getPaths } = require('../config');
 const appIconManager = require('../app-icon-manager');
 const hotelStorage = require('../hotel-storage');
 const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
+const {
+  flushHotelRepositoryCache,
+  resetHotelRepositoryCache
+} = require('../repositories/hotel-repository');
 const { assertString, safeHandle, toErrorMessage } = require('../ipc-safe-handler');
 const { assertAllowedValue } = require('../ipc-validators');
 const {
@@ -49,6 +53,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
     });
     if (result.filePath) {
       const store = dataService.getStore();
+      flushHotelRepositoryCache(store);
       const exportPayload = buildExportPayload(store, { appIconManager });
       fs.writeFileSync(result.filePath, JSON.stringify(exportPayload, null, 2));
       return {
@@ -79,6 +84,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
     });
     if (result.filePaths && result.filePaths[0]) {
       const store = dataService.getStore();
+      flushHotelRepositoryCache(store);
       const previousSnapshot = {
         hotels: store.get('hotels') || [],
         templates: store.get('templates') || [],
@@ -108,6 +114,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         }
 
         hotelStorage.setExpandedHotelsToStore(store, finalPayload.hotels, normalizeHotelPayload);
+        resetHotelRepositoryCache(store);
         store.set('templates', finalPayload.templates);
         store.set('settings', finalPayload.settings);
         cache.invalidate('');
@@ -128,6 +135,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         };
       } catch (error) {
         restoreSnapshot(store, previousSnapshot);
+        resetHotelRepositoryCache(store);
         appIconManager.restoreManagedIconSnapshot(previousIconSnapshot);
         if (windowService) {
           windowService.applyThemeAppearance(previousSnapshot.settings.theme);
@@ -193,6 +201,8 @@ function registerDataHandlers({ ipcMain, cache, services }) {
 
     const dataFolderManager = dataService.getDataFolderManager();
     const currentDataFolder = dataFolderManager.getDataFolderPath();
+    const currentStore = dataService.getStore();
+    flushHotelRepositoryCache(currentStore);
 
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择数据存储位置',
@@ -250,6 +260,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         currentDataFolder,
         targetDataFolder: newDataFolder
       });
+      resetHotelRepositoryCache(currentStore);
 
       // 清除缓存
       cache.invalidate('');
@@ -276,6 +287,7 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         deleted: deleteOld === 0
       };
     } catch (error) {
+      resetHotelRepositoryCache(currentStore);
       console.error('迁移数据失败:', error);
       return { success: false, error: toErrorMessage(error) };
     }

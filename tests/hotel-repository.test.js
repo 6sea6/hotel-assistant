@@ -3,15 +3,22 @@ const assert = require('node:assert/strict');
 
 const hotelStorage = require('../src/main/hotel-storage');
 const { normalizeHotelPayload } = require('../src/main/domain/hotel-normalizer');
-const { createHotelRepository } = require('../src/main/repositories/hotel-repository');
+const {
+  createHotelRepository,
+  flushAllHotelRepositoryCaches,
+  resetHotelRepositoryCache
+} = require('../src/main/repositories/hotel-repository');
 
 function createStore(initialData = {}) {
   const data = { ...initialData };
+  const getCalls = [];
   const setCalls = [];
 
   return {
+    getCalls,
     setCalls,
     get(key) {
+      getCalls.push(key);
       return data[key];
     },
     set(key, value) {
@@ -52,6 +59,7 @@ test('hotel repository add allocates a unique ID and persists compacted hotels',
 
   const added = repo.add({ id: 1, name: ' 新酒店 ', room_type: '双床房' });
   const hotels = repo.getAll();
+  repo.flush();
 
   assert.notEqual(String(added.id), '1');
   assert.equal(added.name, '新酒店');
@@ -124,4 +132,101 @@ test('hotel repository replaceAll stores compact hotel groups', () => {
   const storedHotels = store.get('hotels');
   assert.equal(storedHotels.length, 1);
   assert.equal(storedHotels[0].rooms.length, 2);
+});
+
+test('hotel repository reuses the loaded cache and ID index for repeated reads', () => {
+  const store = createStore({
+    hotels: hotelStorage.compactHotels(
+      [
+        normalizeHotelPayload({ id: 1, name: '酒店 A', room_type: '大床房' }),
+        normalizeHotelPayload({ id: 2, name: '酒店 B', room_type: '双床房' })
+      ],
+      normalizeHotelPayload
+    )
+  });
+  const repo = createRepo(store);
+
+  assert.equal(repo.getById(1).name, '酒店 A');
+  assert.equal(repo.getById('2').name, '酒店 B');
+  assert.equal(repo.getAll().length, 2);
+  assert.equal(store.getCalls.filter((key) => key === 'hotels').length, 1);
+
+  const returnedHotels = repo.getAll();
+  returnedHotels[0].name = '外部误改';
+
+  assert.equal(repo.getById(1).name, '酒店 A');
+});
+
+test('hotel repository shares pending cache changes across instances for the same store', () => {
+  const store = createStore({ hotels: [] });
+  const firstRepo = createRepo(store);
+  const added = firstRepo.add({ name: '新酒店', room_type: '双床房' });
+  const secondRepo = createRepo(store);
+
+  assert.equal(secondRepo.getById(added.id).name, '新酒店');
+  assert.equal(store.getCalls.filter((key) => key === 'hotels').length, 1);
+
+  secondRepo.flush();
+  assert.ok(store.setCalls.some((call) => call.key === 'hotels'));
+});
+
+test('hotel repository mutates cached data and flushes compacted data on demand', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '酒店 A', room_type: '大床房' },
+      { id: 2, name: '酒店 B', room_type: '双床房' },
+      { id: 3, name: '酒店 C', room_type: '家庭房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  assert.equal(repo.getAll().length, 3);
+  repo.updateMany([
+    { id: 1, name: '酒店 A+' },
+    { id: 2, name: '酒店 B+' }
+  ]);
+  repo.deleteById(3);
+
+  assert.equal(store.getCalls.filter((key) => key === 'hotels').length, 1);
+  assert.deepEqual(
+    repo.getAll().map((hotel) => hotel.name),
+    ['酒店 A+', '酒店 B+']
+  );
+
+  repo.flush();
+  assert.ok(store.setCalls.some((call) => call.key === 'hotels'));
+});
+
+test('hotel repository flushes pending changes before compact export', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  repo.add({ name: '导出酒店', room_type: '大床房' });
+  const compacted = repo.getCompactedForExport();
+
+  assert.equal(compacted.length, 1);
+  assert.ok(store.setCalls.some((call) => call.key === 'hotels'));
+});
+
+test('hotel repository can flush all pending store caches before app exit', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  repo.add({ name: '退出前保存酒店', room_type: '双床房' });
+  flushAllHotelRepositoryCaches();
+
+  assert.ok(store.setCalls.some((call) => call.key === 'hotels'));
+});
+
+test('hotel repository cache can be reset after external store writes', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '旧酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  assert.equal(repo.getById(1).name, '旧酒店');
+  store.set('hotels', [{ id: 1, name: '外部新酒店', room_type: '双床房' }]);
+  resetHotelRepositoryCache(store);
+
+  assert.equal(repo.getById(1).name, '外部新酒店');
 });
