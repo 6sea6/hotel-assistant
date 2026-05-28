@@ -57,14 +57,7 @@
                 <option value="">全部</option>
               </select>
             </div>
-            <div class="filter-group">
-              <label>价格排序</label>
-              <select id="priceSort" class="input" data-custom-select="true">
-                <option value="">默认</option>
-                <option value="asc">从低到高</option>
-                <option value="desc">从高到低</option>
-              </select>
-            </div>
+
             <div class="filter-group">
               <label>携程评分</label>
               <select id="filterScore" class="input" data-custom-select="true">
@@ -73,6 +66,7 @@
                 <option value="4.0">4.0分以上</option>
               </select>
             </div>
+
             <div class="filter-group">
               <label>收藏状态</label>
               <select id="filterFavorite" class="input" data-custom-select="true">
@@ -81,12 +75,7 @@
                 <option value="0">未收藏</option>
               </select>
             </div>
-            <div class="filter-group">
-              <label>按模板筛选</label>
-              <select id="filterTemplate" class="input" data-custom-select="true">
-                <option value="">全部</option>
-              </select>
-            </div>
+
             <div class="filter-group">
               <label>公共交通时间</label>
               <select id="filterTransportTime" class="input" data-custom-select="true">
@@ -98,6 +87,7 @@
                 <option value="100">100分钟以内</option>
               </select>
             </div>
+
             <div class="filter-group">
               <label>最近地铁站距离</label>
               <select id="filterSubwayDistance" class="input" data-custom-select="true">
@@ -109,45 +99,39 @@
                 <option value="1.5">1.5km以内</option>
               </select>
             </div>
+
+            <div class="filter-group filter-group-full">
+              <label>按模板筛选</label>
+              <select id="filterTemplate" class="input" data-custom-select="true">
+                <option value="">全部</option>
+              </select>
+            </div>
           </div>
+
           <div class="filter-spacer"></div>
           <button class="btn btn-secondary btn-full" data-action="clear-filters">
             清除筛选
           </button>
-        </div>
 
-        <div class="panel-section panel-section-compact">
-          <h2 class="section-title">排名设置</h2>
-          <div class="ranking-mode">
-            <label>
-              <input type="radio" name="rankingMode" value="auto" checked data-ranking-mode="auto">
-              自动排名
-            </label>
-            <label>
-              <input type="radio" name="rankingMode" value="manual" data-ranking-mode="manual">
-              自定义权重
-            </label>
-          </div>
-          <div id="weightSettings" style="display: none;">
-            <div class="weight-item">
-              <label>价格权重: <span id="priceWeightValue">0.25</span></label>
-              <input type="range" id="weightPrice" min="0" max="1" step="0.05" value="0.25" 
-                     data-weight-key="price">
-            </div>
-            <div class="weight-item">
-              <label>评分权重: <span id="scoreWeightValue">0.35</span></label>
-              <input type="range" id="weightScore" min="0" max="1" step="0.05" value="0.35" 
-                     data-weight-key="score">
-            </div>
-            <div class="weight-item">
-              <label>距离权重: <span id="distanceWeightValue">0.2</span></label>
-              <input type="range" id="weightDistance" min="0" max="1" step="0.05" value="0.2" 
-                     data-weight-key="distance">
-            </div>
-            <div class="weight-item">
-              <label>交通权重: <span id="transportWeightValue">0.2</span></label>
-              <input type="range" id="weightTransport" min="0" max="1" step="0.05" value="0.2" 
-                     data-weight-key="transport">
+          <div class="sort-mode-section">
+            <h2 class="section-title">排序方式</h2>
+            <div class="sort-mode-list" role="radiogroup" aria-label="排序方式">
+              <label class="sort-mode-option">
+                <input type="radio" name="sortMode" value="review_high" checked>
+                <span>好评优先</span>
+              </label>
+              <label class="sort-mode-option">
+                <input type="radio" name="sortMode" value="price_low">
+                <span>低价优先</span>
+              </label>
+              <label class="sort-mode-option">
+                <input type="radio" name="sortMode" value="price_high">
+                <span>高价优先</span>
+              </label>
+              <label class="sort-mode-option">
+                <input type="radio" name="sortMode" value="distance_near">
+                <span>距离近优先</span>
+              </label>
             </div>
           </div>
         </div>

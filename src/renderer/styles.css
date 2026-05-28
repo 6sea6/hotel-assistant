@@ -539,8 +539,8 @@ body.platform-windows .window-controls {
   padding: 20px;
 }
 
-.panel-section {
-  margin-bottom: 24px;
+.side-panel .panel-section {
+  margin-bottom: 16px;
 }
 .panel-section-compact {
   margin-bottom: 12px;
@@ -714,6 +714,60 @@ select.input {
 
 .filter-spacer {
   height: 8px;
+}
+
+.sort-mode-section {
+  margin-top: 10px;
+}
+
+.sort-mode-section .section-title {
+  margin-bottom: 8px;
+}
+
+.sort-mode-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sort-mode-option {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-tertiary) 4%);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.sort-mode-option input[type='radio'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary-color);
+  flex: 0 0 auto;
+}
+
+.sort-mode-option span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sort-mode-option:hover {
+  border-color: color-mix(in srgb, var(--primary-color) 42%, var(--border-color));
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--bg-primary));
+}
+
+.sort-mode-option:has(input[type='radio']:checked) {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, var(--bg-primary));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 14%, transparent);
 }
 
 .ranking-mode {

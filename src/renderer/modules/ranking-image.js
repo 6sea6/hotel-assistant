@@ -5,7 +5,7 @@
 import { state } from './state.js';
 import { hasDisplayValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
-import { applyFiltersToHotels, rankHotels, formatSubwayDistanceValue } from './hotel-filters.js';
+import { applyFiltersToHotels, sortHotels, DEFAULT_SORT_MODE, formatSubwayDistanceValue } from './hotel-filters.js';
 
 export function roundRect(ctx, x, y, width, height, radius) {
   if (typeof radius === 'number') {
@@ -39,17 +39,7 @@ export async function exportRankingImage() {
   const gap = 20;
 
   let filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
-
-  let sortedHotels;
-  if (state.currentFilters.priceSort) {
-    sortedHotels = [...filteredHotels].sort((a, b) => {
-      const priceA = a.total_price || 0;
-      const priceB = b.total_price || 0;
-      return state.currentFilters.priceSort === 'asc' ? priceA - priceB : priceB - priceA;
-    });
-  } else {
-    sortedHotels = rankHotels(filteredHotels);
-  }
+  const sortedHotels = sortHotels(filteredHotels, state.currentFilters.sortMode || DEFAULT_SORT_MODE);
 
   const rows = sortedHotels.length;
   if (rows === 0) {

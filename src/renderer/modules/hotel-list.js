@@ -10,7 +10,6 @@ import {
   setHotels,
   updateCurrentFilters,
   replaceCurrentFilters,
-  clearCurrentFilters,
   clearSelectedHotels,
   setViewMode,
   markRankingCacheDirty,
@@ -49,7 +48,8 @@ import {
 } from './ui-utils.js';
 import {
   applyFiltersToHotels,
-  rankHotels,
+  sortHotels,
+  DEFAULT_SORT_MODE,
   getVisibleHotelSummary,
   formatSubwayInfo,
   formatDistanceValue,
@@ -168,16 +168,7 @@ function renderHotelListPreparingState() {
 
 function getSortedVisibleHotels() {
   const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
-
-  if (state.currentFilters.priceSort) {
-    return [...filteredHotels].sort((a, b) => {
-      const priceA = a.total_price || 0;
-      const priceB = b.total_price || 0;
-      return state.currentFilters.priceSort === 'asc' ? priceA - priceB : priceB - priceA;
-    });
-  }
-
-  return rankHotels(filteredHotels);
+  return sortHotels(filteredHotels, state.currentFilters.sortMode || DEFAULT_SORT_MODE);
 }
 
 function updateVisibleHotelSummary(sortedHotels) {
@@ -1245,24 +1236,28 @@ export function toggleHotelSelection(hotelId) {
 
 /* ---- 筛选 UI ---- */
 
+function getSelectedSortMode() {
+  const checked = document.querySelector('input[name="sortMode"]:checked');
+  return checked instanceof HTMLInputElement ? checked.value : DEFAULT_SORT_MODE;
+}
+
 export function applyFilters() {
   replaceCurrentFilters({
     name: getValue('filterName'),
-    priceSort: getValue('priceSort'),
     score: getValue('filterScore'),
     favorite: getValue('filterFavorite'),
     template: getValue('filterTemplate'),
     transportTime: getValue('filterTransportTime'),
-    subwayDistance: getValue('filterSubwayDistance')
+    subwayDistance: getValue('filterSubwayDistance'),
+    sortMode: getSelectedSortMode()
   });
   markRankingCacheDirty();
-  requestHotelListRender({ reason: 'filter-change', forceFull: true });
+  requestHotelListRender({ reason: 'sort-change', forceFull: true });
 }
 
 export function clearFilters() {
   [
     'filterName',
-    'priceSort',
     'filterScore',
     'filterFavorite',
     'filterTemplate',
@@ -1272,28 +1267,14 @@ export function clearFilters() {
     const el = getFormValueElement(id);
     if (el) el.value = '';
   });
-  clearCurrentFilters();
+
+  replaceCurrentFilters({
+    sortMode: getSelectedSortMode()
+  });
+
+  refreshCustomSelects();
   markRankingCacheDirty();
   requestHotelListRender({ reason: 'filter-change', forceFull: true });
-}
-
-export function changeRankingMode(mode) {
-  state.rankingMode = mode;
-  const weightSettings = document.getElementById('weightSettings');
-  if (weightSettings) {
-    weightSettings.style.display = mode === 'manual' ? 'block' : 'none';
-  }
-  markRankingCacheDirty();
-  requestHotelListRender({ reason: 'ranking-change', forceFull: true });
-}
-
-export function updateWeight(type, value) {
-  const valueEl = document.getElementById(`${type}WeightValue`);
-  if (valueEl) {
-    valueEl.textContent = value;
-  }
-  markRankingCacheDirty();
-  requestHotelListRender({ reason: 'ranking-change', forceFull: true });
 }
 
 /* ---- 注册到 actions ---- */

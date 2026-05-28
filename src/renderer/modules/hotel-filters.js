@@ -238,6 +238,103 @@ export function rankHotels(hotels) {
   return result;
 }
 
+export const DEFAULT_SORT_MODE = 'review_high';
+
+/**
+ * @param {NormalizedHotelRecord[]} hotels
+ * @returns {{hotel: NormalizedHotelRecord, index: number}[]}
+ */
+function withOriginalIndex(hotels) {
+  return hotels.map((hotel, index) => ({ hotel, index }));
+}
+
+/**
+ * @param {number|null|undefined} aValue
+ * @param {number|null|undefined} bValue
+ * @param {'asc'|'desc'} [direction]
+ * @returns {number}
+ */
+function compareMissingLast(aValue, bValue, direction = 'asc') {
+  const aMissing = aValue === null || aValue === undefined || Number.isNaN(aValue);
+  const bMissing = bValue === null || bValue === undefined || Number.isNaN(bValue);
+
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+
+  return direction === 'desc' ? bValue - aValue : aValue - bValue;
+}
+
+/**
+ * @param {NormalizedHotelRecord} hotel
+ * @returns {number|null}
+ */
+function getTotalPriceNumber(hotel) {
+  const value = Number(hotel.total_price);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * @param {NormalizedHotelRecord} hotel
+ * @returns {number|null}
+ */
+function getScoreNumber(hotel) {
+  const value = Number(hotel.ctrip_score);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * @param {NormalizedHotelRecord} hotel
+ * @returns {number|null}
+ */
+function getDistanceNumberForSort(hotel) {
+  const value = extractDistanceNumber(hotel.distance);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 统一排序函数，列表渲染和导出排名图片复用。
+ * @param {NormalizedHotelRecord[]} hotels
+ * @param {string} [sortMode]
+ * @returns {NormalizedHotelRecord[]}
+ */
+export function sortHotels(hotels = [], sortMode = DEFAULT_SORT_MODE) {
+  const mode = sortMode || DEFAULT_SORT_MODE;
+
+  return withOriginalIndex(hotels)
+    .sort((a, b) => {
+      let result = 0;
+
+      switch (mode) {
+        case 'price_low':
+          result = compareMissingLast(getTotalPriceNumber(a.hotel), getTotalPriceNumber(b.hotel), 'asc');
+          break;
+        case 'price_high':
+          result = compareMissingLast(getTotalPriceNumber(a.hotel), getTotalPriceNumber(b.hotel), 'desc');
+          break;
+        case 'distance_near':
+          result = compareMissingLast(getDistanceNumberForSort(a.hotel), getDistanceNumberForSort(b.hotel), 'asc');
+          break;
+        case 'review_high':
+        default:
+          result = compareMissingLast(getScoreNumber(a.hotel), getScoreNumber(b.hotel), 'desc');
+          break;
+      }
+
+      if (result !== 0) return result;
+
+      const priceTieBreak = compareMissingLast(
+        getTotalPriceNumber(a.hotel),
+        getTotalPriceNumber(b.hotel),
+        'asc'
+      );
+      if (priceTieBreak !== 0) return priceTieBreak;
+
+      return a.index - b.index;
+    })
+    .map((item) => item.hotel);
+}
+
 /**
  * @param {Array<NormalizedHotelRecord|RankedHotelRecord>} [sourceHotels]
  * @returns {{hotelCount: number, roomTypeCount: number}}

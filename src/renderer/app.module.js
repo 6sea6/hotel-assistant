@@ -46,9 +46,7 @@ import {
   updateRuleDeletePreview,
   confirmRuleDelete,
   applyFilters,
-  clearFilters,
-  changeRankingMode,
-  updateWeight
+  clearFilters
 } from './modules/hotel-list.js';
 
 import {
@@ -275,18 +273,8 @@ function handleGlobalKeydown(e) {
 function setupStaticFormListeners() {
   if (state.staticFormEventsBound) return;
 
-  document.querySelectorAll('input[name="rankingMode"]').forEach((input) => {
-    const rankingInput = /** @type {HTMLInputElement} */ (input);
-    input.addEventListener('change', () =>
-      changeRankingMode(rankingInput.dataset.rankingMode || rankingInput.value)
-    );
-  });
-
-  document.querySelectorAll('[data-weight-key]').forEach((input) => {
-    const weightInput = /** @type {HTMLInputElement} */ (input);
-    input.addEventListener('input', () =>
-      updateWeight(weightInput.dataset.weightKey, weightInput.value)
-    );
+  document.querySelectorAll('input[name="sortMode"]').forEach((input) => {
+    input.addEventListener('change', applyFilters);
   });
 
   document.querySelectorAll('input[name="themeOption"]').forEach((input) => {
@@ -376,7 +364,6 @@ function setupEventListeners() {
   }
 
   addEvent('filterName', 'change', applyFilters);
-  addEvent('priceSort', 'change', applyFilters);
   addEvent('filterScore', 'change', applyFilters);
   addEvent('filterFavorite', 'change', applyFilters);
   addEvent('filterTemplate', 'change', applyFilters);
