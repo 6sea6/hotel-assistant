@@ -879,34 +879,26 @@
               </div>
             </div>
             <div class="algorithm-section">
-              <h3>排名算法说明</h3>
+              <h3>排序规则说明</h3>
               <div class="algorithm-content">
-                <p><strong>自定义权重排名算法：</strong></p>
-                <p>系统根据四个维度计算每家宾馆的综合得分，得分越高排名越靠前。</p>
-                
-                <p class="formula-title">一、各维度归一化公式：</p>
+                <p>本地宾馆列表支持四种排序方式，切换后会立即重排当前筛选后的宾馆列表。</p>
+
+                <p class="formula-title">排序方式：</p>
                 <div class="formula-box">
-                  <p>价格得分 = (maxPrice - 当前价格) / (maxPrice - minPrice)</p>
-                  <p>评分得分 = 当前评分 / 5</p>
-                  <p>距离得分 = (maxDistance - 当前距离) / (maxDistance - minDistance)</p>
-                  <p>交通得分 = (maxTime - 当前时间) / (maxTime - minTime)</p>
+                  <p>好评优先：按携程评分从高到低排列</p>
+                  <p>低价优先：按总价从低到高排列</p>
+                  <p>高价优先：按总价从高到低排列</p>
+                  <p>距离近优先：按到目的地的距离从近到远排列</p>
                 </div>
-                
-                <p class="formula-title">二、综合得分公式：</p>
-                <div class="formula-box">
-                  <p>S = W<sub>p</sub> × S<sub>p</sub> + W<sub>s</sub> × S<sub>s</sub> + W<sub>d</sub> × S<sub>d</sub> + W<sub>t</sub> × S<sub>t</sub></p>
-                </div>
-                
-                <p><strong>参数说明：</strong></p>
+
+                <p><strong>补充说明：</strong></p>
                 <ul>
-                  <li>S：综合得分（0-1之间）</li>
-                  <li>W<sub>p</sub>：价格权重，S<sub>p</sub>：价格得分</li>
-                  <li>W<sub>s</sub>：评分权重，S<sub>s</sub>：评分得分</li>
-                  <li>W<sub>d</sub>：距离权重，S<sub>d</sub>：距离得分</li>
-                  <li>W<sub>t</sub>：交通权重，S<sub>t</sub>：交通得分</li>
+                  <li>缺失评分、价格或距离的数据不会排到最前，通常会排在对应排序结果后面</li>
+                  <li>当主要排序字段相同时，优先参考更低总价，再保持原有顺序稳定</li>
+                  <li>导出排名图片会使用当前页面的筛选条件和排序方式</li>
                 </ul>
-                
-                <p class="formula-note"><strong>注：</strong>归一化确保各维度在0-1之间，消除量纲影响，使权重设置更有意义。</p>
+
+                <p class="formula-note"><strong>注：</strong>采集助手前筛设置中的"携程排序"是携程列表页原生排序（如欢迎度排序、低价优先、好评优先），与本地宾馆列表排序是不同功能。</p>
               </div>
             </div>
           </div>
