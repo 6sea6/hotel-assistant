@@ -182,7 +182,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   });
 
   // 批量 upsert 酒店
-  safeHandle(ipcMain, 'hotel:upsertMultiple', (_event, hotels) => {
+  safeHandle(ipcMain, 'hotel:upsertMultiple', (_event, hotels, options = {}) => {
     if (!Array.isArray(hotels)) {
       return { success: false, error: '无效的批量宾馆数据' };
     }
@@ -196,7 +196,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
     const repo = getHotelRepo();
     const hotelPayloads = /** @type {Array<Partial<RawHotelRecord>>} */ (hotels);
-    const result = repo.upsertMany(hotelPayloads);
+    const result = repo.upsertMany(hotelPayloads, options);
     cache.invalidate('hotels');
     return {
       success: true,

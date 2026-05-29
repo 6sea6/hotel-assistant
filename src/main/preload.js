@@ -138,9 +138,9 @@ const electronAPI = {
     invalidateCache('hotel');
     return ipcRenderer.invoke('hotel:addMultiple', hotels);
   },
-  upsertMultipleHotels: async (hotels) => {
+  upsertMultipleHotels: async (hotels, options = {}) => {
     invalidateCache('hotel');
-    return ipcRenderer.invoke('hotel:upsertMultiple', hotels);
+    return ipcRenderer.invoke('hotel:upsertMultiple', hotels, options);
   },
 
   // 模板操作

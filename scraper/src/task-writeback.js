@@ -17,37 +17,62 @@ function buildSkippedWriteResult(hotels, reason = SKIP_WRITE_REASON) {
   };
 }
 
-function writeSingleHotelRecords(eligibleRoomRecords) {
+function writeSingleHotelRecords(eligibleRoomRecords, deps = {}) {
+  const appendFn = deps.appendHotelsToStore || appendHotelsToStore;
   if (shouldSkipHotelWrite(eligibleRoomRecords)) {
     return buildSkippedWriteResult(eligibleRoomRecords);
   }
 
-  return appendHotelsToStore(eligibleRoomRecords, { replaceExistingGroup: true });
+  return appendFn(eligibleRoomRecords, { replaceExistingGroup: true });
 }
 
-function writeBatchHotelRecords({ allHotels, resultPayloads, reportDisabled }) {
+function writeBatchHotelRecords({ allHotels, resultPayloads, reportDisabled }, deps = {}) {
+  const appendFn = deps.appendHotelsToStore || appendHotelsToStore;
+
   if (shouldSkipHotelWrite(allHotels)) {
     return buildSkippedWriteResult(allHotels, SKIP_BATCH_WRITE_REASON);
   }
 
   if (reportDisabled) {
-    return appendHotelsToStore(allHotels, { replaceExistingGroup: true });
+    return appendFn(allHotels, { replaceExistingGroup: true });
   }
 
-  return resultPayloads.map((payload, index) => {
+  // Collect writable items and their hotels for a single bulk write
+  const writableItems = [];
+  const skippedItems = [];
+  for (let index = 0; index < resultPayloads.length; index++) {
+    const payload = resultPayloads[index];
     const hotels = Array.isArray(payload.hotels) ? payload.hotels : [];
     if (shouldSkipHotelWrite(hotels)) {
-      return {
+      skippedItems.push({
         itemIndex: index + 1,
         ...buildSkippedWriteResult(hotels, SKIP_BATCH_ITEM_WRITE_REASON)
-      };
+      });
+    } else {
+      writableItems.push({ itemIndex: index + 1, hotels });
     }
+  }
 
-    return {
-      itemIndex: index + 1,
-      result: appendHotelsToStore(hotels, { replaceExistingGroup: true })
-    };
-  });
+  if (writableItems.length === 0) {
+    return skippedItems;
+  }
+
+  // Single bulk write for all writable hotels
+  const bulkHotels = writableItems.flatMap((item) => item.hotels);
+  const bulkResult = appendFn(bulkHotels, { replaceExistingGroup: true });
+
+  // Map bulk results back to per-item structure
+  const writableResults = writableItems.map((item, writableIndex) => ({
+    itemIndex: item.itemIndex,
+    result: {
+      ...(Array.isArray(bulkResult) ? bulkResult[0] || {} : bulkResult),
+      operation: 'bulk-upserted',
+      bulk: true,
+      hotelCount: item.hotels.length
+    }
+  }));
+
+  return [...skippedItems, ...writableResults].sort((a, b) => a.itemIndex - b.itemIndex);
 }
 
 module.exports = {

@@ -279,6 +279,23 @@ test('hotel:upsertMultiple upserts valid hotels and returns counts', () => {
   assert.ok(cache.invalidated.includes('hotels'));
 });
 
+test('hotel:upsertMultiple accepts options parameter for matchByBusinessKey', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '已有酒店', website: 'https://x', room_type: '大床房' }]
+  });
+  const { handlers } = registerHandlers(registerHotelHandlers, store);
+
+  const result = handlers['hotel:upsertMultiple'](
+    createEvent(),
+    [{ name: '新酒店', website: 'https://x', room_type: '大床房', total_price: 500 }],
+    { matchByBusinessKey: false }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.addedCount, 1, 'should add as new since business key matching disabled');
+  assert.equal(result.updatedCount, 0);
+});
+
 test('template handlers reject invalid renderer payloads before normalization', async () => {
   const store = createStore({ templates: [] });
   const { handlers } = registerHandlers(registerTemplateHandlers, store);

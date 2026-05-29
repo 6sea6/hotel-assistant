@@ -6,7 +6,7 @@ const { allocateUniqueId, getIdKey } = require('../../shared/id-utils');
  * @param {string} value
  * @returns {string}
  */
-function normalizeKey(value) {
+function normalizeBusinessKeyPart(value) {
   return String(value || '').trim().toLowerCase();
 }
 
@@ -17,17 +17,23 @@ function normalizeKey(value) {
  * 1. website + room_type (when website is present)
  * 2. name + address + room_type (fallback)
  *
+ * Room type prefers original_room_type over room_type.
+ * Returns '' when no meaningful key can be built.
+ *
  * @param {Partial<import('../../shared/contracts').NormalizedHotelRecord>} hotel
  * @returns {string}
  */
 function buildHotelBusinessKey(hotel) {
-  const roomType = normalizeKey(hotel.room_type);
-  const website = normalizeKey(hotel.website);
+  const roomType = normalizeBusinessKeyPart(hotel.original_room_type || hotel.room_type);
+  const website = normalizeBusinessKeyPart(hotel.website);
   if (website) {
-    return `web:${website}|rt:${roomType}`;
+    return roomType ? `web:${website}|rt:${roomType}` : `web:${website}`;
   }
-  const name = normalizeKey(hotel.name);
-  const address = normalizeKey(hotel.address);
+  const name = normalizeBusinessKeyPart(hotel.name);
+  const address = normalizeBusinessKeyPart(hotel.address);
+  if (!name && !address && !roomType) {
+    return '';
+  }
   return `nm:${name}|ad:${address}|rt:${roomType}`;
 }
 
@@ -41,7 +47,7 @@ function createHotelBusinessKeyIndex(hotels) {
   const index = new Map();
   hotels.forEach((hotel, i) => {
     const key = buildHotelBusinessKey(hotel);
-    if (key !== 'nm:|ad:|rt:') {
+    if (key) {
       index.set(key, i);
     }
   });
@@ -67,7 +73,7 @@ function createHotelBusinessKeyIndex(hotels) {
  * @property {(payload: Partial<RawHotelRecord>) => NormalizedHotelRecord|null} update
  * @property {(payloads: Array<Partial<RawHotelRecord>>) => NormalizedHotelRecord[]} updateMany
  * @property {(payloads: Array<Partial<RawHotelRecord>>) => NormalizedHotelRecord[]} addMany
- * @property {(payloads: Array<Partial<RawHotelRecord>>, options?: {replaceExistingGroup?: boolean}) => {added: NormalizedHotelRecord[], updated: NormalizedHotelRecord[], hotels: NormalizedHotelRecord[]}} upsertMany
+ * @property {(payloads: Array<Partial<RawHotelRecord>>, options?: {matchByBusinessKey?: boolean}) => {added: NormalizedHotelRecord[], updated: NormalizedHotelRecord[], hotels: NormalizedHotelRecord[]}} upsertMany
  * @property {(id: EntityId) => HotelDeleteResult} deleteById
  * @property {(ids: EntityId[]) => HotelDeleteResult} deleteMany
  * @property {(hotels: Array<Partial<RawHotelRecord>|NormalizedHotelRecord>) => NormalizedHotelRecord[]} replaceAll
@@ -411,63 +417,89 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       }
       return added;
     },
-    upsertMany(payloads) {
+    upsertMany(payloads, options = {}) {
       if (!Array.isArray(payloads) || payloads.length === 0) {
         return { added: [], updated: [], hotels: [] };
       }
 
+      const matchByBusinessKey = options.matchByBusinessKey !== false;
+
       loadOnce();
       const idIndex = state.idIndex;
-      const businessKeyIndex = createHotelBusinessKeyIndex(state.hotelsCache);
-      const matchedIndices = new Set();
+      const businessKeyIndex = matchByBusinessKey
+        ? createHotelBusinessKeyIndex(state.hotelsCache)
+        : new Map();
       const added = [];
       const updated = [];
       const usedIds = new Set(state.hotelsCache.map((item) => getIdKey(item.id)).filter(Boolean));
       const nextIdState = { value: Date.now() };
+      const now = new Date().toISOString();
 
       for (const payload of payloads) {
         if (!payload || typeof payload !== 'object') continue;
 
         let matchIndex = -1;
+        let matchSource = '';
+
+        // 1. Try ID match
         const idKey = getIdKey(payload.id);
         if (idKey && idIndex.has(idKey)) {
-          const candidateIndex = idIndex.get(idKey);
-          if (!matchedIndices.has(candidateIndex)) {
-            matchIndex = candidateIndex;
-          }
+          matchIndex = idIndex.get(idKey);
+          matchSource = 'id';
         }
 
-        if (matchIndex < 0) {
-          const bkey = buildHotelBusinessKey(normalizeHotelPayload(payload));
-          if (bkey !== 'nm:|ad:|rt:' && businessKeyIndex.has(bkey)) {
-            const candidateIndex = businessKeyIndex.get(bkey);
-            if (!matchedIndices.has(candidateIndex)) {
-              matchIndex = candidateIndex;
-            }
+        // 2. Try business key match
+        if (matchIndex < 0 && matchByBusinessKey) {
+          const normalizedPayload = normalizeHotelPayload(payload);
+          const bkey = buildHotelBusinessKey(normalizedPayload);
+          if (bkey && businessKeyIndex.has(bkey)) {
+            matchIndex = businessKeyIndex.get(bkey);
+            matchSource = 'businessKey';
           }
         }
 
         if (matchIndex >= 0) {
-          matchedIndices.add(matchIndex);
           const existingHotel = state.hotelsCache[matchIndex];
-          state.hotelsCache[matchIndex] = normalizeHotelPayload(
-            {
-              ...payload,
-              updated_at: new Date().toISOString()
-            },
-            existingHotel
-          );
-          state.hotelsCache[matchIndex].created_at =
-            existingHotel.created_at || state.hotelsCache[matchIndex].created_at;
+          const nextPayload = {
+            ...payload,
+            // Preserve existing ID when matched by business key
+            id: matchSource === 'businessKey' ? existingHotel.id : payload.id,
+            created_at: existingHotel.created_at || payload.created_at || now,
+            updated_at: now
+          };
+          state.hotelsCache[matchIndex] = normalizeHotelPayload(nextPayload, existingHotel);
+
+          // Update business key index for the updated record
+          if (matchByBusinessKey) {
+            const updatedKey = buildHotelBusinessKey(state.hotelsCache[matchIndex]);
+            if (updatedKey) {
+              businessKeyIndex.set(updatedKey, matchIndex);
+            }
+          }
+
           updated.push(cloneHotel(state.hotelsCache[matchIndex]));
         } else {
           const newHotel = normalizeHotelPayload({
             ...payload,
             id: allocateUniqueId(payload.id ?? null, usedIds, nextIdState),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            created_at: now,
+            updated_at: now
           });
           state.hotelsCache.push(newHotel);
+          const newIndex = state.hotelsCache.length - 1;
+
+          // Register in indices so subsequent payloads can match this new hotel
+          const newIdKey = getIdKey(newHotel.id);
+          if (newIdKey) {
+            idIndex.set(newIdKey, newIndex);
+          }
+          if (matchByBusinessKey) {
+            const newKey = buildHotelBusinessKey(newHotel);
+            if (newKey) {
+              businessKeyIndex.set(newKey, newIndex);
+            }
+          }
+
           added.push(cloneHotel(newHotel));
         }
       }

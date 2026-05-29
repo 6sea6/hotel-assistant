@@ -6,7 +6,9 @@ const { normalizeHotelPayload } = require('../src/main/domain/hotel-normalizer')
 const {
   createHotelRepository,
   flushAllHotelRepositoryCaches,
-  resetHotelRepositoryCache
+  resetHotelRepositoryCache,
+  buildHotelBusinessKey,
+  createHotelBusinessKeyIndex
 } = require('../src/main/repositories/hotel-repository');
 
 function createStore(initialData = {}) {
@@ -396,4 +398,121 @@ test('hotel repository upsertMany mixed adds and updates', () => {
   assert.equal(result.hotels.length, 2);
   assert.equal(result.updated[0].name, '更新酒店');
   assert.equal(result.added[0].name, '新增酒店');
+});
+
+// --- buildHotelBusinessKey tests ---
+
+test('buildHotelBusinessKey prefers original_room_type over room_type', () => {
+  const key = buildHotelBusinessKey({
+    website: 'https://hotel.test/1',
+    room_type: '标准房',
+    original_room_type: '豪华大床房'
+  });
+  assert.ok(key.includes('豪华大床房'));
+  assert.ok(!key.includes('标准房'));
+});
+
+test('buildHotelBusinessKey uses name + address + original_room_type when no website', () => {
+  const key = buildHotelBusinessKey({
+    name: '花园酒店',
+    address: '北京市朝阳区',
+    room_type: '标准房',
+    original_room_type: '豪华大床房'
+  });
+  assert.ok(key.includes('花园酒店'));
+  assert.ok(key.includes('北京市朝阳区'));
+  assert.ok(key.includes('豪华大床房'));
+  assert.ok(!key.includes('标准房'));
+});
+
+test('buildHotelBusinessKey returns empty string when all fields missing', () => {
+  assert.equal(buildHotelBusinessKey({}), '');
+  assert.equal(buildHotelBusinessKey({ room_type: '' }), '');
+  assert.equal(buildHotelBusinessKey({ name: '', address: '' }), '');
+});
+
+test('createHotelBusinessKeyIndex ignores empty keys', () => {
+  const hotels = [
+    { id: 1, name: '有效酒店', room_type: '大床房' },
+    { id: 2 },
+    { id: 3, name: '', room_type: '' }
+  ];
+  const index = createHotelBusinessKeyIndex(hotels);
+  assert.equal(index.size, 1);
+  assert.ok(index.has(buildHotelBusinessKey(hotels[0])));
+});
+
+// --- upsertMany ID preservation tests ---
+
+test('hotel repository upsertMany preserves existing ID on business key match', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '已有酒店', website: 'https://x', original_room_type: '豪华大床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { id: 999, name: '更新酒店', website: 'https://x', original_room_type: '豪华大床房', total_price: 500 }
+  ]);
+
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.updated[0].id, 1, 'should preserve existing ID');
+  assert.equal(result.updated[0].total_price, 500);
+  assert.ok(repo.getById(1), 'id 1 should exist');
+  assert.equal(repo.getById(999), undefined, 'id 999 should not exist');
+});
+
+// --- upsertMany same-batch dedup tests ---
+
+test('hotel repository upsertMany deduplicates same-batch payloads with same business key', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { name: 'A', address: 'X', original_room_type: '豪华大床房', total_price: 300 },
+    { name: 'A', address: 'X', original_room_type: '豪华大床房', total_price: 320 }
+  ]);
+
+  assert.equal(result.added.length, 1);
+  assert.equal(result.updated.length, 1);
+  assert.equal(repo.getAll().length, 1, 'should have exactly 1 hotel');
+  assert.equal(result.updated[0].total_price, 320, 'second payload should overwrite first');
+});
+
+test('hotel repository upsertMany same-batch different original_room_type produces two records', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { name: 'A', address: 'X', original_room_type: '豪华大床房', total_price: 300 },
+    { name: 'A', address: 'X', original_room_type: '商务双床房', total_price: 400 }
+  ]);
+
+  assert.equal(result.added.length, 2);
+  assert.equal(result.updated.length, 0);
+  assert.equal(repo.getAll().length, 2);
+});
+
+// --- upsertMany matchByBusinessKey option ---
+
+test('hotel repository upsertMany matchByBusinessKey:false only matches by ID', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '已有酒店', website: 'https://x', room_type: '大床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany(
+    [
+      { name: '更新酒店', website: 'https://x', room_type: '大床房', total_price: 500 }
+    ],
+    { matchByBusinessKey: false }
+  );
+
+  assert.equal(result.updated.length, 0, 'should not match by business key');
+  assert.equal(result.added.length, 1, 'should add as new');
+  assert.equal(repo.getAll().length, 2);
 });
