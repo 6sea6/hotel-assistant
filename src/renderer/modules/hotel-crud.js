@@ -12,6 +12,11 @@ import {
   markRankingCacheDirty
 } from './state.js';
 import {
+  appendHotelToList,
+  replaceHotelInList,
+  removeHotelById
+} from './hotel-state-helpers.js';
+import {
   $,
   getValue,
   setValue,
@@ -426,18 +431,25 @@ export async function saveHotel() {
     previousHotels = state.hotels.slice();
     if (id) {
       hotel.id = normalizeIdValue(id);
-      await window.electronAPI.updateHotel(hotel);
+      const savedHotel = await window.electronAPI.updateHotel(hotel);
+      if (!savedHotel) throw new Error('更新宾馆失败');
+      setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
+      markRankingCacheDirty();
+      requestHotelRender({
+        reason: 'hotel-update',
+        changedIds: [savedHotel.id || id]
+      });
     } else {
-      await window.electronAPI.addHotel(hotel);
+      const savedHotel = await window.electronAPI.addHotel(hotel);
+      if (!savedHotel) throw new Error('新增宾馆失败');
+      setHotels(appendHotelToList(state.hotels, savedHotel));
+      markRankingCacheDirty();
+      requestHotelRender({
+        reason: 'hotel-add',
+        changedIds: [savedHotel.id],
+        forceFull: true
+      });
     }
-
-    setHotels(await loadHotels());
-    markRankingCacheDirty();
-    requestHotelRender({
-      reason: id ? 'hotel-update' : 'hotel-add',
-      changedIds: id ? [id] : [],
-      forceFull: !id
-    });
     closeHotelModal();
   } catch (error) {
     console.error('保存宾馆失败:', error);
@@ -456,11 +468,11 @@ export async function saveHotel() {
 
 export async function deleteHotel(id) {
   perfStart('deleteHotel');
+  let previousHotels = null;
   try {
-    const idx = state.hotels.findIndex((h) => idsEqual(h.id, id));
-    if (idx !== -1) {
-      const nextHotels = state.hotels.slice();
-      nextHotels.splice(idx, 1);
+    previousHotels = state.hotels.slice();
+    const { list: nextHotels, removed } = removeHotelById(state.hotels, id);
+    if (removed) {
       setHotels(nextHotels);
       markRankingCacheDirty();
       requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
@@ -472,17 +484,13 @@ export async function deleteHotel(id) {
         if (!result || !result.success) {
           throw new Error(result?.error || '删除失败');
         }
-        const loaded = await loadHotels();
-        setHotels(loaded || []);
-        markRankingCacheDirty();
-        requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
         showNotification('删除成功', 'success');
         perfEnd('deleteHotel');
       } catch (err) {
         perfEnd('deleteHotel');
         console.error('后台删除失败:', err);
         try {
-          setHotels(await loadHotels());
+          setHotels(previousHotels || (await loadHotels()));
           markRankingCacheDirty();
           requestHotelRender({ reason: 'fallback', forceFull: true });
         } catch (recoveryErr) {
@@ -501,26 +509,32 @@ export async function deleteHotel(id) {
 /* ---- 收藏 ---- */
 
 export async function toggleFavorite(id, currentStatus) {
+  let previousHotels = null;
   try {
     const hotel = state.hotels.find((h) => idsEqual(h.id, id));
     if (!hotel) return;
 
     perfStart('toggleFavorite');
-    hotel.is_favorite = currentStatus ? 0 : 1;
+    previousHotels = state.hotels.slice();
+    const nextFavorite = currentStatus ? 0 : 1;
+    const updatedLocalHotel = { ...hotel, is_favorite: nextFavorite };
+    setHotels(replaceHotelInList(state.hotels, updatedLocalHotel, id).list);
     requestHotelRender({ reason: 'favorite', changedIds: [id] });
 
     (async () => {
       try {
-        await window.electronAPI.updateHotel(hotel);
-        setHotels(await loadHotels());
-        markRankingCacheDirty();
-        requestHotelRender({ reason: 'favorite', changedIds: [id] });
+        const savedHotel = await window.electronAPI.updateHotel(updatedLocalHotel);
+        if (savedHotel) {
+          setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
+          markRankingCacheDirty();
+          requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
+        }
         perfEnd('toggleFavorite');
       } catch (err) {
         perfEnd('toggleFavorite');
         console.error('更新收藏状态失败（后台）:', err);
         try {
-          setHotels(await loadHotels());
+          setHotels(previousHotels || (await loadHotels()));
           markRankingCacheDirty();
           requestHotelRender({ reason: 'fallback', forceFull: true });
         } catch (recoveryErr) {
