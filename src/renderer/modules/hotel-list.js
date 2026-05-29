@@ -16,7 +16,9 @@ import {
   bumpHotelListRenderVersion,
   setRenderScheduled,
   setPendingRenderInteractionFirst,
-  setHotelNameFilterOptionSignature
+  setHotelNameFilterOptionSignature,
+  visibleHotelsCache,
+  buildVisibleHotelsFiltersKey
 } from './state.js';
 import {
   $,
@@ -64,10 +66,26 @@ import {
   normalizeHotelCardVisibleFields,
   renderCardFields
 } from './hotel-card-fields.js';
+import {
+  shouldUseVirtualHotelList,
+  calculateVirtualRange,
+  calculateCardVirtualRange,
+  createDefaultVirtualState,
+  measureAverageHeight,
+  calculateCardColumns,
+  VIRTUAL_OVERSCAN,
+  LIST_ROW_ESTIMATED_HEIGHT,
+  CARD_ESTIMATED_HEIGHT,
+  CARD_GAP
+} from './hotel-virtual-list.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
 export { shouldFullRerender } from './hotel-render-decision.js';
+
+/** @type {ReturnType<typeof createDefaultVirtualState>|null} */
+let virtualHotelListState = null;
+let virtualScrollRafId = 0;
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
@@ -171,8 +189,29 @@ function renderHotelListPreparingState() {
 }
 
 function getSortedVisibleHotels() {
+  const sortMode = state.currentFilters.sortMode || DEFAULT_SORT_MODE;
+  const filtersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
+
+  if (
+    visibleHotelsCache.data &&
+    visibleHotelsCache.hotelsVersion === state.hotelsVersion &&
+    visibleHotelsCache.filtersKey === filtersKey &&
+    visibleHotelsCache.sortMode === sortMode
+  ) {
+    visibleHotelsCache.hitCount += 1;
+    return visibleHotelsCache.data;
+  }
+
+  visibleHotelsCache.missCount += 1;
   const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
-  return sortHotels(filteredHotels, state.currentFilters.sortMode || DEFAULT_SORT_MODE);
+  const sortedHotels = sortHotels(filteredHotels, sortMode);
+
+  visibleHotelsCache.data = sortedHotels;
+  visibleHotelsCache.hotelsVersion = state.hotelsVersion;
+  visibleHotelsCache.filtersKey = filtersKey;
+  visibleHotelsCache.sortMode = sortMode;
+
+  return sortedHotels;
 }
 
 function updateVisibleHotelSummary(sortedHotels) {
@@ -333,6 +372,7 @@ export function requestHotelListRender(options = {}) {
 
 export function renderHotelList(options = {}) {
   bumpHotelListRenderVersion();
+  resetVirtualHotelListState();
   setPendingRenderInteractionFirst(
     state.pendingRenderInteractionFirst || Boolean(options.interactionFirst)
   );
@@ -393,6 +433,19 @@ export function renderHotelList(options = {}) {
 
     container.innerHTML = '';
     container.className = state.viewMode === 'list' ? 'hotel-list list-view' : 'hotel-list';
+
+    try {
+      if (shouldUseVirtualHotelList(sortedHotels.length)) {
+        if (state.viewMode === 'list') {
+          renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel);
+        } else {
+          renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel);
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('[virtual-list] fallback to full render', error);
+    }
 
     if (state.viewMode === 'list') {
       renderHotelListView(container, sortedHotels, taskVersion, perfLabel);
@@ -609,6 +662,248 @@ function renderHotelListView(container, hotelsToRender, taskVersion, perfLabel) 
   }
 
   renderHotelRowsInBatches(tbody, hotelsToRender, taskVersion, perfLabel);
+}
+
+/* ---- 虚拟滚动：行式视图 ---- */
+
+function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel) {
+  virtualHotelListState = createDefaultVirtualState('list');
+  virtualHotelListState.enabled = true;
+  virtualHotelListState.itemCount = sortedHotels.length;
+
+  const table = document.createElement('div');
+  table.className = 'hotel-table';
+
+  const isAllSelected =
+    sortedHotels.length > 0 &&
+    sortedHotels.every((hotel) => state.selectedHotels.has(getSelectionKey(hotel.id)));
+
+  const header = document.createElement('div');
+  header.className = 'hotel-table-header';
+  header.innerHTML = `
+    <div class="table-col checkbox-col">
+      <input type="checkbox" id="selectAll" data-action="toggle-select-all" ${isAllSelected ? 'checked' : ''}>
+    </div>
+    <div class="table-col rank-col">排名</div>
+    <div class="table-col name-col">宾馆名称</div>
+    <div class="table-col price-col">价格</div>
+    <div class="table-col score-col">评分</div>
+    <div class="table-col distance-col">距离</div>
+    <div class="table-col transport-col">交通</div>
+    <div class="table-col template-col">模板</div>
+    <div class="table-col actions-col">操作</div>
+  `;
+  table.appendChild(header);
+
+  const scrollContainer = document.createElement('div');
+  scrollContainer.className = 'hotel-table-body virtual-scroll-body';
+  scrollContainer.style.position = 'relative';
+  scrollContainer.style.overflowY = 'auto';
+  scrollContainer.style.maxHeight = 'calc(100vh - 250px)';
+
+  const spacerBefore = document.createElement('div');
+  spacerBefore.className = 'virtual-spacer virtual-spacer-before';
+
+  const itemsContainer = document.createElement('div');
+  itemsContainer.className = 'virtual-items';
+
+  const spacerAfter = document.createElement('div');
+  spacerAfter.className = 'virtual-spacer virtual-spacer-after';
+
+  scrollContainer.appendChild(spacerBefore);
+  scrollContainer.appendChild(itemsContainer);
+  scrollContainer.appendChild(spacerAfter);
+  table.appendChild(scrollContainer);
+  container.appendChild(table);
+
+  virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
+
+  const updateVirtualList = () => {
+    const scrollTop = scrollContainer.scrollTop;
+    const viewportHeight = scrollContainer.clientHeight || 600;
+    virtualHotelListState.scrollTop = scrollTop;
+    virtualHotelListState.viewportHeight = viewportHeight;
+
+    const range = calculateVirtualRange({
+      itemCount: sortedHotels.length,
+      scrollTop,
+      viewportHeight,
+      estimatedItemHeight: virtualHotelListState.estimatedItemHeight,
+      overscan: VIRTUAL_OVERSCAN
+    });
+
+    virtualHotelListState.startIndex = range.startIndex;
+    virtualHotelListState.endIndex = range.endIndex;
+
+    if (taskVersion !== state.hotelListRenderVersion) {
+      finishHotelRender(taskVersion, perfLabel);
+      return;
+    }
+
+    spacerBefore.style.height = range.beforeHeight + 'px';
+    spacerAfter.style.height = range.afterHeight + 'px';
+
+    const fragment = document.createDocumentFragment();
+    for (let i = range.startIndex; i < range.endIndex; i++) {
+      fragment.appendChild(createHotelListRow(sortedHotels[i], i));
+    }
+
+    itemsContainer.innerHTML = '';
+    itemsContainer.appendChild(fragment);
+
+    const measured = measureAverageHeight(
+      itemsContainer.querySelectorAll('.hotel-table-row'),
+      LIST_ROW_ESTIMATED_HEIGHT
+    );
+    if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 4) {
+      virtualHotelListState.estimatedItemHeight = measured;
+    }
+  };
+
+  scrollContainer.addEventListener('scroll', () => {
+    if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
+    virtualScrollRafId = requestAnimationFrame(() => {
+      virtualScrollRafId = 0;
+      updateVirtualList();
+    });
+  }, { passive: true });
+
+  updateVirtualList();
+  syncVirtualSelectAllCheckboxState(sortedHotels);
+  finishHotelRender(taskVersion, perfLabel);
+}
+
+/* ---- 虚拟滚动：卡片视图 ---- */
+
+function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel) {
+  virtualHotelListState = createDefaultVirtualState('card');
+  virtualHotelListState.enabled = true;
+  virtualHotelListState.itemCount = sortedHotels.length;
+
+  const columns = calculateCardColumns(container.clientWidth);
+  virtualHotelListState.columns = columns;
+
+  const scrollContainer = document.createElement('div');
+  scrollContainer.className = 'virtual-card-scroll';
+  scrollContainer.style.position = 'relative';
+  scrollContainer.style.overflowY = 'auto';
+  scrollContainer.style.maxHeight = 'calc(100vh - 180px)';
+
+  const spacerBefore = document.createElement('div');
+  spacerBefore.className = 'virtual-spacer virtual-spacer-before';
+
+  const itemsContainer = document.createElement('div');
+  itemsContainer.className = 'virtual-card-items';
+  itemsContainer.style.display = 'grid';
+  itemsContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+  itemsContainer.style.gap = CARD_GAP + 'px';
+
+  const spacerAfter = document.createElement('div');
+  spacerAfter.className = 'virtual-spacer virtual-spacer-after';
+
+  scrollContainer.appendChild(spacerBefore);
+  scrollContainer.appendChild(itemsContainer);
+  scrollContainer.appendChild(spacerAfter);
+  container.appendChild(scrollContainer);
+
+  virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
+
+  const updateVirtualCards = () => {
+    const scrollTop = scrollContainer.scrollTop;
+    const viewportHeight = scrollContainer.clientHeight || 600;
+    virtualHotelListState.scrollTop = scrollTop;
+    virtualHotelListState.viewportHeight = viewportHeight;
+
+    const range = calculateCardVirtualRange({
+      itemCount: sortedHotels.length,
+      scrollTop,
+      viewportHeight,
+      estimatedItemHeight: virtualHotelListState.estimatedItemHeight,
+      columns,
+      gap: CARD_GAP,
+      overscan: VIRTUAL_OVERSCAN
+    });
+
+    virtualHotelListState.startIndex = range.startIndex;
+    virtualHotelListState.endIndex = range.endIndex;
+
+    if (taskVersion !== state.hotelListRenderVersion) {
+      finishHotelRender(taskVersion, perfLabel);
+      return;
+    }
+
+    spacerBefore.style.height = range.beforeHeight + 'px';
+    spacerAfter.style.height = range.afterHeight + 'px';
+
+    const fragment = document.createDocumentFragment();
+    for (let i = range.startIndex; i < range.endIndex; i++) {
+      fragment.appendChild(createHotelCard(sortedHotels[i], i));
+    }
+
+    itemsContainer.innerHTML = '';
+    itemsContainer.appendChild(fragment);
+    cleanupHotelActionArtifacts(itemsContainer);
+
+    const firstRowCards = itemsContainer.querySelectorAll('.hotel-card');
+    const measured = measureAverageHeight(firstRowCards, CARD_ESTIMATED_HEIGHT);
+    if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 8) {
+      virtualHotelListState.estimatedItemHeight = measured;
+    }
+  };
+
+  scrollContainer.addEventListener('scroll', () => {
+    if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
+    virtualScrollRafId = requestAnimationFrame(() => {
+      virtualScrollRafId = 0;
+      updateVirtualCards();
+    });
+  }, { passive: true });
+
+  updateVirtualCards();
+  finishHotelRender(taskVersion, perfLabel);
+}
+
+/**
+ * 虚拟滚动模式下的全选状态同步。
+ * 基于 sortedHotels 全量数据判断，而非仅可见 DOM。
+ *
+ * @param {import('../../shared/contracts').NormalizedHotelRecord[]} sortedHotels
+ */
+function syncVirtualSelectAllCheckboxState(sortedHotels) {
+  const selectAllCheckbox = /** @type {HTMLInputElement|null} */ ($('selectAll'));
+  if (!selectAllCheckbox) return;
+
+  if (sortedHotels.length === 0) {
+    selectAllCheckbox.checked = false;
+    selectAllCheckbox.indeterminate = false;
+    return;
+  }
+
+  const selectedCount = sortedHotels.filter((hotel) =>
+    state.selectedHotels.has(getSelectionKey(hotel.id))
+  ).length;
+
+  selectAllCheckbox.checked = selectedCount > 0 && selectedCount === sortedHotels.length;
+  selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < sortedHotels.length;
+}
+
+/**
+ * 获取当前虚拟滚动状态（供测试使用）。
+ * @returns {ReturnType<typeof createDefaultVirtualState>|null}
+ */
+export function getVirtualHotelListState() {
+  return virtualHotelListState;
+}
+
+/**
+ * 重置虚拟滚动状态。
+ */
+export function resetVirtualHotelListState() {
+  virtualHotelListState = null;
+  if (virtualScrollRafId) {
+    cancelAnimationFrame(virtualScrollRafId);
+    virtualScrollRafId = 0;
+  }
 }
 
 /* ---- 卡片视图 ---- */
@@ -870,6 +1165,32 @@ export function closeHotelDetails() {
  * @param {HTMLInputElement} checkbox
  */
 function toggleSelectAll(checkbox) {
+  const isVirtualMode = virtualHotelListState && virtualHotelListState.enabled;
+
+  if (isVirtualMode) {
+    const sortedHotels = getSortedVisibleHotels();
+    if (checkbox.checked) {
+      for (const hotel of sortedHotels) {
+        state.selectedHotels.add(getSelectionKey(hotel.id));
+      }
+    } else {
+      clearSelectedHotels();
+    }
+    const itemsContainer = document.querySelector('.virtual-items, .virtual-card-items');
+    if (itemsContainer) {
+      itemsContainer.querySelectorAll('.hotel-table-row, .hotel-card').forEach((row) => {
+        const hotelId = row.dataset.id;
+        if (!hotelId) return;
+        row.classList.toggle('selected', checkbox.checked);
+        const cb = row.querySelector('input[type="checkbox"]');
+        if (cb instanceof HTMLInputElement) cb.checked = checkbox.checked;
+      });
+    }
+    syncVirtualSelectAllCheckboxState(sortedHotels);
+    resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
+    return;
+  }
+
   const hotelRows = /** @type {NodeListOf<HTMLElement>} */ (
     document.querySelectorAll('.hotel-table-row')
   );
@@ -934,6 +1255,13 @@ function toggleHotelRowSelection(row, nextChecked = null) {
 }
 
 function syncSelectAllCheckboxState() {
+  const isVirtualMode = virtualHotelListState && virtualHotelListState.enabled;
+  if (isVirtualMode) {
+    const sortedHotels = getSortedVisibleHotels();
+    syncVirtualSelectAllCheckboxState(sortedHotels);
+    return;
+  }
+
   const selectAllCheckbox = /** @type {HTMLInputElement|null} */ ($('selectAll'));
   if (!selectAllCheckbox) return;
   const hotelRows = /** @type {NodeListOf<HTMLElement>} */ (

@@ -4128,3 +4128,28 @@ body.modal-open .modal.active {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
 }
+
+/* ---- 虚拟滚动 ---- */
+
+.virtual-scroll-body {
+  contain: layout style;
+}
+
+.virtual-card-scroll {
+  contain: layout style;
+  overflow-y: auto;
+}
+
+.virtual-spacer-before,
+.virtual-spacer-after {
+  width: 100%;
+  pointer-events: none;
+}
+
+.virtual-items {
+  width: 100%;
+}
+
+.virtual-card-items {
+  width: 100%;
+}

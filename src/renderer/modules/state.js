@@ -59,6 +59,7 @@
  * @property {string} aiSelectedQueueTaskId
  * @property {boolean} aiQueueSelectionPinned
  * @property {boolean} aiReviewInputSyncBound
+ * @property {number} hotelsVersion
  * @property {Record<string, unknown>} aiReview
  * @property {boolean} [aiTemplatePickerBound]
  */
@@ -124,6 +125,7 @@ export const state = {
   aiSelectedQueueTaskId: '',
   aiQueueSelectionPinned: false,
   aiReviewInputSyncBound: false,
+  hotelsVersion: 0,
   aiReview: {
     isOpen: false,
     inProgress: false,
@@ -143,6 +145,8 @@ export const state = {
  */
 export function setHotels(hotels) {
   state.hotels = hotels;
+  bumpHotelsVersion();
+  markVisibleHotelsCacheDirty();
 }
 
 /**
@@ -413,4 +417,56 @@ export const rankingCache = {
  */
 export function markRankingCacheDirty() {
   rankingCache.invalidate();
+}
+
+/* ---- 可见宾馆缓存 ---- */
+
+/** @type {{data: NormalizedHotelRecord[]|null, hotelsVersion: number, filtersKey: string, sortMode: string, hitCount: number, missCount: number}} */
+export const visibleHotelsCache = {
+  data: null,
+  hotelsVersion: -1,
+  filtersKey: '',
+  sortMode: '',
+  hitCount: 0,
+  missCount: 0,
+  invalidate() {
+    this.data = null;
+    this.hotelsVersion = -1;
+    this.filtersKey = '';
+    this.sortMode = '';
+  }
+};
+
+/**
+ * 递增 hotelsVersion，用于标记数据已变更。
+ * @returns {number}
+ */
+export function bumpHotelsVersion() {
+  state.hotelsVersion += 1;
+  return state.hotelsVersion;
+}
+
+/**
+ * 使可见宾馆缓存失效（独立于 hotelsVersion 的安全清理入口）。
+ * @returns {void}
+ */
+export function markVisibleHotelsCacheDirty() {
+  visibleHotelsCache.invalidate();
+}
+
+/**
+ * 构建筛选条件的稳定缓存 key（不含 sortMode）。
+ * @param {CurrentFilters} filters
+ * @returns {string}
+ */
+export function buildVisibleHotelsFiltersKey(filters) {
+  const normalize = (v) => (v === undefined || v === null ? '' : String(v));
+  return JSON.stringify([
+    normalize(filters.name),
+    normalize(filters.score),
+    normalize(filters.favorite),
+    normalize(filters.template),
+    normalize(filters.transportTime),
+    normalize(filters.subwayDistance)
+  ]);
 }
