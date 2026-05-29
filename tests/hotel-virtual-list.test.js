@@ -320,3 +320,116 @@ test('calculateVirtualRange: total rendered items + spacers cover full height', 
   const totalCoverage = result.beforeHeight + renderedCount * estimatedItemHeight + result.afterHeight;
   assert.equal(totalCoverage, itemCount * estimatedItemHeight);
 });
+
+/* ---- 超大 scrollTop clamp 测试 ---- */
+
+test('calculateVirtualRange: huge scrollTop clamps to max and endIndex === itemCount', async () => {
+  const { calculateVirtualRange } = await loadModule();
+  const result = calculateVirtualRange({
+    itemCount: 1000,
+    scrollTop: 999999,
+    viewportHeight: 600,
+    estimatedItemHeight: 96,
+    overscan: 10
+  });
+  assert.equal(result.endIndex, 1000);
+  assert.equal(result.afterHeight, 0);
+  assert.ok(result.startIndex >= 0);
+  assert.ok(result.startIndex <= result.endIndex);
+});
+
+test('calculateVirtualRange: scrollTop=NaN clamps to 0', async () => {
+  const { calculateVirtualRange } = await loadModule();
+  const result = calculateVirtualRange({
+    itemCount: 500,
+    scrollTop: NaN,
+    viewportHeight: 600,
+    estimatedItemHeight: 96,
+    overscan: 10
+  });
+  assert.equal(result.startIndex, 0);
+  assert.ok(result.endIndex > 0);
+});
+
+test('calculateVirtualRange: negative scrollTop clamps to 0', async () => {
+  const { calculateVirtualRange } = await loadModule();
+  const result = calculateVirtualRange({
+    itemCount: 500,
+    scrollTop: -500,
+    viewportHeight: 600,
+    estimatedItemHeight: 96,
+    overscan: 10
+  });
+  assert.equal(result.startIndex, 0);
+  assert.equal(result.beforeHeight, 0);
+});
+
+test('calculateVirtualRange: startIndex never exceeds endIndex for any scrollTop', async () => {
+  const { calculateVirtualRange } = await loadModule();
+  const testScrollTops = [0, 100, 1000, 10000, 50000, 99999, -1, NaN, Infinity];
+  for (const scrollTop of testScrollTops) {
+    const result = calculateVirtualRange({
+      itemCount: 100,
+      scrollTop,
+      viewportHeight: 600,
+      estimatedItemHeight: 96,
+      overscan: 10
+    });
+    assert.ok(
+      result.startIndex <= result.endIndex,
+      `startIndex (${result.startIndex}) should <= endIndex (${result.endIndex}) for scrollTop=${scrollTop}`
+    );
+  }
+});
+
+test('calculateCardVirtualRange: huge scrollTop clamps and endIndex === itemCount', async () => {
+  const { calculateCardVirtualRange } = await loadModule();
+  const result = calculateCardVirtualRange({
+    itemCount: 100,
+    scrollTop: 999999,
+    viewportHeight: 600,
+    estimatedItemHeight: 260,
+    columns: 3,
+    gap: 16,
+    overscan: 2
+  });
+  assert.equal(result.endIndex, 100);
+  assert.equal(result.afterHeight, 0);
+  assert.ok(result.startIndex >= 0);
+  assert.ok(result.startIndex <= result.endIndex);
+});
+
+test('calculateCardVirtualRange: negative scrollTop clamps to 0', async () => {
+  const { calculateCardVirtualRange } = await loadModule();
+  const result = calculateCardVirtualRange({
+    itemCount: 100,
+    scrollTop: -100,
+    viewportHeight: 600,
+    estimatedItemHeight: 260,
+    columns: 3,
+    gap: 16,
+    overscan: 2
+  });
+  assert.equal(result.startIndex, 0);
+  assert.equal(result.beforeHeight, 0);
+});
+
+test('calculateCardVirtualRange: startIndex never exceeds endIndex for any scrollTop', async () => {
+  const { calculateCardVirtualRange } = await loadModule();
+  const testScrollTops = [0, 100, 1000, 5000, 50000, 99999, -1, NaN, Infinity];
+  for (const scrollTop of testScrollTops) {
+    const result = calculateCardVirtualRange({
+      itemCount: 50,
+      scrollTop,
+      viewportHeight: 600,
+      estimatedItemHeight: 260,
+      columns: 3,
+      gap: 16,
+      overscan: 2
+    });
+    assert.ok(
+      result.startIndex <= result.endIndex,
+      `startIndex (${result.startIndex}) should <= endIndex (${result.endIndex}) for scrollTop=${scrollTop}`
+    );
+  }
+});

@@ -67,7 +67,10 @@ export function calculateVirtualRange(params) {
     return { startIndex: 0, endIndex: 0, beforeHeight: 0, afterHeight: 0, offsetY: 0 };
   }
 
-  const rawStart = Math.floor(scrollTop / estimatedItemHeight);
+  const maxScrollTop = Math.max(0, itemCount * estimatedItemHeight - viewportHeight);
+  const safeScrollTop = clampScrollTop(scrollTop, maxScrollTop);
+
+  const rawStart = Math.floor(safeScrollTop / estimatedItemHeight);
   const visibleCount = Math.ceil(viewportHeight / estimatedItemHeight);
 
   const startIndex = Math.max(0, rawStart - overscan);
@@ -118,8 +121,10 @@ export function calculateCardVirtualRange(params) {
 
   const rowHeight = estimatedItemHeight + gap;
   const totalRows = Math.ceil(itemCount / columns);
+  const maxScrollTop = Math.max(0, totalRows * rowHeight - viewportHeight);
+  const safeScrollTop = clampScrollTop(scrollTop, maxScrollTop);
 
-  const rawStartRow = Math.floor(scrollTop / rowHeight);
+  const rawStartRow = Math.floor(safeScrollTop / rowHeight);
   const visibleRows = Math.ceil(viewportHeight / rowHeight);
 
   const rowStartIndex = Math.max(0, rawStartRow - overscan);

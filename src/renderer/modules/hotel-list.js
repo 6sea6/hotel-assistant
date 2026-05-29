@@ -372,13 +372,13 @@ export function requestHotelListRender(options = {}) {
 
 export function renderHotelList(options = {}) {
   bumpHotelListRenderVersion();
-  resetVirtualHotelListState();
   setPendingRenderInteractionFirst(
     state.pendingRenderInteractionFirst || Boolean(options.interactionFirst)
   );
   if (state.renderScheduled) return;
 
   clearPendingHotelRenderTimers();
+  resetVirtualHotelListState();
   setRenderScheduled(true);
 
   const runRender = () => {

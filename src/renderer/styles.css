@@ -4132,11 +4132,14 @@ body.modal-open .modal.active {
 /* ---- 虚拟滚动 ---- */
 
 .virtual-scroll-body {
-  contain: layout style;
+  width: 100%;
+  min-height: 0;
 }
 
 .virtual-card-scroll {
-  contain: layout style;
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
   overflow-y: auto;
 }
 
@@ -4151,5 +4154,11 @@ body.modal-open .modal.active {
 }
 
 .virtual-card-items {
+  width: 100%;
+  min-width: 0;
+}
+
+.hotel-list.list-view .hotel-table {
+  grid-column: 1 / -1;
   width: 100%;
 }
