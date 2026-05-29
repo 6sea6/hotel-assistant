@@ -13,6 +13,11 @@ import {
 } from './ui-utils.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
+import {
+  normalizeHotelCardVisibleFields,
+  DEFAULT_HOTEL_CARD_VISIBLE_FIELDS,
+  SUPPORTED_HOTEL_CARD_FIELD_KEYS
+} from './hotel-card-fields.js';
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
@@ -66,11 +71,79 @@ export function closeSettingsModal() {
 export async function openPersonalization() {
   setModalActive('personalizationModal', true);
   syncThemePicker(normalizeThemeKey(state.settings.theme));
+  syncHotelCardFieldPicker();
   await loadAppIconState();
 }
 
 export function closePersonalizationModal() {
   setModalActive('personalizationModal', false);
+}
+
+/* ---- 卡片展示字段 ---- */
+
+function syncHotelCardFieldPicker() {
+  const visibleFields = normalizeHotelCardVisibleFields(state.settings.hotelCardVisibleFields);
+  const visibleSet = new Set(visibleFields);
+  const picker = document.getElementById('cardFieldPicker');
+  if (!picker) return;
+
+  picker.querySelectorAll('input[data-card-field]').forEach((input) => {
+    const checkbox = /** @type {HTMLInputElement} */ (input);
+    const key = checkbox.dataset.cardField;
+    if (key && SUPPORTED_HOTEL_CARD_FIELD_KEYS.has(key)) {
+      checkbox.checked = visibleSet.has(key);
+    }
+  });
+}
+
+function readHotelCardFieldPicker() {
+  const picker = document.getElementById('cardFieldPicker');
+  if (!picker) return [...DEFAULT_HOTEL_CARD_VISIBLE_FIELDS];
+
+  const selected = [];
+  picker.querySelectorAll('input[data-card-field]').forEach((input) => {
+    const checkbox = /** @type {HTMLInputElement} */ (input);
+    if (checkbox.checked && checkbox.dataset.cardField) {
+      selected.push(checkbox.dataset.cardField);
+    }
+  });
+  return normalizeHotelCardVisibleFields(selected);
+}
+
+export async function saveHotelCardVisibleFields() {
+  const nextFields = readHotelCardFieldPicker();
+  const previousFields = normalizeHotelCardVisibleFields(state.settings.hotelCardVisibleFields);
+
+  try {
+    await window.electronAPI.setSetting('hotelCardVisibleFields', nextFields);
+    state.settings.hotelCardVisibleFields = nextFields;
+    syncHotelCardFieldPicker();
+    actions.requestHotelListRender({ reason: 'settings', forceFull: true });
+    showNotification('卡片展示字段已保存', 'success');
+  } catch (error) {
+    console.error('保存卡片展示字段失败:', error);
+    state.settings.hotelCardVisibleFields = previousFields;
+    syncHotelCardFieldPicker();
+    showNotification('保存卡片展示字段失败，请重试', 'error');
+  }
+}
+
+export async function resetHotelCardVisibleFields() {
+  const nextFields = [...DEFAULT_HOTEL_CARD_VISIBLE_FIELDS];
+  const previousFields = normalizeHotelCardVisibleFields(state.settings.hotelCardVisibleFields);
+
+  try {
+    await window.electronAPI.setSetting('hotelCardVisibleFields', nextFields);
+    state.settings.hotelCardVisibleFields = nextFields;
+    syncHotelCardFieldPicker();
+    actions.requestHotelListRender({ reason: 'settings', forceFull: true });
+    showNotification('已恢复默认卡片展示字段', 'success');
+  } catch (error) {
+    console.error('恢复默认卡片展示字段失败:', error);
+    state.settings.hotelCardVisibleFields = previousFields;
+    syncHotelCardFieldPicker();
+    showNotification('恢复默认失败，请重试', 'error');
+  }
 }
 
 export function openListPrefilterSettings() {

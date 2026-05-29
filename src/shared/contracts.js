@@ -286,7 +286,8 @@
  *   collectBatchConcurrency?: number|string,
  *   app_icon_path?: string,
  *   app_icon_file_name?: string,
- *   ai_provider_config?: Record<string, unknown>|null
+ *   ai_provider_config?: Record<string, unknown>|null,
+ *   hotelCardVisibleFields?: string[]
  * }} AppSettings
  */
 

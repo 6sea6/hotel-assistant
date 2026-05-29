@@ -60,6 +60,10 @@ import {
 import { getHotelListRenderDecision } from './hotel-render-decision.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
+import {
+  normalizeHotelCardVisibleFields,
+  renderCardFields
+} from './hotel-card-fields.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
@@ -643,80 +647,31 @@ export function createHotelCard(hotel, index) {
     return false;
   };
 
+  const visibleKeys = normalizeHotelCardVisibleFields(state.settings.hotelCardVisibleFields);
+
+  const helpers = {
+    escapeHtml,
+    escapeHtmlWithLineBreaks,
+    hasDisplayValue,
+    formatDateChinese,
+    getRoomCountText,
+    formatSubwayInfo,
+    isFromTemplate
+  };
+
+  const { headerItems, compactItems, fullItems, footerItems } = renderCardFields(
+    hotel,
+    visibleKeys,
+    helpers
+  );
+
   const card = document.createElement('div');
   card.className = `hotel-card ${hotel.is_favorite ? 'favorite' : ''}`;
   card.dataset.id = hotelIdText;
 
-  const compactInfoItems = [];
-  const fullWidthInfoItems = [];
-
-  if (hotel.total_price) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">总价格</div><div class="info-value price">¥${hotel.total_price}</div></div>`
-    );
-  }
-  if (hotel.daily_price) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">日均价格</div><div class="info-value price">¥${hotel.daily_price}</div></div>`
-    );
-  }
-  if (hotel.destination && !isFromTemplate('destination')) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">目的地</div><div class="info-value">${escapeHtml(hotel.destination)}</div></div>`
-    );
-  }
-  if (hotel.distance) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">距离</div><div class="info-value">${escapeHtml(hotel.distance)} 公里</div></div>`
-    );
-  }
-  if (hasDisplayValue(hotel.subway_station) || hasDisplayValue(hotel.subway_distance)) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">最近地铁站</div><div class="info-value">${escapeHtml(formatSubwayInfo(hotel.subway_station, hotel.subway_distance))}</div></div>`
-    );
-  }
-  if (hotel.transport_time) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">公共交通</div><div class="info-value">${escapeHtml(hotel.transport_time)} 分钟</div></div>`
-    );
-  }
-  if (hasDisplayValue(hotel.bus_route)) {
-    fullWidthInfoItems.push(
-      `<div class="info-item info-item-full info-item-route"><div class="info-label">公交路线</div><div class="info-value">${escapeHtmlWithLineBreaks(hotel.bus_route)}</div></div>`
-    );
-  }
-  if (hotel.room_type) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">房间类型</div><div class="info-value">${escapeHtml(hotel.room_type)}</div></div>`
-    );
-  }
-  if (hotel.room_count && !isFromTemplate('room_count')) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">入住人数</div><div class="info-value">${getRoomCountText(hotel.room_count)}</div></div>`
-    );
-  }
-  if (hotel.room_area) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">房间面积</div><div class="info-value">${escapeHtml(hotel.room_area)} ㎡</div></div>`
-    );
-  }
-  if (hotel.days) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">住宿天数</div><div class="info-value">${hotel.days}天</div></div>`
-    );
-  }
-  if (hotel.check_in_date && hotel.check_out_date && !isFromTemplate('check_in_date')) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">入住日期</div><div class="info-value">${formatDateChinese(hotel.check_in_date)}</div></div>`
-    );
-  }
-  if (hotel.check_out_date && !isFromTemplate('check_out_date')) {
-    compactInfoItems.push(
-      `<div class="info-item"><div class="info-label">离店日期</div><div class="info-value">${formatDateChinese(hotel.check_out_date)}</div></div>`
-    );
-  }
-
-  const infoItems = [...compactInfoItems, ...fullWidthInfoItems];
+  const headerMetaHtml = headerItems.length > 0 ? `<div class="hotel-meta-row">${headerItems.join('')}</div>` : '';
+  const infoItems = [...compactItems, ...fullItems];
+  const notesHtml = footerItems.join('');
 
   card.innerHTML = `
     <div class="hotel-rank ${isTop3 ? 'top3' : ''}">#${rank}</div>
@@ -724,23 +679,13 @@ export function createHotelCard(hotel, index) {
     <div class="hotel-card-header">
       <div class="hotel-card-header-main">
         <div class="hotel-name ${hotel.is_favorite ? 'favorite-name' : ''}">${escapeHtml(hotel.name)}</div>
-        ${hotel.original_room_type ? `<div class="hotel-original-room">原始房型：${escapeHtml(hotel.original_room_type)}</div>` : ''}
-        ${
-          hotel.address || hotel.website
-            ? `
-          <div class="hotel-meta-row">
-            ${hotel.address ? `<div class="hotel-address">📍 ${escapeHtml(hotel.address)}</div>` : ''}
-            ${hotel.website ? `<div class="hotel-website"><span class="hotel-website-icon">🌐</span><a href="#" data-url="${escapeHtml(hotel.website)}" title="${escapeHtml(hotel.website)}">${escapeHtml(hotel.website)}</a></div>` : ''}
-          </div>
-        `
-            : ''
-        }
+        ${headerMetaHtml}
       </div>
     </div>
 
     <div class="hotel-info-grid">${infoItems.join('')}</div>
 
-    ${hotel.notes ? `<div class="hotel-notes">📝 ${escapeHtml(hotel.notes)}</div>` : ''}
+    ${notesHtml}
 
     <div class="hotel-actions">
       <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${hotelIdAttr}">✏️ 编辑</button>
@@ -750,8 +695,6 @@ export function createHotelCard(hotel, index) {
       <button class="btn btn-danger btn-sm" data-action="delete" data-id="${hotelIdAttr}" data-confirming="false">
         🗑️ 删除
       </button>
-
-      ${hasTemplate ? `<div class="hotel-template-badge">${escapeHtml(template.name)}</div>` : ''}
     </div>
   `;
 

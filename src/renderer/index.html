@@ -777,6 +777,101 @@
           </div>
 
           <div class="personalization-section">
+            <div class="personalization-section-title">宾馆卡片展示字段</div>
+            <small class="help-text">选择卡片视图中每个宾馆框展示的信息，排名、名称和操作按钮会始终保留。</small>
+            <div class="card-field-picker" id="cardFieldPicker">
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="original_room_type" checked>
+                <span>原始房型</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="address" checked>
+                <span>地址</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="website" checked>
+                <span>网址</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="total_price" checked>
+                <span>总价格</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="daily_price" checked>
+                <span>日均价格</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="ctrip_score" checked>
+                <span>携程评分</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="destination" checked>
+                <span>目的地</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="distance" checked>
+                <span>距离</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="subway" checked>
+                <span>最近地铁站</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="transport_time" checked>
+                <span>公共交通</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="bus_route" checked>
+                <span>公交路线</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="room_type" checked>
+                <span>房间类型</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="room_count" checked>
+                <span>入住人数</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="room_area" checked>
+                <span>房间面积</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="days" checked>
+                <span>住宿天数</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="check_in_date" checked>
+                <span>入住日期</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="check_out_date" checked>
+                <span>离店日期</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="notes" checked>
+                <span>备注</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="template" checked>
+                <span>模板</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="cancel_policy" checked>
+                <span>取消政策</span>
+              </label>
+              <label class="card-field-option">
+                <input type="checkbox" data-card-field="window_status" checked>
+                <span>房态/窗口状态</span>
+              </label>
+            </div>
+            <div class="card-field-actions">
+              <button class="btn btn-primary btn-sm" data-action="save-hotel-card-fields">保存卡片展示</button>
+              <button class="btn btn-secondary btn-sm" data-action="reset-hotel-card-fields">恢复默认</button>
+            </div>
+          </div>
+
+          <div class="personalization-section">
             <div class="personalization-section-title">应用图标</div>
             <div class="data-path-container">
               <input type="text" id="appIconPathInput" class="input" readonly placeholder="当前使用默认图标">

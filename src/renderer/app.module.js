@@ -89,7 +89,9 @@ import {
   openCtripWebsite,
   openFliggyWebsite,
   refreshCurrentPage,
-  setupMenuListeners
+  setupMenuListeners,
+  saveHotelCardVisibleFields,
+  resetHotelCardVisibleFields
 } from './modules/settings-ui.js';
 import {
   initializeWindowControls,
@@ -204,6 +206,8 @@ const ACTION_HANDLERS = {
   'close-personalization': () => closePersonalizationModal(),
   'choose-app-icon': () => chooseAppIcon(),
   'reset-app-icon': () => resetAppIcon(),
+  'save-hotel-card-fields': () => saveHotelCardVisibleFields(),
+  'reset-hotel-card-fields': () => resetHotelCardVisibleFields(),
   'close-hotel-details': () => closeHotelDetails(),
   'close-data-transfer': () => closeDataTransfer(),
   'export-data': () => handleExportData(),

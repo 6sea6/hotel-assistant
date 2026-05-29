@@ -17,7 +17,30 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   aiCtripScoreMin: '',
   amapApiKey: '',
   enableCollectPerfLog: false,
-  collectBatchConcurrency: 1
+  collectBatchConcurrency: 1,
+  hotelCardVisibleFields: [
+    'original_room_type',
+    'address',
+    'website',
+    'total_price',
+    'daily_price',
+    'ctrip_score',
+    'destination',
+    'distance',
+    'subway',
+    'transport_time',
+    'bus_route',
+    'room_type',
+    'room_count',
+    'room_area',
+    'days',
+    'check_in_date',
+    'check_out_date',
+    'notes',
+    'template',
+    'cancel_policy',
+    'window_status'
+  ]
 });
 
 const DEFAULT_COMPARE_APP_FILES = Object.freeze({
