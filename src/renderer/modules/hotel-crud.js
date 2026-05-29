@@ -14,7 +14,8 @@ import {
 import {
   appendHotelToList,
   replaceHotelInList,
-  removeHotelById
+  removeHotelById,
+  assertSavedHotelResult
 } from './hotel-state-helpers.js';
 import {
   $,
@@ -431,8 +432,10 @@ export async function saveHotel() {
     previousHotels = state.hotels.slice();
     if (id) {
       hotel.id = normalizeIdValue(id);
-      const savedHotel = await window.electronAPI.updateHotel(hotel);
-      if (!savedHotel) throw new Error('更新宾馆失败');
+      const savedHotel = assertSavedHotelResult(
+        await window.electronAPI.updateHotel(hotel),
+        '更新宾馆失败'
+      );
       setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
       markRankingCacheDirty();
       requestHotelRender({
@@ -440,8 +443,10 @@ export async function saveHotel() {
         changedIds: [savedHotel.id || id]
       });
     } else {
-      const savedHotel = await window.electronAPI.addHotel(hotel);
-      if (!savedHotel) throw new Error('新增宾馆失败');
+      const savedHotel = assertSavedHotelResult(
+        await window.electronAPI.addHotel(hotel),
+        '新增宾馆失败'
+      );
       setHotels(appendHotelToList(state.hotels, savedHotel));
       markRankingCacheDirty();
       requestHotelRender({
@@ -523,12 +528,13 @@ export async function toggleFavorite(id, currentStatus) {
 
     (async () => {
       try {
-        const savedHotel = await window.electronAPI.updateHotel(updatedLocalHotel);
-        if (savedHotel) {
-          setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
-          markRankingCacheDirty();
-          requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
-        }
+        const savedHotel = assertSavedHotelResult(
+          await window.electronAPI.updateHotel(updatedLocalHotel),
+          '更新收藏状态失败'
+        );
+        setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
+        markRankingCacheDirty();
+        requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
         perfEnd('toggleFavorite');
       } catch (err) {
         perfEnd('toggleFavorite');

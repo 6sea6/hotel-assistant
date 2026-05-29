@@ -3,6 +3,20 @@
  */
 
 /**
+ * 校验 IPC 返回值，拦截 { success:false, error } 和 null/undefined。
+ *
+ * @param {any} result
+ * @param {string} fallbackMessage
+ * @returns {any} result 当校验通过时原样返回
+ */
+export function assertSavedHotelResult(result, fallbackMessage) {
+  if (!result || result.success === false) {
+    throw new Error(result?.error || fallbackMessage);
+  }
+  return result;
+}
+
+/**
  * @param {Array<{id: any}>} hotels
  * @param {any} id
  * @returns {number}
