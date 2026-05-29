@@ -860,6 +860,85 @@ select.input {
   overflow: hidden;
 }
 
+.hotel-card-header {
+  margin-bottom: 4px;
+}
+
+.hotel-card-header-main {
+  display: grid;
+  gap: 4px;
+}
+
+.hotel-card-header-main .hotel-name {
+  margin-bottom: 0;
+}
+
+.hotel-card-header-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hotel-card-original-room-row {
+  min-width: 0;
+}
+
+.hotel-card-original-room {
+  margin-bottom: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotel-card-meta-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+
+.hotel-card-meta-cell {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hotel-card-meta-cell .hotel-website,
+.hotel-card-meta-cell .hotel-address {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hotel-card-website,
+.hotel-card-address {
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hotel-card-website a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotel-card-address {
+  justify-content: flex-start;
+}
+
+@media (max-width: 720px) {
+  .hotel-card-meta-pair {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
 .hotel-rank {
   position: absolute;
   top: -1px;

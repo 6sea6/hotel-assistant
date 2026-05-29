@@ -86,6 +86,8 @@ export { shouldFullRerender } from './hotel-render-decision.js';
 /** @type {ReturnType<typeof createDefaultVirtualState>|null} */
 let virtualHotelListState = null;
 let virtualScrollRafId = 0;
+let virtualResizeObserver = null;
+let virtualResizeRafId = 0;
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
@@ -780,7 +782,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   virtualHotelListState.enabled = true;
   virtualHotelListState.itemCount = sortedHotels.length;
 
-  const columns = calculateCardColumns(container.clientWidth);
+  let columns = calculateCardColumns(container.clientWidth);
   virtualHotelListState.columns = columns;
 
   const scrollContainer = document.createElement('div');
@@ -851,6 +853,19 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     }
   };
 
+  const updateCardColumnsFromWidth = () => {
+    const width = container.clientWidth || scrollContainer.clientWidth;
+    if (width <= 0) return;
+
+    const nextColumns = calculateCardColumns(width);
+    if (nextColumns !== columns) {
+      columns = nextColumns;
+      virtualHotelListState.columns = columns;
+      itemsContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+      updateVirtualCards();
+    }
+  };
+
   scrollContainer.addEventListener('scroll', () => {
     if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
     virtualScrollRafId = requestAnimationFrame(() => {
@@ -858,6 +873,17 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       updateVirtualCards();
     });
   }, { passive: true });
+
+  if (typeof ResizeObserver !== 'undefined') {
+    virtualResizeObserver = new ResizeObserver(() => {
+      if (virtualResizeRafId) cancelAnimationFrame(virtualResizeRafId);
+      virtualResizeRafId = requestAnimationFrame(() => {
+        virtualResizeRafId = 0;
+        updateCardColumnsFromWidth();
+      });
+    });
+    virtualResizeObserver.observe(container);
+  }
 
   updateVirtualCards();
   finishHotelRender(taskVersion, perfLabel);
@@ -903,6 +929,14 @@ export function resetVirtualHotelListState() {
   if (virtualScrollRafId) {
     cancelAnimationFrame(virtualScrollRafId);
     virtualScrollRafId = 0;
+  }
+  if (virtualResizeObserver) {
+    virtualResizeObserver.disconnect();
+    virtualResizeObserver = null;
+  }
+  if (virtualResizeRafId) {
+    cancelAnimationFrame(virtualResizeRafId);
+    virtualResizeRafId = 0;
   }
 }
 
@@ -954,7 +988,7 @@ export function createHotelCard(hotel, index) {
     isFromTemplate
   };
 
-  const { headerItems, compactItems, fullItems, footerItems, actionItems } = renderCardFields(
+  const { headerItems, headerFieldItems, compactItems, fullItems, footerItems, actionItems } = renderCardFields(
     hotel,
     visibleKeys,
     helpers
@@ -964,7 +998,37 @@ export function createHotelCard(hotel, index) {
   card.className = `hotel-card ${hotel.is_favorite ? 'favorite' : ''}`;
   card.dataset.id = hotelIdText;
 
-  const headerMetaHtml = headerItems.length > 0 ? `<div class="hotel-meta-row">${headerItems.join('')}</div>` : '';
+  const originalRoomHtml = headerFieldItems.find(item => item.key === 'original_room_type')?.html || '';
+  const websiteHtml = headerFieldItems.find(item => item.key === 'website')?.html || '';
+  const addressHtml = headerFieldItems.find(item => item.key === 'address')?.html || '';
+  const extraHeaderHtml = headerFieldItems
+    .filter(item => !['original_room_type', 'website', 'address'].includes(item.key))
+    .map(item => item.html)
+    .join('');
+
+  const originalRoomLineHtml = originalRoomHtml
+    ? `<div class="hotel-card-original-room-row">${originalRoomHtml}</div>`
+    : '';
+
+  const metaPairHtml = websiteHtml || addressHtml
+    ? `<div class="hotel-card-meta-pair">
+        <div class="hotel-card-meta-cell hotel-card-meta-cell-website">${websiteHtml || ''}</div>
+        <div class="hotel-card-meta-cell hotel-card-meta-cell-address">${addressHtml || ''}</div>
+      </div>`
+    : '';
+
+  const extraHeaderLineHtml = extraHeaderHtml
+    ? `<div class="hotel-card-extra-header">${extraHeaderHtml}</div>`
+    : '';
+
+  const headerMetaHtml =
+    originalRoomLineHtml || metaPairHtml || extraHeaderLineHtml
+      ? `<div class="hotel-card-header-meta">
+          ${originalRoomLineHtml}
+          ${metaPairHtml}
+          ${extraHeaderLineHtml}
+        </div>`
+      : '';
   const infoItems = [...compactItems, ...fullItems];
   const notesHtml = footerItems.join('');
 

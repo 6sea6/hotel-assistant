@@ -103,14 +103,14 @@ export const HOTEL_CARD_FIELDS = [
     label: '原始房型',
     group: 'header',
     getValue: (hotel) => hotel.original_room_type || null,
-    render: (value) => `<div class="hotel-original-room">原始房型：${escapeHtml(value)}</div>`
+    render: (value) => `<div class="hotel-original-room hotel-card-original-room">原始房型：${escapeHtml(value)}</div>`
   },
   {
     key: 'address',
     label: '地址',
     group: 'header',
     getValue: (hotel) => hotel.address || null,
-    render: (value) => `<div class="hotel-address">📍 ${escapeHtml(value)}</div>`
+    render: (value) => `<div class="hotel-address hotel-card-address">📍 ${escapeHtml(value)}</div>`
   },
   {
     key: 'website',
@@ -118,7 +118,7 @@ export const HOTEL_CARD_FIELDS = [
     group: 'header',
     getValue: (hotel) => hotel.website || null,
     render: (value) =>
-      `<div class="hotel-website"><span class="hotel-website-icon">🌐</span><a href="#" data-url="${escapeHtml(value)}" title="${escapeHtml(value)}">${escapeHtml(value)}</a></div>`
+      `<div class="hotel-website hotel-card-website"><span class="hotel-website-icon">🌐</span><a href="#" data-url="${escapeHtml(value)}" title="${escapeHtml(value)}">${escapeHtml(value)}</a></div>`
   },
   {
     key: 'total_price',
@@ -308,10 +308,11 @@ export function getFieldDef(key) {
  * @param {NormalizedHotelRecord} hotel
  * @param {string[]} visibleKeys
  * @param {FieldRenderHelpers} helpers
- * @returns {{headerItems: string[], compactItems: string[], fullItems: string[], footerItems: string[], actionItems: string[]}}
+ * @returns {{headerItems: string[], headerFieldItems: Array<{key: string, html: string}>, compactItems: string[], fullItems: string[], footerItems: string[], actionItems: string[]}}
  */
 export function renderCardFields(hotel, visibleKeys, helpers) {
   const headerItems = [];
+  const headerFieldItems = [];
   const compactItems = [];
   const fullItems = [];
   const footerItems = [];
@@ -330,6 +331,7 @@ export function renderCardFields(hotel, visibleKeys, helpers) {
     switch (field.group) {
       case 'header':
         headerItems.push(html);
+        headerFieldItems.push({ key, html });
         break;
       case 'full':
         fullItems.push(html);
@@ -347,5 +349,5 @@ export function renderCardFields(hotel, visibleKeys, helpers) {
     }
   }
 
-  return { headerItems, compactItems, fullItems, footerItems, actionItems };
+  return { headerItems, headerFieldItems, compactItems, fullItems, footerItems, actionItems };
 }
