@@ -87,8 +87,14 @@ export function applyFiltersToHotels(hotels, filters) {
       if (hotelNameKey !== normalizedNameFilter) return false;
     }
 
-    if (filters.score && hotel.ctrip_score < parseFloat(String(filters.score))) {
-      return false;
+    if (filters.score && filters.score !== '') {
+      const minScore = parseFloat(String(filters.score));
+      if (Number.isFinite(minScore)) {
+        const hotelScore = derived?.scoreNumber ?? (Number.isFinite(Number(hotel.ctrip_score)) && Number(hotel.ctrip_score) > 0 ? Number(hotel.ctrip_score) : null);
+        if (hotelScore === null || hotelScore < minScore) {
+          return false;
+        }
+      }
     }
 
     if (filters.favorite !== undefined && filters.favorite !== '') {
