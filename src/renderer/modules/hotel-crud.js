@@ -36,6 +36,7 @@ import {
 } from './ui-utils.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
+import { attachDerivedFields, attachDerivedFieldsToHotel, stripDerivedFieldsFromHotel } from './hotel-derived.js';
 
 /**
  * @typedef {import('../../shared/contracts').AppSettings} AppSettings
@@ -76,7 +77,7 @@ export async function loadHotels() {
   try {
     const result = await window.electronAPI.getAllHotels();
     perfEnd('loadHotels');
-    return result || [];
+    return attachDerivedFields(result || []);
   } catch (error) {
     perfEnd('loadHotels');
     console.error('加载宾馆失败:', error);
@@ -130,7 +131,7 @@ export async function reloadAllData(options = {}) {
     if (verbose) console.log('[数据重载] 开始重新加载数据...');
 
     const [loadedHotels, loadedTemplates, loadedSettings] = await Promise.all(requests);
-    setHotels(loadedHotels || []);
+    setHotels(attachDerivedFields(loadedHotels || []));
     setTemplates(loadedTemplates || []);
 
     if (includeSettings) {
@@ -432,10 +433,10 @@ export async function saveHotel() {
     previousHotels = state.hotels.slice();
     if (id) {
       hotel.id = normalizeIdValue(id);
-      const savedHotel = assertSavedHotelResult(
+      const savedHotel = attachDerivedFieldsToHotel(assertSavedHotelResult(
         await window.electronAPI.updateHotel(hotel),
         '更新宾馆失败'
-      );
+      ));
       setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
       markRankingCacheDirty();
       requestHotelRender({
@@ -443,10 +444,10 @@ export async function saveHotel() {
         changedIds: [savedHotel.id || id]
       });
     } else {
-      const savedHotel = assertSavedHotelResult(
+      const savedHotel = attachDerivedFieldsToHotel(assertSavedHotelResult(
         await window.electronAPI.addHotel(hotel),
         '新增宾馆失败'
-      );
+      ));
       setHotels(appendHotelToList(state.hotels, savedHotel));
       markRankingCacheDirty();
       requestHotelRender({
@@ -522,16 +523,16 @@ export async function toggleFavorite(id, currentStatus) {
     perfStart('toggleFavorite');
     previousHotels = state.hotels.slice();
     const nextFavorite = currentStatus ? 0 : 1;
-    const updatedLocalHotel = { ...hotel, is_favorite: nextFavorite };
+    const updatedLocalHotel = attachDerivedFieldsToHotel({ ...hotel, is_favorite: nextFavorite });
     setHotels(replaceHotelInList(state.hotels, updatedLocalHotel, id).list);
     requestHotelRender({ reason: 'favorite', changedIds: [id] });
 
     (async () => {
       try {
-        const savedHotel = assertSavedHotelResult(
-          await window.electronAPI.updateHotel(updatedLocalHotel),
+        const savedHotel = attachDerivedFieldsToHotel(assertSavedHotelResult(
+          await window.electronAPI.updateHotel(stripDerivedFieldsFromHotel(updatedLocalHotel)),
           '更新收藏状态失败'
-        );
+        ));
         setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
         markRankingCacheDirty();
         requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });

@@ -35,6 +35,10 @@ async function loadCrudModule() {
       path.join(sourceDir, 'hotel-state-helpers.js'),
       path.join(tempRoot, 'hotel-state-helpers.js')
     );
+    fs.copyFileSync(
+      path.join(sourceDir, 'hotel-derived.js'),
+      path.join(tempRoot, 'hotel-derived.js')
+    );
 
     // Stub: state.js
     writeStub(

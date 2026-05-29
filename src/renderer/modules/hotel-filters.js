@@ -80,8 +80,11 @@ export function applyFiltersToHotels(hotels, filters) {
   const normalizedNameFilter = normalizeFilterOptionKey(filters.name);
 
   return hotels.filter((hotel) => {
-    if (normalizedNameFilter && normalizeFilterOptionKey(hotel.name) !== normalizedNameFilter) {
-      return false;
+    const derived = hotel._derived;
+
+    if (normalizedNameFilter) {
+      const hotelNameKey = derived?.nameKey ?? normalizeFilterOptionKey(hotel.name);
+      if (hotelNameKey !== normalizedNameFilter) return false;
     }
 
     if (filters.score && hotel.ctrip_score < parseFloat(String(filters.score))) {
@@ -103,14 +106,14 @@ export function applyFiltersToHotels(hotels, filters) {
 
     if (filters.transportTime && filters.transportTime !== '') {
       const maxTime = parseInt(String(filters.transportTime));
-      const hotelTime = extractTimeNumber(hotel.transport_time);
+      const hotelTime = derived?.transportTimeNumber ?? extractTimeNumber(hotel.transport_time);
       if (hotelTime === null || hotelTime > maxTime) {
         return false;
       }
     }
 
     if (filters.subwayDistance && filters.subwayDistance !== '') {
-      const hotelSubwayDistance = extractDistanceNumber(hotel.subway_distance);
+      const hotelSubwayDistance = derived?.subwayDistanceNumber ?? extractDistanceNumber(hotel.subway_distance);
 
       if (filters.subwayDistance === 'none') {
         if (hotelSubwayDistance !== 0) {
@@ -181,14 +184,14 @@ export function rankHotels(hotels) {
       minPrice = Math.min(minPrice, hotel.daily_price);
     }
     if (hotel.distance) {
-      const dist = extractDistanceNumber(hotel.distance);
+      const dist = hotel._derived?.distanceNumber ?? extractDistanceNumber(hotel.distance);
       if (dist !== null) {
         maxDistance = Math.max(maxDistance, dist);
         minDistance = Math.min(minDistance, dist);
       }
     }
     if (hotel.transport_time) {
-      const time = extractTimeNumber(hotel.transport_time);
+      const time = hotel._derived?.transportTimeNumber ?? extractTimeNumber(hotel.transport_time);
       if (time !== null) {
         maxTime = Math.max(maxTime, time);
         minTime = Math.min(minTime, time);
@@ -212,14 +215,14 @@ export function rankHotels(hotels) {
     }
 
     if (hotel.distance && distanceRange > 0) {
-      const distance = extractDistanceNumber(hotel.distance);
+      const distance = hotel._derived?.distanceNumber ?? extractDistanceNumber(hotel.distance);
       if (distance !== null) {
         score += (1 - (distance - minDistance) / distanceRange) * weights.distance;
       }
     }
 
     if (hotel.transport_time && timeRange > 0) {
-      const time = extractTimeNumber(hotel.transport_time);
+      const time = hotel._derived?.transportTimeNumber ?? extractTimeNumber(hotel.transport_time);
       if (time !== null) {
         score += (1 - (time - minTime) / timeRange) * weights.transport;
       }
@@ -270,6 +273,7 @@ function compareMissingLast(aValue, bValue, direction = 'asc') {
  * @returns {number|null}
  */
 function getTotalPriceNumber(hotel) {
+  if (hotel._derived) return hotel._derived.totalPriceNumber;
   const value = Number(hotel.total_price);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
@@ -279,6 +283,7 @@ function getTotalPriceNumber(hotel) {
  * @returns {number|null}
  */
 function getScoreNumber(hotel) {
+  if (hotel._derived) return hotel._derived.scoreNumber;
   const value = Number(hotel.ctrip_score);
   return Number.isFinite(value) && value > 0 ? value : null;
 }
@@ -288,6 +293,7 @@ function getScoreNumber(hotel) {
  * @returns {number|null}
  */
 function getDistanceNumberForSort(hotel) {
+  if (hotel._derived) return hotel._derived.distanceNumber;
   const value = extractDistanceNumber(hotel.distance);
   return Number.isFinite(value) ? value : null;
 }
@@ -344,14 +350,17 @@ export function getVisibleHotelSummary(sourceHotels = []) {
   const roomTypeKeys = new Set();
 
   sourceHotels.forEach((hotel, index) => {
-    const hotelNameKey = normalizeFilterOptionKey(hotel?.name);
-    const hotelIdentity = hotelNameKey || `hotel:${String(hotel?.id ?? index)}`;
+    const derived = hotel?._derived;
+    const hotelIdentity = derived?.hotelIdentityKey
+      ?? (normalizeFilterOptionKey(hotel?.name) || `hotel:${String(hotel?.id ?? index)}`);
 
     hotelKeys.add(hotelIdentity);
 
     const roomTypeKey =
-      normalizeFilterOptionKey(hotel?.original_room_type) ||
-      normalizeFilterOptionKey(hotel?.room_type);
+      derived?.originalRoomTypeKey
+      || derived?.roomTypeKey
+      || normalizeFilterOptionKey(hotel?.original_room_type)
+      || normalizeFilterOptionKey(hotel?.room_type);
 
     if (roomTypeKey) {
       roomTypeKeys.add(`${hotelIdentity}::${roomTypeKey}`);
