@@ -421,6 +421,8 @@
  * @property {() => Promise<NormalizedHotelRecord[]>} getAllHotels
  * @property {(id: EntityId) => Promise<NormalizedHotelRecord|undefined>} getHotelById
  * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<NormalizedHotelRecord[]>} updateMultipleHotels
+ * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<IpcResult<unknown> & {addedCount?: number, hotels?: NormalizedHotelRecord[]}>} addMultipleHotels
+ * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<IpcResult<unknown> & {addedCount?: number, updatedCount?: number, hotels?: NormalizedHotelRecord[], added?: NormalizedHotelRecord[], updated?: NormalizedHotelRecord[]}>} upsertMultipleHotels
  * @property {(template: Partial<RawTemplateRecord>) => Promise<NormalizedTemplateRecord>} addTemplate
  * @property {(template: Partial<RawTemplateRecord>) => Promise<NormalizedTemplateRecord|null>} updateTemplate
  * @property {(template: Partial<RawTemplateRecord>) => Promise<IpcMutationResult & {template?: NormalizedTemplateRecord}>} updateTemplateAndSync

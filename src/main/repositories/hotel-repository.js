@@ -3,6 +3,52 @@ const { hasNormalizedValueChanged } = require('../normalization-utils');
 const { allocateUniqueId, getIdKey } = require('../../shared/id-utils');
 
 /**
+ * @param {string} value
+ * @returns {string}
+ */
+function normalizeKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+/**
+ * Build a business key string for matching a hotel across imports.
+ *
+ * Priority:
+ * 1. website + room_type (when website is present)
+ * 2. name + address + room_type (fallback)
+ *
+ * @param {Partial<import('../../shared/contracts').NormalizedHotelRecord>} hotel
+ * @returns {string}
+ */
+function buildHotelBusinessKey(hotel) {
+  const roomType = normalizeKey(hotel.room_type);
+  const website = normalizeKey(hotel.website);
+  if (website) {
+    return `web:${website}|rt:${roomType}`;
+  }
+  const name = normalizeKey(hotel.name);
+  const address = normalizeKey(hotel.address);
+  return `nm:${name}|ad:${address}|rt:${roomType}`;
+}
+
+/**
+ * Build a Map from business key → index for the given hotels array.
+ *
+ * @param {Array<Partial<import('../../shared/contracts').NormalizedHotelRecord>>} hotels
+ * @returns {Map<string, number>}
+ */
+function createHotelBusinessKeyIndex(hotels) {
+  const index = new Map();
+  hotels.forEach((hotel, i) => {
+    const key = buildHotelBusinessKey(hotel);
+    if (key !== 'nm:|ad:|rt:') {
+      index.set(key, i);
+    }
+  });
+  return index;
+}
+
+/**
  * @typedef {import('../../shared/contracts').RawHotelRecord} RawHotelRecord
  * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
  * @typedef {import('../../shared/contracts').EntityId} EntityId
@@ -20,6 +66,8 @@ const { allocateUniqueId, getIdKey } = require('../../shared/id-utils');
  * @property {(payload: Partial<RawHotelRecord>) => NormalizedHotelRecord} add
  * @property {(payload: Partial<RawHotelRecord>) => NormalizedHotelRecord|null} update
  * @property {(payloads: Array<Partial<RawHotelRecord>>) => NormalizedHotelRecord[]} updateMany
+ * @property {(payloads: Array<Partial<RawHotelRecord>>) => NormalizedHotelRecord[]} addMany
+ * @property {(payloads: Array<Partial<RawHotelRecord>>, options?: {replaceExistingGroup?: boolean}) => {added: NormalizedHotelRecord[], updated: NormalizedHotelRecord[], hotels: NormalizedHotelRecord[]}} upsertMany
  * @property {(id: EntityId) => HotelDeleteResult} deleteById
  * @property {(ids: EntityId[]) => HotelDeleteResult} deleteMany
  * @property {(hotels: Array<Partial<RawHotelRecord>|NormalizedHotelRecord>) => NormalizedHotelRecord[]} replaceAll
@@ -334,6 +382,102 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       }
       return results;
     },
+    addMany(payloads) {
+      if (!Array.isArray(payloads) || payloads.length === 0) {
+        return [];
+      }
+
+      loadOnce();
+      const usedIds = new Set(state.hotelsCache.map((item) => getIdKey(item.id)).filter(Boolean));
+      const nextIdState = { value: Date.now() };
+      const added = [];
+
+      for (const payload of payloads) {
+        if (!payload || typeof payload !== 'object') continue;
+
+        const newHotel = normalizeHotelPayload({
+          ...payload,
+          id: allocateUniqueId(payload.id ?? null, usedIds, nextIdState),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        state.hotelsCache.push(newHotel);
+        added.push(cloneHotel(newHotel));
+      }
+
+      if (added.length > 0) {
+        rebuildIndex();
+        scheduleFlush();
+      }
+      return added;
+    },
+    upsertMany(payloads) {
+      if (!Array.isArray(payloads) || payloads.length === 0) {
+        return { added: [], updated: [], hotels: [] };
+      }
+
+      loadOnce();
+      const idIndex = state.idIndex;
+      const businessKeyIndex = createHotelBusinessKeyIndex(state.hotelsCache);
+      const matchedIndices = new Set();
+      const added = [];
+      const updated = [];
+      const usedIds = new Set(state.hotelsCache.map((item) => getIdKey(item.id)).filter(Boolean));
+      const nextIdState = { value: Date.now() };
+
+      for (const payload of payloads) {
+        if (!payload || typeof payload !== 'object') continue;
+
+        let matchIndex = -1;
+        const idKey = getIdKey(payload.id);
+        if (idKey && idIndex.has(idKey)) {
+          const candidateIndex = idIndex.get(idKey);
+          if (!matchedIndices.has(candidateIndex)) {
+            matchIndex = candidateIndex;
+          }
+        }
+
+        if (matchIndex < 0) {
+          const bkey = buildHotelBusinessKey(normalizeHotelPayload(payload));
+          if (bkey !== 'nm:|ad:|rt:' && businessKeyIndex.has(bkey)) {
+            const candidateIndex = businessKeyIndex.get(bkey);
+            if (!matchedIndices.has(candidateIndex)) {
+              matchIndex = candidateIndex;
+            }
+          }
+        }
+
+        if (matchIndex >= 0) {
+          matchedIndices.add(matchIndex);
+          const existingHotel = state.hotelsCache[matchIndex];
+          state.hotelsCache[matchIndex] = normalizeHotelPayload(
+            {
+              ...payload,
+              updated_at: new Date().toISOString()
+            },
+            existingHotel
+          );
+          state.hotelsCache[matchIndex].created_at =
+            existingHotel.created_at || state.hotelsCache[matchIndex].created_at;
+          updated.push(cloneHotel(state.hotelsCache[matchIndex]));
+        } else {
+          const newHotel = normalizeHotelPayload({
+            ...payload,
+            id: allocateUniqueId(payload.id ?? null, usedIds, nextIdState),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          state.hotelsCache.push(newHotel);
+          added.push(cloneHotel(newHotel));
+        }
+      }
+
+      if (added.length > 0 || updated.length > 0) {
+        rebuildIndex();
+        scheduleFlush();
+      }
+      return { added, updated, hotels: [...added, ...updated] };
+    },
     deleteById(id) {
       loadOnce();
       const idKey = getIdKey(id);
@@ -397,6 +541,8 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
 }
 
 module.exports = {
+  buildHotelBusinessKey,
+  createHotelBusinessKeyIndex,
   createHotelRepository,
   flushAllHotelRepositoryCaches,
   flushHotelRepositoryCache,

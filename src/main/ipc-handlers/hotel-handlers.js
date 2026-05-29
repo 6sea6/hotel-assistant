@@ -156,6 +156,57 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   safeHandle(ipcMain, 'hotel:getById', (_event, id) => {
     return getHotelRepo().getById(/** @type {EntityId} */ (id));
   });
+
+  // 批量添加酒店
+  safeHandle(ipcMain, 'hotel:addMultiple', (_event, hotels) => {
+    if (!Array.isArray(hotels)) {
+      return { success: false, error: '无效的批量宾馆数据' };
+    }
+    for (const hotel of hotels) {
+      const payloadError = assertPlainObjectPayload(hotel, '无效的批量宾馆数据');
+      if (payloadError) return payloadError;
+      const hotelRecord = /** @type {Record<string, unknown>} */ (hotel);
+      const nameError = assertStringField(hotelRecord, 'name', '宾馆名称不能为空');
+      if (nameError) return nameError;
+    }
+
+    const repo = getHotelRepo();
+    const hotelPayloads = /** @type {Array<Partial<RawHotelRecord>>} */ (hotels);
+    const result = repo.addMany(hotelPayloads);
+    cache.invalidate('hotels');
+    return {
+      success: true,
+      addedCount: result.length,
+      hotels: result
+    };
+  });
+
+  // 批量 upsert 酒店
+  safeHandle(ipcMain, 'hotel:upsertMultiple', (_event, hotels) => {
+    if (!Array.isArray(hotels)) {
+      return { success: false, error: '无效的批量宾馆数据' };
+    }
+    for (const hotel of hotels) {
+      const payloadError = assertPlainObjectPayload(hotel, '无效的批量宾馆数据');
+      if (payloadError) return payloadError;
+      const hotelRecord = /** @type {Record<string, unknown>} */ (hotel);
+      const nameError = assertStringField(hotelRecord, 'name', '宾馆名称不能为空');
+      if (nameError) return nameError;
+    }
+
+    const repo = getHotelRepo();
+    const hotelPayloads = /** @type {Array<Partial<RawHotelRecord>>} */ (hotels);
+    const result = repo.upsertMany(hotelPayloads);
+    cache.invalidate('hotels');
+    return {
+      success: true,
+      addedCount: result.added.length,
+      updatedCount: result.updated.length,
+      hotels: result.hotels,
+      added: result.added,
+      updated: result.updated
+    };
+  });
 }
 
 module.exports = registerHotelHandlers;

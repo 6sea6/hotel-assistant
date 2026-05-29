@@ -134,6 +134,14 @@ const electronAPI = {
   getAllHotels: () => ipcRenderer.invoke('hotel:getAll'),
   getHotelById: (id) => cachedInvoke('hotel:getById', id),
   updateMultipleHotels: batchOperations.updateMultipleHotels,
+  addMultipleHotels: async (hotels) => {
+    invalidateCache('hotel');
+    return ipcRenderer.invoke('hotel:addMultiple', hotels);
+  },
+  upsertMultipleHotels: async (hotels) => {
+    invalidateCache('hotel');
+    return ipcRenderer.invoke('hotel:upsertMultiple', hotels);
+  },
 
   // 模板操作
   addTemplate: async (template) => {

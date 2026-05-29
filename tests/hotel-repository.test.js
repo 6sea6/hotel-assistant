@@ -230,3 +230,170 @@ test('hotel repository cache can be reset after external store writes', () => {
 
   assert.equal(repo.getById(1).name, '外部新酒店');
 });
+
+// --- addMany tests ---
+
+test('hotel repository addMany with empty array returns empty and does not write', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  const result = repo.addMany([]);
+
+  assert.deepEqual(result, []);
+  assert.equal(store.setCalls.length, 0);
+});
+
+test('hotel repository addMany assigns unique IDs and only schedules one flush', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  const payloads = [];
+  for (let i = 0; i < 1000; i++) {
+    payloads.push({ name: `批量酒店 ${i}`, room_type: '大床房' });
+  }
+
+  const result = repo.addMany(payloads);
+
+  assert.equal(result.length, 1000);
+  const ids = result.map((h) => String(h.id));
+  assert.equal(new Set(ids).size, 1000, 'all IDs should be unique');
+  assert.equal(result[0].name, '批量酒店 0');
+  assert.ok(result[0].created_at);
+  assert.ok(result[0].updated_at);
+
+  repo.flush();
+  assert.equal(store.setCalls.filter((c) => c.key === 'hotels').length, 1);
+});
+
+test('hotel repository addMany merges with existing hotels', () => {
+  const existing = normalizeHotelPayload({ id: 1, name: '已有酒店', room_type: '大床房' });
+  const store = createStore({
+    hotels: hotelStorage.compactHotels([existing], normalizeHotelPayload)
+  });
+  const repo = createRepo(store);
+
+  const result = repo.addMany([
+    { name: '新酒店 A', room_type: '双床房' },
+    { name: '新酒店 B', room_type: '家庭房' }
+  ]);
+
+  assert.equal(result.length, 2);
+  assert.equal(repo.getAll().length, 3);
+});
+
+// --- upsertMany tests ---
+
+test('hotel repository upsertMany with empty array returns empty', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([]);
+
+  assert.deepEqual(result, { added: [], updated: [], hotels: [] });
+  assert.equal(store.setCalls.length, 0);
+});
+
+test('hotel repository upsertMany updates by ID when present', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '旧酒店', room_type: '大床房' },
+      { id: 2, name: '酒店 B', room_type: '双床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { id: 1, name: '新酒店', room_type: '大床房' }
+  ]);
+
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.updated[0].name, '新酒店');
+  assert.equal(repo.getById(1).name, '新酒店');
+});
+
+test('hotel repository upsertMany updates by website + room_type when no ID match', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '携程酒店', website: 'https://hotel.ctrip.com/123', room_type: '大床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { name: '携程酒店更新', website: 'https://hotel.ctrip.com/123', room_type: '大床房', total_price: 500 }
+  ]);
+
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.updated[0].total_price, 500);
+  assert.equal(result.updated[0].id, 1, 'should preserve existing ID');
+});
+
+test('hotel repository upsertMany updates by name + address + room_type when no website', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '花园酒店', address: '北京市朝阳区', room_type: '大床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { name: '花园酒店', address: '北京市朝阳区', room_type: '大床房', total_price: 300 }
+  ]);
+
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.added.length, 0);
+  assert.equal(result.updated[0].total_price, 300);
+});
+
+test('hotel repository upsertMany does not match different room_type', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '花园酒店', address: '北京市朝阳区', room_type: '大床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { name: '花园酒店', address: '北京市朝阳区', room_type: '双床房', total_price: 400 }
+  ]);
+
+  assert.equal(result.updated.length, 0);
+  assert.equal(result.added.length, 1);
+  assert.equal(repo.getAll().length, 2);
+});
+
+test('hotel repository upsertMany adds when no match found', () => {
+  const store = createStore({ hotels: [] });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { name: '全新酒店', room_type: '大床房' }
+  ]);
+
+  assert.equal(result.added.length, 1);
+  assert.equal(result.updated.length, 0);
+  assert.equal(result.hotels.length, 1);
+  assert.equal(result.added[0].name, '全新酒店');
+});
+
+test('hotel repository upsertMany mixed adds and updates', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '已有酒店', room_type: '大床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  const result = repo.upsertMany([
+    { id: 1, name: '更新酒店', room_type: '大床房' },
+    { name: '新增酒店', room_type: '双床房' }
+  ]);
+
+  assert.equal(result.updated.length, 1);
+  assert.equal(result.added.length, 1);
+  assert.equal(result.hotels.length, 2);
+  assert.equal(result.updated[0].name, '更新酒店');
+  assert.equal(result.added[0].name, '新增酒店');
+});
