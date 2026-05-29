@@ -17,7 +17,7 @@ import {
  * @typedef {object} HotelCardFieldDef
  * @property {string} key
  * @property {string} label
- * @property {'compact'|'full'|'header'|'footer'} group
+ * @property {'compact'|'full'|'header'|'footer'|'action'} group
  * @property {(hotel: NormalizedHotelRecord, helpers: FieldRenderHelpers) => string|null} getValue
  * @property {(value: string, hotel: NormalizedHotelRecord, helpers: FieldRenderHelpers) => string} render
  * @property {string} [inheritedTemplateField]
@@ -75,21 +75,13 @@ export const DEFAULT_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
   'total_price',
   'daily_price',
   'ctrip_score',
-  'destination',
   'distance',
   'subway',
   'transport_time',
   'bus_route',
   'room_type',
-  'room_count',
-  'room_area',
-  'days',
-  'check_in_date',
-  'check_out_date',
   'notes',
-  'template',
-  'cancel_policy',
-  'window_status'
+  'template'
 ]);
 
 /**
@@ -97,14 +89,11 @@ export const DEFAULT_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
  * @returns {string[]}
  */
 export function normalizeHotelCardVisibleFields(value) {
-  const allowed = new Set(SUPPORTED_HOTEL_CARD_FIELD_KEYS);
-  let list = Array.isArray(value) ? value : [];
-  list = list.filter((key) => typeof key === 'string' && allowed.has(key));
-  list = [...new Set(list)];
-  if (list.length === 0) {
+  if (!Array.isArray(value)) {
     return [...DEFAULT_HOTEL_CARD_VISIBLE_FIELDS];
   }
-  return list;
+  const allowed = new Set(SUPPORTED_HOTEL_CARD_FIELD_KEYS);
+  return [...new Set(value.filter((key) => typeof key === 'string' && allowed.has(key)))];
 }
 
 /** @type {HotelCardFieldDef[]} */
@@ -280,7 +269,7 @@ export const HOTEL_CARD_FIELDS = [
   {
     key: 'template',
     label: '模板',
-    group: 'footer',
+    group: 'action',
     getValue: (hotel) => {
       if (!hotel.template_info) return null;
       return hotel.template_info.name || null;
@@ -319,13 +308,14 @@ export function getFieldDef(key) {
  * @param {NormalizedHotelRecord} hotel
  * @param {string[]} visibleKeys
  * @param {FieldRenderHelpers} helpers
- * @returns {{headerItems: string[], compactItems: string[], fullItems: string[], footerItems: string[]}}
+ * @returns {{headerItems: string[], compactItems: string[], fullItems: string[], footerItems: string[], actionItems: string[]}}
  */
 export function renderCardFields(hotel, visibleKeys, helpers) {
   const headerItems = [];
   const compactItems = [];
   const fullItems = [];
   const footerItems = [];
+  const actionItems = [];
 
   for (const key of visibleKeys) {
     const field = FIELD_MAP.get(key);
@@ -347,6 +337,9 @@ export function renderCardFields(hotel, visibleKeys, helpers) {
       case 'footer':
         footerItems.push(html);
         break;
+      case 'action':
+        actionItems.push(html);
+        break;
       case 'compact':
       default:
         compactItems.push(html);
@@ -354,5 +347,5 @@ export function renderCardFields(hotel, visibleKeys, helpers) {
     }
   }
 
-  return { headerItems, compactItems, fullItems, footerItems };
+  return { headerItems, compactItems, fullItems, footerItems, actionItems };
 }

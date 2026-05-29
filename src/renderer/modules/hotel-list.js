@@ -659,7 +659,7 @@ export function createHotelCard(hotel, index) {
     isFromTemplate
   };
 
-  const { headerItems, compactItems, fullItems, footerItems } = renderCardFields(
+  const { headerItems, compactItems, fullItems, footerItems, actionItems } = renderCardFields(
     hotel,
     visibleKeys,
     helpers
@@ -695,6 +695,7 @@ export function createHotelCard(hotel, index) {
       <button class="btn btn-danger btn-sm" data-action="delete" data-id="${hotelIdAttr}" data-confirming="false">
         🗑️ 删除
       </button>
+      ${actionItems.join('')}
     </div>
   `;
 

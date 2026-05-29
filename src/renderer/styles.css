@@ -886,6 +886,16 @@ select.input {
   margin-left: auto;
 }
 
+.hotel-actions .hotel-template-badge {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+}
+
 .hotel-name {
   font-size: 18px;
   font-weight: 600;

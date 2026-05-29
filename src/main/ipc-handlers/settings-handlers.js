@@ -31,6 +31,48 @@ const SUPPORTED_SETTING_KEYS = Object.freeze([
   'showManualOnStartup'
 ]);
 
+const OLD_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
+  'original_room_type',
+  'address',
+  'website',
+  'total_price',
+  'daily_price',
+  'ctrip_score',
+  'destination',
+  'distance',
+  'subway',
+  'transport_time',
+  'bus_route',
+  'room_type',
+  'room_count',
+  'room_area',
+  'days',
+  'check_in_date',
+  'check_out_date',
+  'notes',
+  'template',
+  'cancel_policy',
+  'window_status'
+]);
+
+const OLD_HOTEL_CARD_VISIBLE_FIELDS_V2 = Object.freeze([
+  'original_room_type',
+  'address',
+  'website',
+  'total_price',
+  'daily_price',
+  'ctrip_score',
+  'distance',
+  'subway',
+  'transport_time',
+  'bus_route',
+  'room_type',
+  'check_in_date',
+  'check_out_date',
+  'notes',
+  'template'
+]);
+
 function registerSettingsHandlers({ ipcMain, cache, services }) {
   const { dataService, windowService } = services;
   const normalizeThemeSetting = (theme) => {
@@ -56,6 +98,24 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     normalizedSettings.collectBatchConcurrency = normalizeCollectBatchConcurrency(
       normalizedSettings.collectBatchConcurrency
     );
+
+    if (
+      Array.isArray(normalizedSettings.hotelCardVisibleFields) &&
+      (
+        (normalizedSettings.hotelCardVisibleFields.length === OLD_HOTEL_CARD_VISIBLE_FIELDS.length &&
+          OLD_HOTEL_CARD_VISIBLE_FIELDS.every(
+            (key, index) => normalizedSettings.hotelCardVisibleFields[index] === key
+          )) ||
+        (normalizedSettings.hotelCardVisibleFields.length === OLD_HOTEL_CARD_VISIBLE_FIELDS_V2.length &&
+          OLD_HOTEL_CARD_VISIBLE_FIELDS_V2.every(
+            (key, index) => normalizedSettings.hotelCardVisibleFields[index] === key
+          ))
+      )
+    ) {
+      normalizedSettings.hotelCardVisibleFields = [
+        ...APP_CONFIG.STORE_DEFAULTS.settings.hotelCardVisibleFields
+      ];
+    }
 
     const managedReference = appIconManager.toManagedIconReference(
       normalizedSettings.app_icon_path
