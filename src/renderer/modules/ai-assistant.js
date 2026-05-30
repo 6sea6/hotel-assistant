@@ -749,6 +749,13 @@ function isBackendBusyError(error) {
   return /已有 AI 采集任务正在运行|正在运行，请等待完成后再开始新任务/.test(message);
 }
 
+function assertSuccessfulAiTaskResult(result) {
+  if (result && result.success !== false) {
+    return;
+  }
+  throw new Error((result && (result.error || result.message)) || '采集任务执行失败');
+}
+
 function deferTaskUntilBackendIdle(queueTask = null) {
   if (!queueTask) return;
 
@@ -884,6 +891,7 @@ async function executeCollectTask(task) {
     } else {
       result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
     }
+    assertSuccessfulAiTaskResult(result);
     const reply = result.message || '任务已处理。';
     finishTaskConsole(result, reply, task);
 

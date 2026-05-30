@@ -18,6 +18,7 @@ const EDGE_PROFILE_SKIP_DIR_NAMES = new Set([
   'ShaderCache'
 ]);
 const EDGE_PROFILE_SKIP_FILE_NAMES = new Set([
+  'CrashpadMetrics.pma',
   'DevToolsActivePort',
   'LOCK',
   'lockfile',

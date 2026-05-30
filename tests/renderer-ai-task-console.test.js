@@ -942,6 +942,50 @@ test('AI collect task payload includes saved AMap API key', async () => {
   assert.equal(capturedPayload.amapKey, 'amap-custom-key');
 });
 
+test('AI collect task treats success:false IPC result as failed queue item', async (t) => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  t.after(() => {
+    console.error = originalConsoleError;
+  });
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async () => ({
+    success: false,
+    error: 'EPERM: operation not permitted, copyfile CrashpadMetrics.pma'
+  });
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(state.aiTaskQueue[0].status, 'failed');
+  assert.match(state.aiTaskQueue[0].errorMessage, /CrashpadMetrics\.pma/);
+  assert.match(elements.get('aiCurrentTaskPanel').innerHTML, /任务执行失败/);
+});
+
 test('AI collect task payload includes saved batch concurrency setting', async () => {
   const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
   const { elements } = installAiAssistantDom(inputUrl);

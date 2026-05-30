@@ -19,6 +19,17 @@ test.after(() => {
   clearPoolModules();
 });
 
+test('batch edge worker profile copy skips locked root Crashpad metrics file', () => {
+  clearPoolModules();
+  const { shouldCopyEdgeProfilePath } = require('../src/batch-edge-worker-pool');
+  const sourceProfile = path.join(os.tmpdir(), 'edge-profile');
+
+  assert.equal(
+    shouldCopyEdgeProfilePath(sourceProfile, path.join(sourceProfile, 'CrashpadMetrics.pma')),
+    false
+  );
+});
+
 test('batch edge worker pool launches separate debugging ports and cleans cloned profiles', async (t) => {
   clearPoolModules();
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-edge-worker-pool-'));
