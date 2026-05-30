@@ -735,6 +735,7 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
 
   let customScrollbar = null;
+  let lastRenderedRangeKey = '';
 
   const updateVirtualList = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -757,6 +758,12 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
       finishHotelRender(taskVersion, perfLabel);
       return;
     }
+
+    const rangeKey = `${range.startIndex}:${range.endIndex}`;
+    if (rangeKey === lastRenderedRangeKey) {
+      return;
+    }
+    lastRenderedRangeKey = rangeKey;
 
     spacerBefore.style.height = range.beforeHeight + 'px';
     spacerAfter.style.height = range.afterHeight + 'px';
@@ -807,6 +814,9 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
       return Math.max(110, Math.min(240, estimated * 3));
     },
     duration: 160,
+    onScrollProgress: () => {
+      if (customScrollbar) customScrollbar.update();
+    },
     onScrollRequest: scheduleVirtualListUpdate
   });
 
@@ -857,6 +867,7 @@ function createSmoothWheelController(scrollContainer, options = {}) {
   const {
     getStep = () => 160,
     onScrollRequest = null,
+    onScrollProgress = null,
     duration = 180
   } = options;
 
@@ -910,6 +921,10 @@ function createSmoothWheelController(scrollContainer, options = {}) {
 
     scrollContainer.scrollTop = next;
 
+    if (typeof onScrollProgress === 'function') {
+      onScrollProgress();
+    }
+
     if (typeof onScrollRequest === 'function') {
       onScrollRequest();
     }
@@ -919,6 +934,9 @@ function createSmoothWheelController(scrollContainer, options = {}) {
     } else {
       scrollContainer.scrollTop = targetScrollTop;
       animationFrameId = 0;
+      if (typeof onScrollProgress === 'function') {
+        onScrollProgress();
+      }
       if (typeof onScrollRequest === 'function') {
         onScrollRequest();
       }
@@ -1239,6 +1257,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
 
   let customScrollbar = null;
   let cardWheelController = null;
+  let lastRenderedRangeKey = '';
 
   const updateVirtualCards = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -1263,6 +1282,12 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       finishHotelRender(taskVersion, perfLabel);
       return;
     }
+
+    const rangeKey = `${range.startIndex}:${range.endIndex}`;
+    if (rangeKey === lastRenderedRangeKey) {
+      return;
+    }
+    lastRenderedRangeKey = rangeKey;
 
     spacerBefore.style.height = range.beforeHeight + 'px';
     spacerAfter.style.height = range.afterHeight + 'px';
@@ -1305,6 +1330,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       virtualHotelListState.columns = columns;
       itemsContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
       virtualHotelListState.hasMeasuredItemHeight = false;
+      lastRenderedRangeKey = '';
       updateVirtualCards();
       if (customScrollbar) customScrollbar.update();
     }
@@ -1325,6 +1351,9 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       return Math.max(140, Math.min(280, estimated * 0.75));
     },
     duration: 180,
+    onScrollProgress: () => {
+      if (customScrollbar) customScrollbar.update();
+    },
     onScrollRequest: scheduleVirtualCardUpdate
   });
 

@@ -4276,6 +4276,7 @@ body.modal-open .modal.active {
   background: color-mix(in srgb, var(--primary-color) 58%, #7b8da4);
   cursor: default;
   will-change: transform;
+  transform: translateZ(0);
 }
 
 .virtual-scrollbar-thumb:hover,
