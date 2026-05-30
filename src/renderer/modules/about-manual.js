@@ -4,7 +4,6 @@
 
 import { $, setText, setStyle } from './dom-helpers.js';
 import { setModalActive } from './ui-utils.js';
-import './hotel-scroll-restore.js';
 
 let manualContentLoaded = false;
 

@@ -131,6 +131,8 @@ import {
   closeManual
 } from './modules/about-manual.js';
 
+import { installHotelScrollRestorePatch } from './modules/hotel-scroll-restore.js';
+
 /* ============ 全局错误捕获 ============ */
 
 window.addEventListener('error', (event) => {
@@ -406,6 +408,7 @@ async function initializeApp() {
       applyAppMetadata();
       applySettings();
       updateTemplateFilter();
+      installHotelScrollRestorePatch();
       renderHotelList();
       setupEventListeners();
       setupMenuListeners();

@@ -77,6 +77,7 @@ function captureVirtualScrollSnapshot() {
 
   const filtersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
   const anchor = getCurrentAnchor(scrollContainer);
+  /** @type {'card'|'list'} */
   const viewMode = scrollContainer.classList.contains('virtual-card-scroll') ? 'card' : 'list';
   const snapshot = {
     scrollTop: scrollContainer.scrollTop,
@@ -98,11 +99,12 @@ function captureVirtualScrollSnapshot() {
 }
 
 /**
- * @param {{scrollTop: number, filtersKey: string}} snapshot
+ * @param {{scrollTop: number, filtersKey: string, anchorHotelId?: string|null, anchorRank?: number}} snapshot
+ * @param {'keep'|'anchor'} behavior
  * @param {number} [attempt]
  * @returns {void}
  */
-function restoreVirtualScrollSnapshot(snapshot, attempt = 0) {
+function restoreVirtualScrollSnapshot(snapshot, behavior, attempt = 0) {
   if (!snapshot) return;
 
   const currentFiltersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
@@ -113,18 +115,29 @@ function restoreVirtualScrollSnapshot(snapshot, attempt = 0) {
   const scrollContainer = getCurrentVirtualScrollContainer();
   if (!scrollContainer) {
     if (attempt < MAX_RESTORE_ATTEMPTS) {
-      requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, attempt + 1));
+      requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, behavior, attempt + 1));
     }
     return;
   }
 
   const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
   if (snapshot.scrollTop > 0 && maxScrollTop <= 0 && attempt < MAX_RESTORE_ATTEMPTS) {
-    requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, attempt + 1));
+    requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, behavior, attempt + 1));
     return;
   }
 
-  const targetScrollTop = clamp(snapshot.scrollTop, 0, maxScrollTop);
+  let targetScrollTop = clamp(snapshot.scrollTop, 0, maxScrollTop);
+
+  // anchor 模式：尝试在新容器中找到同一酒店并定位
+  if (behavior === 'anchor' && snapshot.anchorHotelId) {
+    const anchorEl = scrollContainer.querySelector(`[data-id="${snapshot.anchorHotelId}"]`);
+    if (anchorEl instanceof HTMLElement) {
+      const anchorTop = anchorEl.offsetTop;
+      targetScrollTop = clamp(anchorTop, 0, maxScrollTop);
+    }
+    // fallback: 如果找不到锚点元素，使用 snapshot.scrollTop
+  }
+
   if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 1) {
     scrollContainer.scrollTop = targetScrollTop;
   }
@@ -134,13 +147,13 @@ function restoreVirtualScrollSnapshot(snapshot, attempt = 0) {
 
   // 某些情况下初次恢复会触发测量并改变 estimated height，再补一帧校准。
   if (attempt < 2) {
-    requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, attempt + 1));
+    requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, behavior, attempt + 1));
   }
 }
 
 /**
  * @param {string|undefined} reason
- * @returns {{snapshot: ReturnType<typeof captureVirtualScrollSnapshot>, shouldRestore: boolean}}
+ * @returns {{snapshot: ReturnType<typeof captureVirtualScrollSnapshot>, shouldRestore: boolean, behavior: 'keep'|'anchor'|'top'}}
  */
 function captureForRenderReason(reason) {
   const currentFiltersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
@@ -148,14 +161,15 @@ function captureForRenderReason(reason) {
   const shouldRestore = behavior === 'keep' || behavior === 'anchor';
   return {
     snapshot: shouldRestore ? captureVirtualScrollSnapshot() : null,
-    shouldRestore
+    shouldRestore,
+    behavior
   };
 }
 
-function scheduleRestore(snapshot) {
+function scheduleRestore(snapshot, behavior) {
   if (!snapshot) return;
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot));
+    requestAnimationFrame(() => restoreVirtualScrollSnapshot(snapshot, behavior));
   });
 }
 
@@ -168,23 +182,22 @@ export function installHotelScrollRestorePatch() {
 
   if (typeof originalRequestHotelListRender === 'function') {
     actions.requestHotelListRender = (options = {}) => {
-      const { snapshot, shouldRestore } = captureForRenderReason(options.reason);
+      const { snapshot, shouldRestore, behavior } = captureForRenderReason(options.reason);
       originalRequestHotelListRender(options);
-      if (shouldRestore) scheduleRestore(snapshot);
+      if (shouldRestore) scheduleRestore(snapshot, behavior);
     };
     wrappedAny = true;
   }
 
   if (typeof originalRenderHotelList === 'function') {
     actions.renderHotelList = (options = {}) => {
-      const { snapshot, shouldRestore } = captureForRenderReason(options.reason);
+      const opts = /** @type {Record<string, unknown>} */ (options);
+      const { snapshot, shouldRestore, behavior } = captureForRenderReason(typeof opts.reason === 'string' ? opts.reason : undefined);
       originalRenderHotelList(options);
-      if (shouldRestore) scheduleRestore(snapshot);
+      if (shouldRestore) scheduleRestore(snapshot, behavior);
     };
     wrappedAny = true;
   }
 
   installed = wrappedAny;
 }
-
-installHotelScrollRestorePatch();

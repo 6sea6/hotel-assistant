@@ -124,6 +124,26 @@ test('getScrollBehaviorForReason: unknown reason returns top', async () => {
   assert.equal(getScrollBehaviorForReason('batch-delete', '[]'), 'top');
 });
 
+test('getScrollBehaviorForReason: data-reload returns top', async () => {
+  const { getScrollBehaviorForReason } = await loadModule();
+  assert.equal(getScrollBehaviorForReason('data-reload', '[]'), 'top');
+});
+
+test('getScrollBehaviorForReason: rule-delete returns top', async () => {
+  const { getScrollBehaviorForReason } = await loadModule();
+  assert.equal(getScrollBehaviorForReason('rule-delete', '[]'), 'top');
+});
+
+test('getScrollBehaviorForReason: fallback returns top', async () => {
+  const { getScrollBehaviorForReason } = await loadModule();
+  assert.equal(getScrollBehaviorForReason('fallback', '[]'), 'top');
+});
+
+test('getScrollBehaviorForReason: hotel-add returns top', async () => {
+  const { getScrollBehaviorForReason } = await loadModule();
+  assert.equal(getScrollBehaviorForReason('hotel-add', '[]'), 'top');
+});
+
 /* ---- calculateScrollTopForAnchor ---- */
 
 test('calculateScrollTopForAnchor: null anchor returns 0', async () => {
