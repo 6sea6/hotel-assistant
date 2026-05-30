@@ -846,10 +846,13 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     itemsContainer.appendChild(fragment);
     cleanupHotelActionArtifacts(itemsContainer);
 
-    const firstRowCards = itemsContainer.querySelectorAll('.hotel-card');
-    const measured = measureAverageHeight(firstRowCards, CARD_ESTIMATED_HEIGHT);
-    if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 8) {
-      virtualHotelListState.estimatedItemHeight = measured;
+    if (!virtualHotelListState.hasMeasuredItemHeight) {
+      const firstRowCards = itemsContainer.querySelectorAll('.hotel-card');
+      const measured = measureAverageHeight(firstRowCards, CARD_ESTIMATED_HEIGHT);
+      if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 8) {
+        virtualHotelListState.estimatedItemHeight = measured;
+      }
+      virtualHotelListState.hasMeasuredItemHeight = true;
     }
   };
 
@@ -862,6 +865,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       columns = nextColumns;
       virtualHotelListState.columns = columns;
       itemsContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+      virtualHotelListState.hasMeasuredItemHeight = false;
       updateVirtualCards();
     }
   };

@@ -169,7 +169,8 @@ export function createDefaultVirtualState(viewMode) {
     startIndex: 0,
     endIndex: 0,
     totalHeight: 0,
-    columns: viewMode === 'list' ? 1 : 3
+    columns: viewMode === 'list' ? 1 : 3,
+    hasMeasuredItemHeight: false
   };
 }
 

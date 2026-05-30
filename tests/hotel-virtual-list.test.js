@@ -258,6 +258,7 @@ test('createDefaultVirtualState: list mode defaults', async () => {
   assert.equal(state.itemCount, 0);
   assert.equal(state.estimatedItemHeight, LIST_ROW_ESTIMATED_HEIGHT);
   assert.equal(state.columns, 1);
+  assert.equal(state.hasMeasuredItemHeight, false);
 });
 
 test('createDefaultVirtualState: card mode defaults', async () => {
@@ -267,6 +268,7 @@ test('createDefaultVirtualState: card mode defaults', async () => {
   assert.equal(state.viewMode, 'card');
   assert.equal(state.estimatedItemHeight, CARD_ESTIMATED_HEIGHT);
   assert.equal(state.columns, 3);
+  assert.equal(state.hasMeasuredItemHeight, false);
 });
 
 /* ---- measureAverageHeight ---- */
