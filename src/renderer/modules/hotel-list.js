@@ -78,6 +78,12 @@ import {
   CARD_ESTIMATED_HEIGHT,
   CARD_GAP
 } from './hotel-virtual-list.js';
+import {
+  calculateThumbMetrics,
+  calculateScrollTopFromTrackClick,
+  calculateScrollTopFromDrag,
+  clampValue
+} from './virtual-scrollbar-math.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
 let ruleDeleteInProgress = false;
@@ -88,6 +94,7 @@ let virtualHotelListState = null;
 let virtualScrollRafId = 0;
 let virtualResizeObserver = null;
 let virtualResizeRafId = 0;
+let virtualScrollbarCleanup = null;
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} FormValueElement
@@ -775,6 +782,150 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   finishHotelRender(taskVersion, perfLabel);
 }
 
+/* ---- 自定义虚拟滚动条 ---- */
+
+/**
+ * @param {HTMLElement} scrollContainer
+ * @param {{ className?: string, onScrollRequest?: (() => void)|null }} [options]
+ * @returns {{ element: HTMLElement, update: () => void, cleanup: () => void }}
+ */
+function createCustomVirtualScrollbar(scrollContainer, options = {}) {
+  const { className = '', onScrollRequest = null } = options;
+
+  const scrollbar = document.createElement('div');
+  scrollbar.className = `virtual-scrollbar ${className}`.trim();
+
+  const track = document.createElement('div');
+  track.className = 'virtual-scrollbar-track';
+
+  const thumb = document.createElement('div');
+  thumb.className = 'virtual-scrollbar-thumb';
+
+  track.appendChild(thumb);
+  scrollbar.appendChild(track);
+
+  let isDragging = false;
+
+  function update() {
+    const clientHeight = scrollContainer.clientHeight;
+    const scrollHeight = scrollContainer.scrollHeight;
+    const scrollTop = scrollContainer.scrollTop;
+    const trackHeight = track.clientHeight;
+
+    const metrics = calculateThumbMetrics({
+      clientHeight,
+      scrollHeight,
+      scrollTop,
+      trackHeight,
+      minThumbHeight: 32
+    });
+
+    if (metrics.shouldHide) {
+      scrollbar.hidden = true;
+      return;
+    }
+
+    scrollbar.hidden = false;
+    thumb.style.height = `${metrics.thumbHeight}px`;
+    thumb.style.transform = `translateY(${metrics.thumbTop}px)`;
+  }
+
+  function jumpToPointer(event) {
+    const rect = track.getBoundingClientRect();
+    const y = event.clientY - rect.top;
+    const clientHeight = scrollContainer.clientHeight;
+    const scrollHeight = scrollContainer.scrollHeight;
+    const trackHeight = track.clientHeight;
+    const thumbHeight = thumb.offsetHeight;
+
+    const targetScrollTop = calculateScrollTopFromTrackClick({
+      clickY: y,
+      trackHeight,
+      thumbHeight,
+      clientHeight,
+      scrollHeight
+    });
+
+    scrollContainer.scrollTop = targetScrollTop;
+    update();
+    if (typeof onScrollRequest === 'function') onScrollRequest();
+  }
+
+  function handlePointerMove(event) {
+    if (!isDragging) return;
+
+    const metrics = calculateThumbMetrics({
+      clientHeight: scrollContainer.clientHeight,
+      scrollHeight: scrollContainer.scrollHeight,
+      scrollTop: scrollContainer.scrollTop,
+      trackHeight: track.clientHeight,
+      minThumbHeight: 32
+    });
+
+    const deltaY = event.clientY - dragStartY;
+    const targetScrollTop = calculateScrollTopFromDrag({
+      deltaY,
+      maxThumbTop: metrics.maxThumbTop,
+      maxScrollTop: metrics.maxScrollTop,
+      startScrollTop: dragStartScrollTop
+    });
+
+    scrollContainer.scrollTop = targetScrollTop;
+    update();
+    if (typeof onScrollRequest === 'function') onScrollRequest();
+  }
+
+  let dragStartY = 0;
+  let dragStartScrollTop = 0;
+
+  function stopDragging() {
+    isDragging = false;
+    document.removeEventListener('pointermove', handlePointerMove);
+    document.body.classList.remove('is-dragging-virtual-scrollbar');
+    thumb.classList.remove('is-dragging');
+  }
+
+  function startDragging(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    isDragging = true;
+    dragStartY = event.clientY;
+    dragStartScrollTop = scrollContainer.scrollTop;
+
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', stopDragging, { once: true });
+    document.body.classList.add('is-dragging-virtual-scrollbar');
+    thumb.classList.add('is-dragging');
+  }
+
+  track.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.button !== undefined && event.button !== 0) return;
+
+    if (event.target === thumb) {
+      startDragging(event);
+      return;
+    }
+
+    jumpToPointer(event);
+  });
+
+  function cleanup() {
+    if (isDragging) {
+      stopDragging();
+    }
+    document.removeEventListener('pointermove', handlePointerMove);
+    document.removeEventListener('pointerup', stopDragging);
+    document.body.classList.remove('is-dragging-virtual-scrollbar');
+    thumb.classList.remove('is-dragging');
+  }
+
+  return { element: scrollbar, update, cleanup };
+}
+
 /* ---- 虚拟滚动：卡片视图 ---- */
 
 function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel) {
@@ -785,11 +936,14 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   let columns = calculateCardColumns(container.clientWidth);
   virtualHotelListState.columns = columns;
 
+  const shell = document.createElement('div');
+  shell.className = 'virtual-card-scroll-shell';
+
   const scrollContainer = document.createElement('div');
-  scrollContainer.className = 'virtual-card-scroll';
+  scrollContainer.className = 'virtual-card-scroll virtual-scroll-native-hidden';
   scrollContainer.style.position = 'relative';
   scrollContainer.style.overflowY = 'auto';
-  scrollContainer.style.maxHeight = 'calc(100vh - 180px)';
+  scrollContainer.style.maxHeight = 'none';
 
   const spacerBefore = document.createElement('div');
   spacerBefore.className = 'virtual-spacer virtual-spacer-before';
@@ -806,9 +960,13 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   scrollContainer.appendChild(spacerBefore);
   scrollContainer.appendChild(itemsContainer);
   scrollContainer.appendChild(spacerAfter);
-  container.appendChild(scrollContainer);
+
+  shell.appendChild(scrollContainer);
+  container.appendChild(shell);
 
   virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
+
+  let customScrollbar = null;
 
   const updateVirtualCards = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -856,6 +1014,15 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     }
   };
 
+  const scheduleVirtualCardUpdate = () => {
+    if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
+    virtualScrollRafId = requestAnimationFrame(() => {
+      virtualScrollRafId = 0;
+      updateVirtualCards();
+      if (customScrollbar) customScrollbar.update();
+    });
+  };
+
   const updateCardColumnsFromWidth = () => {
     const width = container.clientWidth || scrollContainer.clientWidth;
     if (width <= 0) return;
@@ -867,16 +1034,18 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       itemsContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
       virtualHotelListState.hasMeasuredItemHeight = false;
       updateVirtualCards();
+      if (customScrollbar) customScrollbar.update();
     }
   };
 
-  scrollContainer.addEventListener('scroll', () => {
-    if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
-    virtualScrollRafId = requestAnimationFrame(() => {
-      virtualScrollRafId = 0;
-      updateVirtualCards();
-    });
-  }, { passive: true });
+  customScrollbar = createCustomVirtualScrollbar(scrollContainer, {
+    className: 'virtual-card-scrollbar',
+    onScrollRequest: scheduleVirtualCardUpdate
+  });
+  shell.appendChild(customScrollbar.element);
+  virtualScrollbarCleanup = customScrollbar.cleanup;
+
+  scrollContainer.addEventListener('scroll', scheduleVirtualCardUpdate, { passive: true });
 
   if (typeof ResizeObserver !== 'undefined') {
     virtualResizeObserver = new ResizeObserver(() => {
@@ -890,6 +1059,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   }
 
   updateVirtualCards();
+  if (customScrollbar) customScrollbar.update();
   finishHotelRender(taskVersion, perfLabel);
 }
 
@@ -941,6 +1111,10 @@ export function resetVirtualHotelListState() {
   if (virtualResizeRafId) {
     cancelAnimationFrame(virtualResizeRafId);
     virtualResizeRafId = 0;
+  }
+  if (typeof virtualScrollbarCleanup === 'function') {
+    virtualScrollbarCleanup();
+    virtualScrollbarCleanup = null;
   }
 }
 
