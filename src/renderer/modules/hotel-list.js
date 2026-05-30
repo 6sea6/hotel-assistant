@@ -704,11 +704,14 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   `;
   table.appendChild(header);
 
+  const listScrollShell = document.createElement('div');
+  listScrollShell.className = 'virtual-list-scroll-shell';
+
   const scrollContainer = document.createElement('div');
-  scrollContainer.className = 'hotel-table-body virtual-scroll-body';
+  scrollContainer.className = 'hotel-table-body virtual-scroll-body virtual-list-scroll virtual-scroll-native-hidden';
   scrollContainer.style.position = 'relative';
   scrollContainer.style.overflowY = 'auto';
-  scrollContainer.style.maxHeight = 'calc(100vh - 250px)';
+  scrollContainer.style.maxHeight = 'none';
 
   const spacerBefore = document.createElement('div');
   spacerBefore.className = 'virtual-spacer virtual-spacer-before';
@@ -722,10 +725,14 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   scrollContainer.appendChild(spacerBefore);
   scrollContainer.appendChild(itemsContainer);
   scrollContainer.appendChild(spacerAfter);
-  table.appendChild(scrollContainer);
+
+  listScrollShell.appendChild(scrollContainer);
+  table.appendChild(listScrollShell);
   container.appendChild(table);
 
   virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
+
+  let customScrollbar = null;
 
   const updateVirtualList = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -760,24 +767,38 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
     itemsContainer.innerHTML = '';
     itemsContainer.appendChild(fragment);
 
-    const measured = measureAverageHeight(
-      itemsContainer.querySelectorAll('.hotel-table-row'),
-      LIST_ROW_ESTIMATED_HEIGHT
-    );
-    if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 4) {
-      virtualHotelListState.estimatedItemHeight = measured;
+    if (!virtualHotelListState.hasMeasuredItemHeight) {
+      const measured = measureAverageHeight(
+        itemsContainer.querySelectorAll('.hotel-table-row'),
+        LIST_ROW_ESTIMATED_HEIGHT
+      );
+      if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 4) {
+        virtualHotelListState.estimatedItemHeight = measured;
+      }
+      virtualHotelListState.hasMeasuredItemHeight = true;
     }
   };
 
-  scrollContainer.addEventListener('scroll', () => {
+  const scheduleVirtualListUpdate = () => {
     if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
     virtualScrollRafId = requestAnimationFrame(() => {
       virtualScrollRafId = 0;
       updateVirtualList();
+      if (customScrollbar) customScrollbar.update();
     });
-  }, { passive: true });
+  };
+
+  customScrollbar = createCustomVirtualScrollbar(scrollContainer, {
+    className: 'virtual-list-scrollbar',
+    onScrollRequest: scheduleVirtualListUpdate
+  });
+  listScrollShell.appendChild(customScrollbar.element);
+  virtualScrollbarCleanup = customScrollbar.cleanup;
+
+  scrollContainer.addEventListener('scroll', scheduleVirtualListUpdate, { passive: true });
 
   updateVirtualList();
+  if (customScrollbar) customScrollbar.update();
   syncVirtualSelectAllCheckboxState(sortedHotels);
   finishHotelRender(taskVersion, perfLabel);
 }
