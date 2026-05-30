@@ -736,6 +736,15 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
 
   let customScrollbar = null;
   let lastRenderedRangeKey = '';
+  let scrollbarUpdateRafId = 0;
+
+  const scheduleScrollbarUpdate = () => {
+    if (scrollbarUpdateRafId) return;
+    scrollbarUpdateRafId = requestAnimationFrame(() => {
+      scrollbarUpdateRafId = 0;
+      if (customScrollbar) customScrollbar.update();
+    });
+  };
 
   const updateVirtualList = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -793,7 +802,7 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
     virtualScrollRafId = requestAnimationFrame(() => {
       virtualScrollRafId = 0;
       updateVirtualList();
-      if (customScrollbar) customScrollbar.update();
+      scheduleScrollbarUpdate();
     });
   };
 
@@ -814,9 +823,7 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
       return Math.max(110, Math.min(240, estimated * 3));
     },
     duration: 160,
-    onScrollProgress: () => {
-      if (customScrollbar) customScrollbar.update();
-    },
+    onScrollProgress: scheduleScrollbarUpdate,
     onScrollRequest: scheduleVirtualListUpdate
   });
 
@@ -831,6 +838,10 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   });
 
   virtualScrollbarCleanup = () => {
+    if (scrollbarUpdateRafId) {
+      cancelAnimationFrame(scrollbarUpdateRafId);
+      scrollbarUpdateRafId = 0;
+    }
     customScrollbar?.cleanup();
     for (const cleanup of cleanupFns) {
       try {
@@ -846,7 +857,7 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
 
   requestAnimationFrame(() => {
     if (taskVersion !== state.hotelListRenderVersion) return;
-    if (customScrollbar) customScrollbar.update();
+    scheduleScrollbarUpdate();
   });
 
   syncVirtualSelectAllCheckboxState(sortedHotels);
@@ -1258,6 +1269,15 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   let customScrollbar = null;
   let cardWheelController = null;
   let lastRenderedRangeKey = '';
+  let scrollbarUpdateRafId = 0;
+
+  const scheduleScrollbarUpdate = () => {
+    if (scrollbarUpdateRafId) return;
+    scrollbarUpdateRafId = requestAnimationFrame(() => {
+      scrollbarUpdateRafId = 0;
+      if (customScrollbar) customScrollbar.update();
+    });
+  };
 
   const updateVirtualCards = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -1316,7 +1336,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     virtualScrollRafId = requestAnimationFrame(() => {
       virtualScrollRafId = 0;
       updateVirtualCards();
-      if (customScrollbar) customScrollbar.update();
+      scheduleScrollbarUpdate();
     });
   };
 
@@ -1332,7 +1352,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       virtualHotelListState.hasMeasuredItemHeight = false;
       lastRenderedRangeKey = '';
       updateVirtualCards();
-      if (customScrollbar) customScrollbar.update();
+      scheduleScrollbarUpdate();
     }
   };
 
@@ -1351,9 +1371,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
       return Math.max(140, Math.min(280, estimated * 0.75));
     },
     duration: 180,
-    onScrollProgress: () => {
-      if (customScrollbar) customScrollbar.update();
-    },
+    onScrollProgress: scheduleScrollbarUpdate,
     onScrollRequest: scheduleVirtualCardUpdate
   });
 
@@ -1368,6 +1386,10 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   });
 
   virtualScrollbarCleanup = () => {
+    if (scrollbarUpdateRafId) {
+      cancelAnimationFrame(scrollbarUpdateRafId);
+      scrollbarUpdateRafId = 0;
+    }
     customScrollbar?.cleanup();
     for (const cleanup of cleanupFns) {
       try {
