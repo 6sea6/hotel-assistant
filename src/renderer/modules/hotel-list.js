@@ -799,6 +799,12 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
 
   updateVirtualList();
   if (customScrollbar) customScrollbar.update();
+
+  requestAnimationFrame(() => {
+    if (taskVersion !== state.hotelListRenderVersion) return;
+    if (customScrollbar) customScrollbar.update();
+  });
+
   syncVirtualSelectAllCheckboxState(sortedHotels);
   finishHotelRender(taskVersion, perfLabel);
 }
