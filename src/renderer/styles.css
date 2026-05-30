@@ -558,6 +558,7 @@ body.platform-windows .window-controls {
   overflow-y: auto;
   scrollbar-gutter: stable;
   background: var(--bg-secondary);
+  overscroll-behavior: contain;
 }
 
 .content-header {
@@ -4221,6 +4222,7 @@ body.modal-open .modal.active {
   min-width: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .virtual-card-scroll-shell {
@@ -4326,6 +4328,7 @@ body.is-dragging-virtual-scrollbar {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .virtual-list-scroll.hotel-table-body {

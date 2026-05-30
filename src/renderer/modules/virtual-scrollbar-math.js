@@ -135,3 +135,30 @@ export function normalizeWheelDelta(event, fallbackStep) {
 
   return direction * normalizedMagnitude;
 }
+
+/**
+ * 将 wheel delta 标准化到固定步长，用于 smooth wheel controller。
+ * 每个 wheel 事件最多只产生一个 step 的位移。
+ *
+ * @param {WheelEvent} event
+ * @param {number} step - 单次滚动的最大像素
+ * @returns {number}
+ */
+export function normalizeWheelToStep(event, step) {
+  let delta = event.deltaY;
+  if (Number.isNaN(delta) || delta === 0) return 0;
+
+  if (event.deltaMode === 1) {
+    delta *= 32;
+  } else if (event.deltaMode === 2) {
+    delta *= step;
+  }
+
+  if (!Number.isFinite(delta)) {
+    return delta > 0 ? step : -step;
+  }
+
+  const direction = delta > 0 ? 1 : -1;
+  const magnitude = Math.min(Math.abs(delta), step);
+  return direction * magnitude;
+}

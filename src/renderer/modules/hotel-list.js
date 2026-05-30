@@ -83,7 +83,8 @@ import {
   calculateScrollTopFromTrackClick,
   calculateScrollTopFromDrag,
   clampValue,
-  normalizeWheelDelta
+  normalizeWheelDelta,
+  normalizeWheelToStep
 } from './virtual-scrollbar-math.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
@@ -795,15 +796,34 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   });
   listScrollShell.appendChild(customScrollbar.element);
 
-  const handleListWheel = createControlledWheelHandler(scrollContainer, {
-    getStep: () => virtualHotelListState?.estimatedItemHeight || LIST_ROW_ESTIMATED_HEIGHT,
+  const cleanupFns = [];
+
+  const listWheelController = createSmoothWheelController(scrollContainer, {
+    getStep: () => {
+      const estimated = virtualHotelListState?.estimatedItemHeight || LIST_ROW_ESTIMATED_HEIGHT;
+      return Math.max(110, Math.min(240, estimated * 3));
+    },
+    duration: 160,
     onScrollRequest: scheduleVirtualListUpdate
   });
-  scrollContainer.addEventListener('wheel', handleListWheel, { passive: false });
+
+  scrollContainer.addEventListener('wheel', listWheelController.handleWheel, {
+    passive: false,
+    capture: true
+  });
+
+  cleanupFns.push(() => {
+    scrollContainer.removeEventListener('wheel', listWheelController.handleWheel, true);
+    listWheelController.cleanup();
+  });
 
   virtualScrollbarCleanup = () => {
     customScrollbar?.cleanup();
-    scrollContainer.removeEventListener('wheel', handleListWheel);
+    for (const cleanup of cleanupFns) {
+      try {
+        cleanup();
+      } catch (_) { /* ignore */ }
+    }
   };
 
   scrollContainer.addEventListener('scroll', scheduleVirtualListUpdate, { passive: true });
@@ -821,6 +841,104 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
 }
 
 /* ---- 自定义虚拟滚动条 ---- */
+
+/**
+ * 创建平滑滚动 wheel 控制器，使用 requestAnimationFrame + easeOutCubic 实现。
+ * 每个 wheel 事件最多追加一个 step，防止飞滚。
+ *
+ * @param {HTMLElement} scrollContainer
+ * @param {{ getStep?: () => number, onScrollRequest?: (() => void)|null, duration?: number }} [options]
+ * @returns {{ handleWheel: (event: WheelEvent) => void, cleanup: () => void, stopAnimation: () => void }}
+ */
+function createSmoothWheelController(scrollContainer, options = {}) {
+  const {
+    getStep = () => 160,
+    onScrollRequest = null,
+    duration = 180
+  } = options;
+
+  let targetScrollTop = scrollContainer.scrollTop;
+  let animationFrameId = 0;
+  let animationStartTime = 0;
+  let animationStartScrollTop = 0;
+
+  function getMaxScrollTop() {
+    return Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+  }
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  function stopAnimation() {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = 0;
+    }
+  }
+
+  function animate(now) {
+    const elapsed = now - animationStartTime;
+    const progress = duration <= 0 ? 1 : Math.min(1, elapsed / duration);
+    const eased = easeOutCubic(progress);
+    const next =
+      animationStartScrollTop +
+      (targetScrollTop - animationStartScrollTop) * eased;
+
+    scrollContainer.scrollTop = next;
+
+    if (typeof onScrollRequest === 'function') {
+      onScrollRequest();
+    }
+
+    if (progress < 1) {
+      animationFrameId = requestAnimationFrame(animate);
+    } else {
+      scrollContainer.scrollTop = targetScrollTop;
+      animationFrameId = 0;
+      if (typeof onScrollRequest === 'function') {
+        onScrollRequest();
+      }
+    }
+  }
+
+  function scrollBy(delta) {
+    const maxScrollTop = getMaxScrollTop();
+    targetScrollTop = clampValue(targetScrollTop + delta, 0, maxScrollTop);
+
+    animationStartScrollTop = scrollContainer.scrollTop;
+    animationStartTime =
+      typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now();
+
+    if (!animationFrameId) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+  }
+
+  function handleWheel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rawStep = Number(getStep());
+    const step = Math.max(60, Number.isFinite(rawStep) ? rawStep : 160);
+    const delta = normalizeWheelToStep(event, step);
+    if (!delta) return;
+
+    scrollBy(delta);
+  }
+
+  function cleanup() {
+    stopAnimation();
+  }
+
+  return {
+    handleWheel,
+    cleanup,
+    stopAnimation
+  };
+}
 
 /**
  * 创建受控的 wheel 事件处理器，防止惯性/加速导致页面持续快速滚动。
@@ -1164,15 +1282,34 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   });
   shell.appendChild(customScrollbar.element);
 
-  const handleCardWheel = createControlledWheelHandler(scrollContainer, {
-    getStep: () => Math.max(120, (virtualHotelListState?.estimatedItemHeight || CARD_ESTIMATED_HEIGHT) * 0.8),
+  const cleanupFns = [];
+
+  const cardWheelController = createSmoothWheelController(scrollContainer, {
+    getStep: () => {
+      const estimated = virtualHotelListState?.estimatedItemHeight || CARD_ESTIMATED_HEIGHT;
+      return Math.max(140, Math.min(280, estimated * 0.75));
+    },
+    duration: 180,
     onScrollRequest: scheduleVirtualCardUpdate
   });
-  scrollContainer.addEventListener('wheel', handleCardWheel, { passive: false });
+
+  scrollContainer.addEventListener('wheel', cardWheelController.handleWheel, {
+    passive: false,
+    capture: true
+  });
+
+  cleanupFns.push(() => {
+    scrollContainer.removeEventListener('wheel', cardWheelController.handleWheel, true);
+    cardWheelController.cleanup();
+  });
 
   virtualScrollbarCleanup = () => {
     customScrollbar?.cleanup();
-    scrollContainer.removeEventListener('wheel', handleCardWheel);
+    for (const cleanup of cleanupFns) {
+      try {
+        cleanup();
+      } catch (_) { /* ignore */ }
+    }
   };
 
   scrollContainer.addEventListener('scroll', scheduleVirtualCardUpdate, { passive: true });

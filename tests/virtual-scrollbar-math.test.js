@@ -335,3 +335,79 @@ test('normalizeWheelDelta: direction preserved for negative delta', async () => 
   const event = { deltaY: -50, deltaMode: 0 };
   assert.equal(normalizeWheelDelta(event, 100), -50);
 });
+
+/* ---- normalizeWheelToStep ---- */
+
+test('normalizeWheelToStep: deltaY=120 step=100 returns 100', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: 120, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), 100);
+});
+
+test('normalizeWheelToStep: deltaY=-120 step=100 returns -100', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: -120, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), -100);
+});
+
+test('normalizeWheelToStep: deltaY=20 step=100 returns 20', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: 20, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), 20);
+});
+
+test('normalizeWheelToStep: deltaMode=1 (line) scales by 32 then clamps', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  // 3 lines * 32 = 96, within step 100
+  const event1 = { deltaY: 3, deltaMode: 1 };
+  assert.equal(normalizeWheelToStep(event1, 100), 96);
+  // 10 lines * 32 = 320, clamped to 100
+  const event2 = { deltaY: 10, deltaMode: 1 };
+  assert.equal(normalizeWheelToStep(event2, 100), 100);
+});
+
+test('normalizeWheelToStep: deltaMode=2 (page) scales by step then clamps', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  // 1 page * 100 = 100
+  const event1 = { deltaY: 1, deltaMode: 2 };
+  assert.equal(normalizeWheelToStep(event1, 100), 100);
+  // 3 pages * 100 = 300, clamped to 100
+  const event2 = { deltaY: 3, deltaMode: 2 };
+  assert.equal(normalizeWheelToStep(event2, 100), 100);
+});
+
+test('normalizeWheelToStep: deltaY=0 returns 0', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: 0, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), 0);
+});
+
+test('normalizeWheelToStep: deltaY=NaN returns 0', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: NaN, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), 0);
+});
+
+test('normalizeWheelToStep: deltaY=Infinity returns step', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: Infinity, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), 100);
+});
+
+test('normalizeWheelToStep: deltaY=-Infinity returns -step', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: -Infinity, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 100), -100);
+});
+
+test('normalizeWheelToStep: small delta passes through', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: 15, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 160), 15);
+});
+
+test('normalizeWheelToStep: negative small delta passes through', async () => {
+  const { normalizeWheelToStep } = await loadModule();
+  const event = { deltaY: -33, deltaMode: 0 };
+  assert.equal(normalizeWheelToStep(event, 160), -33);
+});
