@@ -39,6 +39,40 @@ function clamp(value, min, max) {
 }
 
 /**
+ * 安全地通过 data-id 查找元素。
+ * 优先使用 CSS.escape 避免特殊字符导致 querySelector 报错；
+ * 若 CSS.escape 不可用或查询失败，则回退到遍历 dataset 匹配。
+ *
+ * @param {Element} root
+ * @param {string} id
+ * @returns {HTMLElement|null}
+ */
+function findElementByDataId(root, id) {
+  if (!id) return null;
+
+  // 尝试 CSS.escape 安全查询
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    try {
+      const el = root.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      if (el instanceof HTMLElement) return el;
+    } catch {
+      // querySelector 仍可能在极端情况下抛出，忽略并走 fallback
+    }
+  }
+
+  // fallback: 遍历匹配 dataset.id
+  const all = root.querySelectorAll('[data-id]');
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i];
+    if (el instanceof HTMLElement && el.dataset.id === id) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+/**
  * @returns {HTMLElement|null}
  */
 function getCurrentVirtualScrollContainer() {
@@ -130,12 +164,12 @@ function restoreVirtualScrollSnapshot(snapshot, behavior, attempt = 0) {
 
   // anchor 模式：尝试在新容器中找到同一酒店并定位
   if (behavior === 'anchor' && snapshot.anchorHotelId) {
-    const anchorEl = scrollContainer.querySelector(`[data-id="${snapshot.anchorHotelId}"]`);
-    if (anchorEl instanceof HTMLElement) {
+    const anchorEl = findElementByDataId(scrollContainer, snapshot.anchorHotelId);
+    if (anchorEl) {
       const anchorTop = anchorEl.offsetTop;
       targetScrollTop = clamp(anchorTop, 0, maxScrollTop);
     }
-    // fallback: 如果找不到锚点元素，使用 snapshot.scrollTop
+    // fallback: 如果找不到锚点元素（虚拟列表可能尚未渲染该行），使用 snapshot.scrollTop
   }
 
   if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 1) {

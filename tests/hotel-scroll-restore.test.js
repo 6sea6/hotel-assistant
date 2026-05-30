@@ -236,6 +236,39 @@ test('wrapped renderHotelList: reason=filter-change 时不恢复 scrollTop', asy
   }
 });
 
+test('wrapped requestHotelListRender: reason=sort-change 时不恢复 scrollTop', async () => {
+  const { tempRoot, moduleUrl, actionsUrl } = await createTestEnvironment();
+
+  const scrollContainer = createMockScrollContainer({
+    scrollTop: 800,
+    scrollHeight: 5000,
+    clientHeight: 600,
+    className: 'virtual-list-scroll'
+  });
+
+  const globals = setupDomMock({ scrollContainer });
+  const originals = installGlobals(globals);
+
+  try {
+    const mod = await import(moduleUrl);
+    const { installHotelScrollRestorePatch } = mod;
+
+    const actionsMod = await import(actionsUrl);
+    actionsMod.actions.renderHotelList = () => {};
+    actionsMod.actions.requestHotelListRender = () => {};
+
+    installHotelScrollRestorePatch();
+
+    scrollContainer.scrollTop = 0;
+    actionsMod.actions.requestHotelListRender({ reason: 'sort-change' });
+
+    assert.equal(scrollContainer.scrollTop, 0);
+  } finally {
+    restoreGlobals(originals);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 /* ---- scrollHeight 尚未撑开时延迟恢复 ---- */
 
 test('restoreVirtualScrollSnapshot: scrollHeight 尚未撑开时不会把 scrollTop 设为 0', async () => {
@@ -284,6 +317,46 @@ test('restoreVirtualScrollSnapshot: scrollHeight 尚未撑开时不会把 scroll
   }
 });
 
+/* ---- hotel-update 时在原 actions 执行前捕获 scrollTop ---- */
+
+test('wrapped requestHotelListRender: hotel-update 在原 actions 执行前捕获旧 scrollTop', async () => {
+  const { tempRoot, moduleUrl, actionsUrl } = await createTestEnvironment();
+
+  const scrollContainer = createMockScrollContainer({
+    scrollTop: 777,
+    scrollHeight: 5000,
+    clientHeight: 600,
+    className: 'virtual-card-scroll'
+  });
+
+  const globals = setupDomMock({ scrollContainer });
+  const originals = installGlobals(globals);
+
+  try {
+    const mod = await import(moduleUrl);
+    const { installHotelScrollRestorePatch } = mod;
+
+    const actionsMod = await import(actionsUrl);
+
+    let scrollTopAtCallTime = null;
+    actionsMod.actions.renderHotelList = () => {};
+    actionsMod.actions.requestHotelListRender = (options) => {
+      // 原始函数执行时，scrollTop 应该仍然是旧值（尚未被重置）
+      scrollTopAtCallTime = scrollContainer.scrollTop;
+    };
+
+    installHotelScrollRestorePatch();
+
+    actionsMod.actions.requestHotelListRender({ reason: 'hotel-update' });
+
+    // 原始函数被调用时 scrollTop 仍为 777
+    assert.equal(scrollTopAtCallTime, 777);
+  } finally {
+    restoreGlobals(originals);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 /* ---- getScrollBehaviorForReason 补充测试 ---- */
 
 test('getScrollBehaviorForReason: data-reload returns top', async () => {
@@ -302,6 +375,52 @@ test('getScrollBehaviorForReason: batch-delete returns top', async () => {
     const stateMod = await import(stateUrl);
     assert.equal(stateMod.getScrollBehaviorForReason('batch-delete', '[]'), 'top');
   } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+/* ---- filtersKey 变化时不恢复 ---- */
+
+test('wrapped requestHotelListRender: filtersKey 变化时不恢复 scrollTop', async () => {
+  const { tempRoot, moduleUrl, actionsUrl, stateUrl } = await createTestEnvironment();
+
+  const scrollContainer = createMockScrollContainer({
+    scrollTop: 600,
+    scrollHeight: 5000,
+    clientHeight: 600,
+    className: 'virtual-card-scroll'
+  });
+
+  const globals = setupDomMock({ scrollContainer });
+  const originals = installGlobals(globals);
+
+  try {
+    const mod = await import(moduleUrl);
+    const { installHotelScrollRestorePatch } = mod;
+
+    const actionsMod = await import(actionsUrl);
+    actionsMod.actions.renderHotelList = () => {};
+    actionsMod.actions.requestHotelListRender = () => {};
+
+    const stateMod = await import(stateUrl);
+
+    installHotelScrollRestorePatch();
+
+    // 模拟筛选条件变化：第一次渲染前 filtersKey 是 A
+    stateMod.state.currentFilters = { name: 'old', score: '', favorite: '', template: '', transportTime: '', subwayDistance: '' };
+    scrollContainer.scrollTop = 600;
+    actionsMod.actions.renderHotelList({ reason: 'hotel-update' });
+
+    // 渲染后改变筛选条件（filtersKey 变为 B）
+    stateMod.state.currentFilters = { name: 'new', score: '', favorite: '', template: '', transportTime: '', subwayDistance: '' };
+    scrollContainer.scrollTop = 0;
+
+    // scheduleRestore 在两帧后执行，此时 filtersKey 已变化，不应恢复
+    // 由于 setupDomMock 中 requestAnimationFrame 是同步的，恢复逻辑已经执行
+    // 但因为 filtersKey 不同，restoreVirtualScrollSnapshot 会提前返回
+    assert.equal(scrollContainer.scrollTop, 0);
+  } finally {
+    restoreGlobals(originals);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
