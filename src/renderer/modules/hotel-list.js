@@ -18,7 +18,12 @@ import {
   setPendingRenderInteractionFirst,
   setHotelNameFilterOptionSignature,
   visibleHotelsCache,
-  buildVisibleHotelsFiltersKey
+  buildVisibleHotelsFiltersKey,
+  hotelListScrollMemory,
+  saveScrollMemory,
+  getScrollBehaviorForReason,
+  calculateScrollTopForAnchor,
+  calculateScrollTopAfterDelete
 } from './state.js';
 import {
   $,
@@ -378,7 +383,7 @@ export function requestHotelListRender(options = {}) {
     return;
   }
 
-  renderHotelList({ interactionFirst: options.interactionFirst });
+  renderHotelList({ interactionFirst: options.interactionFirst, reason: decision.reason });
 }
 
 export function renderHotelList(options = {}) {
@@ -448,9 +453,9 @@ export function renderHotelList(options = {}) {
     try {
       if (shouldUseVirtualHotelList(sortedHotels.length)) {
         if (state.viewMode === 'list') {
-          renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel);
+          renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel, options.reason);
         } else {
-          renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel);
+          renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel, options.reason);
         }
         return;
       }
@@ -677,7 +682,7 @@ function renderHotelListView(container, hotelsToRender, taskVersion, perfLabel) 
 
 /* ---- 虚拟滚动：行式视图 ---- */
 
-function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel) {
+function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel, reason) {
   virtualHotelListState = createDefaultVirtualState('list');
   virtualHotelListState.enabled = true;
   virtualHotelListState.itemCount = sortedHotels.length;
@@ -850,7 +855,49 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
     }
   };
 
-  scrollContainer.addEventListener('scroll', scheduleVirtualListUpdate, { passive: true });
+  // 滚动位置记忆：保存
+  const currentFiltersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
+  let saveScrollRafId = 0;
+  const scheduleSaveScrollMemory = () => {
+    if (saveScrollRafId) cancelAnimationFrame(saveScrollRafId);
+    saveScrollRafId = requestAnimationFrame(() => {
+      saveScrollRafId = 0;
+      const vs = virtualHotelListState;
+      if (!vs) return;
+      // 从当前可见范围找锚定酒店
+      const midIndex = Math.floor((vs.startIndex + vs.endIndex) / 2);
+      const anchorHotel = sortedHotels[midIndex] || null;
+      saveScrollMemory({
+        scrollTop: scrollContainer.scrollTop,
+        anchorHotelId: anchorHotel?.id ?? null,
+        anchorRank: midIndex + 1,
+        viewMode: 'list',
+        filtersKey: currentFiltersKey
+      });
+    });
+  };
+
+  scrollContainer.addEventListener('scroll', () => {
+    scheduleVirtualListUpdate();
+    scheduleSaveScrollMemory();
+  }, { passive: true });
+
+  // 滚动位置记忆：恢复
+  const scrollBehavior = getScrollBehaviorForReason(reason, currentFiltersKey);
+  let initialScrollTop = 0;
+  if (scrollBehavior === 'keep') {
+    initialScrollTop = hotelListScrollMemory.lastScrollTop || 0;
+  } else if (scrollBehavior === 'anchor') {
+    initialScrollTop = calculateScrollTopForAnchor(
+      sortedHotels,
+      hotelListScrollMemory.lastAnchorHotelId,
+      virtualHotelListState.estimatedItemHeight,
+      1,
+      0,
+      'list'
+    );
+  }
+  scrollContainer.scrollTop = clampValue(initialScrollTop, 0, Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight));
 
   updateVirtualList();
   if (customScrollbar) customScrollbar.update();
@@ -1228,7 +1275,7 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
 
 /* ---- 虚拟滚动：卡片视图 ---- */
 
-function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel) {
+function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel, reason) {
   virtualHotelListState = createDefaultVirtualState('card');
   virtualHotelListState.enabled = true;
   virtualHotelListState.itemCount = sortedHotels.length;
@@ -1398,7 +1445,31 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     }
   };
 
-  scrollContainer.addEventListener('scroll', scheduleVirtualCardUpdate, { passive: true });
+  // 滚动位置记忆：保存
+  const currentFiltersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
+  let saveScrollRafId = 0;
+  const scheduleSaveScrollMemory = () => {
+    if (saveScrollRafId) cancelAnimationFrame(saveScrollRafId);
+    saveScrollRafId = requestAnimationFrame(() => {
+      saveScrollRafId = 0;
+      const vs = virtualHotelListState;
+      if (!vs) return;
+      const midIndex = Math.floor((vs.startIndex + vs.endIndex) / 2);
+      const anchorHotel = sortedHotels[midIndex] || null;
+      saveScrollMemory({
+        scrollTop: scrollContainer.scrollTop,
+        anchorHotelId: anchorHotel?.id ?? null,
+        anchorRank: midIndex + 1,
+        viewMode: 'card',
+        filtersKey: currentFiltersKey
+      });
+    });
+  };
+
+  scrollContainer.addEventListener('scroll', () => {
+    scheduleVirtualCardUpdate();
+    scheduleSaveScrollMemory();
+  }, { passive: true });
 
   if (typeof ResizeObserver !== 'undefined') {
     virtualResizeObserver = new ResizeObserver(() => {
@@ -1410,6 +1481,23 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     });
     virtualResizeObserver.observe(container);
   }
+
+  // 滚动位置记忆：恢复
+  const scrollBehavior = getScrollBehaviorForReason(reason, currentFiltersKey);
+  let initialScrollTop = 0;
+  if (scrollBehavior === 'keep') {
+    initialScrollTop = hotelListScrollMemory.lastScrollTop || 0;
+  } else if (scrollBehavior === 'anchor') {
+    initialScrollTop = calculateScrollTopForAnchor(
+      sortedHotels,
+      hotelListScrollMemory.lastAnchorHotelId,
+      virtualHotelListState.estimatedItemHeight,
+      columns,
+      CARD_GAP,
+      'card'
+    );
+  }
+  scrollContainer.scrollTop = clampValue(initialScrollTop, 0, Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight));
 
   updateVirtualCards();
   if (customScrollbar) customScrollbar.update();

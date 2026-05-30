@@ -391,6 +391,146 @@ export function resetAiTaskQueueState(options = {}) {
   }
 }
 
+/* ---- 滚动位置记忆 ---- */
+
+/**
+ * @typedef {object} HotelListScrollMemory
+ * @property {number} lastScrollTop
+ * @property {string|number|null} lastAnchorHotelId
+ * @property {number} lastAnchorRank
+ * @property {ViewMode} viewMode
+ * @property {string} filtersKey
+ */
+
+/** @type {HotelListScrollMemory} */
+export const hotelListScrollMemory = {
+  lastScrollTop: 0,
+  lastAnchorHotelId: null,
+  lastAnchorRank: 0,
+  viewMode: 'card',
+  filtersKey: ''
+};
+
+/**
+ * 记录当前滚动位置到 hotelListScrollMemory。
+ *
+ * @param {{ scrollTop: number, anchorHotelId?: string|number|null, anchorRank?: number, viewMode?: ViewMode, filtersKey?: string }} params
+ * @returns {void}
+ */
+export function saveScrollMemory(params) {
+  hotelListScrollMemory.lastScrollTop = params.scrollTop;
+  hotelListScrollMemory.lastAnchorHotelId = params.anchorHotelId ?? null;
+  hotelListScrollMemory.lastAnchorRank = params.anchorRank ?? 0;
+  hotelListScrollMemory.viewMode = params.viewMode ?? state.viewMode;
+  hotelListScrollMemory.filtersKey = params.filtersKey ?? '';
+}
+
+/**
+ * 根据渲染原因决定虚拟列表的滚动行为。
+ *
+ * @param {string} reason
+ * @param {string} currentFiltersKey
+ * @returns {'keep'|'top'|'anchor'}
+ */
+export function getScrollBehaviorForReason(reason, currentFiltersKey) {
+  if (!reason) return 'top';
+
+  // 局部更新/删除：保持当前位置（虚拟模式下 patch 失败会回退到这里）
+  if (reason === 'favorite' || reason === 'hotel-update' || reason === 'hotel-delete') {
+    return 'keep';
+  }
+
+  // 视图切换：尝试锚定到原 hotelId（仅当筛选条件未变时）
+  if (reason === 'view-mode-change') {
+    if (hotelListScrollMemory.filtersKey && hotelListScrollMemory.filtersKey !== currentFiltersKey) {
+      return 'top';
+    }
+    return 'anchor';
+  }
+
+  // 筛选/排序等结构性变化：回到顶部
+  if (
+    reason === 'filter-change' ||
+    reason === 'sort-change' ||
+    reason === 'ranking-change' ||
+    reason === 'template-sync' ||
+    reason === 'settings-change'
+  ) {
+    return 'top';
+  }
+
+  // 其他原因：筛选条件变化时回到顶部
+  if (hotelListScrollMemory.filtersKey && hotelListScrollMemory.filtersKey !== currentFiltersKey) {
+    return 'top';
+  }
+
+  return 'top';
+}
+
+/**
+ * 从已排序的酒店列表中，根据锚定 hotelId 找到对应的 scrollTop。
+ *
+ * @param {Array<{id: string|number}>} sortedHotels
+ * @param {string|number|null} anchorHotelId
+ * @param {number} estimatedItemHeight
+ * @param {number} columns
+ * @param {number} gap
+ * @param {'card'|'list'} viewMode
+ * @returns {number} 目标 scrollTop
+ */
+export function calculateScrollTopForAnchor(sortedHotels, anchorHotelId, estimatedItemHeight, columns, gap, viewMode) {
+  if (anchorHotelId == null || !sortedHotels.length) return 0;
+
+  const anchorIndex = sortedHotels.findIndex((h) => String(h.id) === String(anchorHotelId));
+  if (anchorIndex < 0) return 0;
+
+  if (viewMode === 'list') {
+    return anchorIndex * estimatedItemHeight;
+  }
+
+  // card mode: 计算所在行
+  const row = Math.floor(anchorIndex / Math.max(1, columns));
+  const rowHeight = estimatedItemHeight + gap;
+  return row * rowHeight;
+}
+
+/**
+ * 根据被删除的酒店 ID，计算删除后的目标 scrollTop。
+ *
+ * @param {Array<{id: string|number}>} sortedHotelsBeforeDelete
+ * @param {Set<string|number>} deletedIds
+ * @param {number} currentScrollTop
+ * @param {number} estimatedItemHeight
+ * @param {number} columns
+ * @param {number} gap
+ * @param {'card'|'list'} viewMode
+ * @returns {number} 目标 scrollTop
+ */
+export function calculateScrollTopAfterDelete(sortedHotelsBeforeDelete, deletedIds, currentScrollTop, estimatedItemHeight, columns, gap, viewMode) {
+  if (!sortedHotelsBeforeDelete.length || !deletedIds.size) return currentScrollTop;
+
+  // 找到被删项中最大的 index（即最后可见的被删项）
+  let maxDeletedIndex = -1;
+  for (let i = 0; i < sortedHotelsBeforeDelete.length; i++) {
+    if (deletedIds.has(String(sortedHotelsBeforeDelete[i].id))) {
+      maxDeletedIndex = i;
+    }
+  }
+
+  if (maxDeletedIndex < 0) return currentScrollTop;
+
+  // 定位到被删项的下一个位置
+  const nextIndex = Math.min(maxDeletedIndex + 1, sortedHotelsBeforeDelete.length - 1);
+
+  if (viewMode === 'list') {
+    return nextIndex * estimatedItemHeight;
+  }
+
+  const row = Math.floor(nextIndex / Math.max(1, columns));
+  const rowHeight = estimatedItemHeight + gap;
+  return row * rowHeight;
+}
+
 /* ---- 常量 ---- */
 export const HOTEL_RENDER_BATCH_SIZE = 36;
 export const LARGE_HOTEL_RENDER_THRESHOLD = 120;
