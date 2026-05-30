@@ -805,12 +805,31 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
   scrollbar.appendChild(track);
 
   let isDragging = false;
+  let dragPointerId = null;
+  let dragStartY = 0;
+  let dragStartScrollTop = 0;
 
-  function update() {
+  function getScrollMetrics() {
     const clientHeight = scrollContainer.clientHeight;
     const scrollHeight = scrollContainer.scrollHeight;
-    const scrollTop = scrollContainer.scrollTop;
+    const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
     const trackHeight = track.clientHeight;
+    const thumbHeight = thumb.offsetHeight || 32;
+    const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+    return { clientHeight, scrollHeight, maxScrollTop, trackHeight, thumbHeight, maxThumbTop };
+  }
+
+  function setScrollTopSafely(nextScrollTop) {
+    const { maxScrollTop } = getScrollMetrics();
+    const target = clampValue(nextScrollTop, 0, maxScrollTop);
+    scrollContainer.scrollTop = target;
+    update();
+    if (typeof onScrollRequest === 'function') onScrollRequest();
+  }
+
+  function update() {
+    const { clientHeight, scrollHeight, trackHeight } = getScrollMetrics();
+    const scrollTop = scrollContainer.scrollTop;
 
     const metrics = calculateThumbMetrics({
       clientHeight,
@@ -833,10 +852,7 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
   function jumpToPointer(event) {
     const rect = track.getBoundingClientRect();
     const y = event.clientY - rect.top;
-    const clientHeight = scrollContainer.clientHeight;
-    const scrollHeight = scrollContainer.scrollHeight;
-    const trackHeight = track.clientHeight;
-    const thumbHeight = thumb.offsetHeight;
+    const { trackHeight, thumbHeight, clientHeight, scrollHeight } = getScrollMetrics();
 
     const targetScrollTop = calculateScrollTopFromTrackClick({
       clickY: y,
@@ -846,22 +862,15 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
       scrollHeight
     });
 
-    scrollContainer.scrollTop = targetScrollTop;
-    update();
-    if (typeof onScrollRequest === 'function') onScrollRequest();
+    setScrollTopSafely(targetScrollTop);
   }
 
   function handlePointerMove(event) {
     if (!isDragging) return;
+    if (dragPointerId !== null && event.pointerId !== dragPointerId) return;
+    event.preventDefault();
 
-    const metrics = calculateThumbMetrics({
-      clientHeight: scrollContainer.clientHeight,
-      scrollHeight: scrollContainer.scrollHeight,
-      scrollTop: scrollContainer.scrollTop,
-      trackHeight: track.clientHeight,
-      minThumbHeight: 32
-    });
-
+    const metrics = getScrollMetrics();
     const deltaY = event.clientY - dragStartY;
     const targetScrollTop = calculateScrollTopFromDrag({
       deltaY,
@@ -870,17 +879,17 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
       startScrollTop: dragStartScrollTop
     });
 
-    scrollContainer.scrollTop = targetScrollTop;
-    update();
-    if (typeof onScrollRequest === 'function') onScrollRequest();
+    setScrollTopSafely(targetScrollTop);
   }
 
-  let dragStartY = 0;
-  let dragStartScrollTop = 0;
-
   function stopDragging() {
+    if (!isDragging) return;
     isDragging = false;
+    dragPointerId = null;
     document.removeEventListener('pointermove', handlePointerMove);
+    document.removeEventListener('pointerup', stopDragging);
+    document.removeEventListener('pointercancel', stopDragging);
+    window.removeEventListener('blur', stopDragging);
     document.body.classList.remove('is-dragging-virtual-scrollbar');
     thumb.classList.remove('is-dragging');
   }
@@ -889,21 +898,43 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     event.preventDefault();
     event.stopPropagation();
 
+    stopDragging();
     isDragging = true;
+    dragPointerId = event.pointerId;
     dragStartY = event.clientY;
     dragStartScrollTop = scrollContainer.scrollTop;
 
     document.addEventListener('pointermove', handlePointerMove);
-    document.addEventListener('pointerup', stopDragging, { once: true });
+    document.addEventListener('pointerup', stopDragging);
+    document.addEventListener('pointercancel', stopDragging);
+    window.addEventListener('blur', stopDragging);
     document.body.classList.add('is-dragging-virtual-scrollbar');
     thumb.classList.add('is-dragging');
+
+    try { thumb.setPointerCapture?.(event.pointerId); } catch (_) { /* ignore */ }
   }
 
-  track.addEventListener('pointerdown', (event) => {
+  function handleScrollbarWheel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const { clientHeight } = getScrollMetrics();
+    let delta = event.deltaY;
+    if (!Number.isFinite(delta)) return;
+
+    const maxDelta = Math.max(80, clientHeight * 0.85);
+    delta = clampValue(delta, -maxDelta, maxDelta);
+
+    setScrollTopSafely(scrollContainer.scrollTop + delta);
+  }
+
+  function handleTrackPointerDown(event) {
     event.preventDefault();
     event.stopPropagation();
 
     if (event.button !== undefined && event.button !== 0) return;
+
+    stopDragging();
 
     if (event.target === thumb) {
       startDragging(event);
@@ -911,14 +942,31 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     }
 
     jumpToPointer(event);
-  });
+
+    const pointerId = event.pointerId;
+    try { track.setPointerCapture?.(pointerId); } catch (_) { /* ignore */ }
+
+    const releaseTrackPress = () => {
+      try { track.releasePointerCapture?.(pointerId); } catch (_) { /* ignore */ }
+      track.removeEventListener('pointerup', releaseTrackPress);
+      track.removeEventListener('pointercancel', releaseTrackPress);
+    };
+
+    track.addEventListener('pointerup', releaseTrackPress, { once: true });
+    track.addEventListener('pointercancel', releaseTrackPress, { once: true });
+  }
+
+  scrollbar.addEventListener('wheel', handleScrollbarWheel, { passive: false });
+  track.addEventListener('pointerdown', handleTrackPointerDown);
 
   function cleanup() {
-    if (isDragging) {
-      stopDragging();
-    }
+    stopDragging();
+    scrollbar.removeEventListener('wheel', handleScrollbarWheel);
+    track.removeEventListener('pointerdown', handleTrackPointerDown);
     document.removeEventListener('pointermove', handlePointerMove);
     document.removeEventListener('pointerup', stopDragging);
+    document.removeEventListener('pointercancel', stopDragging);
+    window.removeEventListener('blur', stopDragging);
     document.body.classList.remove('is-dragging-virtual-scrollbar');
     thumb.classList.remove('is-dragging');
   }
