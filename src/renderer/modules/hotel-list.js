@@ -790,15 +790,18 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
     });
   };
 
+  let listWheelController = null;
+
   customScrollbar = createCustomVirtualScrollbar(scrollContainer, {
     className: 'virtual-list-scrollbar',
-    onScrollRequest: scheduleVirtualListUpdate
+    onScrollRequest: scheduleVirtualListUpdate,
+    onExternalScrollChange: () => listWheelController?.syncToCurrentScroll({ stop: true })
   });
   listScrollShell.appendChild(customScrollbar.element);
 
   const cleanupFns = [];
 
-  const listWheelController = createSmoothWheelController(scrollContainer, {
+  listWheelController = createSmoothWheelController(scrollContainer, {
     getStep: () => {
       const estimated = virtualHotelListState?.estimatedItemHeight || LIST_ROW_ESTIMATED_HEIGHT;
       return Math.max(110, Math.min(240, estimated * 3));
@@ -848,7 +851,7 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
  *
  * @param {HTMLElement} scrollContainer
  * @param {{ getStep?: () => number, onScrollRequest?: (() => void)|null, duration?: number }} [options]
- * @returns {{ handleWheel: (event: WheelEvent) => void, cleanup: () => void, stopAnimation: () => void }}
+ * @returns {{ handleWheel: (event: WheelEvent) => void, cleanup: () => void, stopAnimation: () => void, syncToCurrentScroll: (options?: { stop?: boolean }) => void }}
  */
 function createSmoothWheelController(scrollContainer, options = {}) {
   const {
@@ -875,6 +878,26 @@ function createSmoothWheelController(scrollContainer, options = {}) {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = 0;
     }
+  }
+
+  /**
+   * 同步内部 targetScrollTop 到 scrollContainer 的真实 scrollTop。
+   * 当外部（如滚动轴点击、拖动 thumb）直接修改了 scrollTop 时调用。
+   *
+   * @param {{ stop?: boolean }} [syncOptions]
+   */
+  function syncToCurrentScroll(syncOptions = {}) {
+    const { stop = true } = syncOptions;
+    const current = scrollContainer.scrollTop;
+    if (stop) {
+      stopAnimation();
+    }
+    targetScrollTop = current;
+    animationStartScrollTop = current;
+    animationStartTime =
+      typeof performance !== 'undefined' && performance.now
+        ? performance.now()
+        : Date.now();
   }
 
   function animate(now) {
@@ -904,6 +927,14 @@ function createSmoothWheelController(scrollContainer, options = {}) {
 
   function scrollBy(delta) {
     const maxScrollTop = getMaxScrollTop();
+    const current = scrollContainer.scrollTop;
+
+    // 如果真实位置和内部目标差距很大，说明用户通过滚动轴点击、拖动
+    // 或其它方式改变了 scrollTop，需要从真实位置重新开始。
+    if (!animationFrameId && Math.abs(current - targetScrollTop) > 2) {
+      targetScrollTop = current;
+    }
+
     targetScrollTop = clampValue(targetScrollTop + delta, 0, maxScrollTop);
 
     animationStartScrollTop = scrollContainer.scrollTop;
@@ -936,7 +967,8 @@ function createSmoothWheelController(scrollContainer, options = {}) {
   return {
     handleWheel,
     cleanup,
-    stopAnimation
+    stopAnimation,
+    syncToCurrentScroll
   };
 }
 
@@ -985,11 +1017,11 @@ function createControlledWheelHandler(scrollContainer, options = {}) {
 
 /**
  * @param {HTMLElement} scrollContainer
- * @param {{ className?: string, onScrollRequest?: (() => void)|null }} [options]
+ * @param {{ className?: string, onScrollRequest?: (() => void)|null, onExternalScrollChange?: (() => void)|null }} [options]
  * @returns {{ element: HTMLElement, update: () => void, cleanup: () => void }}
  */
 function createCustomVirtualScrollbar(scrollContainer, options = {}) {
-  const { className = '', onScrollRequest = null } = options;
+  const { className = '', onScrollRequest = null, onExternalScrollChange = null } = options;
 
   const scrollbar = document.createElement('div');
   scrollbar.className = `virtual-scrollbar ${className}`.trim();
@@ -1023,6 +1055,7 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     const target = clampValue(nextScrollTop, 0, maxScrollTop);
     scrollContainer.scrollTop = target;
     update();
+    if (typeof onExternalScrollChange === 'function') onExternalScrollChange();
     if (typeof onScrollRequest === 'function') onScrollRequest();
   }
 
@@ -1205,6 +1238,7 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
 
   let customScrollbar = null;
+  let cardWheelController = null;
 
   const updateVirtualCards = () => {
     const scrollTop = scrollContainer.scrollTop;
@@ -1278,13 +1312,14 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
 
   customScrollbar = createCustomVirtualScrollbar(scrollContainer, {
     className: 'virtual-card-scrollbar',
-    onScrollRequest: scheduleVirtualCardUpdate
+    onScrollRequest: scheduleVirtualCardUpdate,
+    onExternalScrollChange: () => cardWheelController?.syncToCurrentScroll({ stop: true })
   });
   shell.appendChild(customScrollbar.element);
 
   const cleanupFns = [];
 
-  const cardWheelController = createSmoothWheelController(scrollContainer, {
+  cardWheelController = createSmoothWheelController(scrollContainer, {
     getStep: () => {
       const estimated = virtualHotelListState?.estimatedItemHeight || CARD_ESTIMATED_HEIGHT;
       return Math.max(140, Math.min(280, estimated * 0.75));
