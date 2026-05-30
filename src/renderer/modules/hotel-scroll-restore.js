@@ -31,6 +31,7 @@ const VIRTUAL_ITEM_SELECTOR = '.hotel-card[data-id], .hotel-table-row[data-id]';
 const MAX_RESTORE_ATTEMPTS = 12;
 
 let installed = false;
+let viewModeCaptureInstalled = false;
 
 /**
  * @param {unknown} value
@@ -264,7 +265,31 @@ function scheduleRestore(snapshot, behavior) {
   });
 }
 
+function scheduleRestoreAfterCurrentClick(snapshot, behavior) {
+  if (!snapshot) return;
+  window.setTimeout(() => scheduleRestore(snapshot, behavior), 0);
+}
+
+function handleViewModeToggleCapture(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  const actionElement = target?.closest('[data-action="toggle-view-mode"]');
+  if (!actionElement) return;
+
+  const { snapshot, shouldRestore, behavior } = captureForRenderReason('view-mode-change');
+  if (shouldRestore) {
+    scheduleRestoreAfterCurrentClick(snapshot, behavior);
+  }
+}
+
+function installViewModeToggleCapture() {
+  if (viewModeCaptureInstalled) return;
+  document.addEventListener('click', handleViewModeToggleCapture, true);
+  viewModeCaptureInstalled = true;
+}
+
 export function installHotelScrollRestorePatch() {
+  installViewModeToggleCapture();
+
   if (installed) return;
 
   const originalRequestHotelListRender = actions.requestHotelListRender;
