@@ -152,6 +152,28 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     return getHotelRepo().getAll();
   });
 
+  // 获取酒店数据元信息（revision + count）
+  safeHandle(ipcMain, 'hotel:getMeta', () => {
+    return getHotelRepo().getMeta();
+  });
+
+  // 获取酒店数据 revision
+  safeHandle(ipcMain, 'hotel:getRevision', () => {
+    const repo = getHotelRepo();
+    return { revision: repo.getRevision(), count: repo.getAll().length };
+  });
+
+  // 获取所有酒店 + 元信息
+  safeHandle(ipcMain, 'hotel:getAllWithMeta', () => {
+    const repo = getHotelRepo();
+    const meta = repo.getMeta();
+    return {
+      revision: meta.revision,
+      count: meta.count,
+      hotels: repo.getAll()
+    };
+  });
+
   // 根据ID获取酒店
   safeHandle(ipcMain, 'hotel:getById', (_event, id) => {
     return getHotelRepo().getById(/** @type {EntityId} */ (id));

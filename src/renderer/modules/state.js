@@ -538,6 +538,49 @@ export const TEMPLATE_SELECT_BATCH_SIZE = 180;
 export const TEMPLATE_FILTER_BATCH_SIZE = 180;
 export const INTERACTION_FIRST_RENDER_DELAY = 260;
 
+/* ---- 宾馆数据客户端缓存元信息 ---- */
+
+/**
+ * @typedef {object} HotelDataClientCache
+ * @property {number|null} revision - 主进程最新已知 revision，null 表示未知
+ * @property {number} count - 主进程最新已知宾馆数量
+ * @property {boolean} loaded - 是否曾经成功加载过
+ */
+
+/** @type {HotelDataClientCache} */
+export const hotelDataClientCache = {
+  revision: null,
+  count: 0,
+  loaded: false
+};
+
+/**
+ * 获取本地缓存的宾馆 revision。
+ * @returns {number|null}
+ */
+export function getLocalHotelsRevision() {
+  return hotelDataClientCache.revision;
+}
+
+/**
+ * 设置本地缓存的宾馆 revision 和 count。
+ * @param {{ revision: number, count: number }} meta
+ * @returns {void}
+ */
+export function setLocalHotelsRevision(meta) {
+  hotelDataClientCache.revision = meta.revision;
+  hotelDataClientCache.count = meta.count;
+  hotelDataClientCache.loaded = true;
+}
+
+/**
+ * 标记本地宾馆 revision 未知，下次加载时必须查询主进程。
+ * @returns {void}
+ */
+export function markLocalHotelsRevisionUnknown() {
+  hotelDataClientCache.revision = null;
+}
+
 /* ---- 排名缓存 ---- */
 export const rankingCache = {
   data: null,

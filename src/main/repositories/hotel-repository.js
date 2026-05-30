@@ -82,6 +82,9 @@ function createHotelBusinessKeyIndex(hotels) {
  * @property {() => void} invalidateCache
  * @property {NormalizeHotelPayload} normalize
  * @property {(id: unknown) => boolean} hasValidId
+ * @property {() => number} getRevision
+ * @property {() => {revision: number, count: number, loaded: boolean, dirty: boolean}} getMeta
+ * @property {() => number} touchRevision
  *
  * @typedef {object} HotelRepositoryState
  * @property {boolean} loaded
@@ -91,6 +94,7 @@ function createHotelBusinessKeyIndex(hotels) {
  * @property {ReturnType<typeof setTimeout>|null} flushTimer
  * @property {RepositoryStore|null} store
  * @property {NormalizeHotelPayload|null} normalizeHotelPayload
+ * @property {number} revision
  */
 
 /** @type {WeakMap<RepositoryStore, HotelRepositoryState>} */
@@ -109,7 +113,8 @@ function createRepositoryState() {
     dirty: false,
     flushTimer: null,
     store: null,
-    normalizeHotelPayload: null
+    normalizeHotelPayload: null,
+    revision: 0
   };
 }
 
@@ -166,6 +171,15 @@ function resetRepositoryState(state) {
   state.hotelsCache = [];
   state.idIndex = new Map();
   state.dirty = false;
+}
+
+/**
+ * @param {HotelRepositoryState} state
+ * @returns {number}
+ */
+function bumpRevision(state) {
+  state.revision += 1;
+  return state.revision;
 }
 
 /**
@@ -289,6 +303,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
     if (shouldWriteBack) {
       writeAll(state.hotelsCache);
       state.dirty = false;
+      bumpRevision(state);
     }
   };
 
@@ -342,6 +357,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       state.hotelsCache.push(newHotel);
       rebuildIndex();
       scheduleFlush();
+      bumpRevision(state);
       return cloneHotel(newHotel);
     },
     update(payload) {
@@ -361,6 +377,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       );
       rebuildIndex();
       scheduleFlush();
+      bumpRevision(state);
       return cloneHotel(state.hotelsCache[index]);
     },
     updateMany(payloads) {
@@ -385,6 +402,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       if (results.length > 0) {
         rebuildIndex();
         scheduleFlush();
+        bumpRevision(state);
       }
       return results;
     },
@@ -414,6 +432,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       if (added.length > 0) {
         rebuildIndex();
         scheduleFlush();
+        bumpRevision(state);
       }
       return added;
     },
@@ -507,6 +526,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       if (added.length > 0 || updated.length > 0) {
         rebuildIndex();
         scheduleFlush();
+        bumpRevision(state);
       }
       return { added, updated, hotels: [...added, ...updated] };
     },
@@ -524,6 +544,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       state.hotelsCache.splice(index, 1);
       rebuildIndex();
       scheduleFlush();
+      bumpRevision(state);
       return {
         deletedCount: 1,
         hotels: cloneHotels(state.hotelsCache)
@@ -543,6 +564,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       rebuildIndex();
       if (deletedCount > 0) {
         scheduleFlush();
+        bumpRevision(state);
       }
       return {
         deletedCount,
@@ -556,6 +578,7 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
       rebuildIndex();
       state.dirty = true;
       flush();
+      bumpRevision(state);
       return cloneHotels(state.hotelsCache);
     },
     getCompactedForExport() {
@@ -566,6 +589,22 @@ function createHotelRepository({ store, normalizeHotelPayload }) {
     flush,
     invalidateCache() {
       resetRepositoryState(state);
+    },
+    getRevision() {
+      loadOnce();
+      return state.revision;
+    },
+    getMeta() {
+      loadOnce();
+      return {
+        revision: state.revision,
+        count: state.hotelsCache.length,
+        loaded: state.loaded,
+        dirty: state.dirty
+      };
+    },
+    touchRevision() {
+      return bumpRevision(state);
     },
     normalize: normalizeHotelPayload,
     hasValidId

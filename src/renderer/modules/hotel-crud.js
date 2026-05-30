@@ -9,7 +9,10 @@ import {
   setTemplates,
   setSettings,
   clearSelectedHotels,
-  markRankingCacheDirty
+  markRankingCacheDirty,
+  getLocalHotelsRevision,
+  setLocalHotelsRevision,
+  markLocalHotelsRevisionUnknown
 } from './state.js';
 import {
   appendHotelToList,
@@ -70,18 +73,61 @@ function requestHotelRender(options = {}) {
 /* ---- 公共数据加载 ---- */
 
 /**
+ * @param {{force?: boolean, reason?: string}} [options]
  * @returns {Promise<NormalizedHotelRecord[]>}
  */
-export async function loadHotels() {
+export async function loadHotels(options = {}) {
+  const { force = false } = options;
   perfStart('loadHotels');
+
   try {
-    const result = await window.electronAPI.getAllHotels();
+    // 强制刷新时直接拉全量
+    if (force) {
+      const result = await window.electronAPI.getAllHotelsWithMeta();
+      const hotels = attachDerivedFields(result.hotels || []);
+      setLocalHotelsRevision({ revision: result.revision, count: result.count });
+      perfEnd('loadHotels');
+      return hotels;
+    }
+
+    // 非强制时，先检查 revision
+    const localRevision = getLocalHotelsRevision();
+    if (localRevision !== null && state.hotels.length > 0) {
+      try {
+        const meta = await window.electronAPI.getHotelsMeta();
+        if (meta.revision === localRevision && meta.count === state.hotels.length) {
+          // revision 未变化，复用本地数据
+          console.debug('[hotels] revision unchanged, skip full load', meta);
+          perfEnd('loadHotels');
+          return state.hotels;
+        }
+      } catch (metaError) {
+        // meta 查询失败，降级到全量拉取
+        console.warn('[hotels] getHotelsMeta failed, fallback to full load', metaError);
+      }
+    }
+
+    // revision 变化或首次加载，拉全量
+    const localRev = getLocalHotelsRevision();
+    const result = await window.electronAPI.getAllHotelsWithMeta();
+    const hotels = attachDerivedFields(result.hotels || []);
+    setLocalHotelsRevision({ revision: result.revision, count: result.count });
+    if (localRev !== null) {
+      console.debug('[hotels] revision changed, reload full hotels', { localRevision: localRev, remoteRevision: result.revision });
+    }
     perfEnd('loadHotels');
-    return attachDerivedFields(result || []);
+    return hotels;
   } catch (error) {
     perfEnd('loadHotels');
     console.error('加载宾馆失败:', error);
-    return [];
+    // 降级到旧 API
+    try {
+      const result = await window.electronAPI.getAllHotels();
+      return attachDerivedFields(result || []);
+    } catch (fallbackError) {
+      console.error('加载宾馆失败（降级）:', fallbackError);
+      return [];
+    }
   }
 }
 
@@ -110,19 +156,22 @@ export async function loadSettings() {
 }
 
 /**
- * @param {{includeSettings?: boolean, invalidateCache?: boolean, verbose?: boolean}} [options]
+ * @param {{includeSettings?: boolean, invalidateCache?: boolean, verbose?: boolean, forceHotels?: boolean}} [options]
  * @returns {Promise<{hotelsCount: number, templatesCount: number, settingsLoaded: boolean}>}
  */
 export async function reloadAllData(options = {}) {
-  const { includeSettings = false, invalidateCache = false, verbose = true } = options;
+  const { includeSettings = false, invalidateCache = false, verbose = true, forceHotels = false } = options;
 
   if (invalidateCache && window.electronAPI.invalidateRendererCache) {
     window.electronAPI.invalidateRendererCache();
+    markLocalHotelsRevisionUnknown();
   }
+
+  const shouldForceHotels = forceHotels || invalidateCache;
 
   /** @type {[Promise<NormalizedHotelRecord[]>, Promise<NormalizedTemplateRecord[]>, Promise<AppSettings|null>]} */
   const requests = [
-    window.electronAPI.getAllHotels(),
+    loadHotels({ force: shouldForceHotels, reason: 'reloadAllData' }),
     window.electronAPI.getAllTemplates(),
     includeSettings ? window.electronAPI.getAllSettings() : Promise.resolve(null)
   ];
@@ -131,7 +180,7 @@ export async function reloadAllData(options = {}) {
     if (verbose) console.log('[数据重载] 开始重新加载数据...');
 
     const [loadedHotels, loadedTemplates, loadedSettings] = await Promise.all(requests);
-    setHotels(attachDerivedFields(loadedHotels || []));
+    setHotels(loadedHotels || []);
     setTemplates(loadedTemplates || []);
 
     if (includeSettings) {
@@ -439,6 +488,7 @@ export async function saveHotel() {
       ));
       setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
       markRankingCacheDirty();
+      markLocalHotelsRevisionUnknown();
       requestHotelRender({
         reason: 'hotel-update',
         changedIds: [savedHotel.id || id]
@@ -450,6 +500,7 @@ export async function saveHotel() {
       ));
       setHotels(appendHotelToList(state.hotels, savedHotel));
       markRankingCacheDirty();
+      markLocalHotelsRevisionUnknown();
       requestHotelRender({
         reason: 'hotel-add',
         changedIds: [savedHotel.id],
@@ -481,6 +532,7 @@ export async function deleteHotel(id) {
     if (removed) {
       setHotels(nextHotels);
       markRankingCacheDirty();
+      markLocalHotelsRevisionUnknown();
       requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
     }
 
@@ -535,6 +587,7 @@ export async function toggleFavorite(id, currentStatus) {
         ));
         setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
         markRankingCacheDirty();
+        markLocalHotelsRevisionUnknown();
         requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
         perfEnd('toggleFavorite');
       } catch (err) {
@@ -594,6 +647,7 @@ export async function confirmBatchDelete() {
     setHotels(previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id))));
     clearSelectedHotels();
     markRankingCacheDirty();
+    markLocalHotelsRevisionUnknown();
     requestHotelRender({ reason: 'batch-delete', forceFull: true });
 
     if (document.activeElement instanceof HTMLElement) {

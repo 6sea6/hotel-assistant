@@ -419,6 +419,9 @@
  * @property {(id: EntityId) => Promise<IpcMutationResult>} deleteHotel
  * @property {(ids: EntityId[]) => Promise<IpcMutationResult>} deleteMultipleHotels
  * @property {() => Promise<NormalizedHotelRecord[]>} getAllHotels
+ * @property {() => Promise<{revision: number, count: number, loaded: boolean, dirty: boolean}>} getHotelsMeta
+ * @property {() => Promise<{revision: number, count: number}>} getHotelsRevision
+ * @property {() => Promise<{revision: number, count: number, hotels: NormalizedHotelRecord[]}>} getAllHotelsWithMeta
  * @property {(id: EntityId) => Promise<NormalizedHotelRecord|undefined>} getHotelById
  * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<NormalizedHotelRecord[]>} updateMultipleHotels
  * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<IpcResult<unknown> & {addedCount?: number, hotels?: NormalizedHotelRecord[]}>} addMultipleHotels

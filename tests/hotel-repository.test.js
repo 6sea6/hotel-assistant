@@ -516,3 +516,231 @@ test('hotel repository upsertMany matchByBusinessKey:false only matches by ID', 
   assert.equal(result.added.length, 1, 'should add as new');
   assert.equal(repo.getAll().length, 2);
 });
+
+/* ---- revision / meta tests ---- */
+
+test('hotel repository getMeta initial revision is 0 with count', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '酒店A', room_type: '大床房' },
+      { id: 2, name: '酒店B', room_type: '双床房' }
+    ]
+  });
+  const repo = createRepo(store);
+  const meta = repo.getMeta();
+
+  assert.equal(meta.revision, 0);
+  assert.equal(meta.count, 2);
+  assert.equal(meta.loaded, true);
+});
+
+test('hotel repository getAll does not change revision', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.getAll();
+  repo.getAll();
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository add increments revision by 1', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.add({ name: '新酒店', room_type: '双床房' });
+  assert.equal(repo.getRevision(), 1);
+  assert.equal(repo.getMeta().count, 2);
+});
+
+test('hotel repository update increments revision when found', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '旧名', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.update({ id: 1, name: '新名' });
+  assert.equal(repo.getRevision(), 1);
+});
+
+test('hotel repository update does not increment revision when not found', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.update({ id: 999, name: '不存在' });
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository updateMany does not increment when no matches', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.updateMany([{ id: 999, name: '不存在' }]);
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository addMany increments revision once for N adds', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '已有', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.addMany([
+    { name: '新A', room_type: '双床房' },
+    { name: '新B', room_type: '家庭房' },
+    { name: '新C', room_type: '大床房' }
+  ]);
+  assert.equal(repo.getRevision(), 1);
+  assert.equal(repo.getMeta().count, 4);
+});
+
+test('hotel repository addMany empty array does not increment revision', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.addMany([]);
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository upsertMany increments revision once when has changes', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '已有', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.upsertMany([
+    { id: 1, name: '更新', room_type: '大床房' },
+    { name: '新增', room_type: '双床房' }
+  ]);
+  assert.equal(repo.getRevision(), 1);
+});
+
+test('hotel repository upsertMany empty array does not increment revision', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.upsertMany([]);
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository deleteById increments revision when found', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.deleteById(1);
+  assert.equal(repo.getRevision(), 1);
+  assert.equal(repo.getMeta().count, 0);
+});
+
+test('hotel repository deleteById does not increment revision when not found', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.deleteById(999);
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository deleteMany increments revision when deletions occur', () => {
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '酒店A', room_type: '大床房' },
+      { id: 2, name: '酒店B', room_type: '双床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  repo.deleteMany([1, 2]);
+  assert.equal(repo.getRevision(), 1);
+  assert.equal(repo.getMeta().count, 0);
+});
+
+test('hotel repository deleteMany does not increment when nothing deleted', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.deleteMany([999]);
+  assert.equal(repo.getRevision(), 0);
+});
+
+test('hotel repository replaceAll increments revision', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '旧', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.replaceAll([{ id: 2, name: '新', room_type: '双床房' }]);
+  assert.equal(repo.getRevision(), 1);
+  assert.equal(repo.getMeta().count, 1);
+});
+
+test('hotel repository touchRevision increments revision without changing data', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  const newRevision = repo.touchRevision();
+  assert.equal(newRevision, 1);
+  assert.equal(repo.getRevision(), 1);
+  assert.equal(repo.getMeta().count, 1, 'count should not change');
+});
+
+test('hotel repository invalidateCache resets loaded but revision stays in state', () => {
+  const store = createStore({
+    hotels: [{ id: 1, name: '酒店', room_type: '大床房' }]
+  });
+  const repo = createRepo(store);
+
+  repo.add({ name: '新', room_type: '双床房' });
+  assert.equal(repo.getRevision(), 1);
+
+  repo.invalidateCache();
+  // After invalidateCache, loaded=false, but revision is still in state
+  // Next getRevision will call loadOnce which reloads from store
+  // The store still has the data written by scheduleFlush
+  const meta = repo.getMeta();
+  assert.equal(meta.loaded, true); // loadOnce reloads from store
+});
+
+test('hotel repository revision is per-store (different stores have independent revisions)', () => {
+  const store1 = createStore({ hotels: [{ id: 1, name: 'A', room_type: '大床房' }] });
+  const store2 = createStore({ hotels: [{ id: 2, name: 'B', room_type: '双床房' }] });
+  const repo1 = createRepo(store1);
+  const repo2 = createRepo(store2);
+
+  repo1.add({ name: '新A', room_type: '双床房' });
+  assert.equal(repo1.getRevision(), 1);
+  assert.equal(repo2.getRevision(), 0);
+});
+
+test('hotel repository loadOnce with writeback increments revision', () => {
+  // Store with data that needs normalization (triggers writeback)
+  const store = createStore({
+    hotels: [
+      { name: ' 无 ID 酒店 ', room_type: '双床房' }
+    ]
+  });
+  const repo = createRepo(store);
+
+  // getAll triggers loadOnce which normalizes and writes back
+  repo.getAll();
+  // revision should be incremented due to writeback
+  assert.ok(repo.getRevision() >= 1, 'revision should bump after loadOnce writeback');
+});

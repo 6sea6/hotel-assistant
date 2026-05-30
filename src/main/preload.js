@@ -132,6 +132,9 @@ const electronAPI = {
     return ipcRenderer.invoke('hotel:deleteMultiple', ids);
   },
   getAllHotels: () => ipcRenderer.invoke('hotel:getAll'),
+  getHotelsMeta: () => ipcRenderer.invoke('hotel:getMeta'),
+  getHotelsRevision: () => ipcRenderer.invoke('hotel:getRevision'),
+  getAllHotelsWithMeta: () => ipcRenderer.invoke('hotel:getAllWithMeta'),
   getHotelById: (id) => cachedInvoke('hotel:getById', id),
   updateMultipleHotels: batchOperations.updateMultipleHotels,
   addMultipleHotels: async (hotels) => {

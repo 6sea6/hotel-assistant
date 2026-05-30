@@ -51,6 +51,9 @@ async function loadCrudModule() {
       export function setSettings(s) { state.settings = s; }
       export function clearSelectedHotels() { state.selectedHotels.clear(); }
       export function markRankingCacheDirty() { state._rankingDirty = true; }
+      export function getLocalHotelsRevision() { return null; }
+      export function setLocalHotelsRevision() {}
+      export function markLocalHotelsRevisionUnknown() {}
       `
     );
 
