@@ -82,7 +82,8 @@ import {
   calculateThumbMetrics,
   calculateScrollTopFromTrackClick,
   calculateScrollTopFromDrag,
-  clampValue
+  clampValue,
+  normalizeWheelDelta
 } from './virtual-scrollbar-math.js';
 
 const RULE_DELETE_MODAL_ID = 'ruleDeleteModal';
@@ -793,7 +794,17 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
     onScrollRequest: scheduleVirtualListUpdate
   });
   listScrollShell.appendChild(customScrollbar.element);
-  virtualScrollbarCleanup = customScrollbar.cleanup;
+
+  const handleListWheel = createControlledWheelHandler(scrollContainer, {
+    getStep: () => virtualHotelListState?.estimatedItemHeight || LIST_ROW_ESTIMATED_HEIGHT,
+    onScrollRequest: scheduleVirtualListUpdate
+  });
+  scrollContainer.addEventListener('wheel', handleListWheel, { passive: false });
+
+  virtualScrollbarCleanup = () => {
+    customScrollbar?.cleanup();
+    scrollContainer.removeEventListener('wheel', handleListWheel);
+  };
 
   scrollContainer.addEventListener('scroll', scheduleVirtualListUpdate, { passive: true });
 
@@ -810,6 +821,49 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
 }
 
 /* ---- 自定义虚拟滚动条 ---- */
+
+/**
+ * 创建受控的 wheel 事件处理器，防止惯性/加速导致页面持续快速滚动。
+ *
+ * @param {HTMLElement} scrollContainer
+ * @param {{ getStep?: () => number, onScrollRequest?: (() => void)|null }} [options]
+ * @returns {(event: WheelEvent) => void}
+ */
+function createControlledWheelHandler(scrollContainer, options = {}) {
+  const { getStep = () => 120, onScrollRequest = null } = options;
+
+  let lastWheelTime = 0;
+
+  return function handleControlledWheel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const now = performance.now();
+
+    // 过滤极高频的惯性尾巴
+    if (now - lastWheelTime < 8) {
+      return;
+    }
+    lastWheelTime = now;
+
+    const step = Math.max(40, Number(getStep()) || 120);
+    const delta = normalizeWheelDelta(event, step);
+    if (!delta) return;
+
+    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+    const nextScrollTop = clampValue(scrollContainer.scrollTop + delta, 0, maxScrollTop);
+
+    if (Math.abs(nextScrollTop - scrollContainer.scrollTop) < 0.5) {
+      return;
+    }
+
+    scrollContainer.scrollTop = nextScrollTop;
+
+    if (typeof onScrollRequest === 'function') {
+      onScrollRequest();
+    }
+  };
+}
 
 /**
  * @param {HTMLElement} scrollContainer
@@ -941,19 +995,10 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     try { thumb.setPointerCapture?.(event.pointerId); } catch (_) { /* ignore */ }
   }
 
-  function handleScrollbarWheel(event) {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const { clientHeight } = getScrollMetrics();
-    let delta = event.deltaY;
-    if (!Number.isFinite(delta)) return;
-
-    const maxDelta = Math.max(80, clientHeight * 0.85);
-    delta = clampValue(delta, -maxDelta, maxDelta);
-
-    setScrollTopSafely(scrollContainer.scrollTop + delta);
-  }
+  const handleScrollbarWheel = createControlledWheelHandler(scrollContainer, {
+    getStep: () => Math.max(80, scrollContainer.clientHeight * 0.18),
+    onScrollRequest
+  });
 
   function handleTrackPointerDown(event) {
     event.preventDefault();
@@ -1118,7 +1163,17 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
     onScrollRequest: scheduleVirtualCardUpdate
   });
   shell.appendChild(customScrollbar.element);
-  virtualScrollbarCleanup = customScrollbar.cleanup;
+
+  const handleCardWheel = createControlledWheelHandler(scrollContainer, {
+    getStep: () => Math.max(120, (virtualHotelListState?.estimatedItemHeight || CARD_ESTIMATED_HEIGHT) * 0.8),
+    onScrollRequest: scheduleVirtualCardUpdate
+  });
+  scrollContainer.addEventListener('wheel', handleCardWheel, { passive: false });
+
+  virtualScrollbarCleanup = () => {
+    customScrollbar?.cleanup();
+    scrollContainer.removeEventListener('wheel', handleCardWheel);
+  };
 
   scrollContainer.addEventListener('scroll', scheduleVirtualCardUpdate, { passive: true });
 

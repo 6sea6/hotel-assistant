@@ -257,3 +257,81 @@ test('clampValue: Infinity returns max', async () => {
   const { clampValue } = await loadModule();
   assert.equal(clampValue(Infinity, 0, 10), 10);
 });
+
+/* ---- normalizeWheelDelta ---- */
+
+test('normalizeWheelDelta: deltaY=120 fallbackStep=100 returns 100', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: 120, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), 100);
+});
+
+test('normalizeWheelDelta: deltaY=-120 fallbackStep=100 returns -100', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: -120, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), -100);
+});
+
+test('normalizeWheelDelta: deltaY=20 fallbackStep=100 returns 20', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: 20, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), 20);
+});
+
+test('normalizeWheelDelta: deltaMode=1 (line) scales by 32', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  // 3 lines * 32 = 96 pixels, within step 100
+  const event = { deltaY: 3, deltaMode: 1 };
+  assert.equal(normalizeWheelDelta(event, 100), 96);
+});
+
+test('normalizeWheelDelta: deltaMode=1 clamped to fallbackStep', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  // 10 lines * 32 = 320 pixels, clamped to 100
+  const event = { deltaY: 10, deltaMode: 1 };
+  assert.equal(normalizeWheelDelta(event, 100), 100);
+});
+
+test('normalizeWheelDelta: deltaMode=2 (page) scales by fallbackStep', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  // 1 page * 100 = 100 pixels
+  const event = { deltaY: 1, deltaMode: 2 };
+  assert.equal(normalizeWheelDelta(event, 100), 100);
+});
+
+test('normalizeWheelDelta: deltaMode=2 multiple pages clamped', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  // 3 pages * 100 = 300 pixels, clamped to 100
+  const event = { deltaY: 3, deltaMode: 2 };
+  assert.equal(normalizeWheelDelta(event, 100), 100);
+});
+
+test('normalizeWheelDelta: deltaY=0 returns 0', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: 0, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), 0);
+});
+
+test('normalizeWheelDelta: deltaY=NaN returns 0', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: NaN, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), 0);
+});
+
+test('normalizeWheelDelta: deltaY=Infinity returns fallbackStep', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: Infinity, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), 100);
+});
+
+test('normalizeWheelDelta: deltaY=-Infinity returns -fallbackStep', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: -Infinity, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), -100);
+});
+
+test('normalizeWheelDelta: direction preserved for negative delta', async () => {
+  const { normalizeWheelDelta } = await loadModule();
+  const event = { deltaY: -50, deltaMode: 0 };
+  assert.equal(normalizeWheelDelta(event, 100), -50);
+});

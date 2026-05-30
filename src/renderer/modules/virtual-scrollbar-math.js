@@ -103,3 +103,35 @@ export function clampValue(value, min, max) {
   if (!Number.isFinite(value)) return value > 0 ? max : min;
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * 标准化滚轮 delta，防止一次 wheel 事件滚动过远。
+ *
+ * @param {WheelEvent} event
+ * @param {number} fallbackStep - 最大允许的单次滚动像素
+ * @returns {number}
+ */
+export function normalizeWheelDelta(event, fallbackStep) {
+  let delta = event.deltaY;
+  if (Number.isNaN(delta) || delta === 0) return 0;
+
+  // deltaMode: 0=pixel, 1=line, 2=page
+  if (event.deltaMode === 1) {
+    delta *= 32;
+  } else if (event.deltaMode === 2) {
+    delta *= fallbackStep;
+  }
+
+  // 处理 Infinity
+  if (!Number.isFinite(delta)) {
+    return delta > 0 ? fallbackStep : -fallbackStep;
+  }
+
+  const direction = delta > 0 ? 1 : -1;
+  const absDelta = Math.abs(delta);
+
+  // 不让一次 wheel 的巨大 delta 直接滚很远
+  const normalizedMagnitude = Math.min(absDelta, fallbackStep);
+
+  return direction * normalizedMagnitude;
+}
