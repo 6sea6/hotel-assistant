@@ -19,6 +19,12 @@ import {
   getScrollBehaviorForReason,
   saveScrollMemory
 } from './state.js';
+import {
+  LIST_ROW_ESTIMATED_HEIGHT,
+  CARD_ESTIMATED_HEIGHT,
+  CARD_GAP,
+  calculateCardColumns
+} from './hotel-virtual-list.js';
 
 const VIRTUAL_SCROLL_SELECTOR = '.virtual-card-scroll, .virtual-list-scroll';
 const VIRTUAL_ITEM_SELECTOR = '.hotel-card[data-id], .hotel-table-row[data-id]';
@@ -82,6 +88,47 @@ function getCurrentVirtualScrollContainer() {
 
 /**
  * @param {HTMLElement} scrollContainer
+ * @returns {'card'|'list'}
+ */
+function getVirtualViewMode(scrollContainer) {
+  return scrollContainer.classList.contains('virtual-card-scroll') ? 'card' : 'list';
+}
+
+/**
+ * @param {HTMLElement} scrollContainer
+ * @param {number} anchorRank
+ * @returns {number|null}
+ */
+function estimateScrollTopForAnchorRank(scrollContainer, anchorRank) {
+  const rank = Math.max(1, Number(anchorRank) || 0);
+  if (!rank) return null;
+
+  const zeroBasedIndex = rank - 1;
+  if (getVirtualViewMode(scrollContainer) === 'list') {
+    return zeroBasedIndex * LIST_ROW_ESTIMATED_HEIGHT;
+  }
+
+  const width =
+    scrollContainer.clientWidth ||
+    (scrollContainer.parentElement instanceof HTMLElement ? scrollContainer.parentElement.clientWidth : 0);
+  const columns = Math.max(1, calculateCardColumns(width));
+  const row = Math.floor(zeroBasedIndex / columns);
+  return row * (CARD_ESTIMATED_HEIGHT + CARD_GAP);
+}
+
+/**
+ * @param {HTMLElement} scrollContainer
+ * @param {HTMLElement} anchorElement
+ * @returns {number}
+ */
+function calculateScrollTopFromRenderedAnchor(scrollContainer, anchorElement) {
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const anchorRect = anchorElement.getBoundingClientRect();
+  return scrollContainer.scrollTop + (anchorRect.top - containerRect.top);
+}
+
+/**
+ * @param {HTMLElement} scrollContainer
  * @returns {{id: string|null, rank: number}}
  */
 function getCurrentAnchor(scrollContainer) {
@@ -112,7 +159,7 @@ function captureVirtualScrollSnapshot() {
   const filtersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
   const anchor = getCurrentAnchor(scrollContainer);
   /** @type {'card'|'list'} */
-  const viewMode = scrollContainer.classList.contains('virtual-card-scroll') ? 'card' : 'list';
+  const viewMode = getVirtualViewMode(scrollContainer);
   const snapshot = {
     scrollTop: scrollContainer.scrollTop,
     anchorHotelId: anchor.id,
@@ -162,14 +209,24 @@ function restoreVirtualScrollSnapshot(snapshot, behavior, attempt = 0) {
 
   let targetScrollTop = clamp(snapshot.scrollTop, 0, maxScrollTop);
 
-  // anchor 模式：尝试在新容器中找到同一酒店并定位
-  if (behavior === 'anchor' && snapshot.anchorHotelId) {
-    const anchorEl = findElementByDataId(scrollContainer, snapshot.anchorHotelId);
-    if (anchorEl) {
-      const anchorTop = anchorEl.offsetTop;
-      targetScrollTop = clamp(anchorTop, 0, maxScrollTop);
+  if (behavior === 'anchor') {
+    const estimatedByRank = estimateScrollTopForAnchorRank(scrollContainer, snapshot.anchorRank || 0);
+    if (estimatedByRank !== null) {
+      targetScrollTop = clamp(estimatedByRank, 0, maxScrollTop);
     }
-    // fallback: 如果找不到锚点元素（虚拟列表可能尚未渲染该行），使用 snapshot.scrollTop
+
+    // 第一次用 rank 估算把目标酒店滚进虚拟窗口；后续帧如果同一酒店已经进入 DOM，
+    // 再用真实 DOM 位置微调，避免卡片/行式高度差导致切换后锚定失效。
+    if (snapshot.anchorHotelId) {
+      const anchorEl = findElementByDataId(scrollContainer, String(snapshot.anchorHotelId));
+      if (anchorEl) {
+        targetScrollTop = clamp(
+          calculateScrollTopFromRenderedAnchor(scrollContainer, anchorEl),
+          0,
+          maxScrollTop
+        );
+      }
+    }
   }
 
   if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 1) {
