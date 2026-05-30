@@ -43,7 +43,9 @@ function setupDomMock(options = {}) {
           return scrollContainer;
         }
         return null;
-      }
+      },
+      addEventListener() {},
+      removeEventListener() {}
     },
     requestAnimationFrame: (cb) => {
       cb(Date.now());

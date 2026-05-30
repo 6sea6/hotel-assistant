@@ -159,8 +159,8 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
   // 获取酒店数据 revision
   safeHandle(ipcMain, 'hotel:getRevision', () => {
-    const repo = getHotelRepo();
-    return { revision: repo.getRevision(), count: repo.getAll().length };
+    const meta = getHotelRepo().getMeta();
+    return { revision: meta.revision, count: meta.count };
   });
 
   // 获取所有酒店 + 元信息

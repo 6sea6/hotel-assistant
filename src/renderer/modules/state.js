@@ -430,7 +430,7 @@ export function saveScrollMemory(params) {
  *
  * @param {string} reason
  * @param {string} currentFiltersKey
- * @returns {'keep'|'top'|'anchor'}
+ * @returns {'keep'|'top'}
  */
 export function getScrollBehaviorForReason(reason, currentFiltersKey) {
   if (!reason) return 'top';
@@ -440,12 +440,9 @@ export function getScrollBehaviorForReason(reason, currentFiltersKey) {
     return 'keep';
   }
 
-  // 视图切换：尝试锚定到原 hotelId（仅当筛选条件未变时）
+  // 视图切换：回到顶部
   if (reason === 'view-mode-change') {
-    if (hotelListScrollMemory.filtersKey && hotelListScrollMemory.filtersKey !== currentFiltersKey) {
-      return 'top';
-    }
-    return 'anchor';
+    return 'top';
   }
 
   // 筛选/排序等结构性变化：回到顶部

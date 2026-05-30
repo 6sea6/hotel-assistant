@@ -41,9 +41,9 @@ test('getScrollBehaviorForReason: hotel-delete returns keep', async () => {
   assert.equal(getScrollBehaviorForReason('hotel-delete', '[]'), 'keep');
 });
 
-test('getScrollBehaviorForReason: view-mode-change returns anchor', async () => {
+test('getScrollBehaviorForReason: view-mode-change returns top', async () => {
   const { getScrollBehaviorForReason } = await loadModule();
-  assert.equal(getScrollBehaviorForReason('view-mode-change', '[]'), 'anchor');
+  assert.equal(getScrollBehaviorForReason('view-mode-change', '[]'), 'top');
 });
 
 test('getScrollBehaviorForReason: filter-change returns top', async () => {
@@ -96,11 +96,11 @@ test('getScrollBehaviorForReason: view-mode-change returns top when filtersKey c
   assert.equal(getScrollBehaviorForReason('view-mode-change', '["new","","","","",""]'), 'top');
 });
 
-test('getScrollBehaviorForReason: view-mode-change returns anchor when filtersKey unchanged', async () => {
+test('getScrollBehaviorForReason: view-mode-change returns top when filtersKey unchanged', async () => {
   const { getScrollBehaviorForReason, saveScrollMemory } = await loadModule();
   const fk = '["test","","","","",""]';
   saveScrollMemory({ scrollTop: 500, filtersKey: fk });
-  assert.equal(getScrollBehaviorForReason('view-mode-change', fk), 'anchor');
+  assert.equal(getScrollBehaviorForReason('view-mode-change', fk), 'top');
 });
 
 test('getScrollBehaviorForReason: unknown reason returns top when filtersKey changed', async () => {

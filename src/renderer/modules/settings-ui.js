@@ -649,6 +649,7 @@ export async function changeDataPath(eventLike) {
     const result = await window.electronAPI.changeDataPath();
     if (result.success) {
       setValue('dataPathInput', result.path);
+      await actions.refreshCurrentPage({ showSuccess: false, interactionFirst: true });
       showNotification(`数据存储位置已更改为:\n${result.path}`, 'success');
     } else if (!result.canceled) {
       showNotification(result.error || '更改失败，请重试', 'error');

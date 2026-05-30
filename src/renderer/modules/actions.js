@@ -13,7 +13,7 @@
  */
 
 /**
- * @typedef {{includeSettings?: boolean, invalidateCache?: boolean, verbose?: boolean}} ReloadAllDataOptions
+ * @typedef {{includeSettings?: boolean, invalidateCache?: boolean, verbose?: boolean, forceHotels?: boolean}} ReloadAllDataOptions
  * @typedef {{interactionFirst?: boolean}} RenderHotelListOptions
  * @typedef {{reason?: string, changedIds?: Array<EntityId|null|undefined>|Set<EntityId|null|undefined>, forceFull?: boolean, interactionFirst?: boolean}} RequestHotelListRenderOptions
  * @typedef {{selectedValue?: string, interactionFirst?: boolean}} UpdateTemplateFilterOptions

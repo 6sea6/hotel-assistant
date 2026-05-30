@@ -887,15 +887,6 @@ function renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLa
   let initialScrollTop = 0;
   if (scrollBehavior === 'keep') {
     initialScrollTop = hotelListScrollMemory.lastScrollTop || 0;
-  } else if (scrollBehavior === 'anchor') {
-    initialScrollTop = calculateScrollTopForAnchor(
-      sortedHotels,
-      hotelListScrollMemory.lastAnchorHotelId,
-      virtualHotelListState.estimatedItemHeight,
-      1,
-      0,
-      'list'
-    );
   }
   scrollContainer.scrollTop = clampValue(initialScrollTop, 0, Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight));
 
@@ -1487,15 +1478,6 @@ function renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLa
   let initialScrollTop = 0;
   if (scrollBehavior === 'keep') {
     initialScrollTop = hotelListScrollMemory.lastScrollTop || 0;
-  } else if (scrollBehavior === 'anchor') {
-    initialScrollTop = calculateScrollTopForAnchor(
-      sortedHotels,
-      hotelListScrollMemory.lastAnchorHotelId,
-      virtualHotelListState.estimatedItemHeight,
-      columns,
-      CARD_GAP,
-      'card'
-    );
   }
   scrollContainer.scrollTop = clampValue(initialScrollTop, 0, Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight));
 
