@@ -191,6 +191,26 @@ function validateAiTaskPayload(payload) {
   return null;
 }
 
+/**
+ * @param {unknown} payload
+ * @returns {import('../../shared/contracts').IpcResult<unknown>|null}
+ */
+function validateAiRefreshPayload(payload) {
+  const payloadError = assertPlainObjectPayload(payload, AI_REQUEST_ERROR);
+  if (payloadError) return payloadError;
+  const taskPayload = /** @type {Record<string, unknown>} */ (payload);
+
+  const amapKeyError = assertOptionalStringField(taskPayload, 'amapKey', AI_REQUEST_ERROR);
+  if (amapKeyError) return amapKeyError;
+
+  return assertNumberField(taskPayload, 'batchConcurrency', AI_REQUEST_ERROR, {
+    optional: true,
+    integer: true,
+    min: 1,
+    max: 2
+  });
+}
+
 function registerAiHandlers({ ipcMain, services }) {
   const getAiService = () =>
     typeof services.getAiService === 'function' ? services.getAiService() : services.aiService;
@@ -216,9 +236,8 @@ function registerAiHandlers({ ipcMain, services }) {
     return getAiService().startTask(payload);
   });
   safeHandle(ipcMain, 'ai:task:refresh-data', (_event, payload) => {
-    if (!isPlainObject(payload)) {
-      return { success: false, error: '无效的 AI 请求参数' };
-    }
+    const payloadError = validateAiRefreshPayload(payload);
+    if (payloadError) return payloadError;
     return getAiService().refreshHotelData(payload);
   });
   safeHandle(ipcMain, 'ai:task:cancel', () => getAiService().cancelTask());

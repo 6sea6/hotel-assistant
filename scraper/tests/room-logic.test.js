@@ -179,6 +179,61 @@ test('selectMatchingRooms keeps occupancy exact by default and can optionally in
   );
 });
 
+test('selectMatchingRooms allows 2-person big-bed rooms for 1-person templates only', () => {
+  const roomBlocks = [
+    {
+      title: '单人入住特惠房',
+      standard_title: '双床房',
+      original_title: '单人入住特惠房',
+      occupancy: 1,
+      price: 180,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '舒适大床房',
+      standard_title: '大床房',
+      original_title: '舒适大床房',
+      occupancy: 2,
+      price: 220,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '舒适双床房',
+      standard_title: '双床房',
+      original_title: '舒适双床房',
+      occupancy: 2,
+      price: 210,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '亲子家庭房',
+      standard_title: '家庭房',
+      original_title: '亲子家庭房',
+      occupancy: 2,
+      price: 260,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    }
+  ];
+
+  const rooms = selectMatchingRooms(roomBlocks, {
+    room_count: 1,
+    room_type: ''
+  });
+
+  assert.deepEqual(
+    rooms.map((room) => room.title),
+    ['单人入住特惠房', '舒适大床房']
+  );
+});
+
 test('selectMatchingRooms skips non-cancellable and restricted-free-cancellation room variants', () => {
   const roomBlocks = [
     {

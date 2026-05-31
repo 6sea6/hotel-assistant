@@ -73,6 +73,7 @@ import {
 } from './hotel-card-fields.js';
 import {
   shouldUseVirtualHotelList,
+  getVirtualScrollThreshold,
   calculateVirtualRange,
   calculateCardVirtualRange,
   createDefaultVirtualState,
@@ -435,12 +436,13 @@ export function renderHotelList(options = {}) {
         (value) => value !== undefined && value !== null && value !== ''
       );
       const isFilterEmptyState = state.hotels.length > 0 && hasActiveFilters;
-      const emptyAction = isFilterEmptyState ? 'clear-filters' : 'open-add-hotel';
+      const emptyAction = isFilterEmptyState ? 'clear-filters' : 'open-ai-assistant';
+      const emptyActionText = isFilterEmptyState ? '清除筛选' : '打开采集助手';
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🏨</div>
           <div class="empty-state-text">${isFilterEmptyState ? '当前筛选条件下没有匹配结果' : '暂无宾馆数据'}</div>
-          <button class="btn ${isFilterEmptyState ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="${emptyAction}">${isFilterEmptyState ? '清除筛选' : '添加第一个宾馆'}</button>
+          <button class="btn ${isFilterEmptyState ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="${emptyAction}">${emptyActionText}</button>
         </div>
       `;
       perfEnd(perfLabel);
@@ -451,7 +453,8 @@ export function renderHotelList(options = {}) {
     container.className = state.viewMode === 'list' ? 'hotel-list list-view' : 'hotel-list';
 
     try {
-      if (shouldUseVirtualHotelList(sortedHotels.length)) {
+      const virtualScrollThreshold = getVirtualScrollThreshold(state.viewMode);
+      if (shouldUseVirtualHotelList(sortedHotels.length, { threshold: virtualScrollThreshold })) {
         if (state.viewMode === 'list') {
           renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel, options.reason);
         } else {

@@ -52,6 +52,28 @@ test('shouldUseVirtualHotelList: custom threshold', async () => {
   assert.equal(shouldUseVirtualHotelList(150, { threshold: 100 }), true);
 });
 
+test('shouldUseVirtualHotelList: card mode uses threshold 80', async () => {
+  const {
+    shouldUseVirtualHotelList,
+    getVirtualScrollThreshold,
+    CARD_VIRTUAL_SCROLL_THRESHOLD
+  } = await loadModule();
+
+  assert.equal(CARD_VIRTUAL_SCROLL_THRESHOLD, 80);
+  assert.equal(getVirtualScrollThreshold('card'), 80);
+  assert.equal(shouldUseVirtualHotelList(80, { threshold: getVirtualScrollThreshold('card') }), false);
+  assert.equal(shouldUseVirtualHotelList(81, { threshold: getVirtualScrollThreshold('card') }), true);
+});
+
+test('shouldUseVirtualHotelList: list mode keeps threshold 200', async () => {
+  const { shouldUseVirtualHotelList, getVirtualScrollThreshold, VIRTUAL_SCROLL_THRESHOLD } = await loadModule();
+
+  assert.equal(VIRTUAL_SCROLL_THRESHOLD, 200);
+  assert.equal(getVirtualScrollThreshold('list'), 200);
+  assert.equal(shouldUseVirtualHotelList(81, { threshold: getVirtualScrollThreshold('list') }), false);
+  assert.equal(shouldUseVirtualHotelList(201, { threshold: getVirtualScrollThreshold('list') }), true);
+});
+
 test('shouldUseVirtualHotelList: 0 returns false', async () => {
   const { shouldUseVirtualHotelList } = await loadModule();
   assert.equal(shouldUseVirtualHotelList(0), false);

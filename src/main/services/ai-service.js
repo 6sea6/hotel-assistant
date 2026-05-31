@@ -555,7 +555,8 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       flushStoreBeforeExternalWrite();
       return scraperRunner.refreshExistingCtripHotels(
         {
-          amapKey: payload.amapKey
+          amapKey: payload.amapKey,
+          batchConcurrency: payload.batchConcurrency
         },
         {
           taskId,

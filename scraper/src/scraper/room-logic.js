@@ -279,6 +279,13 @@ function isAllowedOccupancy(room, desiredOccupancy, options = {}) {
     return true;
   }
   if (
+    desiredOccupancy === 1 &&
+    occupancy === 2 &&
+    normalizeText(room && room.standard_title) === '大床房'
+  ) {
+    return true;
+  }
+  if (
     desiredOccupancy === 3 &&
     occupancy === 4 &&
     Boolean(options.includeFourPersonRoomsForThreePersonTemplate)

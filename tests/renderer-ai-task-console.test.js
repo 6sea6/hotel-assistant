@@ -9,6 +9,7 @@ const { buildCtripListUrl, parseCtripListUrl } = require('../shared/compare-app/
 let taskConsoleModuleUrl = '';
 let aiAssistantModuleUrl = '';
 let aiAssistantStateModuleUrl = '';
+let aiAssistantActionsModuleUrl = '';
 
 async function loadTaskConsoleModule() {
   if (!taskConsoleModuleUrl) {
@@ -58,18 +59,21 @@ async function loadAiAssistantModules() {
     });
     aiAssistantModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-assistant.js')).href;
     aiAssistantStateModuleUrl = pathToFileURL(path.join(tempRoot, 'state.js')).href;
+    aiAssistantActionsModuleUrl = pathToFileURL(path.join(tempRoot, 'actions.js')).href;
     process.on('exit', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     });
   }
 
-  const [module, stateModule] = await Promise.all([
+  const [module, stateModule, actionsModule] = await Promise.all([
     import(aiAssistantModuleUrl),
-    import(aiAssistantStateModuleUrl)
+    import(aiAssistantStateModuleUrl),
+    import(aiAssistantActionsModuleUrl)
   ]);
   return {
     module,
-    state: stateModule.state
+    state: stateModule.state,
+    actions: actionsModule.actions
   };
 }
 
@@ -1030,6 +1034,63 @@ test('AI collect task payload includes saved batch concurrency setting', async (
   };
 
   await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.batchConcurrency, 2);
+});
+
+test('AI refresh task payload includes saved batch concurrency setting', async () => {
+  installAiAssistantDom('');
+  const { module, state, actions } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.settings = {
+    collectBatchConcurrency: 2
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  actions.reloadAllData = async () => ({
+    hotelsCount: 0,
+    templatesCount: 0,
+    settingsLoaded: true
+  });
+  actions.updateTemplateFilter = () => {};
+  actions.requestHotelListRender = () => {};
+  actions.renderHotelList = () => {};
+  global.window.electronAPI.ai.refreshHotelData = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '更新完成',
+      collectResult: {
+        success: true,
+        totalHotelCount: 0,
+        updatedHotelCount: 0,
+        updatedRoomTypeCount: 0,
+        deletedRoomTypeCount: 0,
+        skippedHotelCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueRefreshHotelDataTask();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.equal(capturedPayload.batchConcurrency, 2);

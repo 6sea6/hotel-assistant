@@ -5,10 +5,22 @@
  */
 
 export const VIRTUAL_SCROLL_THRESHOLD = 200;
+export const LIST_VIRTUAL_SCROLL_THRESHOLD = VIRTUAL_SCROLL_THRESHOLD;
+export const CARD_VIRTUAL_SCROLL_THRESHOLD = 80;
 export const VIRTUAL_OVERSCAN = 10;
 export const LIST_ROW_ESTIMATED_HEIGHT = 96;
 export const CARD_ESTIMATED_HEIGHT = 260;
 export const CARD_GAP = 16;
+
+/**
+ * 根据视图模式返回启用虚拟滚动的数量阈值。
+ *
+ * @param {'card'|'list'|string} viewMode
+ * @returns {number}
+ */
+export function getVirtualScrollThreshold(viewMode) {
+  return viewMode === 'card' ? CARD_VIRTUAL_SCROLL_THRESHOLD : LIST_VIRTUAL_SCROLL_THRESHOLD;
+}
 
 /**
  * 判断是否应启用虚拟滚动。

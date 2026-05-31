@@ -345,12 +345,12 @@ test('scraper-runner.js: refresh skips hotels on collection failure', () => {
 });
 
 /* ============================================================
- * Test: task-runner.js - skipTransit support
+ * Test: single-detail-runner.js - skipTransit support
  * ============================================================ */
 
-test('task-runner.js: skipTransit flag is supported', () => {
+test('single-detail-runner.js: skipTransit flag is supported', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'scraper', 'src', 'task-runner.js'),
+    path.join(__dirname, '..', 'scraper', 'src', 'single-detail-runner.js'),
     'utf8'
   );
   assert.ok(
@@ -359,9 +359,9 @@ test('task-runner.js: skipTransit flag is supported', () => {
   );
 });
 
-test('task-runner.js: skipTransit skips getTransitInfo call', () => {
+test('single-detail-runner.js: skipTransit skips getTransitInfo call', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'scraper', 'src', 'task-runner.js'),
+    path.join(__dirname, '..', 'scraper', 'src', 'single-detail-runner.js'),
     'utf8'
   );
   // Verify that transit is conditional
@@ -371,9 +371,9 @@ test('task-runner.js: skipTransit skips getTransitInfo call', () => {
   );
 });
 
-test('task-runner.js: skipTransit does not emit transit:start', () => {
+test('single-detail-runner.js: skipTransit does not emit transit:start', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'scraper', 'src', 'task-runner.js'),
+    path.join(__dirname, '..', 'scraper', 'src', 'single-detail-runner.js'),
     'utf8'
   );
   assert.ok(
@@ -446,7 +446,7 @@ test('normal collect: BASE_STEP_DEFINITIONS still has transit step', async () =>
 
 test('normal collect: getTransitInfo is still called when skipTransit is false', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'scraper', 'src', 'task-runner.js'),
+    path.join(__dirname, '..', 'scraper', 'src', 'single-detail-runner.js'),
     'utf8'
   );
   assert.ok(
@@ -735,10 +735,11 @@ test('scraper-runner: refresh:item-done has status and total in details', () => 
     path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
     'utf8'
   );
+  const batchStart = code.indexOf('async function runRefreshHotelBatch');
   const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
-  const refreshEnd = code.indexOf('module.exports', refreshStart);
-  assert.ok(refreshStart > 0, 'Should find refreshExistingCtripHotels function');
-  const fnBody = code.substring(refreshStart, refreshEnd);
+  assert.ok(batchStart > 0, 'Should find runRefreshHotelBatch function');
+  assert.ok(refreshStart > batchStart, 'Should find refreshExistingCtripHotels function');
+  const fnBody = code.substring(batchStart, refreshStart);
 
   // Check refresh:item-done has status: 'updated' and total
   const itemDoneMatch = fnBody.match(/refresh:item-done[\s\S]*?emit\([\s\S]*?\{[\s\S]*?\}/);
@@ -747,7 +748,7 @@ test('scraper-runner: refresh:item-done has status and total in details', () => 
     itemDoneMatch[0].includes("status: 'updated'"),
     'item-done should have status: updated'
   );
-  assert.ok(itemDoneMatch[0].includes('total:'), 'item-done should have total field');
+  assert.ok(fnBody.includes('total: totalHotelCount'), 'item-done should have total field');
 
   // Check refresh:item-skipped has status and total
   const skippedMatches = fnBody.match(/refresh:item-skipped/g);
@@ -757,6 +758,10 @@ test('scraper-runner: refresh:item-done has status and total in details', () => 
   );
   // Verify at least one has total field
   assert.ok(fnBody.includes('total: totalHotelCount'), 'Should include total in details');
+  assert.ok(
+    fnBody.includes('requestedConcurrency') && fnBody.includes('effectiveConcurrency'),
+    'Should include requested/effective concurrency in item details'
+  );
 });
 
 test('scraper-runner: refresh:summary has complete statistics', () => {
@@ -778,26 +783,116 @@ test('scraper-runner: refresh:summary has complete statistics', () => {
 });
 
 /* ============================================================
- * Tests: refresh:item-write and current step priority
+ * Tests: refresh final write and current step priority
  * ============================================================
  */
 
-test('scraper-runner: refresh uses refresh:item-write instead of refresh:write for single hotel', () => {
+test('scraper-runner: refresh uses one final refresh:write after collection', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    'utf8'
+  );
+  const batchStart = code.indexOf('async function runRefreshHotelBatch');
+  const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
+  const refreshEnd = code.indexOf('module.exports', refreshStart);
+  assert.ok(batchStart > 0, 'Should find runRefreshHotelBatch function');
+  assert.ok(refreshStart > batchStart, 'Should find refreshExistingCtripHotels function');
+  const batchBody = code.substring(batchStart, refreshStart);
+  const refreshBody = code.substring(refreshStart, refreshEnd);
+
+  assert.ok(
+    /emit\(\s*'refresh:write'/.test(batchBody),
+    'Should emit final refresh:write before writing updates'
+  );
+  assert.ok(batchBody.includes("scope: 'final'"), 'refresh:write should include scope: final');
+  assert.ok(
+    batchBody.includes('writeHotels(updatedHotels'),
+    'Should write collected updates in one batch after collection'
+  );
+  assert.ok(
+    refreshBody.includes('appendHotelsToStore(hotels') &&
+      refreshBody.includes('overwriteExistingGroup: true'),
+    'Should overwrite existing hotel groups during the final batch write'
+  );
+});
+
+test('scraper-runner: refresh item collection bypasses full task runner overhead', () => {
   const code = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
     'utf8'
   );
   const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
   const refreshEnd = code.indexOf('module.exports', refreshStart);
+  assert.ok(refreshStart > 0, 'Should find refreshExistingCtripHotels function');
   const fnBody = code.substring(refreshStart, refreshEnd);
 
-  // Should have refresh:item-write event
   assert.ok(
-    /emit\(\s*'refresh:item-write'/.test(fnBody),
-    'Should use refresh:item-write for single hotel write'
+    fnBody.includes('runPreparedDetailBatch'),
+    'Refresh should collect each item through the shared prepared detail batch collector'
   );
-  // Should include scope: 'item'
-  assert.ok(fnBody.includes("scope: 'item'"), 'refresh:item-write should include scope: item');
+  assert.ok(
+    !fnBody.includes('runPreparedSingleDetailImport'),
+    'Refresh should not call the prepared single-detail runner directly'
+  );
+  assert.ok(
+    !fnBody.includes('runHotelImportTask(collectArgs'),
+    'Refresh should not run the full task runner for every hotel'
+  );
+  assert.ok(fnBody.includes("reportLevel: 'off'"), 'Refresh should skip per-hotel report output');
+});
+
+test('scraper-runner: refresh prepares cloned Edge profiles before launching concurrent workers', () => {
+  const code = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    'utf8'
+  );
+  const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
+  const refreshEnd = code.indexOf('module.exports', refreshStart);
+  assert.ok(refreshStart > 0, 'Should find refreshExistingCtripHotels function');
+  const fnBody = code.substring(refreshStart, refreshEnd);
+  const cloneIndex = fnBody.indexOf('prepareBatchEdgeWorkerProfileClones');
+  const launchIndex = fnBody.indexOf('launchAndWaitForEdge({');
+  const poolIndex = fnBody.indexOf('createBatchEdgeWorkerPool({');
+
+  assert.ok(cloneIndex > 0, 'Refresh should prepare cloned Edge profiles');
+  assert.ok(launchIndex > cloneIndex, 'Refresh should clone profiles before launching Edge');
+  assert.ok(
+    fnBody.includes('preparedUserDataDirs: preparedEdgeWorkerProfileDirs'),
+    'Refresh should pass prepared clones into the worker pool'
+  );
+  assert.ok(poolIndex > launchIndex, 'Refresh should create the worker pool after primary Edge');
+});
+
+test('refresh and normal collect share the bounded worker scheduler', () => {
+  const refreshCode = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    'utf8'
+  );
+  const batchCode = fs.readFileSync(
+    path.join(__dirname, '..', 'scraper', 'src', 'batch-orchestrator.js'),
+    'utf8'
+  );
+  const preparedCollectorCode = fs.readFileSync(
+    path.join(__dirname, '..', 'scraper', 'src', 'prepared-detail-batch-collector.js'),
+    'utf8'
+  );
+
+  assert.ok(
+    refreshCode.includes('runBoundedWorkers'),
+    'Refresh should use the shared bounded worker scheduler'
+  );
+  assert.ok(
+    preparedCollectorCode.includes('runBoundedWorkers'),
+    'Prepared detail batch collector should use the shared bounded worker scheduler'
+  );
+  assert.ok(
+    refreshCode.includes('runPreparedDetailBatch'),
+    'Refresh should use the shared prepared detail batch collector'
+  );
+  assert.ok(
+    batchCode.includes('runPreparedDetailBatch'),
+    'Normal batch collect should use the shared prepared detail batch collector'
+  );
 });
 
 test('refresh-data: refresh:item-write maps to refresh step, not write step', async () => {
@@ -904,6 +999,44 @@ test('refresh-data: current step stays on refresh after first hotel item-write w
   );
 });
 
+test('refresh-data: refresh step title shows both concurrent hotel names', async () => {
+  const mod = await loadTaskConsoleModule();
+
+  const now = new Date().toISOString();
+  const result = mod.normalizeTaskState({
+    task: { taskKind: 'refresh-data', startedAt: now },
+    events: [
+      { type: 'task:start', at: now },
+      { type: 'refresh:load-data', at: now },
+      { type: 'refresh:scan-done', at: now, details: { total: 3 } },
+      { type: 'edge:login-done', at: now },
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 1/3 家：酒店A',
+        details: { index: 1, total: 3, hotelName: '酒店A' }
+      },
+      {
+        type: 'refresh:item-start',
+        at: now,
+        message: '正在更新第 2/3 家：酒店B',
+        details: { index: 2, total: 3, hotelName: '酒店B' }
+      }
+    ],
+    inProgress: true
+  });
+
+  const refreshStep = result.steps.find((s) => s.key === 'refresh');
+  assert.ok(
+    refreshStep.title.includes('酒店A'),
+    `title should include first hotel: ${refreshStep.title}`
+  );
+  assert.ok(
+    refreshStep.title.includes('酒店B'),
+    `title should include second hotel: ${refreshStep.title}`
+  );
+});
+
 test('refresh-data: current step becomes write only after all items are processed', async () => {
   const mod = await loadTaskConsoleModule();
 
@@ -954,12 +1087,12 @@ test('refresh-data: current step becomes write only after all items are processe
         message: '已更新 酒店B',
         details: { index: 2, total: 2, status: 'updated' }
       },
-      // Final summary
+      // Final batch write
       {
-        type: 'refresh:summary',
+        type: 'refresh:write',
         at: now,
-        message: '更新完成',
-        details: { totalHotelCount: 2, updatedHotelCount: 2 }
+        message: '正在写入 2 家宾馆的更新结果',
+        details: { scope: 'final', total: 2, updatedHotelCount: 2 }
       }
     ],
     inProgress: true
@@ -969,7 +1102,7 @@ test('refresh-data: current step becomes write only after all items are processe
   assert.equal(
     writeStep.status,
     'running',
-    'write step should be running after all items processed and summary emitted'
+    'write step should be running after all items processed and final write starts'
   );
 });
 

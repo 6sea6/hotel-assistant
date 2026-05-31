@@ -27,7 +27,8 @@ const {
   isTaskCancelled,
   resolveRootPerfLogDir,
   resolveScraperPath,
-  restoreWriteRollbackSnapshot
+  restoreWriteRollbackSnapshot,
+  runRefreshHotelBatch
 } = require('../src/main/ai/scraper-runner');
 
 function createTrustedIpcEvent() {
@@ -464,6 +465,10 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     success: false,
     error: '无效的 AI 请求参数'
   });
+  assert.deepEqual(await handlers.get('ai:task:refresh-data')(event, { batchConcurrency: 3 }), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
   assert.deepEqual(await handlers.get('ai:task:start')(event, { url: 123 }), {
     success: false,
     error: '无效的 AI 请求参数'
@@ -796,6 +801,189 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.ok(
     events.some((event) => event.channel === 'ai:task:event' && event.payload.type === 'task:done')
   );
+});
+
+test('direct AI refresh passes batch concurrency to scraper runner', async (t) => {
+  const aiServicePath = require.resolve('../src/main/services/ai-service');
+  const lazyLoader = require('../src/main/ai/scraper-lazy-loader');
+  const originalLoadScraperRunner = lazyLoader.loadScraperRunner;
+  const originalAiServiceCache = require.cache[aiServicePath];
+  const calls = [];
+  const events = [];
+
+  lazyLoader.loadScraperRunner = async () => ({
+    refreshExistingCtripHotels: async (input, context) => {
+      calls.push({ input, context });
+      context.onEvent({ type: 'refresh:summary', message: '更新完成' });
+      return {
+        success: true,
+        totalHotelCount: 2,
+        updatedHotelCount: 2,
+        updatedRoomTypeCount: 4,
+        deletedRoomTypeCount: 0,
+        skippedHotelCount: 0,
+        items: [],
+        writeResult: { batchMode: true, appliedCount: 2 }
+      };
+    }
+  });
+  delete require.cache[aiServicePath];
+
+  t.after(() => {
+    lazyLoader.loadScraperRunner = originalLoadScraperRunner;
+    delete require.cache[aiServicePath];
+    if (originalAiServiceCache) {
+      require.cache[aiServicePath] = originalAiServiceCache;
+    }
+  });
+
+  const {
+    createAiService: createAiServiceWithMockRunner
+  } = require('../src/main/services/ai-service');
+  const service = createAiServiceWithMockRunner({
+    dataService: {
+      getDataFolderPath() {
+        return 'E:/实验/1/宾馆比较助手';
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return {
+          isDestroyed: () => false,
+          webContents: {
+            send(channel, payload) {
+              events.push({ channel, payload });
+            }
+          }
+        };
+      }
+    }
+  });
+
+  const result = await service.refreshHotelData({
+    amapKey: 'custom-amap-key',
+    batchConcurrency: 2
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input.amapKey, 'custom-amap-key');
+  assert.equal(calls[0].input.batchConcurrency, 2);
+  assert.equal(calls[0].context.dataFolderPath, 'E:/实验/1/宾馆比较助手');
+  assert.equal(result.collectResult.updatedHotelCount, 2);
+  assert.ok(
+    events.some(
+      (event) => event.channel === 'ai:task:event' && event.payload.type === 'refresh:summary'
+    )
+  );
+});
+
+test('refresh hotel batch runner honors bounded concurrency and writes once after collection', async () => {
+  const events = [];
+  const writtenBatches = [];
+  let activeRefreshes = 0;
+  let maxActiveRefreshes = 0;
+
+  const result = await runRefreshHotelBatch({
+    hotelUrls: [
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=3'
+    ],
+    requestedConcurrency: 2,
+    signal: null,
+    emit(type, message, details) {
+      events.push({ type, message, details });
+    },
+    processHotel: async ({ url, index }) => {
+      activeRefreshes += 1;
+      maxActiveRefreshes = Math.max(maxActiveRefreshes, activeRefreshes);
+      await new Promise((resolve) => setTimeout(resolve, index === 1 ? 30 : 5));
+      activeRefreshes -= 1;
+
+      if (index === 3) {
+        return {
+          hotelName: '酒店三',
+          url,
+          status: 'skipped',
+          updatedHotels: [],
+          updatedRoomTypeCount: 0,
+          deletedRoomTypeCount: 0,
+          skipReason: '没有有效房型',
+          error: ''
+        };
+      }
+
+      return {
+        hotelName: `酒店${index}`,
+        url,
+        status: 'updated',
+        updatedHotels: [
+          { name: `酒店${index}`, room_type: '大床房' },
+          { name: `酒店${index}`, room_type: '双床房' }
+        ],
+        updatedRoomTypeCount: 2,
+        deletedRoomTypeCount: index === 1 ? 1 : 0,
+        skipReason: '',
+        error: ''
+      };
+    },
+    writeHotels: async (hotels) => {
+      writtenBatches.push(hotels);
+      return { batchMode: true, appliedCount: hotels.length };
+    }
+  });
+
+  assert.equal(maxActiveRefreshes, 2);
+  assert.equal(writtenBatches.length, 1);
+  assert.deepEqual(
+    writtenBatches[0].map((hotel) => `${hotel.name}:${hotel.room_type}`),
+    ['酒店1:大床房', '酒店1:双床房', '酒店2:大床房', '酒店2:双床房']
+  );
+  assert.equal(result.requestedConcurrency, 2);
+  assert.equal(result.effectiveConcurrency, 2);
+  assert.equal(result.updatedHotelCount, 2);
+  assert.equal(result.updatedRoomTypeCount, 4);
+  assert.equal(result.deletedRoomTypeCount, 1);
+  assert.equal(result.skippedHotelCount, 1);
+  assert.equal(result.items.length, 3);
+  assert.equal(events.filter((event) => event.type === 'refresh:item-start').length, 3);
+  assert.equal(events.filter((event) => event.type === 'refresh:item-done').length, 2);
+  assert.equal(events.filter((event) => event.type === 'refresh:item-skipped').length, 1);
+  assert.equal(events.filter((event) => event.type === 'refresh:write').length, 1);
+  assert.equal(events.find((event) => event.type === 'refresh:write').details.scope, 'final');
+});
+
+test('refresh hotel batch runner stays serial when requested concurrency is one', async () => {
+  let activeRefreshes = 0;
+  let maxActiveRefreshes = 0;
+
+  const result = await runRefreshHotelBatch({
+    hotelUrls: ['url-1', 'url-2'],
+    requestedConcurrency: 1,
+    emit() {},
+    processHotel: async ({ url, index }) => {
+      activeRefreshes += 1;
+      maxActiveRefreshes = Math.max(maxActiveRefreshes, activeRefreshes);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeRefreshes -= 1;
+      return {
+        hotelName: `酒店${index}`,
+        url,
+        status: 'updated',
+        updatedHotels: [{ name: `酒店${index}`, room_type: '大床房' }],
+        updatedRoomTypeCount: 1,
+        deletedRoomTypeCount: 0,
+        skipReason: '',
+        error: ''
+      };
+    },
+    writeHotels: async () => ({ batchMode: true, appliedCount: 2 })
+  });
+
+  assert.equal(maxActiveRefreshes, 1);
+  assert.equal(result.requestedConcurrency, 1);
+  assert.equal(result.effectiveConcurrency, 1);
+  assert.equal(result.updatedHotelCount, 2);
 });
 
 test('direct AI task reloads the data store after scraper writeback', async () => {

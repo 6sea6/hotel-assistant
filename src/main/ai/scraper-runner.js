@@ -202,6 +202,351 @@ function normalizeBatchConcurrency(value) {
   return Number(value) === 2 ? 2 : 1;
 }
 
+const MAX_REFRESH_BATCH_CONCURRENCY = 2;
+
+function loadEmbeddedBoundedWorkerRunner() {
+  const modulePath = path.join(resolveEmbeddedScraperPath(), 'src', 'bounded-worker-runner.js');
+  return require(modulePath);
+}
+
+function getEffectiveRefreshConcurrency(
+  requestedConcurrency,
+  totalHotelCount,
+  workerContexts = [],
+  getEffectiveBoundedConcurrency = null
+) {
+  if (typeof getEffectiveBoundedConcurrency === 'function') {
+    return getEffectiveBoundedConcurrency({
+      requestedConcurrency: normalizeBatchConcurrency(requestedConcurrency),
+      total: totalHotelCount,
+      workerContexts,
+      maxConcurrency: MAX_REFRESH_BATCH_CONCURRENCY
+    });
+  }
+
+  const workerLimit =
+    Array.isArray(workerContexts) && workerContexts.length > 0
+      ? workerContexts.length
+      : MAX_REFRESH_BATCH_CONCURRENCY;
+  return Math.max(
+    1,
+    Math.min(
+      normalizeBatchConcurrency(requestedConcurrency),
+      Math.max(1, Number(totalHotelCount || 0)),
+      workerLimit,
+      MAX_REFRESH_BATCH_CONCURRENCY
+    )
+  );
+}
+
+function buildRefreshItemDetails({
+  index,
+  total,
+  hotelName = '',
+  status = '',
+  roomTypeCount = 0,
+  deletedRoomTypeCount = 0,
+  reason = '',
+  requestedConcurrency = 1,
+  effectiveConcurrency = 1
+}) {
+  return {
+    index,
+    total,
+    hotelName,
+    status,
+    roomTypeCount,
+    deletedRoomTypeCount,
+    reason,
+    requestedConcurrency,
+    effectiveConcurrency
+  };
+}
+
+function normalizeRefreshItemResult(result = {}, fallback = {}) {
+  const status = result.status === 'updated' ? 'updated' : result.status || 'skipped';
+  const updatedHotels = Array.isArray(result.updatedHotels) ? result.updatedHotels : [];
+  return {
+    hotelName: result.hotelName || fallback.hotelName || '',
+    url: result.url || fallback.url || '',
+    status,
+    updatedHotels,
+    updatedRoomTypeCount: Number(result.updatedRoomTypeCount || updatedHotels.length || 0),
+    deletedRoomTypeCount: Number(result.deletedRoomTypeCount || 0),
+    skipReason: result.skipReason || '',
+    error: result.error || ''
+  };
+}
+
+function toPublicRefreshItem(item = {}) {
+  return {
+    hotelName: item.hotelName || '',
+    url: item.url || '',
+    status: item.status || 'skipped',
+    updatedRoomTypeCount: Number(item.updatedRoomTypeCount || 0),
+    deletedRoomTypeCount: Number(item.deletedRoomTypeCount || 0),
+    skipReason: item.skipReason || '',
+    error: item.error || ''
+  };
+}
+
+async function runRefreshHotelBatch({
+  hotelUrls = [],
+  requestedConcurrency = 1,
+  workerContexts = [],
+  signal = null,
+  emit = () => {},
+  getHotelName = () => '',
+  processHotel,
+  writeHotels,
+  runWorkers = null,
+  getEffectiveConcurrency = null,
+  runPreparedDetails = null,
+  createDetailContext = null,
+  mapPreparedResult = null
+} = {}) {
+  const urls = Array.isArray(hotelUrls) ? hotelUrls : [];
+  const totalHotelCount = urls.length;
+  const normalizedRequestedConcurrency = normalizeBatchConcurrency(requestedConcurrency);
+  const runBoundedWorkers =
+    typeof runWorkers === 'function'
+      ? runWorkers
+      : loadEmbeddedBoundedWorkerRunner().runBoundedWorkers;
+  const effectiveConcurrency = getEffectiveRefreshConcurrency(
+    normalizedRequestedConcurrency,
+    totalHotelCount,
+    workerContexts,
+    getEffectiveConcurrency
+  );
+  const collectedItems = new Array(totalHotelCount);
+  const updatedHotelBatches = new Array(totalHotelCount);
+
+  const buildItemMeta = ({ url, zeroBasedIndex, index, total, worker }) => {
+    const hotelName = String(getHotelName(url) || '');
+    return {
+      url,
+      zeroBasedIndex,
+      index,
+      total,
+      worker,
+      hotelName,
+      detailsBase: {
+        index,
+        total,
+        hotelName,
+        requestedConcurrency: normalizedRequestedConcurrency,
+        effectiveConcurrency
+      }
+    };
+  };
+
+  const emitItemStart = (meta) => {
+    emit(
+      'refresh:item-start',
+      `正在更新第 ${meta.index}/${totalHotelCount} 家${meta.hotelName ? `：${meta.hotelName}` : ''}`,
+      buildRefreshItemDetails(meta.detailsBase)
+    );
+  };
+
+  const storeRefreshItem = (rawResult, meta) => {
+    const item = normalizeRefreshItemResult(rawResult, {
+      url: meta.url,
+      hotelName: meta.hotelName
+    });
+    collectedItems[meta.zeroBasedIndex] = item;
+    updatedHotelBatches[meta.zeroBasedIndex] =
+      item.status === 'updated' ? item.updatedHotels || [] : [];
+
+    if (item.status === 'updated') {
+      emit(
+        'refresh:item-done',
+        `已更新 ${item.hotelName || meta.hotelName || meta.url}：${item.updatedRoomTypeCount} 种房型`,
+        buildRefreshItemDetails({
+          ...meta.detailsBase,
+          hotelName: item.hotelName || meta.hotelName,
+          status: 'updated',
+          roomTypeCount: item.updatedRoomTypeCount,
+          deletedRoomTypeCount: item.deletedRoomTypeCount
+        })
+      );
+    } else {
+      const reason = item.skipReason || item.error || '采集未返回有效房型数据';
+      emit(
+        'refresh:item-skipped',
+        `跳过 ${item.hotelName || meta.hotelName || meta.url}：${reason}`,
+        buildRefreshItemDetails({
+          ...meta.detailsBase,
+          hotelName: item.hotelName || meta.hotelName,
+          status: item.status,
+          reason
+        })
+      );
+    }
+
+    return item;
+  };
+
+  const storeRefreshError = (error, meta) => {
+    if (isTaskCancelled(error, signal)) {
+      throw error;
+    }
+    const errorMessage = error && error.message ? error.message : String(error || '未知错误');
+    const item = normalizeRefreshItemResult(
+      {
+        hotelName: meta.hotelName,
+        url: meta.url,
+        status: 'failed',
+        updatedHotels: [],
+        updatedRoomTypeCount: 0,
+        deletedRoomTypeCount: 0,
+        skipReason: errorMessage,
+        error: errorMessage
+      },
+      { url: meta.url, hotelName: meta.hotelName }
+    );
+    collectedItems[meta.zeroBasedIndex] = item;
+    updatedHotelBatches[meta.zeroBasedIndex] = [];
+    emit(
+      'refresh:item-skipped',
+      `跳过 ${meta.hotelName || meta.url}：${errorMessage}`,
+      buildRefreshItemDetails({
+        ...meta.detailsBase,
+        status: 'failed',
+        reason: errorMessage
+      })
+    );
+    return item;
+  };
+
+  if (
+    typeof runPreparedDetails === 'function' &&
+    typeof createDetailContext === 'function' &&
+    typeof mapPreparedResult === 'function'
+  ) {
+    await runPreparedDetails({
+      items: urls,
+      requestedConcurrency: normalizedRequestedConcurrency,
+      workerContexts,
+      maxConcurrency: effectiveConcurrency,
+      signal,
+      createDetailContext: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
+        const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+        emitItemStart(meta);
+        const preparedContext = await createDetailContext({
+          url,
+          index,
+          total,
+          hotelName: meta.hotelName,
+          worker
+        });
+        if (preparedContext && Object.prototype.hasOwnProperty.call(preparedContext, 'context')) {
+          return {
+            context: preparedContext.context,
+            meta: {
+              ...meta,
+              ...(preparedContext.meta || {})
+            }
+          };
+        }
+        return {
+          context: preparedContext,
+          meta
+        };
+      },
+      mapPreparedResult: async ({ preparedResult, meta }) => {
+        const rawResult = await mapPreparedResult({
+          preparedResult,
+          url: meta.url,
+          index: meta.index,
+          total: meta.total,
+          hotelName: meta.hotelName,
+          worker: meta.worker,
+          meta
+        });
+        return storeRefreshItem(rawResult, meta);
+      },
+      mapDetailError: async ({ error, item: url, zeroBasedIndex, index, total, worker, meta }) => {
+        const safeMeta =
+          meta || buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+        return storeRefreshError(error, safeMeta);
+      }
+    });
+  } else {
+    await runBoundedWorkers({
+      items: urls,
+      requestedConcurrency: normalizedRequestedConcurrency,
+      workerContexts,
+      maxConcurrency: effectiveConcurrency,
+      signal,
+      runItem: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
+        assertNotCancelled(signal);
+        const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+        emitItemStart(meta);
+
+        try {
+          const rawResult = await processHotel({
+            url,
+            index,
+            total,
+            hotelName: meta.hotelName,
+            worker
+          });
+          return storeRefreshItem(rawResult, meta);
+        } catch (error) {
+          return storeRefreshError(error, meta);
+        }
+      }
+    });
+  }
+
+  const internalItems = collectedItems.filter(Boolean);
+  const updatedItems = internalItems.filter((item) => item.status === 'updated');
+  const skippedItems = internalItems.filter((item) => item.status !== 'updated');
+  const updatedHotels = updatedHotelBatches.flatMap((hotels) =>
+    Array.isArray(hotels) ? hotels : []
+  );
+  const updatedRoomTypeCount = updatedItems.reduce(
+    (sum, item) => sum + Number(item.updatedRoomTypeCount || 0),
+    0
+  );
+  const deletedRoomTypeCount = updatedItems.reduce(
+    (sum, item) => sum + Number(item.deletedRoomTypeCount || 0),
+    0
+  );
+  let rawWriteResult = null;
+
+  if (updatedHotels.length > 0 && typeof writeHotels === 'function') {
+    emit('refresh:write', `正在写入 ${updatedItems.length} 家宾馆的更新结果`, {
+      scope: 'final',
+      total: totalHotelCount,
+      updatedHotelCount: updatedItems.length,
+      updatedRoomTypeCount,
+      deletedRoomTypeCount,
+      skippedHotelCount: skippedItems.length,
+      requestedConcurrency: normalizedRequestedConcurrency,
+      effectiveConcurrency
+    });
+    rawWriteResult = await writeHotels(updatedHotels, {
+      updatedItems,
+      skippedItems,
+      updatedHotels
+    });
+  }
+
+  return {
+    requestedConcurrency: normalizedRequestedConcurrency,
+    effectiveConcurrency,
+    totalHotelCount,
+    updatedHotelCount: updatedItems.length,
+    updatedRoomTypeCount,
+    deletedRoomTypeCount,
+    skippedHotelCount: skippedItems.length,
+    items: internalItems.map(toPublicRefreshItem),
+    updatedHotels,
+    rawWriteResult
+  };
+}
+
 function buildScraperArgs(input, workDir) {
   const args = {
     url: input.url,
@@ -718,17 +1063,19 @@ async function refreshExistingCtripHotels(input, context = {}) {
       const hotelMerge = await loadScraperModule(scraperPath, 'compare-app/hotel-merge.js');
       const store = bridge.loadCompareAppStore();
       const rawHotels = Array.isArray(store.hotels) ? store.hotels : [];
-      const { expandStoredHotels, compactHotels: _compactHotels } = await loadScraperModule(
+      const sharedCompareAppModule = await loadScraperModule(
         scraperPath,
         'compare-app/shared-module.js'
-      ).then((mod) => {
-        const groups = mod.requireSharedCompareAppModule('hotel-groups.js');
-        return {
-          expandStoredHotels: groups.expandStoredHotels,
-          compactHotels: groups.compactHotels
-        };
-      });
+      );
+      const { BASE_COMPARE_APP_SETTINGS } =
+        sharedCompareAppModule.requireSharedCompareAppModule('constants.js');
+      const { expandStoredHotels } =
+        sharedCompareAppModule.requireSharedCompareAppModule('hotel-groups.js');
       const expandedHotels = expandStoredHotels(rawHotels);
+      const compareAppSettings = {
+        ...BASE_COMPARE_APP_SETTINGS,
+        ...((store && store.settings) || {})
+      };
 
       // 2. Group hotels by website (ctrip URL), find ones with ctrip links
       const hotelGroups = new Map();
@@ -764,46 +1111,124 @@ async function refreshExistingCtripHotels(input, context = {}) {
         total: totalHotelCount
       });
 
-      // 3. Prepare Edge session
+      // 3. Prepare Edge sessions
       assertNotCancelled(context.signal);
       emit('edge:login-required', '正在准备 Edge 登录态');
-      const { launchAndWaitForEdge } = await loadScraperModule(scraperPath, 'cli/auto-edge.js');
-      await launchAndWaitForEdge({
-        userDataDir: path.join(workDir, 'state', 'edge-profile'),
-        profileDirectory: 'Default',
-        port: 9222,
-        url: hotelUrls[0] || 'https://hotels.ctrip.com/'
-      });
-      emit('edge:login-done', 'Edge 登录态已准备完成');
+      const requestedConcurrency = normalizeBatchConcurrency(input.batchConcurrency);
+      const { getEffectiveBoundedConcurrency, runBoundedWorkers } = await loadScraperModule(
+        scraperPath,
+        'bounded-worker-runner.js'
+      );
+      const plannedEffectiveConcurrency = getEffectiveRefreshConcurrency(
+        requestedConcurrency,
+        totalHotelCount,
+        [],
+        getEffectiveBoundedConcurrency
+      );
+      const baseEdgeUserDataDir = path.join(workDir, 'state', 'edge-profile');
+      const baseEdgeProfileDirectory = 'Default';
+      const baseEdgeDebuggingPort = 9222;
+      const baseEdgeTemplate = {
+        edge_user_data_dir: baseEdgeUserDataDir,
+        edge_profile_directory: baseEdgeProfileDirectory,
+        edge_debugging_port: baseEdgeDebuggingPort,
+        edge_headless: true
+      };
+      const { closeAutoEdge, launchAndWaitForEdge } = await loadScraperModule(
+        scraperPath,
+        'cli/auto-edge.js'
+      );
+      const {
+        createBatchEdgeWorkerPool,
+        cleanupBatchEdgeWorkerProfileClones,
+        prepareBatchEdgeWorkerProfileClones
+      } = await loadScraperModule(scraperPath, 'batch-edge-worker-pool.js');
+      const { runPreparedDetailBatch } = await loadScraperModule(
+        scraperPath,
+        'prepared-detail-batch-collector.js'
+      );
+      const { createScrapeEventForwarder } = await loadScraperModule(scraperPath, 'task-events.js');
+      const { applyMatchedTemplate, mergeTemplateWithArgs, validateTemplate } =
+        await loadScraperModule(scraperPath, 'template-loader.js');
+      const { normalizePlaceName } = await loadScraperModule(scraperPath, 'utils.js');
+      let primaryEdgePid = null;
+      let edgeWorkerPool = null;
+      let workerContexts = [];
+      let preparedEdgeWorkerProfileDirs = [];
 
-      assertNotCancelled(context.signal);
-      await createWriteRollbackSnapshot(scraperPath, rollbackState);
+      try {
+        if (plannedEffectiveConcurrency > 1) {
+          preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
+            effectiveTemplate: baseEdgeTemplate,
+            concurrency: plannedEffectiveConcurrency,
+            existingWorkerCount: 1
+          });
+        }
 
-      // 4. Process each hotel
-      let updatedHotelCount = 0;
-      let updatedRoomTypeCount = 0;
-      let deletedRoomTypeCount = 0;
-      let skippedHotelCount = 0;
-      const items = [];
+        const primaryEdge = await launchAndWaitForEdge({
+          userDataDir: baseEdgeUserDataDir,
+          profileDirectory: baseEdgeProfileDirectory,
+          port: baseEdgeDebuggingPort,
+          url: hotelUrls[0] || 'https://hotels.ctrip.com/'
+        });
+        primaryEdgePid = primaryEdge.pid || null;
+        const primaryWorker = {
+          id: 1,
+          pid: primaryEdge.pid || null,
+          port: Number(primaryEdge.port || baseEdgeDebuggingPort),
+          userDataDir: baseEdgeUserDataDir,
+          profileDirectory: baseEdgeProfileDirectory,
+          cleanupUserDataDir: false,
+          shouldClose: false,
+          effectiveTemplate: {
+            ...baseEdgeTemplate,
+            edge_debugging_port: Number(primaryEdge.port || baseEdgeDebuggingPort)
+          }
+        };
 
-      const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
+        workerContexts = [primaryWorker];
+        if (plannedEffectiveConcurrency > 1) {
+          try {
+            edgeWorkerPool = await createBatchEdgeWorkerPool({
+              args: { 'auto-edge': true },
+              effectiveTemplate: {
+                ...baseEdgeTemplate,
+                edge_debugging_port: Number(primaryEdge.port || baseEdgeDebuggingPort)
+              },
+              concurrency: plannedEffectiveConcurrency,
+              existingWorker: primaryWorker,
+              preparedUserDataDirs: preparedEdgeWorkerProfileDirs
+            });
+            workerContexts =
+              edgeWorkerPool && Array.isArray(edgeWorkerPool.workers)
+                ? edgeWorkerPool.workers
+                : workerContexts;
+          } catch (error) {
+            emit('edge:parallel-disabled', '并发 Edge 会话准备失败，已回退为串行更新', {
+              reason: error && error.message ? error.message : String(error || ''),
+              requestedConcurrency,
+              effectiveConcurrency: 1
+            });
+          }
+        }
 
-      for (let index = 0; index < hotelUrls.length; index++) {
-        assertNotCancelled(context.signal);
-
-        const url = hotelUrls[index];
-        const existingHotels = hotelGroups.get(url);
-        const firstHotel = existingHotels[0] || {};
-        const hotelName = firstHotel.name || '';
-
-        emit('refresh:item-start', `正在更新第 ${index + 1}/${totalHotelCount} 家：${hotelName}`, {
-          index: index + 1,
-          total: totalHotelCount,
-          hotelName
+        emit('edge:login-done', 'Edge 登录态已准备完成', {
+          requestedConcurrency,
+          effectiveConcurrency: getEffectiveRefreshConcurrency(
+            requestedConcurrency,
+            totalHotelCount,
+            workerContexts,
+            getEffectiveBoundedConcurrency
+          )
         });
 
-        try {
-          // Run single detail page scrape with skipTransit
+        assertNotCancelled(context.signal);
+        await createWriteRollbackSnapshot(scraperPath, rollbackState);
+
+        const createRefreshDetailContext = async ({ url, index, total, hotelName, worker }) => {
+          assertNotCancelled(context.signal);
+          const existingHotels = hotelGroups.get(url) || [];
+          const firstHotel = existingHotels[0] || {};
           const collectArgs = buildScraperArgs(
             {
               url,
@@ -814,23 +1239,87 @@ async function refreshExistingCtripHotels(input, context = {}) {
             workDir
           );
           collectArgs.skipTransit = true;
+          collectArgs['skip-report'] = true;
+          collectArgs['no-output-report'] = true;
+          collectArgs.captureStrategy = 'parallel_edge';
+          if (worker && worker.port) {
+            collectArgs['auto-edge'] = false;
+            collectArgs['edge-user-data-dir'] = worker.userDataDir || baseEdgeUserDataDir;
+            collectArgs['edge-profile-directory'] =
+              worker.profileDirectory || baseEdgeProfileDirectory;
+            collectArgs['edge-debugging-port'] = Number(worker.port);
+          }
 
-          const collectResult = await runHotelImportTask(collectArgs, {
-            workingDirectory: workDir,
-            taskId: context.taskId,
-            signal: context.signal,
-            onEvent: (event) => {
-              // Only forward non-transit events
-              const type = event.type || '';
-              if (
-                !type.startsWith('transit:') &&
-                type !== 'transit:start' &&
-                type !== 'transit:done'
-              ) {
-                emit(event.type, event.message, event.details || {});
-              }
+          const itemEmit = (eventType, message, details = {}) => {
+            const type = eventType || '';
+            if (
+              type.startsWith('transit:') ||
+              type === 'transit:start' ||
+              type === 'transit:done' ||
+              type === 'task:start' ||
+              type === 'task:done'
+            ) {
+              return;
             }
-          });
+            emit(type, message, {
+              index,
+              total,
+              hotelName,
+              ...details
+            });
+          };
+          const loadedTemplate = mergeTemplateWithArgs({}, collectArgs);
+          const matchedTemplate = bridge.findTemplateInStore(
+            store,
+            loadedTemplate.template_id,
+            loadedTemplate.template_name || collectArgs.templateName
+          );
+          const effectiveTemplate = applyMatchedTemplate(loadedTemplate, matchedTemplate);
+          validateTemplate(effectiveTemplate);
+          const effectiveDestination = normalizePlaceName(
+            (matchedTemplate && matchedTemplate.destination) || effectiveTemplate.destination
+          );
+
+          return {
+            context: {
+              args: collectArgs,
+              startedAt: new Date().toISOString(),
+              taskId: `${context.taskId || 'refresh'}-${index}`,
+              emit: itemEmit,
+              signal: context.signal,
+              outputDir: path.join(workDir, 'output'),
+              template: loadedTemplate,
+              matchedTemplate,
+              effectiveTemplate,
+              compareAppSettings,
+              effectiveDestination,
+              hotelInput: {
+                url,
+                requestedUrl: url,
+                source: 'refresh',
+                hotelId: firstHotel.id || ''
+              },
+              outputPath: '',
+              autoEdge: false,
+              transitCache: null,
+              writeAppData: false,
+              pageIndex: index,
+              reportLevel: 'off',
+              captureStrategy: collectArgs.captureStrategy,
+              edgeParallelCancelPolicy: collectArgs.edgeParallelCancelPolicy || 'none',
+              scrapeEventForwarder: createScrapeEventForwarder(itemEmit)
+            },
+            meta: {
+              existingHotels,
+              firstHotel
+            }
+          };
+        };
+
+        const mapRefreshPreparedResult = async ({ preparedResult, url, hotelName, meta }) => {
+          const existingHotels = (meta && meta.existingHotels) || [];
+          const firstHotel = (meta && meta.firstHotel) || existingHotels[0] || {};
+          const collectResult = preparedResult.result;
 
           assertNotCancelled(context.signal);
 
@@ -843,52 +1332,34 @@ async function refreshExistingCtripHotels(input, context = {}) {
           ) {
             const skipReason =
               collectResult && collectResult.error ? collectResult.error : '采集未返回有效房型数据';
-            skippedHotelCount++;
-            items.push({
+            return {
               hotelName,
               url,
               status: 'skipped',
+              updatedHotels: [],
               updatedRoomTypeCount: 0,
               deletedRoomTypeCount: 0,
               skipReason,
               error: skipReason
-            });
-            emit('refresh:item-skipped', `跳过 ${hotelName}：${skipReason}`, {
-              index: index + 1,
-              total: totalHotelCount,
-              hotelName,
-              status: 'skipped',
-              reason: skipReason
-            });
-            continue;
+            };
           }
 
-          // Check price availability
           const newHotels = Array.isArray(collectResult.eligibleHotels)
             ? collectResult.eligibleHotels
             : [];
           if (newHotels.length === 0) {
-            skippedHotelCount++;
-            items.push({
+            return {
               hotelName,
               url,
               status: 'skipped',
+              updatedHotels: [],
               updatedRoomTypeCount: 0,
               deletedRoomTypeCount: 0,
               skipReason: '采集成功但没有有效房型',
               error: ''
-            });
-            emit('refresh:item-skipped', `跳过 ${hotelName}：没有有效房型`, {
-              index: index + 1,
-              total: totalHotelCount,
-              hotelName,
-              status: 'skipped',
-              reason: '没有有效房型'
-            });
-            continue;
+            };
           }
 
-          // Preserve old fields from existing records
           const oldRoomTypes = new Set(
             existingHotels.map((h) => (h.room_type || '').trim()).filter(Boolean)
           );
@@ -925,7 +1396,6 @@ async function refreshExistingCtripHotels(input, context = {}) {
             };
           });
 
-          // Calculate deleted room types
           const newRoomTypes = new Set(
             refreshedHotels.map((h) => (h.room_type || '').trim()).filter(Boolean)
           );
@@ -936,102 +1406,99 @@ async function refreshExistingCtripHotels(input, context = {}) {
             }
           }
 
-          // Write using overwriteExistingGroup strategy
-          emit(
-            'refresh:item-write',
-            `正在写入第 ${index + 1}/${totalHotelCount} 家的更新结果：${hotelName}`,
-            {
-              index: index + 1,
-              total: totalHotelCount,
-              hotelName,
-              scope: 'item'
-            }
-          );
-          const _writeResult = await hotelMerge.appendHotelsToStore(refreshedHotels, {
-            overwriteExistingGroup: true
-          });
-
-          updatedHotelCount++;
-          updatedRoomTypeCount += refreshedHotels.length;
-          deletedRoomTypeCount += deletedForThisHotel;
-
-          items.push({
+          return {
             hotelName,
             url,
             status: 'updated',
+            updatedHotels: refreshedHotels,
             updatedRoomTypeCount: refreshedHotels.length,
             deletedRoomTypeCount: deletedForThisHotel,
             skipReason: '',
             error: ''
-          });
+          };
+        };
 
-          emit('refresh:item-done', `已更新 ${hotelName}：${refreshedHotels.length} 种房型`, {
-            index: index + 1,
-            total: totalHotelCount,
-            hotelName,
-            status: 'updated',
-            roomTypeCount: refreshedHotels.length,
-            deletedRoomTypeCount: deletedForThisHotel
-          });
-        } catch (error) {
-          if (isTaskCancelled(error, context.signal)) {
-            throw error;
+        const batchResult = await runRefreshHotelBatch({
+          hotelUrls,
+          requestedConcurrency,
+          workerContexts,
+          signal: context.signal,
+          emit,
+          getHotelName(url) {
+            const existingHotels = hotelGroups.get(url) || [];
+            const firstHotel = existingHotels[0] || {};
+            return firstHotel.name || '';
+          },
+          runWorkers: runBoundedWorkers,
+          getEffectiveConcurrency: getEffectiveBoundedConcurrency,
+          runPreparedDetails: runPreparedDetailBatch,
+          createDetailContext: createRefreshDetailContext,
+          mapPreparedResult: mapRefreshPreparedResult,
+          writeHotels(hotels) {
+            return hotelMerge.appendHotelsToStore(hotels, {
+              overwriteExistingGroup: true
+            });
           }
-          const errorMessage = error && error.message ? error.message : String(error || '未知错误');
-          skippedHotelCount++;
-          items.push({
-            hotelName,
-            url,
-            status: 'failed',
-            updatedRoomTypeCount: 0,
-            deletedRoomTypeCount: 0,
-            skipReason: errorMessage,
-            error: errorMessage
-          });
-          emit('refresh:item-skipped', `跳过 ${hotelName}：${errorMessage}`, {
-            index: index + 1,
-            total: totalHotelCount,
-            hotelName,
-            status: 'failed',
-            reason: errorMessage
-          });
+        });
+
+        const {
+          updatedHotelCount,
+          updatedRoomTypeCount,
+          deletedRoomTypeCount,
+          skippedHotelCount,
+          items,
+          effectiveConcurrency,
+          rawWriteResult
+        } = batchResult;
+
+        const message =
+          totalHotelCount === 0
+            ? '当前没有找到带携程链接的宾馆，未执行更新。'
+            : updatedHotelCount === 0 && skippedHotelCount > 0
+              ? `本次没有成功更新的宾馆，已跳过 ${skippedHotelCount} 家。请检查携程登录态或稍后重试。`
+              : `更新完成，本次更新 ${updatedHotelCount} 家宾馆信息，更新 ${updatedRoomTypeCount} 种房型价格，删除 ${deletedRoomTypeCount} 种已下架房型，跳过 ${skippedHotelCount} 家。`;
+
+        emit('refresh:summary', message, {
+          totalHotelCount,
+          updatedHotelCount,
+          updatedRoomTypeCount,
+          deletedRoomTypeCount,
+          skippedHotelCount,
+          requestedConcurrency,
+          effectiveConcurrency
+        });
+
+        return {
+          success: true,
+          totalHotelCount,
+          updatedHotelCount,
+          updatedRoomTypeCount,
+          deletedRoomTypeCount,
+          skippedHotelCount,
+          requestedConcurrency,
+          effectiveConcurrency,
+          items,
+          message,
+          writeResult: {
+            batchMode: true,
+            appliedCount: updatedHotelCount,
+            skippedCount: skippedHotelCount,
+            operations: rawWriteResult || [],
+            items: items.map((item) => ({
+              skipped: item.status !== 'updated',
+              reason: item.skipReason || ''
+            }))
+          }
+        };
+      } finally {
+        if (edgeWorkerPool) {
+          await edgeWorkerPool.close();
         }
+        if (primaryEdgePid) {
+          closeAutoEdge(primaryEdgePid);
+        }
+        cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
       }
-
-      const message =
-        totalHotelCount === 0
-          ? '当前没有找到带携程链接的宾馆，未执行更新。'
-          : updatedHotelCount === 0 && skippedHotelCount > 0
-            ? `本次没有成功更新的宾馆，已跳过 ${skippedHotelCount} 家。请检查携程登录态或稍后重试。`
-            : `更新完成，本次更新 ${updatedHotelCount} 家宾馆信息，更新 ${updatedRoomTypeCount} 种房型价格，删除 ${deletedRoomTypeCount} 种已下架房型，跳过 ${skippedHotelCount} 家。`;
-
-      emit('refresh:summary', message, {
-        totalHotelCount,
-        updatedHotelCount,
-        updatedRoomTypeCount,
-        deletedRoomTypeCount,
-        skippedHotelCount
-      });
-
-      return {
-        success: true,
-        totalHotelCount,
-        updatedHotelCount,
-        updatedRoomTypeCount,
-        deletedRoomTypeCount,
-        skippedHotelCount,
-        items,
-        message,
-        writeResult: {
-          batchMode: true,
-          appliedCount: updatedHotelCount,
-          skippedCount: skippedHotelCount,
-          items: items.map((item) => ({
-            skipped: item.status !== 'updated',
-            reason: item.skipReason || ''
-          }))
-        }
-      };
     } catch (error) {
       if (isTaskCancelled(error, context.signal)) {
         restoreWriteRollbackSnapshot(rollbackState, context);
@@ -1053,6 +1520,7 @@ module.exports = {
   openVisibleEdgeLogin,
   refreshExistingCtripHotels,
   resolveRootPerfLogDir,
+  runRefreshHotelBatch,
   restoreWriteRollbackSnapshot,
   resolveScraperPath,
   resolveScraperWorkDir

@@ -97,9 +97,9 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
       type === 'refresh:item-skipped'
     )
       return 'refresh';
-    if (type.startsWith('refresh:')) return 'refresh';
     if (type === 'refresh:write') return 'write';
     if (type === 'refresh:summary') return 'write';
+    if (type.startsWith('refresh:')) return 'refresh';
     if (type.startsWith('edge:') || toolName === 'open_visible_edge_login') return 'edge';
     if (type.startsWith('write:') || type.startsWith('apply:')) return 'write';
     if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return 'received';
@@ -209,6 +209,53 @@ export function getLastTaskError(events = [], task = {}) {
   return errorEvent ? errorEvent.message || errorEvent.type : '';
 }
 
+function getRefreshEventIndex(event = {}) {
+  const detail = event.raw && isRecord(event.raw.details) ? event.raw.details : {};
+  return Number(detail.index || detail.itemIndex || detail.currentIndex || 0);
+}
+
+function getRefreshEventHotelName(event = {}) {
+  const detail = event.raw && isRecord(event.raw.details) ? event.raw.details : {};
+  const detailName = String(detail.hotelName || '').trim();
+  if (detailName) return detailName;
+  const message = String((event.raw && event.raw.message) || event.title || '');
+  const parts = message.split('：');
+  return String(parts[parts.length - 1] || '').trim();
+}
+
+function buildConcurrentRefreshEvent(runningEvents = []) {
+  if (runningEvents.length <= 1) {
+    return runningEvents[0] || null;
+  }
+
+  const runningItems = runningEvents.map((event) => ({
+    index: getRefreshEventIndex(event),
+    hotelName: getRefreshEventHotelName(event)
+  }));
+  const hotelNames = runningItems.map((item) => item.hotelName).filter(Boolean);
+  const latestEvent = runningEvents[runningEvents.length - 1];
+
+  return {
+    key: 'refresh',
+    time: latestEvent.time || '',
+    title:
+      hotelNames.length > 0
+        ? `正在同时更新 ${runningEvents.length} 家：${hotelNames.join('、')}`
+        : `正在同时更新 ${runningEvents.length} 家宾馆`,
+    detail: {
+      runningItems
+    },
+    toolName: '',
+    raw: {
+      type: 'refresh:items-running',
+      message: '',
+      details: {
+        runningItems
+      }
+    }
+  };
+}
+
 /**
  * @param {AiNormalizedEvent[]} normalizedEvents
  * @param {string} key
@@ -219,47 +266,25 @@ export function findRefreshStepEvent(normalizedEvents, key) {
     return findStepEvent(normalizedEvents, key);
   }
 
-  const isIndexRunning = (index) => {
-    if (index <= 0) return false;
-    return !normalizedEvents.some((event) => {
-      if (event.key !== 'refresh') return false;
-      const eventType = event.raw && event.raw.type;
-      if (eventType !== 'refresh:item-done' && eventType !== 'refresh:item-skipped') return false;
-      const detail =
-        event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
-      return Number(detail.index || 0) === index;
-    });
-  };
+  const runningByIndex = new Map();
+  for (const event of normalizedEvents) {
+    if (event.key !== 'refresh') continue;
+    const rawType = event.raw && event.raw.type;
+    const index = getRefreshEventIndex(event);
+    if (index <= 0) continue;
 
-  const runningItemWrite = normalizedEvents
-    .slice()
-    .reverse()
-    .find((event) => {
-      if (event.key !== 'refresh') return false;
-      const rawType = event.raw && event.raw.type;
-      if (rawType !== 'refresh:item-write') return false;
-      const detail =
-        event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
-      const index = Number(detail.index || 0);
-      return isIndexRunning(index);
-    });
+    if (rawType === 'refresh:item-start' || rawType === 'refresh:item-write') {
+      runningByIndex.set(index, event);
+    } else if (rawType === 'refresh:item-done' || rawType === 'refresh:item-skipped') {
+      runningByIndex.delete(index);
+    }
+  }
 
-  if (runningItemWrite) return runningItemWrite;
-
-  const runningItemStart = normalizedEvents
-    .slice()
-    .reverse()
-    .find((event) => {
-      if (event.key !== 'refresh') return false;
-      const rawType = event.raw && event.raw.type;
-      if (rawType !== 'refresh:item-start') return false;
-      const detail =
-        event.raw.details && typeof event.raw.details === 'object' ? event.raw.details : {};
-      const index = Number(detail.index || 0);
-      return isIndexRunning(index);
-    });
-
-  if (runningItemStart) return runningItemStart;
+  const runningEvents = [...runningByIndex.entries()]
+    .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+    .map(([, event]) => event);
+  const runningEvent = buildConcurrentRefreshEvent(runningEvents);
+  if (runningEvent) return runningEvent;
 
   return findStepEvent(normalizedEvents, key);
 }

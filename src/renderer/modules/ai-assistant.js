@@ -886,7 +886,8 @@ async function executeCollectTask(task) {
     let result;
     if (isRefresh) {
       result = await window.electronAPI.ai.refreshHotelData({
-        amapKey: String(state.settings.amapApiKey || '').trim() || undefined
+        amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
+        batchConcurrency: readCollectBatchConcurrency()
       });
     } else {
       result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
