@@ -5,6 +5,7 @@ const {
   buildRoomSelectionDiagnostics,
   deriveStandardRoomType,
   normalizeRoomCandidate,
+  selectBestRoom,
   selectMatchingRooms
 } = require('../src/scraper/room-logic');
 
@@ -231,6 +232,73 @@ test('selectMatchingRooms allows 2-person big-bed rooms for 1-person templates o
   assert.deepEqual(
     rooms.map((room) => room.title),
     ['单人入住特惠房', '舒适大床房']
+  );
+});
+
+test('selectBestRoom applies the same 1-person occupancy relaxation as eligible rooms', () => {
+  const roomBlocks = [
+    {
+      title: '舒适双床房',
+      standard_title: '双床房',
+      original_title: '舒适双床房',
+      occupancy: 2,
+      price: 180,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '舒适大床房',
+      standard_title: '大床房',
+      original_title: '舒适大床房',
+      occupancy: 2,
+      price: 220,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    }
+  ];
+
+  const room = selectBestRoom(roomBlocks, {
+    room_count: 1,
+    room_type: ''
+  });
+
+  assert.equal(room.title, '舒适大床房');
+});
+
+test('selectMatchingRooms normalizes template room count aliases before applying relaxation', () => {
+  const roomBlocks = [
+    {
+      title: '单人入住特惠房',
+      standard_title: '大床房',
+      original_title: '单人入住特惠房',
+      occupancy: 1,
+      price: 180,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '舒适大床房',
+      standard_title: '大床房',
+      original_title: '舒适大床房',
+      occupancy: 2,
+      price: 220,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    }
+  ];
+
+  const rooms = selectMatchingRooms(roomBlocks, {
+    roomCount: 2,
+    room_type: ''
+  });
+
+  assert.deepEqual(
+    rooms.map((room) => room.title),
+    ['舒适大床房']
   );
 });
 

@@ -9,6 +9,10 @@ const { getBundleManifest, getSetupArtifactName } = require('../scripts/package/
 const { createBuilderConfig } = require('../scripts/package/create-builder-config');
 const { prepareFullBundle } = require('../scripts/package/prepare-full-bundle');
 const { verifyPackageLayout } = require('../scripts/package/verify-package-layout');
+const {
+  cleanupRuntimeArtifacts,
+  DEFAULT_RUNTIME_ARTIFACT_PATHS
+} = require('../scripts/cleanup-runtime-artifacts');
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -184,6 +188,23 @@ test('electron-builder config excludes development perf tooling and JSONL logs',
   ].forEach((pattern) => {
     assert.ok(files.includes(pattern), `missing electron-builder exclude: ${pattern}`);
   });
+  [
+    '!node_modules/@*/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history,LICENSE,license,license.md,license.txt}',
+    '!node_modules/@*/*/{.github,.travis.yml,.gitignore,.eslintrc,.eslintrc.js,.eslintrc.json,.npmignore}',
+    '!node_modules/@*/*/test/**/*',
+    '!node_modules/@*/*/tests/**/*',
+    '!node_modules/@*/*/__tests__/**/*',
+    '!node_modules/@*/*/src/**/*',
+    '!node_modules/@*/*/example/**/*',
+    '!node_modules/@*/*/examples/**/*',
+    '!node_modules/@*/*/demo/**/*',
+    '!node_modules/@*/*/*.ts',
+    '!node_modules/@*/*/*.map',
+    '!node_modules/@*/*/docs/**/*',
+    '!node_modules/@*/*/doc/**/*'
+  ].forEach((pattern) => {
+    assert.ok(files.includes(pattern), `missing scoped package exclude: ${pattern}`);
+  });
   assert.equal(
     files.includes('!**/*token*'),
     false,
@@ -197,6 +218,7 @@ test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', ()
   );
   const nsis = packageJson.build.nsis;
 
+  assert.deepEqual(packageJson.build.electronLanguages, ['zh-CN', 'en-US']);
   assert.deepEqual(nsis.installerLanguages, ['zh_CN']);
   assert.equal(nsis.displayLanguageSelector, false);
   assert.equal(nsis.unicode, true);
@@ -422,6 +444,75 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   );
 });
 
+test('prepareFullBundle prunes copied vendor development assets', (t) => {
+  const tempRoot = makeTempRoot();
+  const scraperDir = path.join(tempRoot, 'scraper');
+  const nodeModulesDir = path.join(tempRoot, 'node_modules');
+
+  fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, 'package.json'),
+    JSON.stringify({ name: 'fixture-scraper', dependencies: { fixturepkg: '^1.0.0' } }, null, 2),
+    'utf-8'
+  );
+  fs.writeFileSync(path.join(scraperDir, 'README.md'), '# fixture\n', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName),
+    '# guide\n',
+    'utf-8'
+  );
+
+  const packageDir = writePackageFixture(nodeModulesDir, 'fixturepkg', {
+    main: 'dist/index.js',
+    exports: './dist/index.js'
+  });
+  fs.mkdirSync(path.join(packageDir, 'dist'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'docs'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'tests'), { recursive: true });
+  fs.writeFileSync(path.join(packageDir, 'dist', 'index.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'dist', 'index.js.map'), '{}', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'dist', 'index.d.ts'), 'export {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'src', 'index.ts'), 'export {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'docs', 'usage.md'), '# docs\n', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'tests', 'fixture.test.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'README.md'), '# package readme\n', 'utf-8');
+
+  const prepared = prepareFullBundle({
+    projectRoot: tempRoot,
+    scraperDir
+  });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(prepared.bundleRoot, { recursive: true, force: true });
+  });
+
+  const bundledPackageDir = path.join(
+    prepared.manifest.directories.scraperRoot,
+    'vendor',
+    'fixturepkg'
+  );
+
+  assert.equal(fs.existsSync(path.join(bundledPackageDir, 'package.json')), true);
+  assert.equal(fs.existsSync(path.join(bundledPackageDir, 'dist', 'index.js')), true);
+  [
+    path.join('dist', 'index.js.map'),
+    path.join('dist', 'index.d.ts'),
+    path.join('src'),
+    path.join('docs'),
+    path.join('tests'),
+    'README.md'
+  ].forEach((relativePath) => {
+    assert.equal(
+      fs.existsSync(path.join(bundledPackageDir, relativePath)),
+      false,
+      `${relativePath} should be pruned from copied vendor package`
+    );
+  });
+});
+
 test('verifyPackageLayout requires full resource layout', (t) => {
   const tempRoot = makeTempRoot();
   const fullResourcesDir = path.join(tempRoot, 'full', 'win-unpacked', 'resources');
@@ -510,6 +601,45 @@ test('package layout rejects local data and login state resources', (t) => {
   );
 });
 
+test('package layout rejects unexpected Electron locale packs', (t) => {
+  const tempRoot = makeTempRoot();
+  const unpackedDir = path.join(tempRoot, 'full', 'win-unpacked');
+  const resourcesDir = path.join(unpackedDir, 'resources');
+  const localesDir = path.join(unpackedDir, 'locales');
+
+  const writeResourceFile = (relativePath) => {
+    const targetPath = path.join(resourcesDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, 'fixture', 'utf-8');
+  };
+  const writeLocale = (name) => {
+    fs.mkdirSync(localesDir, { recursive: true });
+    fs.writeFileSync(path.join(localesDir, `${name}.pak`), 'fixture', 'utf-8');
+  };
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  [
+    path.join('shared', 'compare-app', 'constants.js'),
+    path.join('shared', 'compare-app', 'data-folder.js'),
+    path.join('shared', 'compare-app', 'hotel-groups.js')
+  ].forEach(writeResourceFile);
+  getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
+  writeLocale('zh-CN');
+  writeLocale('en-US');
+  writeLocale('ja');
+
+  assert.throws(
+    () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }),
+    /不应存在的 Electron 语言包/
+  );
+
+  fs.rmSync(path.join(localesDir, 'ja.pak'), { force: true });
+  assert.doesNotThrow(() => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }));
+});
+
 test('scraper unified prompt asset remains present in workspace', () => {
   const scraperRoot = path.resolve(__dirname, '..', 'scraper');
   const promptGuidePath = path.join(scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName);
@@ -529,6 +659,7 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
   assert.equal(packageJson.scripts['build:win'], 'node scripts/package/run-build.js');
   assert.equal(packageJson.scripts['build:nsis'], 'node scripts/package/run-build.js');
   assert.equal(typeof packageJson.scripts['package:smoke'], 'string');
+  assert.equal(packageJson.scripts['clean:runtime'], 'node scripts/cleanup-runtime-artifacts.js');
   assert.equal(
     packageJson.scripts['smoke:data-migration'],
     'node scripts/smoke/data-folder-migration-smoke.js'
@@ -540,6 +671,62 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
   assert.match(workflow, /npm test/);
   assert.match(workflow, /npm run coverage/);
   assert.match(workflow, /npm run package:smoke/);
+});
+
+test('runtime artifact cleanup removes only known generated output directories', () => {
+  const tempRoot = makeTempRoot();
+  const generatedFiles = [
+    path.join('output', 'latest-run.json'),
+    path.join('state', 'session.json'),
+    path.join('scraper-data', 'task.json'),
+    path.join('scraper', 'output', 'batch-items', 'item.json'),
+    path.join('scraper', 'state', 'edge.json'),
+    path.join('scraper', 'scraper-data', 'hotel-data.json'),
+    path.join('logs', 'perf', 'collect_perf.jsonl'),
+    path.join('coverage', 'index.html')
+  ];
+  const preservedFiles = [
+    path.join('src', 'main.js'),
+    path.join('宾馆比较助手', 'hotel-data.json'),
+    path.join('scraper', 'src', 'cli.js')
+  ];
+
+  [...generatedFiles, ...preservedFiles].forEach((relativePath) => {
+    const filePath = path.join(tempRoot, relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${relativePath}\n`, 'utf-8');
+  });
+
+  const dryRun = cleanupRuntimeArtifacts({ projectRoot: tempRoot, dryRun: true });
+  assert.equal(dryRun.removed.length, 0);
+  assert.ok(dryRun.candidates.some((item) => item.relativePath === path.join('scraper', 'output')));
+  generatedFiles.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(tempRoot, relativePath)), true);
+  });
+
+  const result = cleanupRuntimeArtifacts({ projectRoot: tempRoot });
+  assert.ok(result.removed.length >= 6);
+  assert.ok(result.totalBytes > 0);
+  generatedFiles.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(tempRoot, relativePath)), false, relativePath);
+  });
+  preservedFiles.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(tempRoot, relativePath)), true, relativePath);
+  });
+});
+
+test('runtime artifact cleanup rejects paths outside project root', () => {
+  const tempRoot = makeTempRoot();
+
+  assert.throws(
+    () =>
+      cleanupRuntimeArtifacts({
+        projectRoot: tempRoot,
+        runtimeArtifactPaths: ['output', '..']
+      }),
+    /outside project root/
+  );
+  assert.ok(DEFAULT_RUNTIME_ARTIFACT_PATHS.includes(path.join('scraper', 'output')));
 });
 
 test('build asset sync is implemented by the Node script without Python or Pillow', () => {

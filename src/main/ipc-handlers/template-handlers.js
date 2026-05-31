@@ -7,6 +7,7 @@ const {
   clearTemplateFromHotels,
   syncTemplateToHotels
 } = require('../services/template-sync-service');
+const { logMainDebug } = require('../debug-log');
 const { idsEqual } = require('../../shared/id-utils');
 
 /**
@@ -129,13 +130,13 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
     const templateId = /** @type {EntityId} */ (template.id);
 
     try {
-      console.log('[模板同步] 开始更新模板:', templatePayload.name, 'ID:', templateId);
+      logMainDebug('[模板同步] 开始更新模板:', templatePayload.name, 'ID:', templateId);
 
       const oldTemplate = templateRepo.getById(templateId);
       if (!oldTemplate) {
         throw new Error('模板不存在');
       }
-      console.log('[模板同步] 当前模板数量:', templateRepo.getAll().length);
+      logMainDebug('[模板同步] 当前模板数量:', templateRepo.getAll().length);
 
       const syncedTemplate = templateRepo.update(templatePayload);
       if (!syncedTemplate) {
@@ -143,8 +144,8 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       }
       cache.invalidate('templates');
 
-      console.log('[模板同步] 模板已更新:', syncedTemplate.name);
-      console.log(
+      logMainDebug('[模板同步] 模板已更新:', syncedTemplate.name);
+      logMainDebug(
         '[模板同步] 目的地从',
         oldTemplate.destination,
         '改为',
@@ -153,39 +154,39 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
 
       // 同步更新所有使用该模板的酒店
       const hotels = hotelRepo.getAll();
-      console.log('[模板同步] 当前酒店数量:', hotels.length);
+      logMainDebug('[模板同步] 当前酒店数量:', hotels.length);
 
       const templateIdStr = String(syncedTemplate.id);
 
-      console.log('[模板同步] 查找使用模板', templateIdStr, '的酒店...');
+      logMainDebug('[模板同步] 查找使用模板', templateIdStr, '的酒店...');
 
       const matchedHotels = hotels.filter(
         (hotel) => hotel.template_id != null && idsEqual(hotel.template_id, syncedTemplate.id)
       );
       matchedHotels.forEach((hotel) =>
-        console.log('[模板同步] ✓ 找到匹配酒店:', hotel.name, 'ID:', hotel.id)
+        logMainDebug('[模板同步] ✓ 找到匹配酒店:', hotel.name, 'ID:', hotel.id)
       );
       const { affectedCount: updatedCount } = syncTemplateToHotels({
         hotelRepo,
         template: syncedTemplate
       });
 
-      console.log('[模板同步] 共更新了', updatedCount, '个酒店');
+      logMainDebug('[模板同步] 共更新了', updatedCount, '个酒店');
 
       if (updatedCount > 0) {
         cache.invalidate('hotels');
-        console.log('[模板同步] 酒店数据已保存');
+        logMainDebug('[模板同步] 酒店数据已保存');
       }
 
       // 通知渲染进程
-      console.log('[模板同步] 发送 template:updated 事件');
+      logMainDebug('[模板同步] 发送 template:updated 事件');
       notifyRenderer(getMainWindow(), 'template:updated', {
         templateId: syncedTemplate.id,
         affectedCount: updatedCount,
         template: syncedTemplate
       });
 
-      console.log('[模板同步] 完成');
+      logMainDebug('[模板同步] 完成');
       return { success: true, template: syncedTemplate, affectedCount: updatedCount };
     } catch (error) {
       console.error('模板更新失败:', error);

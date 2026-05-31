@@ -39,6 +39,7 @@ async function loadCrudModule() {
       path.join(sourceDir, 'hotel-derived.js'),
       path.join(tempRoot, 'hotel-derived.js')
     );
+    fs.copyFileSync(path.join(sourceDir, 'debug-log.js'), path.join(tempRoot, 'debug-log.js'));
 
     // Stub: state.js
     writeStub(

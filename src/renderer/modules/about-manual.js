@@ -4,6 +4,7 @@
 
 import { $, setText, setStyle } from './dom-helpers.js';
 import { setModalActive } from './ui-utils.js';
+import { logRendererDebug } from './debug-log.js';
 
 let manualContentLoaded = false;
 
@@ -81,9 +82,9 @@ export async function closeManual() {
   if (checkbox && checkbox.checked) {
     try {
       const result = await window.electronAPI.setSetting('showManualOnStartup', false);
-      console.log('说明书设置已保存:', result);
+      logRendererDebug('说明书设置已保存:', result);
       const savedValue = await window.electronAPI.getSetting('showManualOnStartup');
-      console.log('验证保存的值:', savedValue);
+      logRendererDebug('验证保存的值:', savedValue);
     } catch (error) {
       console.error('保存说明书设置失败:', error);
     }

@@ -21,9 +21,7 @@ import {
   buildVisibleHotelsFiltersKey,
   hotelListScrollMemory,
   saveScrollMemory,
-  getScrollBehaviorForReason,
-  calculateScrollTopForAnchor,
-  calculateScrollTopAfterDelete
+  getScrollBehaviorForReason
 } from './state.js';
 import {
   $,
@@ -1592,7 +1590,7 @@ export function createHotelCard(hotel, index) {
     isFromTemplate
   };
 
-  const { headerItems, headerFieldItems, compactItems, fullItems, footerItems, actionItems } = renderCardFields(
+  const { headerFieldItems, compactItems, fullItems, footerItems, actionItems } = renderCardFields(
     hotel,
     visibleKeys,
     helpers

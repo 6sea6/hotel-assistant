@@ -189,6 +189,27 @@ test('hotel handlers reject invalid renderer payloads before normalization', () 
   });
 });
 
+test('hotel add is silent by default while still invalidating hotel cache', () => {
+  const store = createStore({ hotels: [] });
+  const { handlers, cache } = registerHandlers(registerHotelHandlers, store);
+  const originalLog = console.log;
+  const logs = [];
+  console.log = (...args) => logs.push(args);
+
+  try {
+    const result = handlers['hotel:add'](createEvent(), {
+      name: '新增酒店',
+      room_type: '大床房'
+    });
+
+    assert.equal(result.name, '新增酒店');
+    assert.ok(cache.invalidated.includes('hotels'));
+    assert.deepEqual(logs, []);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
 test('hotel:updateMultiple rejects non-object items instead of silently skipping them', () => {
   const store = createStore({
     hotels: [{ id: 1, name: '测试酒店', room_type: '大床房' }]
@@ -316,6 +337,69 @@ test('template handlers reject invalid renderer payloads before normalization', 
     success: false,
     error: '无效的模板 ID'
   });
+});
+
+test('template update sync is silent by default while still updating hotels', async () => {
+  const store = createStore({
+    templates: [
+      {
+        id: 1,
+        name: '实验模板',
+        destination: '旧目的地',
+        check_in_date: '2026-06-01',
+        check_out_date: '2026-06-02',
+        room_count: 1
+      }
+    ],
+    hotels: [
+      {
+        id: 1,
+        name: '测试酒店',
+        room_type: '大床房',
+        destination: '旧目的地',
+        template_id: 1,
+        template_info: { id: 1, name: '实验模板', destination: '旧目的地' }
+      }
+    ]
+  });
+  const sendCalls = [];
+  const { handlers } = registerHandlers(registerTemplateHandlers, store, {
+    windowService: {
+      getMainWindow: () => ({
+        isDestroyed: () => false,
+        webContents: {
+          send(channel, payload) {
+            sendCalls.push({ channel, payload });
+          }
+        }
+      })
+    }
+  });
+  const originalLog = console.log;
+  const logs = [];
+  console.log = (...args) => logs.push(args);
+
+  try {
+    const result = await handlers['template:updateAndSync'](createEvent(), {
+      id: 1,
+      name: '实验模板',
+      destination: '新目的地',
+      check_in_date: '2026-06-01',
+      check_out_date: '2026-06-02',
+      room_count: 1
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.affectedCount, 1);
+    assert.ok(store.setCalls.some((call) => call.key === 'hotels'));
+    assert.deepEqual(
+      sendCalls.map((call) => call.channel),
+      ['template:updated']
+    );
+    assert.deepEqual(logs, []);
+  } finally {
+    console.log = originalLog;
+  }
 });
 
 test('ranking image export rejects invalid image data before opening save dialog', async () => {

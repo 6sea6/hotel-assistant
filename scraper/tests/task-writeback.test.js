@@ -38,7 +38,7 @@ test('writeBatchHotelRecords calls appendHotelsToStore only once when reportDisa
 
     clearModules();
     installMock('../src/compare-app-bridge', {
-      appendHotelsToStore: (hotels, options) => {
+      appendHotelsToStore: (hotels, _options) => {
         appendCallCount += 1;
         appendedHotels = hotels;
         return { operation: 'bulk-upserted', count: hotels.length };

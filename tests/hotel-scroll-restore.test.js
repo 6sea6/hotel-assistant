@@ -342,7 +342,7 @@ test('wrapped requestHotelListRender: hotel-update 在原 actions 执行前捕�
 
     let scrollTopAtCallTime = null;
     actionsMod.actions.renderHotelList = () => {};
-    actionsMod.actions.requestHotelListRender = (options) => {
+    actionsMod.actions.requestHotelListRender = (_options) => {
       // 原始函数执行时，scrollTop 应该仍然是旧值（尚未被重置）
       scrollTopAtCallTime = scrollContainer.scrollTop;
     };

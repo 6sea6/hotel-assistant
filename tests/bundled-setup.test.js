@@ -88,9 +88,13 @@ test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
   const restoreExecPath = overrideProcessProperty('execPath', fakeExecPath);
   const restoreResourcesPath = overrideProcessProperty('resourcesPath', prepared.bundleRoot);
   const originalHomedir = os.homedir;
+  const originalLog = console.log;
+  const logs = [];
   os.homedir = () => homeRoot;
+  console.log = (...args) => logs.push(args);
 
   t.after(() => {
+    console.log = originalLog;
     restoreExecPath();
     restoreResourcesPath();
     os.homedir = originalHomedir;
@@ -120,4 +124,5 @@ test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
   const workDir = path.join(dataDir, 'scraper-data');
 
   assert.equal(fs.existsSync(path.join(workDir, PROMPT_CONTRACT.unifiedPromptFileName)), true);
+  assert.deepEqual(logs, []);
 });

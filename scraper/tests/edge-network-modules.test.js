@@ -18,6 +18,10 @@ const {
   buildLightweightEdgeDomExtractExpression
 } = require('../src/scraper/edge-capture-modules/dom-extract-script');
 const {
+  isEdgeDebugLoggingEnabled,
+  logEdgeDebug
+} = require('../src/scraper/edge-capture-modules/debug');
+const {
   detectCtripLoginPromptFromText
 } = require('../src/scraper/edge-capture-modules/login-detection');
 
@@ -111,4 +115,39 @@ test('DOM extract script builders return room-oriented JavaScript strings', () =
   assert.match(fullExpression, /更多房型/);
   assert.match(lightweightExpression, /大床房/);
   assert.match(lightweightExpression, /JSON\.stringify/);
+});
+
+test('edge debug logging is silent by default and opt-in through debug env', () => {
+  const previousEnv = {
+    HOTEL_DEBUG_EDGE_CAPTURE: process.env.HOTEL_DEBUG_EDGE_CAPTURE,
+    HOTEL_DEBUG_EDGE_CAPTURE_DIR: process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR
+  };
+  const originalLog = console.log;
+  const logs = [];
+  console.log = (...args) => logs.push(args.join(' '));
+
+  try {
+    delete process.env.HOTEL_DEBUG_EDGE_CAPTURE;
+    delete process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR;
+    assert.equal(isEdgeDebugLoggingEnabled(), false);
+    logEdgeDebug('hidden');
+    assert.deepEqual(logs, []);
+
+    process.env.HOTEL_DEBUG_EDGE_CAPTURE = '1';
+    assert.equal(isEdgeDebugLoggingEnabled(), true);
+    logEdgeDebug('visible');
+    assert.deepEqual(logs, ['visible']);
+  } finally {
+    console.log = originalLog;
+    if (previousEnv.HOTEL_DEBUG_EDGE_CAPTURE === undefined) {
+      delete process.env.HOTEL_DEBUG_EDGE_CAPTURE;
+    } else {
+      process.env.HOTEL_DEBUG_EDGE_CAPTURE = previousEnv.HOTEL_DEBUG_EDGE_CAPTURE;
+    }
+    if (previousEnv.HOTEL_DEBUG_EDGE_CAPTURE_DIR === undefined) {
+      delete process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR;
+    } else {
+      process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR = previousEnv.HOTEL_DEBUG_EDGE_CAPTURE_DIR;
+    }
+  }
 });

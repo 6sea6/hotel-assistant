@@ -200,9 +200,20 @@ function rankRoomTypeMatch(room, template) {
   return 0;
 }
 
+function getTemplateRoomCount(template, fallback = null) {
+  const value = pickFirst(
+    toNumber(template && template.room_count),
+    toNumber(template && template.roomCount),
+    toNumber(template && template.occupancy),
+    fallback
+  );
+
+  return Number(value) > 0 ? Number(value) : fallback;
+}
+
 function rankRoomMatch(room, template) {
   let score = 0;
-  const desiredOccupancy = Number(template.room_count) || null;
+  const desiredOccupancy = getTemplateRoomCount(template, null);
   score += rankRoomTypeMatch(room, template);
   if (desiredOccupancy && room.occupancy && Number(room.occupancy) === desiredOccupancy) {
     score += 12;
@@ -222,7 +233,7 @@ function rankRoomMatch(room, template) {
   if (
     !normalizeText(template.room_type) &&
     room.occupancy &&
-    Number(room.occupancy) === Number(template.room_count)
+    Number(room.occupancy) === desiredOccupancy
   ) {
     score += 3;
   }
@@ -246,12 +257,21 @@ function rankRoomMatch(room, template) {
   return score;
 }
 
-function selectBestRoom(roomBlocks, template) {
-  if (roomBlocks.length === 0) {
+function selectBestRoom(roomBlocks, template, options = {}) {
+  const rooms = Array.isArray(roomBlocks) ? roomBlocks : [];
+  if (rooms.length === 0) {
+    return null;
+  }
+  const desiredOccupancy = getTemplateRoomCount(template, null);
+  const candidateRooms = desiredOccupancy
+    ? rooms.filter((room) => isAllowedOccupancy(room, desiredOccupancy, options))
+    : rooms;
+
+  if (candidateRooms.length === 0) {
     return null;
   }
 
-  return roomBlocks
+  return candidateRooms
     .map((room) => ({ room, score: rankRoomMatch(room, template) }))
     .sort((left, right) => {
       if (right.score !== left.score) {
@@ -311,7 +331,7 @@ function buildRoomDedupeKey(room) {
 }
 
 function createRoomEvaluation(room, template, options, seen) {
-  const desiredOccupancy = Number(template.room_count) || 1;
+  const desiredOccupancy = getTemplateRoomCount(template, 1);
   const score = rankRoomMatch(room, template);
   const base = {
     room,

@@ -59,6 +59,155 @@ function copyProductionDependencyTree({
   });
 }
 
+const VENDOR_PRUNE_DIR_NAMES = new Set([
+  '.github',
+  'coverage',
+  'demo',
+  'demos',
+  'doc',
+  'docs',
+  'example',
+  'examples',
+  'test',
+  'tests',
+  '__tests__'
+]);
+
+const VENDOR_PRUNE_FILE_NAMES = new Set([
+  '.editorconfig',
+  '.eslintignore',
+  '.eslintrc',
+  '.eslintrc.js',
+  '.eslintrc.json',
+  '.gitattributes',
+  '.gitignore',
+  '.npmignore',
+  '.prettierignore',
+  '.prettierrc',
+  '.prettierrc.json',
+  'changelog',
+  'changelog.md',
+  'history',
+  'history.md',
+  'news',
+  'news.md',
+  'readme',
+  'readme.md',
+  'readme.txt',
+  'tsconfig.json'
+]);
+
+const VENDOR_PRUNE_EXTENSIONS = new Set([
+  '.cts',
+  '.d.ts',
+  '.iml',
+  '.lock',
+  '.map',
+  '.markdown',
+  '.md',
+  '.mts',
+  '.ts',
+  '.tsx',
+  '.yaml',
+  '.yml'
+]);
+
+function getRuntimeEntryText(packageJson = {}) {
+  return JSON.stringify({
+    main: packageJson.main,
+    module: packageJson.module,
+    browser: packageJson.browser,
+    exports: packageJson.exports,
+    bin: packageJson.bin
+  });
+}
+
+function packageRuntimeReferencesSrc(packageJson = {}) {
+  return /(?:^|["'./\\])src[\\/]/.test(getRuntimeEntryText(packageJson));
+}
+
+function hasCompiledRuntimeDir(packageDir) {
+  return ['dist', 'lib', 'cjs', 'esm', 'build'].some((dirName) =>
+    fs.existsSync(path.join(packageDir, dirName))
+  );
+}
+
+function shouldPrunePackageSrcDir(packageDir, packageJson = {}) {
+  return (
+    fs.existsSync(path.join(packageDir, 'src')) &&
+    hasCompiledRuntimeDir(packageDir) &&
+    !packageRuntimeReferencesSrc(packageJson)
+  );
+}
+
+function shouldPruneVendorFile(filePath) {
+  const lowerName = path.basename(filePath).toLowerCase();
+  if (VENDOR_PRUNE_FILE_NAMES.has(lowerName)) {
+    return true;
+  }
+  if (/\.d\.[cm]?ts$/i.test(lowerName)) {
+    return true;
+  }
+  return VENDOR_PRUNE_EXTENSIONS.has(path.extname(lowerName));
+}
+
+function findPackageDirs(rootDir) {
+  const packageDirs = [];
+  if (!fs.existsSync(rootDir)) {
+    return packageDirs;
+  }
+
+  const visit = (dir) => {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      packageDirs.push(dir);
+    }
+
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      visit(path.join(dir, entry.name));
+    }
+  };
+
+  visit(rootDir);
+  return packageDirs;
+}
+
+function pruneFilesRecursively(rootDir) {
+  if (!fs.existsSync(rootDir)) {
+    return;
+  }
+  for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
+    const targetPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      pruneFilesRecursively(targetPath);
+      continue;
+    }
+    if (shouldPruneVendorFile(targetPath)) {
+      fs.rmSync(targetPath, { force: true });
+    }
+  }
+}
+
+function pruneVendorPackageDevelopmentAssets(packageDir) {
+  const packageJson = readPackageJson(packageDir);
+  for (const dirName of VENDOR_PRUNE_DIR_NAMES) {
+    const targetPath = path.join(packageDir, dirName);
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+  }
+  if (shouldPrunePackageSrcDir(packageDir, packageJson)) {
+    fs.rmSync(path.join(packageDir, 'src'), { recursive: true, force: true });
+  }
+  pruneFilesRecursively(packageDir);
+}
+
+function pruneCopiedVendorDevelopmentAssets(vendorDir) {
+  findPackageDirs(vendorDir).forEach(pruneVendorPackageDevelopmentAssets);
+}
+
 function prepareFullBundle({ projectRoot, scraperDir }) {
   const promptGuideFile = findPromptGuideFile(scraperDir);
   if (!fs.existsSync(path.join(scraperDir, 'src', 'cli.js'))) {
@@ -91,6 +240,7 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
     targetNodeModules: path.join(manifest.directories.scraperRoot, 'vendor'),
     dependencyNames: getProductionDependencyNames(scraperPackageJson)
   });
+  pruneCopiedVendorDevelopmentAssets(path.join(manifest.directories.scraperRoot, 'vendor'));
 
   return {
     bundleRoot,

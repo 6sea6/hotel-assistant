@@ -364,7 +364,7 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
             source: candidate.source || 'api-json-raw'
           }))
         ]);
-        const selectedRoom = selectBestRoom(roomBlocks, template);
+        const selectedRoom = selectBestRoom(roomBlocks, template, options.matchingOptions || {});
         attempts.push({
           endpoint: variant.endpoint,
           variant: variant.variantName,

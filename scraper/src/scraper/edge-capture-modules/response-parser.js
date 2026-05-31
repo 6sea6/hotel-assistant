@@ -2,7 +2,7 @@ const { mergeRoomCandidates, selectBestRoom, selectMatchingRooms } = require('..
 const { findRoomBlocksFromStructuredText, safeJsonParse } = require('../html-parser');
 const { collectRoomCandidatesFromPayload } = require('../structured-extractor');
 const { extractSpiderErrorCode } = require('../api-replay');
-const { writeEdgeDebugArtifact } = require('./debug');
+const { logEdgeDebug = () => {}, writeEdgeDebugArtifact } = require('./debug');
 const {
   buildEdgeResponseReadPlan,
   getPrioritizedEdgeResponseEntries,
@@ -19,7 +19,8 @@ function shouldUseEdgeRawTextFallback({
   isRoomResponse,
   roomBlocks,
   structuredCandidates,
-  template
+  template,
+  matchingOptions = {}
 }) {
   if (!isRoomResponse) {
     return true;
@@ -45,13 +46,17 @@ function shouldUseEdgeRawTextFallback({
     room_count: template.room_count || template.roomCount || template.occupancy
   };
 
-  return !isEdgeRoomFastPathComplete([...roomBlocks, ...structuredCandidates], normalizedTemplate);
+  return !isEdgeRoomFastPathComplete(
+    [...roomBlocks, ...structuredCandidates],
+    normalizedTemplate,
+    matchingOptions
+  );
 }
 
-function isEdgeRoomFastPathComplete(roomBlocks, template) {
+function isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions = {}) {
   const mergedBlocks = mergeRoomCandidates(roomBlocks);
-  const selectedRoom = selectBestRoom(mergedBlocks, template);
-  const eligibleRooms = selectMatchingRooms(mergedBlocks, template);
+  const selectedRoom = selectBestRoom(mergedBlocks, template, matchingOptions);
+  const eligibleRooms = selectMatchingRooms(mergedBlocks, template, matchingOptions);
   return Boolean(
     selectedRoom &&
     selectedRoom.price !== null &&
@@ -97,6 +102,7 @@ async function parseEdgeNetworkResponses({
   roomApiDebugIndex = 0,
   responseBodyTimeoutMs = null,
   roomResponseBodyMaxAttempts = 2,
+  matchingOptions = {},
   signal = null,
   responseParseMaxMs = EDGE_RESPONSE_PARSE_MAX_MS,
   nonRoomResponseBodyTimeoutBudget = EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET
@@ -276,7 +282,8 @@ async function parseEdgeNetworkResponses({
         isRoomResponse,
         roomBlocks,
         structuredCandidates,
-        template
+        template,
+        matchingOptions
       });
       const fallbackTextCandidates = shouldUseRawFallback
         ? findRoomBlocksFromStructuredText(bodyResult.body).map((candidate) => ({
@@ -294,11 +301,11 @@ async function parseEdgeNetworkResponses({
       const extractedCount = roomBlocks.length - beforeCount;
       stats.responseParseCandidateCount += Math.max(0, extractedCount);
       if (extractedCount > 0 || meta.url.includes('Room') || meta.url.includes('room')) {
-        console.log(
+        logEdgeDebug(
           `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${bodyResult.body.includes('套房')}, has 开放: ${bodyResult.body.includes('开放')}`
         );
       }
-      if (isRoomResponse && isEdgeRoomFastPathComplete(roomBlocks, template)) {
+      if (isRoomResponse && isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions)) {
         state.fastPathComplete = true;
       }
     } catch (error) {

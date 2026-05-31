@@ -72,7 +72,7 @@ test('getScrollBehaviorForReason: settings-change returns top', async () => {
 });
 
 test('getScrollBehaviorForReason: hotel-update returns keep even with different filtersKey', async () => {
-  const { getScrollBehaviorForReason, saveScrollMemory, hotelListScrollMemory } = await loadModule();
+  const { getScrollBehaviorForReason, saveScrollMemory } = await loadModule();
   saveScrollMemory({ scrollTop: 500, filtersKey: '["old-name","","","","",""]' });
   // hotel-update should keep scroll even if filtersKey changed
   assert.equal(getScrollBehaviorForReason('hotel-update', '["new-name","","","","",""]'), 'keep');

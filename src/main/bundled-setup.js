@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DataFolderManager } = require('./utils');
+const { logMainDebug } = require('./debug-log');
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
 const { BUNDLE_RESOURCE_MAP, PROMPT_CONTRACT } =
   requireSharedCompareAppModule('prompt-contract.js');
@@ -117,7 +118,7 @@ function setupBundledModules() {
   deployBundledUnifiedPrompt();
   ensureBundledRuntimeDirs();
 
-  console.log('[bundled-setup] AI 数据采集模块初始化完成');
+  logMainDebug('[bundled-setup] AI 数据采集模块初始化完成');
 }
 
 module.exports = {

@@ -18,6 +18,7 @@ import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from
 import { isHotelInputPriorityActive } from './render-scheduler.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
+import { logRendererDebug } from './debug-log.js';
 
 /**
  * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
@@ -205,7 +206,7 @@ export async function saveTemplate() {
       const result = await window.electronAPI.updateTemplateAndSync(template);
 
       if (result.success) {
-        console.log('[保存模板] 成功，更新了', result.affectedCount, '个宾馆');
+        logRendererDebug('[保存模板] 成功，更新了', result.affectedCount, '个宾馆');
         await actions.reloadAllData();
         updateTemplateFilter();
         renderTemplateList();
@@ -325,7 +326,7 @@ export function updateTemplateFilter(options = {}) {
 /* ---- 模板同步监听器 ---- */
 
 export function setupTemplateSyncListener() {
-  console.log('[事件监听] 设置 template:updated 监听器');
+  logRendererDebug('[事件监听] 设置 template:updated 监听器');
   window.electronAPI.onTemplateUpdated(async (data) => {
     try {
       await actions.reloadAllData();
@@ -333,13 +334,13 @@ export function setupTemplateSyncListener() {
       refreshCustomSelects();
       renderTemplateList();
       requestTemplateSyncedHotelRender();
-      console.log('[事件监听] 模板同步完成:', data);
+      logRendererDebug('[事件监听] 模板同步完成:', data);
     } catch (error) {
       console.error('[事件监听] 模板同步后刷新失败:', error);
       showNotification('模板同步后刷新失败，请手动点击刷新按钮', 'error');
     }
   });
-  console.log('[事件监听] template:updated 监听器已设置完成');
+  logRendererDebug('[事件监听] template:updated 监听器已设置完成');
 }
 
 /* ---- 注册到 actions ---- */

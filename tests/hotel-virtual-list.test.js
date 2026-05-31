@@ -168,7 +168,7 @@ test('calculateVirtualRange: near bottom endIndex equals itemCount', async () =>
 });
 
 test('calculateVirtualRange: overscan applies on both sides', async () => {
-  const { calculateVirtualRange, VIRTUAL_OVERSCAN } = await loadModule();
+  const { calculateVirtualRange } = await loadModule();
   const result = calculateVirtualRange({
     itemCount: 1000,
     scrollTop: 9600,

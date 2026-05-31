@@ -62,7 +62,7 @@ function writeBatchHotelRecords({ allHotels, resultPayloads, reportDisabled }, d
   const bulkResult = appendFn(bulkHotels, { replaceExistingGroup: true });
 
   // Map bulk results back to per-item structure
-  const writableResults = writableItems.map((item, writableIndex) => ({
+  const writableResults = writableItems.map((item) => ({
     itemIndex: item.itemIndex,
     result: {
       ...(Array.isArray(bulkResult) ? bulkResult[0] || {} : bulkResult),

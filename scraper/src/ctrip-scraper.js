@@ -285,7 +285,7 @@ async function runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }
     parsedSources,
     mergedRoomBlocks,
     normalizedRoomBlocks,
-    selectedRoom: selectBestRoom(normalizedRoomBlocks, template),
+    selectedRoom: selectBestRoom(normalizedRoomBlocks, template, options.matchingOptions || {}),
     htmlMs: durationSince(htmlStartedAt)
   };
 }
@@ -321,6 +321,7 @@ async function runEdgeCapture({
         captureMethod,
         captureStrategy,
         onEvent: options.onEvent,
+        matchingOptions: options.matchingOptions || {},
         signal: options.signal || null
       })
   );
@@ -382,7 +383,9 @@ async function scrapeCtripHotel(url, template, options = {}) {
     }
 
     normalizedRoomBlocks.splice(0, normalizedRoomBlocks.length, ...captureResult.roomBlocks);
-    selectedRoom = captureResult.selectedRoom || selectBestRoom(normalizedRoomBlocks, template);
+    selectedRoom =
+      captureResult.selectedRoom ||
+      selectBestRoom(normalizedRoomBlocks, template, options.matchingOptions || {});
     return true;
   };
 
@@ -481,6 +484,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
               capture_strategy: captureStrategy
             }),
             captureMethod: 'edge_cdp_then_api_replay',
+            matchingOptions: options.matchingOptions || {},
             signal: options.signal || null
           })
       );
@@ -543,6 +547,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
               capture_strategy: captureStrategy
             }),
             captureMethod: 'edge_cdp_then_api_replay',
+            matchingOptions: options.matchingOptions || {},
             signal: options.signal || null
           })
       );
@@ -573,6 +578,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
               capture_strategy: captureStrategy
             }),
             captureMethod: 'html_then_api_replay',
+            matchingOptions: options.matchingOptions || {},
             signal: options.signal || null
           })
       );

@@ -7,6 +7,7 @@ const {
 } = require('../ipc-validators');
 const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
 const { createHotelRepository } = require('../repositories/hotel-repository');
+const { logMainDebug } = require('../debug-log');
 const { idsEqual } = require('../../shared/id-utils');
 
 /**
@@ -42,7 +43,7 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
     const newHotel = getHotelRepo().add(hotelPayload);
     cache.invalidate('hotels');
-    console.log('[hotel:add] 添加宾馆:', newHotel.name, 'ID:', newHotel.id);
+    logMainDebug('[hotel:add] 添加宾馆:', newHotel.name, 'ID:', newHotel.id);
     return newHotel;
   });
 

@@ -40,6 +40,7 @@ import {
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
 import { attachDerivedFields, attachDerivedFieldsToHotel, stripDerivedFieldsFromHotel } from './hotel-derived.js';
+import { logRendererDebug } from './debug-log.js';
 
 /**
  * @typedef {import('../../shared/contracts').AppSettings} AppSettings
@@ -177,7 +178,7 @@ export async function reloadAllData(options = {}) {
   ];
 
   try {
-    if (verbose) console.log('[数据重载] 开始重新加载数据...');
+    if (verbose) logRendererDebug('[数据重载] 开始重新加载数据...');
 
     const [loadedHotels, loadedTemplates, loadedSettings] = await Promise.all(requests);
     setHotels(loadedHotels || []);
@@ -188,7 +189,7 @@ export async function reloadAllData(options = {}) {
     }
 
     if (verbose) {
-      console.log('[数据重载] 完成:', {
+      logRendererDebug('[数据重载] 完成:', {
         hotels: state.hotels.length,
         templates: state.templates.length,
         settingsLoaded: includeSettings

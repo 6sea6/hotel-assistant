@@ -17,7 +17,7 @@ const {
   waitForSessionCondition,
   waitForStableCount
 } = require('../cdp-utils');
-const { writeEdgeDebugArtifact } = require('./debug');
+const { logEdgeDebug = () => {}, writeEdgeDebugArtifact } = require('./debug');
 const { isReusableEdgeHotelTarget } = require('./target-reuse');
 const { settleRoomListInEdgeSession } = require('./session-settle');
 const {
@@ -941,7 +941,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     });
 
     if (targetMode === 'reused-match') {
-      console.log(
+      logEdgeDebug(
         `[edge-cdp] reusing matched tab and navigating: ${targetInitialUrl || 'about:blank'} -> ${url}`
       );
       const removeListener = connection.addListener((message) => {
@@ -1047,7 +1047,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         signal
       });
 
-      console.log(
+      logEdgeDebug(
         `[edge-cdp] tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`
       );
 
@@ -1069,6 +1069,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           spiderErrorCodes,
           debugHotelId,
           roomApiDebugIndex,
+          matchingOptions: options.matchingOptions || {},
           signal
         });
         edgeParseStats = parseStats;
@@ -1221,7 +1222,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         signal
       });
 
-      console.log(
+      logEdgeDebug(
         `[edge-cdp] new-tab tracked URLs before expand: ${trackedBeforeExpand}, after: ${trackedUrls.size}`
       );
       removeListener();
@@ -1242,6 +1243,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
           spiderErrorCodes,
           debugHotelId,
           roomApiDebugIndex,
+          matchingOptions: options.matchingOptions || {},
           signal
         });
         edgeParseStats = parseStats;
@@ -1328,7 +1330,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         const nextMergedBlocks = mergeRoomCandidates(roomBlocks);
         return {
           mergedBlocks: nextMergedBlocks,
-          selectedRoom: selectBestRoom(nextMergedBlocks, template)
+          selectedRoom: selectBestRoom(nextMergedBlocks, template, options.matchingOptions || {})
         };
       }
     );

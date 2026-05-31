@@ -13,6 +13,21 @@ function getEdgeDebugDir() {
   return '';
 }
 
+function isEdgeDebugLoggingEnabled() {
+  return Boolean(
+    normalizeText(process.env.HOTEL_DEBUG_EDGE_CAPTURE_DIR) ||
+      normalizeText(process.env.HOTEL_DEBUG_EDGE_CAPTURE) === '1'
+  );
+}
+
+function logEdgeDebug(...args) {
+  if (!isEdgeDebugLoggingEnabled()) {
+    return;
+  }
+
+  console.log(...args);
+}
+
 function writeEdgeDebugArtifact(fileName, content) {
   const debugDir = getEdgeDebugDir();
   if (!debugDir || !fileName || content === undefined || content === null) {
@@ -27,5 +42,7 @@ function writeEdgeDebugArtifact(fileName, content) {
 
 module.exports = {
   getEdgeDebugDir,
+  isEdgeDebugLoggingEnabled,
+  logEdgeDebug,
   writeEdgeDebugArtifact
 };

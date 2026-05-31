@@ -15,6 +15,7 @@
 
 import { state, setHotels, setTemplates, setSettings, setInitialized } from './modules/state.js';
 import { $, addEvent } from './modules/dom-helpers.js';
+import { logRendererDebug } from './modules/debug-log.js';
 
 import {
   loadHotels,
@@ -383,7 +384,7 @@ function setupEventListeners() {
 async function initializeApp() {
   if (state.isInitialized) return;
 
-  console.log('[初始化] 开始初始化应用...');
+  logRendererDebug('[初始化] 开始初始化应用...');
 
   try {
     const [loadedSettings, loadedHotels, loadedTemplates] = await Promise.all([
@@ -392,7 +393,7 @@ async function initializeApp() {
       loadTemplates()
     ]);
 
-    console.log('[初始化] 数据加载完成:', {
+    logRendererDebug('[初始化] 数据加载完成:', {
       settings: loadedSettings,
       hotelsCount: loadedHotels ? loadedHotels.length : 0,
       templatesCount: loadedTemplates ? loadedTemplates.length : 0
@@ -404,7 +405,7 @@ async function initializeApp() {
     await initializeWindowControls();
 
     requestAnimationFrame(() => {
-      console.log('[初始化] 开始渲染界面...');
+      logRendererDebug('[初始化] 开始渲染界面...');
       applyAppMetadata();
       applySettings();
       updateTemplateFilter();
@@ -416,11 +417,11 @@ async function initializeApp() {
       setupCustomSelects(document, { auto: true });
       refreshCustomSelects(document, { auto: true });
       checkAndShowManual();
-      console.log('[初始化] 界面渲染完成');
+      logRendererDebug('[初始化] 界面渲染完成');
     });
 
     setInitialized(true);
-    console.log('[初始化] 应用初始化完成');
+    logRendererDebug('[初始化] 应用初始化完成');
   } catch (error) {
     console.error('[初始化] 初始化失败:', error);
   }
