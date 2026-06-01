@@ -13,7 +13,17 @@ async function loadHotelListModule() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-hotel-list-empty-'));
   const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
 
-  fs.copyFileSync(path.join(sourceDir, 'hotel-list.js'), path.join(tempRoot, 'hotel-list.js'));
+  [
+    'hotel-list.js',
+    'hotel-list-controller.js',
+    'hotel-list-empty-state.js',
+    'hotel-list-table-renderer.js',
+    'hotel-list-card-renderer.js',
+    'hotel-list-selection.js',
+    'hotel-list-virtual-adapter.js'
+  ].forEach((fileName) => {
+    fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+  });
   writeFile(path.join(tempRoot, 'package.json'), '{"type":"module"}\n');
 
   writeFile(
@@ -108,7 +118,7 @@ async function loadHotelListModule() {
     path.join(tempRoot, 'hotel-card-fields.js'),
     `
     export function normalizeHotelCardVisibleFields() { return []; }
-    export function renderCardFields() { return { headerFieldItems: [], bodyFieldItems: [], footerFieldItems: [] }; }
+    export function renderCardFields() { return { headerFieldItems: [], compactItems: [], fullItems: [], footerItems: [], actionItems: [] }; }
     `
   );
   writeFile(

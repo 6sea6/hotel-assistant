@@ -279,7 +279,7 @@ test('ai-service.js: refreshHotelData is in returned service object', () => {
 
 test('scraper-runner.js: exports refreshExistingCtripHotels', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   assert.ok(
@@ -294,7 +294,7 @@ test('scraper-runner.js: exports refreshExistingCtripHotels', () => {
 
 test('scraper-runner.js: refresh does not call getTransitInfo', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   // Find the refreshExistingCtripHotels function only
@@ -309,7 +309,7 @@ test('scraper-runner.js: refresh does not call getTransitInfo', () => {
 
 test('scraper-runner.js: refresh preserves old fields', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   assert.ok(code.includes('PRESERVED_FIELDS_ON_REFRESH'), 'Should define preserved fields');
@@ -324,7 +324,7 @@ test('scraper-runner.js: refresh preserves old fields', () => {
 
 test('scraper-runner.js: refresh uses overwriteExistingGroup', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   assert.ok(
@@ -335,7 +335,7 @@ test('scraper-runner.js: refresh uses overwriteExistingGroup', () => {
 
 test('scraper-runner.js: refresh skips hotels on collection failure', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   // Verify that collection failure leads to skipped status
@@ -732,7 +732,7 @@ test('refresh-data: getReadableEventTitle returns correct titles', () => {
 
 test('scraper-runner: refresh:item-done has status and total in details', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   const batchStart = code.indexOf('async function runRefreshHotelBatch');
@@ -766,7 +766,7 @@ test('scraper-runner: refresh:item-done has status and total in details', () => 
 
 test('scraper-runner: refresh:summary has complete statistics', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
@@ -789,7 +789,7 @@ test('scraper-runner: refresh:summary has complete statistics', () => {
 
 test('scraper-runner: refresh uses one final refresh:write after collection', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   const batchStart = code.indexOf('async function runRefreshHotelBatch');
@@ -818,7 +818,7 @@ test('scraper-runner: refresh uses one final refresh:write after collection', ()
 
 test('scraper-runner: refresh item collection bypasses full task runner overhead', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
@@ -843,7 +843,7 @@ test('scraper-runner: refresh item collection bypasses full task runner overhead
 
 test('scraper-runner: refresh prepares cloned Edge profiles before launching concurrent workers', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
@@ -865,7 +865,7 @@ test('scraper-runner: refresh prepares cloned Edge profiles before launching con
 
 test('refresh and normal collect share the bounded worker scheduler', () => {
   const refreshCode = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
   const batchCode = fs.readFileSync(
