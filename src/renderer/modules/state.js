@@ -18,7 +18,15 @@
  * @typedef {object} ResetAiTaskQueueStateOptions
  * @property {boolean} [keepRunningTask]
  * @property {boolean} [resetCounter]
+ * @typedef {object} TemplateChangeEvent
+ * @property {NormalizedTemplateRecord[]} templates
+ * @property {string} [reason]
+ * @property {boolean} [renderHotels]
+ * @property {boolean} [interactionFirst]
  */
+
+/** @type {Set<(event: TemplateChangeEvent) => void>} */
+const templateChangeListeners = new Set();
 
 /**
  * @typedef {object} RendererState
@@ -151,10 +159,40 @@ export function setHotels(hotels) {
 
 /**
  * @param {NormalizedTemplateRecord[]} templates
+ * @param {Omit<TemplateChangeEvent, 'templates'>} [event]
  * @returns {void}
  */
-export function setTemplates(templates) {
+export function setTemplates(templates, event = {}) {
   state.templates = templates;
+  notifyTemplateChanges(event);
+}
+
+/**
+ * @param {(event: TemplateChangeEvent) => void} listener
+ * @returns {() => void}
+ */
+export function subscribeTemplateChanges(listener) {
+  templateChangeListeners.add(listener);
+  return () => templateChangeListeners.delete(listener);
+}
+
+/**
+ * @param {Omit<TemplateChangeEvent, 'templates'>} [event]
+ * @returns {void}
+ */
+function notifyTemplateChanges(event = {}) {
+  if (templateChangeListeners.size === 0) return;
+  const payload = {
+    ...event,
+    templates: state.templates
+  };
+  for (const listener of templateChangeListeners) {
+    try {
+      listener(payload);
+    } catch (error) {
+      console.error('[templates] change listener failed', error);
+    }
+  }
 }
 
 /**

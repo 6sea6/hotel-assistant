@@ -28,20 +28,8 @@ function getBundledAppDataPath() {
   return dataFolder;
 }
 
-function getBundledWorkDir() {
-  return resolveBundledPaths().bundledWorkDir;
-}
-
-function getBundledUnifiedPromptSourcePath() {
-  return resolveBundledPaths().unifiedPromptSourcePath;
-}
-
-function getBundledUnifiedPromptTargetPath() {
-  return resolveBundledPaths().unifiedPromptTargetPath;
-}
-
-function isBundledWithScraper() {
-  return isBundledScraperAvailable(resolveBundledPaths());
+function isBundledWithScraper(paths = resolveBundledPaths()) {
+  return isBundledScraperAvailable(paths);
 }
 
 function copyFileSync(src, dest) {
@@ -49,34 +37,35 @@ function copyFileSync(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
-function deployBundledUnifiedPrompt() {
-  if (!isBundledWithScraper()) {
+function deployBundledUnifiedPrompt(paths = resolveBundledPaths()) {
+  if (!isBundledWithScraper(paths)) {
     return '';
   }
 
-  const promptSourcePath = getBundledUnifiedPromptSourcePath();
+  const promptSourcePath = paths.unifiedPromptSourcePath;
   if (!fs.existsSync(promptSourcePath)) {
     return '';
   }
 
-  const promptTargetPath = getBundledUnifiedPromptTargetPath();
+  const promptTargetPath = paths.unifiedPromptTargetPath;
   copyFileSync(promptSourcePath, promptTargetPath);
   return promptTargetPath;
 }
 
 function ensureBundledBootstrapResources() {
-  if (!isBundledWithScraper()) {
+  const paths = resolveBundledPaths();
+  if (!isBundledWithScraper(paths)) {
     return;
   }
 
-  ensureBundledRuntimeDirs();
-  deployBundledUnifiedPrompt();
+  ensureBundledRuntimeDirs(paths);
+  deployBundledUnifiedPrompt(paths);
 }
 
-function ensureBundledRuntimeDirs() {
-  if (!isBundledWithScraper()) return;
+function ensureBundledRuntimeDirs(paths = resolveBundledPaths()) {
+  if (!isBundledWithScraper(paths)) return;
 
-  const workDir = getBundledWorkDir();
+  const workDir = paths.bundledWorkDir;
   const runtimeDirs = [
     path.join(workDir, 'state', 'edge-profile'),
     path.join(workDir, 'output'),
@@ -113,10 +102,11 @@ function scheduleBundledSetup(delayMs = 0) {
  * 2. 确保 edge-profile 和 output 目录存在
  */
 function setupBundledModules() {
-  if (!isBundledWithScraper()) return;
+  const paths = resolveBundledPaths();
+  if (!isBundledWithScraper(paths)) return;
 
-  deployBundledUnifiedPrompt();
-  ensureBundledRuntimeDirs();
+  deployBundledUnifiedPrompt(paths);
+  ensureBundledRuntimeDirs(paths);
 
   logMainDebug('[bundled-setup] AI 数据采集模块初始化完成');
 }

@@ -66,6 +66,7 @@ test('package manifest keeps full bundle resource contracts stable', () => {
     path.join('scraper', 'logs'),
     path.join('scraper', 'tests'),
     path.join('scraper', 'devtools'),
+    path.join('scraper', 'README.md'),
     path.join('scraper', 'scripts', 'analyze_perf.py'),
     path.join('scraper', 'src', 'devtools'),
     path.join('scraper', 'src', 'runtime', 'perf_log.py')
@@ -93,6 +94,10 @@ test('package manifest keeps full bundle resource contracts stable', () => {
       path.join('scraper', 'src', 'runtime', 'perf_log.py')
     ),
     'neverResources must exclude perf_log.py'
+  );
+  assert.ok(
+    manifest.expectations.neverResources.includes(path.join('scraper', 'README.md')),
+    'neverResources must exclude scraper README'
   );
   assert.ok(
     manifest.extraResources[0].filter.some((pattern) => pattern === '!**/*.jsonl'),
@@ -367,6 +372,11 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
     true
   );
   assert.equal(
+    fs.existsSync(path.join(prepared.manifest.directories.scraperRoot, 'README.md')),
+    false,
+    'scraper README is documentation and should not be copied into the runtime bundle'
+  );
+  assert.equal(
     fs.existsSync(
       path.join(prepared.manifest.directories.scraperRoot, 'vendor', 'axios', 'package.json')
     ),
@@ -469,14 +479,31 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
   });
   fs.mkdirSync(path.join(packageDir, 'dist'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'benchmark'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'benchmarks'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'docs'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'spec'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'specs'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'tests'), { recursive: true });
   fs.writeFileSync(path.join(packageDir, 'dist', 'index.js'), 'module.exports = {};', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'dist', 'index.js.map'), '{}', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'dist', 'index.d.ts'), 'export {};', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'src', 'index.ts'), 'export {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'benchmark', 'speed.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    path.join(packageDir, 'benchmarks', 'speed.js'),
+    'module.exports = {};',
+    'utf-8'
+  );
   fs.writeFileSync(path.join(packageDir, 'docs', 'usage.md'), '# docs\n', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'spec', 'index.spec.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    path.join(packageDir, 'specs', 'index.spec.js'),
+    'module.exports = {};',
+    'utf-8'
+  );
   fs.writeFileSync(path.join(packageDir, 'tests', 'fixture.test.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'package-lock.json'), '{"lockfileVersion":3}\n', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'README.md'), '# package readme\n', 'utf-8');
 
   const prepared = prepareFullBundle({
@@ -501,8 +528,13 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
     path.join('dist', 'index.js.map'),
     path.join('dist', 'index.d.ts'),
     path.join('src'),
+    path.join('benchmark'),
+    path.join('benchmarks'),
     path.join('docs'),
+    path.join('spec'),
+    path.join('specs'),
     path.join('tests'),
+    'package-lock.json',
     'README.md'
   ].forEach((relativePath) => {
     assert.equal(
@@ -671,6 +703,25 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
   assert.match(workflow, /npm test/);
   assert.match(workflow, /npm run coverage/);
   assert.match(workflow, /npm run package:smoke/);
+});
+
+test('package test scripts discover renderer and scraper test files automatically', () => {
+  const projectRoot = path.resolve(__dirname, '..');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+  const { findNodeTestFiles } = require('../scripts/run-node-tests');
+
+  assert.equal(packageJson.scripts['test:app'], 'node scripts/run-node-tests.js tests');
+  assert.equal(packageJson.scripts['test:scraper'], 'node scripts/run-node-tests.js scraper/tests');
+
+  const appTestFiles = findNodeTestFiles(path.join(projectRoot, 'tests')).map((filePath) =>
+    path.relative(projectRoot, filePath)
+  );
+  const scraperTestFiles = findNodeTestFiles(path.join(projectRoot, 'scraper', 'tests')).map(
+    (filePath) => path.relative(projectRoot, filePath)
+  );
+
+  assert.ok(appTestFiles.includes(path.join('tests', 'renderer-template-ui.test.js')));
+  assert.ok(scraperTestFiles.includes(path.join('scraper', 'tests', 'prompt-rules.test.js')));
 });
 
 test('runtime artifact cleanup removes only known generated output directories', () => {

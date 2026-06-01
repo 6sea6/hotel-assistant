@@ -81,7 +81,7 @@ function renderTaskConsole() {
   updateTaskInputCount();
 }
 
-function renderAiTemplateOptions() {
+export function renderAiTemplateOptions() {
   const select = /** @type {HTMLSelectElement|null} */ ($('aiTemplateSelect'));
   if (!select) return;
 
@@ -1236,3 +1236,5 @@ export async function enqueueRefreshHotelDataTask() {
   showNotification('已创建更新数据任务，准备开始', 'success');
   await runNextQueueTask();
 }
+
+actions.renderAiTemplateOptions = renderAiTemplateOptions;

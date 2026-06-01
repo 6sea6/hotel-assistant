@@ -2,12 +2,16 @@
  * 轻量性能埋点工具 —— 用于排查渲染与 IPC 卡顿。
  */
 
+import { isRendererDebugLoggingEnabled } from './debug-log.js';
+
 const __perf = { marks: {}, measures: [] };
 
 export function perfStart(name) {
   try {
     __perf.marks[name] = performance.now();
-    console.debug(`[perf] start ${name}`);
+    if (isRendererDebugLoggingEnabled()) {
+      console.debug(`[perf] start ${name}`);
+    }
   } catch (e) {}
 }
 
@@ -17,7 +21,9 @@ export function perfEnd(name) {
     if (!s) return;
     const d = performance.now() - s;
     __perf.measures.push({ name, duration: d });
-    console.info(`[PERF] ${name}: ${d.toFixed(1)} ms`);
+    if (isRendererDebugLoggingEnabled()) {
+      console.info(`[PERF] ${name}: ${d.toFixed(1)} ms`);
+    }
     delete __perf.marks[name];
   } catch (e) {}
 }

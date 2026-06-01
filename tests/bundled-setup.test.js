@@ -32,10 +32,14 @@ function overrideProcessProperty(name, value) {
 }
 
 function withMockedElectron(mockedElectron, fn) {
+  return withMockedModules({ electron: mockedElectron }, fn);
+}
+
+function withMockedModules(moduleMap, fn) {
   const originalLoad = Module._load;
   Module._load = function patchedLoad(request, parent, isMain) {
-    if (request === 'electron') {
-      return mockedElectron;
+    if (Object.prototype.hasOwnProperty.call(moduleMap, request)) {
+      return moduleMap[request];
     }
     return originalLoad.call(this, request, parent, isMain);
   };
@@ -125,4 +129,80 @@ test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
 
   assert.equal(fs.existsSync(path.join(workDir, PROMPT_CONTRACT.unifiedPromptFileName)), true);
   assert.deepEqual(logs, []);
+});
+
+test('setupBundledModules reuses resolved bundled paths during startup', (t) => {
+  const tempRoot = makeTempRoot();
+  const scraperDir = path.join(tempRoot, 'resources', 'scraper');
+  const workDir = path.join(tempRoot, 'data', 'scraper-data');
+  const sourcePromptPath = path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName);
+  const targetPromptPath = path.join(workDir, PROMPT_CONTRACT.unifiedPromptFileName);
+  let getBundledResourcePathsCount = 0;
+  let getDataFolderPathCount = 0;
+  let ensureDataFolderCount = 0;
+
+  fs.mkdirSync(scraperDir, { recursive: true });
+  fs.writeFileSync(sourcePromptPath, '# prompt\n', 'utf-8');
+
+  t.after(() => {
+    delete require.cache[bundledSetupModulePath];
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  delete require.cache[bundledSetupModulePath];
+  withMockedModules(
+    {
+      './utils': {
+        DataFolderManager: class {
+          getDataFolderPath() {
+            getDataFolderPathCount += 1;
+            return path.join(tempRoot, 'data');
+          }
+
+          ensureDataFolder(folderPath) {
+            ensureDataFolderCount += 1;
+            fs.mkdirSync(folderPath, { recursive: true });
+          }
+        }
+      },
+      './shared-compare-app': {
+        requireSharedCompareAppModule(moduleName) {
+          if (moduleName === 'prompt-contract.js') {
+            return {
+              BUNDLE_RESOURCE_MAP: { scraperDirName: 'scraper' },
+              PROMPT_CONTRACT
+            };
+          }
+          if (moduleName === 'runtime-paths.js') {
+            return {
+              getBundledResourcePaths(options) {
+                getBundledResourcePathsCount += 1;
+                return {
+                  resourcesPath: options.resourcesPath,
+                  scraperPath: path.join(scraperDir, 'src', 'cli.js'),
+                  bundledWorkDir: workDir,
+                  unifiedPromptSourcePath: sourcePromptPath,
+                  unifiedPromptTargetPath: targetPromptPath
+                };
+              },
+              isBundledScraperAvailable() {
+                return true;
+              }
+            };
+          }
+          throw new Error(`Unexpected shared module: ${moduleName}`);
+        }
+      }
+    },
+    () => {
+      const bundledSetup = require(bundledSetupModulePath);
+      bundledSetup.setupBundledModules();
+    }
+  );
+
+  assert.equal(fs.existsSync(targetPromptPath), true);
+  assert.equal(fs.existsSync(path.join(workDir, 'state', 'edge-profile')), true);
+  assert.equal(getBundledResourcePathsCount, 1);
+  assert.equal(getDataFolderPathCount, 1);
+  assert.equal(ensureDataFolderCount, 1);
 });

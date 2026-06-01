@@ -30,7 +30,7 @@
  * @property {(id: EntityId) => void} editHotel
  * @property {(id: EntityId) => Promise<void>} deleteHotel
  * @property {(id: EntityId, currentStatus: number|boolean) => Promise<void>} toggleFavorite
- * @property {() => Promise<NormalizedHotelRecord[]>} loadHotels
+ * @property {(options?: {force?: boolean, reason?: string}) => Promise<NormalizedHotelRecord[]>} loadHotels
  * @property {() => Promise<NormalizedTemplateRecord[]>} loadTemplates
  * @property {() => Promise<AppSettings>} loadSettings
  * @property {(options?: ReloadAllDataOptions) => Promise<{hotelsCount: number, templatesCount: number, settingsLoaded: boolean}>} reloadAllData
@@ -38,6 +38,7 @@
  * @property {(templateId?: EntityId|null) => void} openAddHotelModal
  * @property {() => void} renderTemplateList
  * @property {(options?: UpdateTemplateFilterOptions) => void} updateTemplateFilter
+ * @property {() => void} [renderAiTemplateOptions]
  * @property {(url?: string) => Promise<void>} openWebsite
  * @property {() => void} applySettings
  * @property {(options?: RefreshCurrentPageOptions) => Promise<void>} refreshCurrentPage

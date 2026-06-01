@@ -61,6 +61,8 @@ function copyProductionDependencyTree({
 
 const VENDOR_PRUNE_DIR_NAMES = new Set([
   '.github',
+  'benchmark',
+  'benchmarks',
   'coverage',
   'demo',
   'demos',
@@ -68,6 +70,8 @@ const VENDOR_PRUNE_DIR_NAMES = new Set([
   'docs',
   'example',
   'examples',
+  'spec',
+  'specs',
   'test',
   'tests',
   '__tests__'
@@ -91,6 +95,7 @@ const VENDOR_PRUNE_FILE_NAMES = new Set([
   'history.md',
   'news',
   'news.md',
+  'package-lock.json',
   'readme',
   'readme.md',
   'readme.txt',
@@ -224,10 +229,6 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
   copyFileSync(
     path.join(scraperDir, 'package.json'),
     path.join(manifest.directories.scraperRoot, 'package.json')
-  );
-  copyFileSync(
-    path.join(scraperDir, 'README.md'),
-    path.join(manifest.directories.scraperRoot, 'README.md')
   );
   copyFileSync(
     promptGuideFile,

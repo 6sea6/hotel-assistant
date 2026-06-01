@@ -2,7 +2,14 @@
  * 模板管理 UI —— 模板列表展示、新建/编辑/删除、应用模板，以及模板同步事件。
  */
 
-import { state, TEMPLATE_FILTER_BATCH_SIZE, setTemplates, markRankingCacheDirty } from './state.js';
+import {
+  state,
+  TEMPLATE_FILTER_BATCH_SIZE,
+  setHotels,
+  setTemplates,
+  subscribeTemplateChanges,
+  markRankingCacheDirty
+} from './state.js';
 import {
   $,
   escapeHtml,
@@ -22,7 +29,14 @@ import { logRendererDebug } from './debug-log.js';
 
 /**
  * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
+ * @typedef {import('../../shared/contracts').EntityId} EntityId
+ * @typedef {object} TemplateMutationRefreshOptions
+ * @property {string} [reason]
+ * @property {number} [affectedHotelCount]
+ * @property {boolean} [interactionFirst]
  */
+
+const localTemplateUpdateIds = new Set();
 
 function requestTemplateSyncedHotelRender() {
   if (typeof actions.requestHotelListRender === 'function') {
@@ -32,6 +46,93 @@ function requestTemplateSyncedHotelRender() {
 
   actions.renderHotelList();
 }
+
+function renderAiTemplateOptionsIfAvailable() {
+  if (typeof actions.renderAiTemplateOptions === 'function') {
+    actions.renderAiTemplateOptions();
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+function normalizeAffectedHotelCount(value) {
+  const count = Number(value || 0);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+/**
+ * @param {EntityId|null|undefined} templateId
+ * @returns {void}
+ */
+function rememberLocalTemplateUpdate(templateId) {
+  if (templateId === null || templateId === undefined || templateId === '') return;
+
+  const key = String(templateId);
+  localTemplateUpdateIds.add(key);
+  setTimeout(() => {
+    localTemplateUpdateIds.delete(key);
+  }, 2500);
+}
+
+/**
+ * @param {unknown} data
+ * @returns {string}
+ */
+function getTemplateUpdateEventId(data) {
+  if (!data || typeof data !== 'object') return '';
+  const payload = /** @type {{templateId?: EntityId, id?: EntityId, template?: {id?: EntityId}}} */ (data);
+  const value = payload.templateId ?? payload.template?.id ?? payload.id;
+  return value === null || value === undefined || value === '' ? '' : String(value);
+}
+
+/**
+ * @param {number|undefined} affectedHotelCount
+ * @param {string} reason
+ * @returns {Promise<boolean>}
+ */
+async function reloadHotelsForTemplateMutation(affectedHotelCount, reason) {
+  if (normalizeAffectedHotelCount(affectedHotelCount) === 0) return false;
+
+  const hotels = await actions.loadHotels({ force: true, reason });
+  setHotels(hotels || []);
+  markRankingCacheDirty();
+  return true;
+}
+
+/**
+ * @param {TemplateMutationRefreshOptions} [options]
+ * @returns {Promise<void>}
+ */
+async function refreshTemplatesAfterMutation(options = {}) {
+  const reason = options.reason || 'template-change';
+  const renderHotels = await reloadHotelsForTemplateMutation(options.affectedHotelCount, reason);
+  const templates = await actions.loadTemplates();
+  setTemplates(templates || [], {
+    reason,
+    renderHotels,
+    interactionFirst: options.interactionFirst ?? true
+  });
+}
+
+/**
+ * @param {{renderHotels?: boolean, interactionFirst?: boolean}} [event]
+ * @returns {void}
+ */
+function handleTemplateStateChanged(event = {}) {
+  updateTemplateFilter({ interactionFirst: event.interactionFirst });
+  renderAiTemplateOptionsIfAvailable();
+  refreshCustomSelects();
+  renderTemplateList();
+
+  if (event.renderHotels) {
+    markRankingCacheDirty();
+    requestTemplateSyncedHotelRender();
+  }
+}
+
+subscribeTemplateChanges(handleTemplateStateChanged);
 
 /* ---- 打开/关闭模板弹窗 ---- */
 
@@ -203,32 +304,35 @@ export async function saveTemplate() {
   try {
     if (id) {
       template.id = normalizeIdValue(id);
+      rememberLocalTemplateUpdate(template.id);
       const result = await window.electronAPI.updateTemplateAndSync(template);
 
       if (result.success) {
         logRendererDebug('[保存模板] 成功，更新了', result.affectedCount, '个宾馆');
-        await actions.reloadAllData();
-        updateTemplateFilter();
-        renderTemplateList();
-        requestTemplateSyncedHotelRender();
+        await refreshTemplatesAfterMutation({
+          reason: 'template-save',
+          affectedHotelCount: result.affectedCount,
+          interactionFirst: true
+        });
       } else {
         throw new Error(result.error || '更新失败');
       }
     } else {
       await window.electronAPI.addTemplate(template);
-      setTemplates(await actions.loadTemplates());
-      updateTemplateFilter();
-      renderTemplateList();
+      await refreshTemplatesAfterMutation({
+        reason: 'template-add',
+        interactionFirst: true
+      });
     }
 
     cancelTemplateForm();
   } catch (error) {
     console.error('保存模板失败:', error);
     try {
-      await actions.reloadAllData();
-      updateTemplateFilter();
-      renderTemplateList();
-      requestTemplateSyncedHotelRender();
+      await refreshTemplatesAfterMutation({
+        reason: 'template-save-recovery',
+        interactionFirst: true
+      });
     } catch (recoveryError) {
       console.error('恢复数据状态失败:', recoveryError);
     }
@@ -245,11 +349,11 @@ export async function deleteTemplate(id) {
       throw new Error(result?.error || '删除失败');
     }
 
-    await actions.reloadAllData({ verbose: false });
-    updateTemplateFilter();
-    renderTemplateList();
-    markRankingCacheDirty();
-    requestTemplateSyncedHotelRender();
+    await refreshTemplatesAfterMutation({
+      reason: 'template-delete',
+      affectedHotelCount: result.affectedHotelCount,
+      interactionFirst: true
+    });
     showNotification(
       `模板已删除${result.affectedHotelCount ? `，同步清理 ${result.affectedHotelCount} 家宾馆的模板关联` : ''}`,
       'success'
@@ -329,11 +433,17 @@ export function setupTemplateSyncListener() {
   logRendererDebug('[事件监听] 设置 template:updated 监听器');
   window.electronAPI.onTemplateUpdated(async (data) => {
     try {
-      await actions.reloadAllData();
-      updateTemplateFilter();
-      refreshCustomSelects();
-      renderTemplateList();
-      requestTemplateSyncedHotelRender();
+      const eventId = getTemplateUpdateEventId(data);
+      if (eventId && localTemplateUpdateIds.has(eventId)) {
+        logRendererDebug('[事件监听] 跳过本地已处理的模板同步事件:', data);
+        return;
+      }
+
+      await refreshTemplatesAfterMutation({
+        reason: 'template-event',
+        affectedHotelCount: data?.affectedCount ?? data?.affectedHotelCount,
+        interactionFirst: true
+      });
       logRendererDebug('[事件监听] 模板同步完成:', data);
     } catch (error) {
       console.error('[事件监听] 模板同步后刷新失败:', error);

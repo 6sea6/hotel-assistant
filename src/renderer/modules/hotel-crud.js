@@ -98,7 +98,7 @@ export async function loadHotels(options = {}) {
         const meta = await window.electronAPI.getHotelsMeta();
         if (meta.revision === localRevision && meta.count === state.hotels.length) {
           // revision 未变化，复用本地数据
-          console.debug('[hotels] revision unchanged, skip full load', meta);
+          logRendererDebug('[hotels] revision unchanged, skip full load', meta);
           perfEnd('loadHotels');
           return state.hotels;
         }
@@ -114,7 +114,10 @@ export async function loadHotels(options = {}) {
     const hotels = attachDerivedFields(result.hotels || []);
     setLocalHotelsRevision({ revision: result.revision, count: result.count });
     if (localRev !== null) {
-      console.debug('[hotels] revision changed, reload full hotels', { localRevision: localRev, remoteRevision: result.revision });
+      logRendererDebug('[hotels] revision changed, reload full hotels', {
+        localRevision: localRev,
+        remoteRevision: result.revision
+      });
     }
     perfEnd('loadHotels');
     return hotels;

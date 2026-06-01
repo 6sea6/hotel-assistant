@@ -52,9 +52,9 @@ async function loadCrudModule() {
       export function setSettings(s) { state.settings = s; }
       export function clearSelectedHotels() { state.selectedHotels.clear(); }
       export function markRankingCacheDirty() { state._rankingDirty = true; }
-      export function getLocalHotelsRevision() { return null; }
-      export function setLocalHotelsRevision() {}
-      export function markLocalHotelsRevisionUnknown() {}
+      export function getLocalHotelsRevision() { return globalThis.__localHotelsRevision ?? null; }
+      export function setLocalHotelsRevision(meta) { globalThis.__localHotelsRevision = meta?.revision ?? null; }
+      export function markLocalHotelsRevisionUnknown() { globalThis.__localHotelsRevision = null; }
       `
     );
 
@@ -157,6 +157,7 @@ function initTestState(hotels = []) {
   s.lastEditedPriceField = null;
   s.hotelTemplateSelectRenderVersion = 0;
   s._rankingDirty = false;
+  globalThis.__localHotelsRevision = null;
   globalThis.__formFields = {};
   globalThis.__notifications = [];
 }
@@ -172,6 +173,43 @@ function setFormCheckbox(id, checked) {
 function flushMicrotasks() {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+/* ---- loadHotels ---- */
+
+test('loadHotels reuses unchanged revision without console debug by default', async () => {
+  const { loadHotels } = await loadCrudModule();
+  initTestState([{ id: 1, name: '缓存宾馆', is_favorite: 0 }]);
+  globalThis.__localHotelsRevision = 7;
+
+  const originalDebug = console.debug;
+  const debugLogs = [];
+  let metaCallCount = 0;
+  let getAllWithMetaCallCount = 0;
+
+  window.electronAPI = {
+    getHotelsMeta: async () => {
+      metaCallCount += 1;
+      return { revision: 7, count: 1 };
+    },
+    getAllHotelsWithMeta: async () => {
+      getAllWithMetaCallCount += 1;
+      return { hotels: [], revision: 8, count: 0 };
+    },
+    getAllHotels: async () => []
+  };
+  console.debug = (...args) => debugLogs.push(args);
+
+  try {
+    const hotels = await loadHotels();
+
+    assert.equal(metaCallCount, 1);
+    assert.equal(getAllWithMetaCallCount, 0);
+    assert.equal(hotels, globalThis.__testState.hotels);
+    assert.deepEqual(debugLogs, []);
+  } finally {
+    console.debug = originalDebug;
+  }
+});
 
 /* ---- saveHotel ---- */
 

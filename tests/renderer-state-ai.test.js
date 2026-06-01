@@ -92,3 +92,24 @@ test('AI state helpers manage queue selection, running-task clear, console reset
   assert.equal(state.aiTaskConsole.templateLabel, '');
   assert.equal(state.aiTaskConsole.taskId, '');
 });
+
+test('template state notifies subscribers when templates are replaced', async () => {
+  const { state, setTemplates, subscribeTemplateChanges } = await loadStateModule();
+  const events = [];
+  const unsubscribe = subscribeTemplateChanges((event) => events.push(event));
+
+  try {
+    setTemplates([{ id: 'tpl-1', name: '武汉模板' }], {
+      reason: 'template-save',
+      renderHotels: true
+    });
+
+    assert.deepEqual(state.templates, [{ id: 'tpl-1', name: '武汉模板' }]);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].reason, 'template-save');
+    assert.equal(events[0].renderHotels, true);
+    assert.deepEqual(events[0].templates, state.templates);
+  } finally {
+    unsubscribe();
+  }
+});
