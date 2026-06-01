@@ -9,7 +9,6 @@ const {
 } = require('./scraper-paths');
 const {
   assertNotCancelled,
-  buildScraperArgs,
   isCtripHotelUrl,
   isTaskCancelled,
   normalizeBatchConcurrency
@@ -18,6 +17,10 @@ const {
   createWriteRollbackSnapshot,
   restoreWriteRollbackSnapshot
 } = require('./scraper-write-rollback');
+const {
+  createRefreshDetailContextFactory,
+  mapRefreshPreparedResult
+} = require('./refresh-item-context');
 
 const MAX_REFRESH_BATCH_CONCURRENCY = 2;
 
@@ -364,22 +367,6 @@ async function runRefreshHotelBatch({
   };
 }
 
-const PRESERVED_FIELDS_ON_REFRESH = [
-  'distance',
-  'subway_station',
-  'subway_distance',
-  'transport_time',
-  'bus_route',
-  'destination',
-  'template_id',
-  'template_info',
-  'check_in_date',
-  'check_out_date',
-  'days',
-  'is_favorite',
-  'notes'
-];
-
 async function refreshExistingCtripHotels(input, context = {}) {
   const dataFolderPath = context.dataFolderPath;
   if (!dataFolderPath) {
@@ -568,198 +555,23 @@ async function refreshExistingCtripHotels(input, context = {}) {
         assertNotCancelled(context.signal);
         await createWriteRollbackSnapshot(scraperPath, rollbackState);
 
-        const createRefreshDetailContext = async ({ url, index, total, hotelName, worker }) => {
-          assertNotCancelled(context.signal);
-          const existingHotels = hotelGroups.get(url) || [];
-          const firstHotel = existingHotels[0] || {};
-          const collectArgs = buildScraperArgs(
-            {
-              url,
-              templateId: firstHotel.template_id || '',
-              templateName: '',
-              amapKey: input.amapKey
-            },
-            workDir
-          );
-          collectArgs.skipTransit = true;
-          collectArgs['skip-report'] = true;
-          collectArgs['no-output-report'] = true;
-          collectArgs.captureStrategy = 'parallel_edge';
-          if (worker && worker.port) {
-            collectArgs['auto-edge'] = false;
-            collectArgs['edge-user-data-dir'] = worker.userDataDir || baseEdgeUserDataDir;
-            collectArgs['edge-profile-directory'] =
-              worker.profileDirectory || baseEdgeProfileDirectory;
-            collectArgs['edge-debugging-port'] = Number(worker.port);
-          }
-
-          const itemEmit = (eventType, message, details = {}) => {
-            const type = eventType || '';
-            if (
-              type.startsWith('transit:') ||
-              type === 'transit:start' ||
-              type === 'transit:done' ||
-              type === 'task:start' ||
-              type === 'task:done'
-            ) {
-              return;
-            }
-            emit(type, message, {
-              index,
-              total,
-              hotelName,
-              ...details
-            });
-          };
-          const loadedTemplate = mergeTemplateWithArgs({}, collectArgs);
-          const matchedTemplate = bridge.findTemplateInStore(
-            store,
-            loadedTemplate.template_id,
-            loadedTemplate.template_name || collectArgs.templateName
-          );
-          const effectiveTemplate = applyMatchedTemplate(loadedTemplate, matchedTemplate);
-          validateTemplate(effectiveTemplate);
-          const effectiveDestination = normalizePlaceName(
-            (matchedTemplate && matchedTemplate.destination) || effectiveTemplate.destination
-          );
-
-          return {
-            context: {
-              args: collectArgs,
-              startedAt: new Date().toISOString(),
-              taskId: `${context.taskId || 'refresh'}-${index}`,
-              emit: itemEmit,
-              signal: context.signal,
-              outputDir: path.join(workDir, 'output'),
-              template: loadedTemplate,
-              matchedTemplate,
-              effectiveTemplate,
-              compareAppSettings,
-              effectiveDestination,
-              hotelInput: {
-                url,
-                requestedUrl: url,
-                source: 'refresh',
-                hotelId: firstHotel.id || ''
-              },
-              outputPath: '',
-              autoEdge: false,
-              transitCache: null,
-              writeAppData: false,
-              pageIndex: index,
-              reportLevel: 'off',
-              captureStrategy: collectArgs.captureStrategy,
-              edgeParallelCancelPolicy: collectArgs.edgeParallelCancelPolicy || 'none',
-              scrapeEventForwarder: createScrapeEventForwarder(itemEmit)
-            },
-            meta: {
-              existingHotels,
-              firstHotel
-            }
-          };
-        };
-
-        const mapRefreshPreparedResult = async ({ preparedResult, url, hotelName, meta }) => {
-          const existingHotels = (meta && meta.existingHotels) || [];
-          const firstHotel = (meta && meta.firstHotel) || existingHotels[0] || {};
-          const collectResult = preparedResult.result;
-
-          assertNotCancelled(context.signal);
-
-          // Check if collection was successful with valid room data
-          if (
-            !collectResult ||
-            collectResult.success !== true ||
-            !Number.isFinite(Number(collectResult.eligibleCount)) ||
-            Number(collectResult.eligibleCount) <= 0
-          ) {
-            const skipReason =
-              collectResult && collectResult.error ? collectResult.error : '采集未返回有效房型数据';
-            return {
-              hotelName,
-              url,
-              status: 'skipped',
-              updatedHotels: [],
-              updatedRoomTypeCount: 0,
-              deletedRoomTypeCount: 0,
-              skipReason,
-              error: skipReason
-            };
-          }
-
-          const newHotels = Array.isArray(collectResult.eligibleHotels)
-            ? collectResult.eligibleHotels
-            : [];
-          if (newHotels.length === 0) {
-            return {
-              hotelName,
-              url,
-              status: 'skipped',
-              updatedHotels: [],
-              updatedRoomTypeCount: 0,
-              deletedRoomTypeCount: 0,
-              skipReason: '采集成功但没有有效房型',
-              error: ''
-            };
-          }
-
-          const oldRoomTypes = new Set(
-            existingHotels.map((h) => (h.room_type || '').trim()).filter(Boolean)
-          );
-          const preservedByRoomType = new Map();
-          for (const oldHotel of existingHotels) {
-            const roomType = (oldHotel.room_type || '').trim();
-            preservedByRoomType.set(roomType, oldHotel);
-          }
-
-          const refreshedHotels = newHotels.map((newHotel) => {
-            const oldHotel =
-              preservedByRoomType.get((newHotel.room_type || '').trim()) || firstHotel;
-            const preserved = {};
-            for (const field of PRESERVED_FIELDS_ON_REFRESH) {
-              if (
-                oldHotel[field] !== undefined &&
-                oldHotel[field] !== null &&
-                oldHotel[field] !== ''
-              ) {
-                preserved[field] = oldHotel[field];
-              }
-            }
-            // Also preserve is_favorite as numeric
-            if (oldHotel.is_favorite !== undefined) {
-              preserved.is_favorite = oldHotel.is_favorite;
-            }
-            // Also preserve notes even if empty string (user may have cleared them)
-            if (oldHotel.notes !== undefined) {
-              preserved.notes = oldHotel.notes;
-            }
-            return {
-              ...newHotel,
-              ...preserved
-            };
-          });
-
-          const newRoomTypes = new Set(
-            refreshedHotels.map((h) => (h.room_type || '').trim()).filter(Boolean)
-          );
-          let deletedForThisHotel = 0;
-          for (const oldType of oldRoomTypes) {
-            if (!newRoomTypes.has(oldType)) {
-              deletedForThisHotel++;
-            }
-          }
-
-          return {
-            hotelName,
-            url,
-            status: 'updated',
-            updatedHotels: refreshedHotels,
-            updatedRoomTypeCount: refreshedHotels.length,
-            deletedRoomTypeCount: deletedForThisHotel,
-            skipReason: '',
-            error: ''
-          };
-        };
+        const createRefreshDetailContext = createRefreshDetailContextFactory({
+          input,
+          taskContext: context,
+          workDir,
+          hotelGroups,
+          bridge,
+          store,
+          compareAppSettings,
+          baseEdgeUserDataDir,
+          baseEdgeProfileDirectory,
+          emit,
+          createScrapeEventForwarder,
+          applyMatchedTemplate,
+          mergeTemplateWithArgs,
+          validateTemplate,
+          normalizePlaceName
+        });
 
         const batchResult = await runRefreshHotelBatch({
           hotelUrls,
@@ -776,7 +588,10 @@ async function refreshExistingCtripHotels(input, context = {}) {
           getEffectiveConcurrency: getEffectiveBoundedConcurrency,
           runPreparedDetails: runPreparedDetailBatch,
           createDetailContext: createRefreshDetailContext,
-          mapPreparedResult: mapRefreshPreparedResult,
+          mapPreparedResult: async (args) => {
+            assertNotCancelled(context.signal);
+            return mapRefreshPreparedResult(args);
+          },
           writeHotels(hotels) {
             return hotelMerge.appendHotelsToStore(hotels, {
               overwriteExistingGroup: true

@@ -1,0 +1,32 @@
+/* 视图切换按钮 */
+.view-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.btn-icon {
+  min-width: 36px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.btn-icon span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+}
+
+.btn-icon.is-refreshing span {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

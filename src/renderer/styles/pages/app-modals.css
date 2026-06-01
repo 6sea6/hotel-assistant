@@ -1,0 +1,371 @@
+.author-info-modal {
+  padding: 20px 0;
+}
+.author-info-modal h3 {
+  margin-bottom: 16px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+.author-section {
+  margin-bottom: 24px;
+}
+.author-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 0;
+}
+.author-item .author-label {
+  min-width: 90px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+.author-item .author-name {
+  color: var(--primary-color);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.3px;
+}
+.thanks-name {
+  font-weight: 700;
+}
+.thanks-asagirl {
+  color: #8a2be2;
+}
+.thanks-moli {
+  color: #1677ff;
+}
+.thanks-sixpence {
+  background: linear-gradient(90deg, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.version-section {
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+.version-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.version-item span:first-child {
+  min-width: 80px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.algorithm-section {
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+  margin-top: 24px;
+}
+.algorithm-section h3 {
+  margin-bottom: 16px;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+.algorithm-content {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+}
+.algorithm-content p {
+  margin-bottom: 10px;
+}
+.algorithm-content ul {
+  margin: 10px 0 12px 20px;
+  padding: 0;
+}
+.algorithm-content li {
+  margin-bottom: 6px;
+}
+.algorithm-content .formula-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.algorithm-content .formula-box {
+  background: var(--bg-secondary);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 12px;
+  color: var(--primary-color);
+  margin: 8px 0;
+  border-left: 3px solid var(--primary-color);
+}
+
+.algorithm-content .formula-box p {
+  margin: 6px 0;
+}
+.algorithm-content .formula-note {
+  margin-top: 16px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.data-path-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.data-path-container .input {
+  background: var(--bg-secondary);
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: 'Courier New', Consolas, monospace;
+}
+
+.data-path-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.help-text {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.personalization-section {
+  padding: 18px 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.personalization-section + .personalization-section {
+  margin-top: 18px;
+}
+
+.personalization-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.card-field-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 16px;
+}
+
+.card-field-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.card-field-option:hover {
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary));
+}
+
+.card-field-option input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.card-field-option span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-field-actions {
+  display: flex;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .card-field-picker {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .card-field-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-picker-inline {
+  display: grid;
+  grid-template-columns: max-content repeat(5, max-content);
+  align-items: center;
+  gap: 24px 28px;
+}
+
+.theme-picker-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.theme-picker-spacer {
+  visibility: hidden;
+}
+
+.theme-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.theme-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.theme-option-indicator {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--text-secondary);
+  background: var(--bg-primary);
+  box-shadow: inset 0 0 0 4px var(--bg-primary);
+  transition: all var(--transition-fast);
+}
+
+.theme-option-indicator::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: transparent;
+  transition: all var(--transition-fast);
+}
+
+.theme-option input:checked + .theme-option-indicator {
+  border-color: var(--primary-color);
+}
+
+.theme-option input:checked + .theme-option-indicator::after {
+  background: var(--primary-color);
+}
+
+.theme-option:hover .theme-option-indicator {
+  border-color: var(--primary-color);
+  transform: scale(1.04);
+}
+
+.theme-option-text {
+  white-space: nowrap;
+}
+
+/* 数据管理模态框样式 */
+.modal-small {
+  max-width: 500px;
+}
+
+.data-transfer-options {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.transfer-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.transfer-option:hover {
+  border-color: var(--primary-color);
+  background: var(--bg-tertiary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.transfer-option-static {
+  cursor: default;
+  align-items: flex-start;
+}
+
+.transfer-option-static:hover {
+  transform: none;
+}
+
+.transfer-option-focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
+}
+
+.transfer-icon {
+  font-size: 48px;
+  min-width: 60px;
+  text-align: center;
+}
+
+.transfer-info h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.transfer-info p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.transfer-option-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.transfer-option-note {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-tertiary);
+}
+
+/* 设置开关样式 */
+.setting-switch-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

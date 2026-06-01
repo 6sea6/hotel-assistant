@@ -21,6 +21,28 @@ import { getReadableToolLabel } from './ai-task-formatters.js';
  * @property {AiTaskEvent} raw
  */
 
+/**
+ * Build a requestAnimationFrame-backed render scheduler.
+ * Multiple calls within one frame collapse into a single render.
+ *
+ * @param {() => void} render
+ * @returns {() => void}
+ */
+export function createRafRenderScheduler(render) {
+  let rafId = 0;
+  return function scheduleRender() {
+    if (rafId) return;
+    const requestFrame =
+      globalThis.requestAnimationFrame ||
+      (globalThis.window && globalThis.window.requestAnimationFrame) ||
+      ((callback) => globalThis.setTimeout(callback, 0));
+    rafId = requestFrame(() => {
+      rafId = 0;
+      render();
+    });
+  };
+}
+
 /** @type {AiStepDefinition[]} */
 export const BASE_STEP_DEFINITIONS = [
   { key: 'received', title: '已接收任务', doneTitle: '任务创建' },

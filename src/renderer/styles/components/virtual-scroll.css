@@ -1,0 +1,136 @@
+/* ---- 虚拟滚动 ---- */
+
+.virtual-scroll-body {
+  width: 100%;
+  min-height: 0;
+}
+
+.virtual-card-scroll {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.virtual-card-scroll-shell {
+  position: relative;
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100vh - 180px);
+}
+
+.virtual-scroll-native-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.virtual-scroll-native-hidden::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.virtual-scrollbar {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  bottom: 6px;
+  width: 10px;
+  z-index: 10;
+  user-select: none;
+  touch-action: none;
+}
+
+.virtual-scrollbar[hidden] {
+  display: none;
+}
+
+.virtual-scrollbar-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-color) 45%, transparent);
+}
+
+.virtual-scrollbar-thumb {
+  position: absolute;
+  left: 1px;
+  top: 0;
+  width: 8px;
+  min-height: 32px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-color) 58%, #7b8da4);
+  cursor: default;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.virtual-scrollbar-thumb:hover,
+.virtual-scrollbar-thumb.is-dragging {
+  background: color-mix(in srgb, var(--primary-color) 58%, #7b8da4);
+}
+
+.virtual-scrollbar-thumb.is-dragging {
+  cursor: default;
+}
+
+body.is-dragging-virtual-scrollbar {
+  user-select: none;
+  cursor: default;
+}
+
+.virtual-spacer-before,
+.virtual-spacer-after {
+  width: 100%;
+  pointer-events: none;
+}
+
+.virtual-items {
+  width: 100%;
+}
+
+.virtual-card-items {
+  width: 100%;
+  min-width: 0;
+  padding-right: 16px;
+}
+
+.hotel-list.list-view .hotel-table {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.virtual-list-scroll-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: calc(100vh - 250px);
+  max-height: calc(100vh - 250px);
+  overflow: hidden;
+}
+
+.virtual-list-scroll {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.virtual-list-scroll.hotel-table-body {
+  max-height: none;
+}
+
+.virtual-list-scroll .virtual-items {
+  padding-right: 16px;
+}
+
+.virtual-list-scrollbar {
+  top: 6px;
+  right: 4px;
+  bottom: 6px;
+}

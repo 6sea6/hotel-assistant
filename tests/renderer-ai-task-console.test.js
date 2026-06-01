@@ -11,6 +11,24 @@ let aiAssistantModuleUrl = '';
 let aiAssistantStateModuleUrl = '';
 let aiAssistantActionsModuleUrl = '';
 
+function readRendererStyles() {
+  const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
+  const visited = new Set();
+
+  function readCss(relativePath) {
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+    if (visited.has(normalizedPath)) return '';
+    visited.add(normalizedPath);
+
+    const css = fs.readFileSync(path.join(rendererDir, normalizedPath), 'utf8');
+    return css.replace(/@import\s+url\('([^']+)'\);/g, (_statement, importPath) =>
+      readCss(path.posix.normalize(path.posix.join(path.posix.dirname(normalizedPath), importPath)))
+    );
+  }
+
+  return readCss('styles.css');
+}
+
 async function loadTaskConsoleModule() {
   if (!taskConsoleModuleUrl) {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-ai-task-console-'));
@@ -47,9 +65,12 @@ async function loadAiAssistantModules() {
       'ai-task-console.js',
       'ai-task-events.js',
       'ai-task-formatters.js',
+      'ai-task-payload.js',
       'ai-task-progress.js',
+      'ai-task-queue.js',
       'ai-task-renderers.js',
       'ai-task-state.js',
+      'ai-template-picker.js',
       'custom-select.js',
       'dom-helpers.js',
       'notification.js',
@@ -212,6 +233,37 @@ test('extractCtripUrls trims prose after a pasted list URL', async () => {
     'https://hotels.ctrip.com/hotels/list?cityId=477&checkin=2026-06-01&checkout=2026-06-02&listFilters=29~1*29*1~3&locale=zh-CN'
   );
   assert.equal(extractCtripUrl(text), urls[0]);
+});
+
+test('AI task event render scheduler batches console renders with requestAnimationFrame', async (t) => {
+  const { createRafRenderScheduler } = await loadTaskConsoleModule();
+  const originalRequestAnimationFrame = global.requestAnimationFrame;
+  const originalCancelAnimationFrame = global.cancelAnimationFrame;
+  const callbacks = [];
+  let renderCount = 0;
+
+  global.requestAnimationFrame = (callback) => {
+    callbacks.push(callback);
+    return callbacks.length;
+  };
+  global.cancelAnimationFrame = () => {};
+  t.after(() => {
+    global.requestAnimationFrame = originalRequestAnimationFrame;
+    global.cancelAnimationFrame = originalCancelAnimationFrame;
+  });
+
+  const scheduleRender = createRafRenderScheduler(() => {
+    renderCount += 1;
+  });
+
+  scheduleRender();
+  scheduleRender();
+  scheduleRender();
+  assert.equal(callbacks.length, 1);
+  assert.equal(renderCount, 0);
+
+  callbacks.shift()(123);
+  assert.equal(renderCount, 1);
 });
 
 test('hasWriteResult understands batch apply summaries', async () => {
@@ -542,7 +594,7 @@ test('batch progress stat icons use svg and animate the running icon', () => {
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-renderers.js'),
     'utf8'
   );
-  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles.css'), 'utf8');
+  const css = readRendererStyles();
 
   assert.match(moduleSource, /<svg class="task-progress-stat-icon task-progress-stat-icon-hotel"/);
   assert.match(moduleSource, /<svg class="task-progress-stat-icon task-progress-stat-icon-done"/);
@@ -1212,7 +1264,7 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
 });
 
 test('list prefilter styles inherit global personalization theme variables', () => {
-  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'styles.css'), 'utf8');
+  const css = readRendererStyles();
   const taskButtonStart = css.indexOf('.task-prefilter-button {');
   const taskButtonEnd = css.indexOf('.task-prefilter-button svg');
   const modalStart = css.indexOf('.list-prefilter-modal-content');

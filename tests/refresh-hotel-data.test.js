@@ -48,9 +48,12 @@ async function loadAiAssistantModules() {
       'ai-task-console.js',
       'ai-task-events.js',
       'ai-task-formatters.js',
+      'ai-task-payload.js',
       'ai-task-progress.js',
+      'ai-task-queue.js',
       'ai-task-renderers.js',
       'ai-task-state.js',
+      'ai-template-picker.js',
       'custom-select.js',
       'dom-helpers.js',
       'notification.js',
@@ -118,9 +121,9 @@ test('ai-assistant.js: exports enqueueRefreshHotelDataTask', async () => {
   assert.equal(typeof module.enqueueRefreshHotelDataTask, 'function');
 });
 
-test('ai-assistant.js: createQueueTask supports taskKind parameter', async () => {
+test('ai-task-queue.js: createQueueTask supports taskKind parameter', async () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-assistant.js'),
+    path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-task-queue.js'),
     'utf8'
   );
   assert.ok(code.includes("taskKind = 'collect'"), 'Default taskKind should be collect');
@@ -309,7 +312,7 @@ test('scraper-runner.js: refresh does not call getTransitInfo', () => {
 
 test('scraper-runner.js: refresh preserves old fields', () => {
   const code = fs.readFileSync(
-    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-item-context.js'),
     'utf8'
   );
   assert.ok(code.includes('PRESERVED_FIELDS_ON_REFRESH'), 'Should define preserved fields');
@@ -334,10 +337,15 @@ test('scraper-runner.js: refresh uses overwriteExistingGroup', () => {
 });
 
 test('scraper-runner.js: refresh skips hotels on collection failure', () => {
-  const code = fs.readFileSync(
+  const runnerCode = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
+  const itemContextCode = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-item-context.js'),
+    'utf8'
+  );
+  const code = `${runnerCode}\n${itemContextCode}`;
   // Verify that collection failure leads to skipped status
   assert.ok(code.includes("status: 'skipped'"), 'Should mark failed collections as skipped');
   assert.ok(code.includes("status: 'failed'"), 'Should mark error collections as failed');
@@ -817,14 +825,18 @@ test('scraper-runner: refresh uses one final refresh:write after collection', ()
 });
 
 test('scraper-runner: refresh item collection bypasses full task runner overhead', () => {
-  const code = fs.readFileSync(
+  const runnerCode = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
   );
-  const refreshStart = code.indexOf('async function refreshExistingCtripHotels');
-  const refreshEnd = code.indexOf('module.exports', refreshStart);
+  const itemContextCode = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-item-context.js'),
+    'utf8'
+  );
+  const refreshStart = runnerCode.indexOf('async function refreshExistingCtripHotels');
+  const refreshEnd = runnerCode.indexOf('module.exports', refreshStart);
   assert.ok(refreshStart > 0, 'Should find refreshExistingCtripHotels function');
-  const fnBody = code.substring(refreshStart, refreshEnd);
+  const fnBody = runnerCode.substring(refreshStart, refreshEnd);
 
   assert.ok(
     fnBody.includes('runPreparedDetailBatch'),
@@ -838,7 +850,10 @@ test('scraper-runner: refresh item collection bypasses full task runner overhead
     !fnBody.includes('runHotelImportTask(collectArgs'),
     'Refresh should not run the full task runner for every hotel'
   );
-  assert.ok(fnBody.includes("reportLevel: 'off'"), 'Refresh should skip per-hotel report output');
+  assert.ok(
+    itemContextCode.includes("reportLevel: 'off'"),
+    'Refresh should skip per-hotel report output'
+  );
 });
 
 test('scraper-runner: refresh prepares cloned Edge profiles before launching concurrent workers', () => {

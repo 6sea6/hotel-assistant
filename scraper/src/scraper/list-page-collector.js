@@ -504,6 +504,10 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
 
       for (let round = 0; round < maxScrollRounds; round += 1) {
         const roundStartedAt = Date.now();
+        const edgeHtmlExpression =
+          options.includeFullEdgeHtml === true
+            ? "document.documentElement ? document.documentElement.outerHTML : ''"
+            : 'collectCandidateHtml()';
         const scrollResult = await evaluateInSession(
           connection,
           sessionId,
@@ -530,6 +534,47 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
             } catch (_error) {
               return 0;
             }
+          };
+          const collectCandidateHtml = () => {
+            const selector = [
+              'a[href*="/hotels/"]',
+              'a[href*="hotelId="]',
+              '[data-hotelid]',
+              '[data-hotel-id]',
+              '[data-offline-hotelid]',
+              '[data-offline-hotelId]',
+              '[class*="hotel"]',
+              '[class*="Hotel"]'
+            ].join(',');
+            const fragments = [];
+            const seen = new Set();
+            let totalBytes = 0;
+            const addFragment = (element) => {
+              if (!element || seen.has(element)) return;
+              seen.add(element);
+              const html = String(element.outerHTML || '').trim();
+              if (!html) return;
+              fragments.push(html.slice(0, 12000));
+              totalBytes += html.length;
+            };
+            for (const element of Array.from(document.querySelectorAll(selector))) {
+              let candidate = element;
+              for (let depth = 0; depth < 3; depth += 1) {
+                const parent = candidate && candidate.parentElement;
+                if (!parent || parent === document.body || parent === document.documentElement) {
+                  break;
+                }
+                const text = parent.innerText || '';
+                if (text.length > 30 && text.length <= 1800) {
+                  candidate = parent;
+                }
+              }
+              addFragment(candidate);
+              if (fragments.length >= 120 || totalBytes >= 240000) {
+                break;
+              }
+            }
+            return fragments.join('\n');
           };
           const isVisible = (element) => {
             if (!element || element === document.body || element === document.documentElement) {
@@ -624,11 +669,14 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
           await sleep(250);
           const nextHeight = getHeight();
           const nextCount = getCandidateCount();
-          const html = document.documentElement ? document.documentElement.outerHTML : '';
+          const candidateHtml = collectCandidateHtml();
+          const html = ${edgeHtmlExpression};
           return JSON.stringify({
             scrollHeight: nextHeight,
             candidateCount: nextCount,
             html,
+            candidateHtml,
+            fullHtmlIncluded: ${options.includeFullEdgeHtml === true ? 'true' : 'false'},
             scrollContainerCount: containers.length,
             scrollActions,
             documentHeightBefore: height,
@@ -660,10 +708,11 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         );
         const listApiSnapshot = pendingListApiSnapshot;
         pendingListApiSnapshot = { count: 0, html: '', pageIndexes: [], error: '' };
+        const domHtml = String(parsed.html || parsed.candidateHtml || '');
 
         const pageRecord = {
           url,
-          html: [String(parsed.html || ''), networkSnapshot.html, listApiSnapshot.html]
+          html: [domHtml, networkSnapshot.html, listApiSnapshot.html]
             .filter(Boolean)
             .join('\n'),
           source: 'edge-cdp',
@@ -687,7 +736,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
           listApiPageIndexes: Array.isArray(listApiSnapshot.pageIndexes)
             ? listApiSnapshot.pageIndexes
             : [],
-          listApiError: listApiSnapshot.error || ''
+          listApiError: listApiSnapshot.error || '',
+          fullHtmlIncluded: Boolean(parsed.fullHtmlIncluded)
         };
         pages.push(pageRecord);
 
@@ -923,7 +973,8 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
         listApiPageIndexes: Array.isArray(edgePage.listApiPageIndexes)
           ? edgePage.listApiPageIndexes
           : [],
-        listApiError: edgePage.listApiError || ''
+        listApiError: edgePage.listApiError || '',
+        fullHtmlIncluded: Boolean(edgePage.fullHtmlIncluded)
       };
       pages.push(pageRecord);
       performance.edgePages.push(pageRecord);

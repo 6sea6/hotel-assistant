@@ -23,6 +23,7 @@ export {
 export {
   BASE_STEP_DEFINITIONS,
   CANCEL_STEP_DEFINITION,
+  createRafRenderScheduler,
   findRefreshStepEvent,
   findStepEvent,
   getEventDetailText,

@@ -719,6 +719,103 @@ test('captureListHtmlPagesWithEdge keeps scrolling while unique list candidates 
   }
 });
 
+test('captureListHtmlPagesWithEdge returns candidate HTML without full document by default', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Edge CDP list fallback is Windows-only');
+    return;
+  }
+
+  let evaluatedExpression = '';
+  const listeners = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    connectToDebugger: async () => ({
+      async send(method) {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.createTarget') {
+          return { targetId: 'target-1' };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'session-1' };
+        }
+        if (method === 'Page.navigate') {
+          setImmediate(() => {
+            listeners.forEach((listener) =>
+              listener({ sessionId: 'session-1', method: 'Page.loadEventFired' })
+            );
+          });
+        }
+        return {};
+      },
+      addListener(listener) {
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      async close() {}
+    }),
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      evaluatedExpression = String(expression);
+      return JSON.stringify({
+        scrollHeight: 1200,
+        candidateCount: 1,
+        scrollContainerCount: 0,
+        scrollActions: 1,
+        candidateHtml: buildListHtml([{ id: '9301', name: '轻量候选酒店' }]),
+        fullHtmlIncluded: false
+      });
+    },
+    launchManagedEdgeSession: async () => ({
+      browser: { pid: 123 },
+      userDataDir: '',
+      shouldCleanupUserDataDir: false,
+      debuggerUrl: 'ws://edge.test/devtools/browser'
+    }),
+    normalizeEdgeSessionOptions: () => ({}),
+    waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+    waitForSessionCondition: async () => true
+  });
+  const processUtilsPath = installMock('../src/scraper/process-utils', {
+    findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killProcessTree: () => undefined
+  });
+  const collectorPath = require.resolve('../src/scraper/list-page-collector');
+  delete require.cache[collectorPath];
+
+  try {
+    const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
+    const result = await captureListHtmlPagesWithEdge(
+      ['https://hotels.ctrip.com/hotels/list?city=2'],
+      {},
+      {
+        maxScrollRounds: 1,
+        stableRoundLimit: 1,
+        initialSettleMs: 0
+      }
+    );
+
+    const candidates = parseListPageCandidatesFromHtml(
+      result.pages[0].html,
+      'https://hotels.ctrip.com/hotels/list?city=2'
+    );
+
+    assert.equal(evaluatedExpression.includes('document.documentElement.outerHTML'), false);
+    assert.equal(evaluatedExpression.includes('candidateHtml'), true);
+    assert.equal(result.pages[0].fullHtmlIncluded, false);
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.hotelId),
+      ['9301']
+    );
+  } finally {
+    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+  }
+});
+
 test('captureListHtmlPagesWithEdge appends Ctrip list network responses to snapshots', async (t) => {
   if (process.platform !== 'win32') {
     t.skip('Edge CDP list fallback is Windows-only');

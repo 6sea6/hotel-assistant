@@ -103,11 +103,78 @@ export function renderVirtualHotelListView(
   table.appendChild(listScrollShell);
   container.appendChild(table);
 
+  renderVirtualHotelCollection({
+    mode: 'list',
+    scrollShell: listScrollShell,
+    scrollContainer,
+    itemsContainer,
+    spacerBefore,
+    spacerAfter,
+    sortedHotels,
+    taskVersion,
+    perfLabel,
+    reason,
+    options,
+    calculateRange({ itemCount, scrollTop, viewportHeight, estimatedItemHeight }) {
+      return calculateVirtualRange({
+        itemCount,
+        scrollTop,
+        viewportHeight,
+        estimatedItemHeight,
+        overscan: VIRTUAL_OVERSCAN
+      });
+    },
+    renderItem: (hotel, index) => createHotelListRow(hotel, index),
+    measureSelector: '.hotel-table-row',
+    measureFallback: LIST_ROW_ESTIMATED_HEIGHT,
+    measureTolerance: 4,
+    scrollbarClassName: 'virtual-list-scrollbar',
+    getWheelStep: (virtualState) => {
+      const estimated = virtualState?.estimatedItemHeight || LIST_ROW_ESTIMATED_HEIGHT;
+      return Math.max(110, Math.min(240, estimated * 3));
+    },
+    wheelDuration: 160,
+    afterInitialRender({ scheduleScrollbarUpdate }) {
+      requestAnimationFrame(() => {
+        if (taskVersion !== state.hotelListRenderVersion) return;
+        scheduleScrollbarUpdate();
+      });
+      syncVirtualSelectAllCheckboxState(sortedHotels);
+    }
+  });
+}
+
+function renderVirtualHotelCollection({
+  mode,
+  scrollShell,
+  scrollContainer,
+  itemsContainer,
+  spacerBefore,
+  spacerAfter,
+  sortedHotels,
+  taskVersion,
+  perfLabel,
+  reason,
+  options = {},
+  calculateRange,
+  renderItem,
+  measureSelector,
+  measureFallback,
+  measureTolerance,
+  scrollbarClassName,
+  getWheelStep,
+  wheelDuration,
+  afterItemsRendered = null,
+  afterInitialRender = null,
+  getRangeKeySuffix = null
+}) {
   virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
 
   let customScrollbar = null;
+  let wheelController = null;
   let lastRenderedRangeKey = '';
   let scrollbarUpdateRafId = 0;
+  let saveScrollRafId = 0;
 
   const scheduleScrollbarUpdate = () => {
     if (scrollbarUpdateRafId) return;
@@ -117,18 +184,24 @@ export function renderVirtualHotelListView(
     });
   };
 
-  const updateVirtualList = () => {
+  const resetRenderedRange = () => {
+    lastRenderedRangeKey = '';
+  };
+
+  const updateVirtualItems = () => {
+    if (!virtualHotelListState) return;
+
     const scrollTop = scrollContainer.scrollTop;
     const viewportHeight = scrollContainer.clientHeight || 600;
     virtualHotelListState.scrollTop = scrollTop;
     virtualHotelListState.viewportHeight = viewportHeight;
 
-    const range = calculateVirtualRange({
+    const range = calculateRange({
       itemCount: sortedHotels.length,
       scrollTop,
       viewportHeight,
       estimatedItemHeight: virtualHotelListState.estimatedItemHeight,
-      overscan: VIRTUAL_OVERSCAN
+      virtualState: virtualHotelListState
     });
 
     virtualHotelListState.startIndex = range.startIndex;
@@ -139,7 +212,8 @@ export function renderVirtualHotelListView(
       return;
     }
 
-    const rangeKey = `${range.startIndex}:${range.endIndex}`;
+    const suffix = typeof getRangeKeySuffix === 'function' ? getRangeKeySuffix() : '';
+    const rangeKey = `${range.startIndex}:${range.endIndex}:${suffix}`;
     if (rangeKey === lastRenderedRangeKey) {
       return;
     }
@@ -150,62 +224,55 @@ export function renderVirtualHotelListView(
 
     const fragment = document.createDocumentFragment();
     for (let i = range.startIndex; i < range.endIndex; i++) {
-      fragment.appendChild(createHotelListRow(sortedHotels[i], i));
+      fragment.appendChild(renderItem(sortedHotels[i], i));
     }
 
     itemsContainer.innerHTML = '';
     itemsContainer.appendChild(fragment);
 
+    if (typeof afterItemsRendered === 'function') {
+      afterItemsRendered(itemsContainer, range);
+    }
+
     if (!virtualHotelListState.hasMeasuredItemHeight) {
       const measured = measureAverageHeight(
-        itemsContainer.querySelectorAll('.hotel-table-row'),
-        LIST_ROW_ESTIMATED_HEIGHT
+        itemsContainer.querySelectorAll(measureSelector),
+        measureFallback
       );
-      if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 4) {
+      if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > measureTolerance) {
         virtualHotelListState.estimatedItemHeight = measured;
       }
       virtualHotelListState.hasMeasuredItemHeight = true;
     }
   };
 
-  const scheduleVirtualListUpdate = () => {
+  const scheduleVirtualUpdate = () => {
     if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
     virtualScrollRafId = requestAnimationFrame(() => {
       virtualScrollRafId = 0;
-      updateVirtualList();
+      updateVirtualItems();
       scheduleScrollbarUpdate();
     });
   };
 
-  let listWheelController = null;
-
   customScrollbar = createCustomVirtualScrollbar(scrollContainer, {
-    className: 'virtual-list-scrollbar',
-    onScrollRequest: scheduleVirtualListUpdate,
-    onExternalScrollChange: () => listWheelController?.syncToCurrentScroll({ stop: true })
+    className: scrollbarClassName,
+    onScrollRequest: scheduleVirtualUpdate,
+    onExternalScrollChange: () => wheelController?.syncToCurrentScroll({ stop: true })
   });
-  listScrollShell.appendChild(customScrollbar.element);
+  scrollShell.appendChild(customScrollbar.element);
 
-  const cleanupFns = [];
-
-  listWheelController = createSmoothWheelController(scrollContainer, {
-    getStep: () => {
-      const estimated = virtualHotelListState?.estimatedItemHeight || LIST_ROW_ESTIMATED_HEIGHT;
-      return Math.max(110, Math.min(240, estimated * 3));
-    },
-    duration: 160,
+  wheelController = createSmoothWheelController(scrollContainer, {
+    getStep: () =>
+      typeof getWheelStep === 'function' ? getWheelStep(virtualHotelListState) : 160,
+    duration: wheelDuration,
     onScrollProgress: scheduleScrollbarUpdate,
-    onScrollRequest: scheduleVirtualListUpdate
+    onScrollRequest: scheduleVirtualUpdate
   });
 
-  scrollContainer.addEventListener('wheel', listWheelController.handleWheel, {
+  scrollContainer.addEventListener('wheel', wheelController.handleWheel, {
     passive: false,
     capture: true
-  });
-
-  cleanupFns.push(() => {
-    scrollContainer.removeEventListener('wheel', listWheelController.handleWheel, true);
-    listWheelController.cleanup();
   });
 
   virtualScrollbarCleanup = () => {
@@ -213,59 +280,74 @@ export function renderVirtualHotelListView(
       cancelAnimationFrame(scrollbarUpdateRafId);
       scrollbarUpdateRafId = 0;
     }
-    customScrollbar?.cleanup();
-    for (const cleanup of cleanupFns) {
-      try {
-        cleanup();
-      } catch (_) { /* ignore */ }
+    if (saveScrollRafId) {
+      cancelAnimationFrame(saveScrollRafId);
+      saveScrollRafId = 0;
     }
+    customScrollbar?.cleanup();
+    scrollContainer.removeEventListener('wheel', wheelController.handleWheel, true);
+    wheelController.cleanup();
   };
 
-  // 滚动位置记忆：保存
   const currentFiltersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
-  let saveScrollRafId = 0;
   const scheduleSaveScrollMemory = () => {
     if (saveScrollRafId) cancelAnimationFrame(saveScrollRafId);
     saveScrollRafId = requestAnimationFrame(() => {
       saveScrollRafId = 0;
       const vs = virtualHotelListState;
       if (!vs) return;
-      // 从当前可见范围找锚定酒店
       const midIndex = Math.floor((vs.startIndex + vs.endIndex) / 2);
       const anchorHotel = sortedHotels[midIndex] || null;
       saveScrollMemory({
         scrollTop: scrollContainer.scrollTop,
         anchorHotelId: anchorHotel?.id ?? null,
         anchorRank: midIndex + 1,
-        viewMode: 'list',
+        viewMode: mode,
         filtersKey: currentFiltersKey
       });
     });
   };
 
-  scrollContainer.addEventListener('scroll', () => {
-    scheduleVirtualListUpdate();
-    scheduleSaveScrollMemory();
-  }, { passive: true });
+  scrollContainer.addEventListener(
+    'scroll',
+    () => {
+      scheduleVirtualUpdate();
+      scheduleSaveScrollMemory();
+    },
+    { passive: true }
+  );
 
-  // 滚动位置记忆：恢复
   const scrollBehavior = getScrollBehaviorForReason(reason, currentFiltersKey);
   let initialScrollTop = 0;
   if (scrollBehavior === 'keep') {
     initialScrollTop = hotelListScrollMemory.lastScrollTop || 0;
   }
-  scrollContainer.scrollTop = clampValue(initialScrollTop, 0, Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight));
+  scrollContainer.scrollTop = clampValue(
+    initialScrollTop,
+    0,
+    Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+  );
 
-  updateVirtualList();
+  updateVirtualItems();
   if (customScrollbar) customScrollbar.update();
 
-  requestAnimationFrame(() => {
-    if (taskVersion !== state.hotelListRenderVersion) return;
-    scheduleScrollbarUpdate();
-  });
+  if (typeof afterInitialRender === 'function') {
+    afterInitialRender({
+      scheduleScrollbarUpdate,
+      scheduleVirtualUpdate,
+      updateVirtualItems,
+      resetRenderedRange
+    });
+  }
 
-  syncVirtualSelectAllCheckboxState(sortedHotels);
   options.finishHotelRender?.(taskVersion, perfLabel);
+
+  return {
+    scheduleScrollbarUpdate,
+    scheduleVirtualUpdate,
+    updateVirtualItems,
+    resetRenderedRange
+  };
 }
 
 /* ---- 自定义虚拟滚动条 ---- */
@@ -675,81 +757,44 @@ export function renderVirtualHotelCardGrid(
   shell.appendChild(scrollContainer);
   container.appendChild(shell);
 
-  virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
-
-  let customScrollbar = null;
-  let cardWheelController = null;
-  let lastRenderedRangeKey = '';
-  let scrollbarUpdateRafId = 0;
-
-  const scheduleScrollbarUpdate = () => {
-    if (scrollbarUpdateRafId) return;
-    scrollbarUpdateRafId = requestAnimationFrame(() => {
-      scrollbarUpdateRafId = 0;
-      if (customScrollbar) customScrollbar.update();
-    });
-  };
-
-  const updateVirtualCards = () => {
-    const scrollTop = scrollContainer.scrollTop;
-    const viewportHeight = scrollContainer.clientHeight || 600;
-    virtualHotelListState.scrollTop = scrollTop;
-    virtualHotelListState.viewportHeight = viewportHeight;
-
-    const range = calculateCardVirtualRange({
-      itemCount: sortedHotels.length,
-      scrollTop,
-      viewportHeight,
-      estimatedItemHeight: virtualHotelListState.estimatedItemHeight,
-      columns,
-      gap: CARD_GAP,
-      overscan: VIRTUAL_OVERSCAN
-    });
-
-    virtualHotelListState.startIndex = range.startIndex;
-    virtualHotelListState.endIndex = range.endIndex;
-
-    if (taskVersion !== state.hotelListRenderVersion) {
-      options.finishHotelRender?.(taskVersion, perfLabel);
-      return;
-    }
-
-    const rangeKey = `${range.startIndex}:${range.endIndex}`;
-    if (rangeKey === lastRenderedRangeKey) {
-      return;
-    }
-    lastRenderedRangeKey = rangeKey;
-
-    spacerBefore.style.height = range.beforeHeight + 'px';
-    spacerAfter.style.height = range.afterHeight + 'px';
-
-    const fragment = document.createDocumentFragment();
-    for (let i = range.startIndex; i < range.endIndex; i++) {
-      fragment.appendChild(createHotelCard(sortedHotels[i], i));
-    }
-
-    itemsContainer.innerHTML = '';
-    itemsContainer.appendChild(fragment);
-    cleanupHotelActionArtifacts(itemsContainer);
-
-    if (!virtualHotelListState.hasMeasuredItemHeight) {
-      const firstRowCards = itemsContainer.querySelectorAll('.hotel-card');
-      const measured = measureAverageHeight(firstRowCards, CARD_ESTIMATED_HEIGHT);
-      if (Math.abs(measured - virtualHotelListState.estimatedItemHeight) > 8) {
-        virtualHotelListState.estimatedItemHeight = measured;
-      }
-      virtualHotelListState.hasMeasuredItemHeight = true;
-    }
-  };
-
-  const scheduleVirtualCardUpdate = () => {
-    if (virtualScrollRafId) cancelAnimationFrame(virtualScrollRafId);
-    virtualScrollRafId = requestAnimationFrame(() => {
-      virtualScrollRafId = 0;
-      updateVirtualCards();
-      scheduleScrollbarUpdate();
-    });
-  };
+  const controls = renderVirtualHotelCollection({
+    mode: 'card',
+    scrollShell: shell,
+    scrollContainer,
+    itemsContainer,
+    spacerBefore,
+    spacerAfter,
+    sortedHotels,
+    taskVersion,
+    perfLabel,
+    reason,
+    options,
+    calculateRange({ itemCount, scrollTop, viewportHeight, estimatedItemHeight }) {
+      return calculateCardVirtualRange({
+        itemCount,
+        scrollTop,
+        viewportHeight,
+        estimatedItemHeight,
+        columns,
+        gap: CARD_GAP,
+        overscan: VIRTUAL_OVERSCAN
+      });
+    },
+    renderItem: (hotel, index) => createHotelCard(hotel, index),
+    measureSelector: '.hotel-card',
+    measureFallback: CARD_ESTIMATED_HEIGHT,
+    measureTolerance: 8,
+    scrollbarClassName: 'virtual-card-scrollbar',
+    getWheelStep: (virtualState) => {
+      const estimated = virtualState?.estimatedItemHeight || CARD_ESTIMATED_HEIGHT;
+      return Math.max(140, Math.min(280, estimated * 0.75));
+    },
+    wheelDuration: 180,
+    afterItemsRendered: (nextItemsContainer) => {
+      cleanupHotelActionArtifacts(nextItemsContainer);
+    },
+    getRangeKeySuffix: () => columns
+  });
 
   const updateCardColumnsFromWidth = () => {
     const width = container.clientWidth || scrollContainer.clientWidth;
@@ -761,79 +806,11 @@ export function renderVirtualHotelCardGrid(
       virtualHotelListState.columns = columns;
       itemsContainer.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
       virtualHotelListState.hasMeasuredItemHeight = false;
-      lastRenderedRangeKey = '';
-      updateVirtualCards();
-      scheduleScrollbarUpdate();
+      controls.resetRenderedRange();
+      controls.updateVirtualItems();
+      controls.scheduleScrollbarUpdate();
     }
   };
-
-  customScrollbar = createCustomVirtualScrollbar(scrollContainer, {
-    className: 'virtual-card-scrollbar',
-    onScrollRequest: scheduleVirtualCardUpdate,
-    onExternalScrollChange: () => cardWheelController?.syncToCurrentScroll({ stop: true })
-  });
-  shell.appendChild(customScrollbar.element);
-
-  const cleanupFns = [];
-
-  cardWheelController = createSmoothWheelController(scrollContainer, {
-    getStep: () => {
-      const estimated = virtualHotelListState?.estimatedItemHeight || CARD_ESTIMATED_HEIGHT;
-      return Math.max(140, Math.min(280, estimated * 0.75));
-    },
-    duration: 180,
-    onScrollProgress: scheduleScrollbarUpdate,
-    onScrollRequest: scheduleVirtualCardUpdate
-  });
-
-  scrollContainer.addEventListener('wheel', cardWheelController.handleWheel, {
-    passive: false,
-    capture: true
-  });
-
-  cleanupFns.push(() => {
-    scrollContainer.removeEventListener('wheel', cardWheelController.handleWheel, true);
-    cardWheelController.cleanup();
-  });
-
-  virtualScrollbarCleanup = () => {
-    if (scrollbarUpdateRafId) {
-      cancelAnimationFrame(scrollbarUpdateRafId);
-      scrollbarUpdateRafId = 0;
-    }
-    customScrollbar?.cleanup();
-    for (const cleanup of cleanupFns) {
-      try {
-        cleanup();
-      } catch (_) { /* ignore */ }
-    }
-  };
-
-  // 滚动位置记忆：保存
-  const currentFiltersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
-  let saveScrollRafId = 0;
-  const scheduleSaveScrollMemory = () => {
-    if (saveScrollRafId) cancelAnimationFrame(saveScrollRafId);
-    saveScrollRafId = requestAnimationFrame(() => {
-      saveScrollRafId = 0;
-      const vs = virtualHotelListState;
-      if (!vs) return;
-      const midIndex = Math.floor((vs.startIndex + vs.endIndex) / 2);
-      const anchorHotel = sortedHotels[midIndex] || null;
-      saveScrollMemory({
-        scrollTop: scrollContainer.scrollTop,
-        anchorHotelId: anchorHotel?.id ?? null,
-        anchorRank: midIndex + 1,
-        viewMode: 'card',
-        filtersKey: currentFiltersKey
-      });
-    });
-  };
-
-  scrollContainer.addEventListener('scroll', () => {
-    scheduleVirtualCardUpdate();
-    scheduleSaveScrollMemory();
-  }, { passive: true });
 
   if (typeof ResizeObserver !== 'undefined') {
     virtualResizeObserver = new ResizeObserver(() => {
@@ -845,18 +822,6 @@ export function renderVirtualHotelCardGrid(
     });
     virtualResizeObserver.observe(container);
   }
-
-  // 滚动位置记忆：恢复
-  const scrollBehavior = getScrollBehaviorForReason(reason, currentFiltersKey);
-  let initialScrollTop = 0;
-  if (scrollBehavior === 'keep') {
-    initialScrollTop = hotelListScrollMemory.lastScrollTop || 0;
-  }
-  scrollContainer.scrollTop = clampValue(initialScrollTop, 0, Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight));
-
-  updateVirtualCards();
-  if (customScrollbar) customScrollbar.update();
-  options.finishHotelRender?.(taskVersion, perfLabel);
 }
 
 /**

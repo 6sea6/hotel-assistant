@@ -1,0 +1,211 @@
+.custom-select,
+.ai-template-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.custom-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.custom-select-button,
+.ai-template-picker-button {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 999px;
+  padding: 8px 14px 8px 18px;
+  background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
+  cursor: pointer;
+  text-align: left;
+}
+
+.custom-select-text,
+.ai-template-picker-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-caret,
+.ai-template-picker-caret {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  transition: transform var(--transition-fast);
+}
+
+.custom-select.is-open .custom-select-caret,
+.ai-template-picker.is-open .ai-template-picker-caret {
+  transform: rotate(180deg);
+}
+
+.custom-select.is-open .custom-select-button {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 24%, transparent);
+}
+
+.custom-select-menu,
+.ai-template-picker-menu {
+  position: fixed;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 26%, var(--border-color));
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-secondary) 4%);
+  box-shadow: 0 18px 42px rgba(28, 54, 84, 0.18);
+}
+
+.custom-select-menu {
+  z-index: 2600;
+  overflow-y: visible;
+}
+
+.ai-template-picker-menu {
+  z-index: 2000;
+}
+
+.custom-select-menu[hidden],
+.ai-template-picker-menu[hidden] {
+  display: none;
+}
+
+.custom-select-option,
+.ai-template-picker-option {
+  width: 100%;
+  min-height: 36px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.custom-select-option:hover,
+.custom-select-option.is-active,
+.ai-template-picker-option:hover {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+
+.custom-select-option.is-selected,
+.ai-template-picker-option.is-selected {
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--primary-color),
+    color-mix(in srgb, var(--primary-color) 76%, #0e4cd9)
+  );
+}
+
+.custom-select-option:active,
+.ai-template-picker-option:active {
+  transform: scale(0.99);
+}
+
+.custom-select-option.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.custom-select-button:disabled,
+.custom-select.is-disabled .custom-select-button {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.task-url-input-wrap {
+  position: relative;
+  min-width: 0;
+  height: 40px;
+}
+
+.task-url-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.task-url-input {
+  display: block;
+  padding-left: 38px;
+  padding-right: 86px;
+  line-height: 1.45;
+  resize: none;
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+
+.task-input-count {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.task-start-button {
+  width: 100%;
+  min-height: 40px;
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--primary-color),
+    color-mix(in srgb, var(--primary-color) 74%, #0e4cd9)
+  );
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--primary-color) 25%, transparent);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    transform var(--transition-fast),
+    filter var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.task-start-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.task-start-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.task-button-spinner {
+  position: relative;
+  inset: auto;
+  width: 16px;
+  height: 16px;
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  display: inline-flex;
+}

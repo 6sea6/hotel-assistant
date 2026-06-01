@@ -331,6 +331,55 @@ test('settleRoomListInEdgeSession skips late DOM settle steps after room API res
   }
 });
 
+test('settleRoomListInEdgeSession skips main scroll when room API is already captured', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: 1,
+        containerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 3,
+      getRoomTrackedUrlCount: () => 1
+    });
+
+    assert.equal(
+      expressions.some((expression) => expression.includes('stableHeightRounds')),
+      false
+    );
+    assert.equal(
+      expressions.some((expression) => expression.includes('await scrollAllContainers')),
+      false
+    );
+    assert.equal(records.find((record) => record.phase === 'edge_settle_close_panels').status, 'success');
+    assert.equal(records.find((record) => record.phase === 'edge_settle_initial_expand').status, 'skipped');
+    assert.equal(records.find((record) => record.phase === 'edge_settle_main_scroll').status, 'skipped');
+    assert.equal(records.find((record) => record.phase === 'edge_settle_initial_expand').skip_reason, 'room_api_fast_path');
+    assert.equal(stats.apiFastPathSkippedStepCount, 5);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settleRoomListInEdgeSession treats duplicate skipped clicks as stable for bottom expand', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {

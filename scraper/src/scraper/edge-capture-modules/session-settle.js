@@ -215,11 +215,20 @@ function getRoomApiFastSettleThreshold(options = {}) {
   if (Number.isFinite(value) && value > 0) {
     return Math.max(1, Math.trunc(value));
   }
-  return 4;
+  return 1;
 }
 
 function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
-  if (options.roomApiFastSettle === false || stepPhase !== 'edge_settle_main_scroll') {
+  if (options.roomApiFastSettle === false) {
+    return false;
+  }
+
+  const fastSettleGatePhases = new Set([
+    'edge_settle_close_panels',
+    'edge_settle_initial_expand',
+    'edge_settle_main_scroll'
+  ]);
+  if (!fastSettleGatePhases.has(stepPhase)) {
     return false;
   }
 
