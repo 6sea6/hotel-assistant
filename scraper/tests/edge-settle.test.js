@@ -22,7 +22,10 @@ function clearModules(paths) {
         '../src/scraper/edge-capture-modules/response-parser',
         '../src/scraper/edge-capture-modules/dom-extract-script',
         '../src/scraper/edge-capture-modules/login-detection',
-        '../src/scraper/edge-capture-modules/edge-retry-policy'
+        '../src/scraper/edge-capture-modules/edge-retry-policy',
+        '../src/scraper/edge-capture-modules/edge-dom-extract',
+        '../src/scraper/edge-capture-modules/edge-target-capture',
+        '../src/scraper/edge-capture-modules/edge-target-session'
       ]) {
         delete require.cache[require.resolve(relatedModulePath)];
       }

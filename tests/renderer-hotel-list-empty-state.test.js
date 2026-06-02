@@ -20,6 +20,10 @@ async function loadHotelListModule() {
     'hotel-list-table-renderer.js',
     'hotel-list-card-renderer.js',
     'hotel-list-model.js',
+    'hotel-list-filter-options.js',
+    'hotel-list-patch.js',
+    'hotel-list-render-orchestrator.js',
+    'rule-delete-controller.js',
     'hotel-list-selection.js',
     'hotel-list-virtual-adapter.js'
   ].forEach((fileName) => {
@@ -71,7 +75,10 @@ async function loadHotelListModule() {
   );
 
   writeFile(path.join(tempRoot, 'notification.js'), 'export function showNotification() {}\n');
-  writeFile(path.join(tempRoot, 'perf.js'), 'export function perfStart() {}\nexport function perfEnd() {}\n');
+  writeFile(
+    path.join(tempRoot, 'perf.js'),
+    'export function perfStart() {}\nexport function perfEnd() {}\n'
+  );
   writeFile(
     path.join(tempRoot, 'render-scheduler.js'),
     `
@@ -209,7 +216,14 @@ test('renderHotelList: empty hotel state opens AI assistant instead of manual ad
     pendingRenderInteractionFirst: false,
     pendingHotelRenderResume: null,
     hotelNameFilterOptionSignature: '',
-    visibleHotelsCache: { data: null, hotelsVersion: -1, filtersKey: '', sortMode: '', hitCount: 0, missCount: 0 }
+    visibleHotelsCache: {
+      data: null,
+      hotelsVersion: -1,
+      filtersKey: '',
+      sortMode: '',
+      hitCount: 0,
+      missCount: 0
+    }
   };
 
   try {

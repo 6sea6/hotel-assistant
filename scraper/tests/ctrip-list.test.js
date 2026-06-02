@@ -56,7 +56,10 @@ function clearModules(paths) {
 function getListCollectorModulePaths() {
   return [
     require.resolve('../src/scraper/list-page-collector'),
-    require.resolve('../src/scraper/list-page-edge-capture')
+    require.resolve('../src/scraper/list-page-edge-capture'),
+    require.resolve('../src/scraper/list-page-cdp-session'),
+    require.resolve('../src/scraper/list-page-network-drain'),
+    require.resolve('../src/scraper/list-page-scroll-policy')
   ];
 }
 

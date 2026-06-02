@@ -15,6 +15,10 @@ test('hotel list responsibilities are split behind the existing facade', () => {
     'src/renderer/modules/hotel-list-table-renderer.js',
     'src/renderer/modules/hotel-list-card-renderer.js',
     'src/renderer/modules/hotel-list-model.js',
+    'src/renderer/modules/hotel-list-filter-options.js',
+    'src/renderer/modules/hotel-list-patch.js',
+    'src/renderer/modules/hotel-list-render-orchestrator.js',
+    'src/renderer/modules/rule-delete-controller.js',
     'src/renderer/modules/hotel-list-selection.js',
     'src/renderer/modules/hotel-list-empty-state.js',
     'src/renderer/modules/hotel-list-virtual-adapter.js'
@@ -30,6 +34,10 @@ test('hotel list responsibilities are split behind the existing facade', () => {
     './hotel-list-table-renderer.js',
     './hotel-list-card-renderer.js',
     './hotel-list-model.js',
+    './hotel-list-filter-options.js',
+    './hotel-list-patch.js',
+    './hotel-list-render-orchestrator.js',
+    './rule-delete-controller.js',
     './hotel-list-selection.js',
     './hotel-list-empty-state.js',
     './hotel-list-virtual-adapter.js'
@@ -38,11 +46,28 @@ test('hotel list responsibilities are split behind the existing facade', () => {
   });
 
   const controller = readProjectFile('src/renderer/modules/hotel-list-controller.js');
-  ['./hotel-list-model.js'].forEach((importPath) => {
+  [
+    './hotel-list-filter-options.js',
+    './hotel-list-render-orchestrator.js',
+    './rule-delete-controller.js'
+  ].forEach((importPath) => {
     assert.match(controller, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
   assert.doesNotMatch(controller, /function getSortedVisibleHotels\(/);
+  assert.doesNotMatch(controller, /function patchHotelCards\(/);
+  assert.doesNotMatch(controller, /function renderHotelList\(/);
+  assert.doesNotMatch(controller, /function getRuleDeleteThresholds\(/);
+  assert.doesNotMatch(controller, /export async function confirmRuleDelete\(/);
   assert.doesNotMatch(controller, /visibleHotelsCache\.(data|filtersKey|hitCount|missCount)/);
+  assert.ok(
+    controller.split(/\r?\n/).length <= 460,
+    'hotel-list-controller.js should stay focused'
+  );
+
+  const renderOrchestrator = readProjectFile(
+    'src/renderer/modules/hotel-list-render-orchestrator.js'
+  );
+  assert.match(renderOrchestrator, /\.\/hotel-list-model\.js/);
 });
 
 test('hotel virtual adapter shares list and card render plumbing', () => {
@@ -212,6 +237,58 @@ test('Ctrip list page collector is split into URL Edge and strategy modules', ()
   assert.doesNotMatch(collector, /function fetchListApiPagesInEdgeSession/);
   assert.doesNotMatch(collector, /function dispatchCdpWheelScroll/);
   assert.doesNotMatch(collector, /function normalizeEdgePageDecision/);
+});
+
+test('Ctrip Edge network capture splits target DOM and capture runner modules', () => {
+  const expectedModules = [
+    'scraper/src/scraper/edge-capture-modules/edge-target-session.js',
+    'scraper/src/scraper/edge-capture-modules/edge-target-capture.js',
+    'scraper/src/scraper/edge-capture-modules/edge-dom-extract.js'
+  ];
+
+  expectedModules.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(projectRoot, relativePath)), true, relativePath);
+  });
+
+  const networkCapture = readProjectFile(
+    'scraper/src/scraper/edge-capture-modules/network-capture.js'
+  );
+  ['./edge-target-session', './edge-target-capture', './edge-dom-extract'].forEach((importPath) => {
+    assert.match(networkCapture, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+
+  assert.doesNotMatch(networkCapture, /function runEdgeTargetCapture\(/);
+  assert.doesNotMatch(networkCapture, /function extractEdgeDomRoomCandidates\(/);
+  assert.doesNotMatch(networkCapture, /Target\.getTargets/);
+  assert.doesNotMatch(networkCapture, /Target\.createTarget/);
+  assert.ok(networkCapture.split(/\r?\n/).length <= 520, 'network-capture.js should stay focused');
+});
+
+test('Ctrip list Edge capture splits CDP session network and scroll policy modules', () => {
+  const expectedModules = [
+    'scraper/src/scraper/list-page-cdp-session.js',
+    'scraper/src/scraper/list-page-network-drain.js',
+    'scraper/src/scraper/list-page-scroll-policy.js'
+  ];
+
+  expectedModules.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(projectRoot, relativePath)), true, relativePath);
+  });
+
+  const edgeCapture = readProjectFile('scraper/src/scraper/list-page-edge-capture.js');
+  ['./list-page-cdp-session', './list-page-network-drain', './list-page-scroll-policy'].forEach(
+    (importPath) => {
+      assert.match(edgeCapture, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    }
+  );
+
+  assert.doesNotMatch(edgeCapture, /function getEdgeWebSocket\(/);
+  assert.doesNotMatch(edgeCapture, /function drainListNetworkResponses\(/);
+  assert.doesNotMatch(edgeCapture, /function dispatchCdpWheelScroll\(/);
+  assert.ok(
+    edgeCapture.split(/\r?\n/).length <= 430,
+    'list-page-edge-capture.js should stay focused'
+  );
 });
 
 test('settings UI is split behind a thin compatibility facade', () => {
