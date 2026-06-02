@@ -164,6 +164,10 @@ export function getRoomCountText(count) {
   return `${count}人`;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 export function normalizeFilterOptionKey(value) {
   return String(value ?? '')
     .trim()

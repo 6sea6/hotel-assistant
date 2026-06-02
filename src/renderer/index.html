@@ -1,1004 +1,1428 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:;">
-  <title>宾馆比较助手</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <div id="app">
-    <header class="app-header">
-      <div class="header-left">
-        <h1 class="app-title">🏨 宾馆比较助手</h1>
-      </div>
-      <div class="header-right">
-        <button class="btn btn-secondary" data-action="open-ai-assistant">
-          <span>🤖</span> 采集助手
-        </button>
-        <button class="btn btn-secondary" data-action="open-template-manager">
-          <span>📋</span> 模板管理
-        </button>
-        <button class="btn btn-secondary" data-action="open-data-transfer">
-          <span>💾</span> 数据管理
-        </button>
-        <button class="btn btn-secondary" data-action="open-personalization">
-          <span>🎨</span> 个性化
-        </button>
-        <button class="btn btn-secondary" data-action="open-settings">
-          <span>⚙️</span> 设置
-        </button>
-        <button class="btn btn-secondary" data-action="open-about">
-          <span>ℹ️</span> 关于
-        </button>
-      </div>
-      <div id="windowControls" class="window-controls" aria-label="窗口控制">
-        <button id="windowMinimizeBtn" class="window-control-btn" type="button" aria-label="最小化" data-action="window-minimize">
-          <span class="window-control-icon minimize-icon" aria-hidden="true"></span>
-        </button>
-        <button id="windowMaximizeBtn" class="window-control-btn" type="button" aria-label="最大化" data-action="window-toggle-maximize">
-          <span class="window-control-icon maximize-icon" aria-hidden="true"></span>
-        </button>
-        <button id="windowCloseBtn" class="window-control-btn window-control-close" type="button" aria-label="关闭" data-action="window-close">
-          <span class="window-control-icon close-icon" aria-hidden="true"></span>
-        </button>
-      </div>
-    </header>
-
-    <main id="hotelMain" class="app-main">
-      <aside class="side-panel">
-        <div class="panel-section">
-          <h2 class="section-title">搜索筛选</h2>
-          <div class="filter-grid">
-            <div class="filter-group filter-group-full">
-              <label>宾馆名称</label>
-              <select id="filterName" class="input" data-custom-select="true">
-                <option value="">全部</option>
-              </select>
-            </div>
-
-            <div class="filter-group">
-              <label>携程评分</label>
-              <select id="filterScore" class="input" data-custom-select="true">
-                <option value="">全部</option>
-                <option value="4.5">4.5分以上</option>
-                <option value="4.0">4.0分以上</option>
-              </select>
-            </div>
-
-            <div class="filter-group">
-              <label>收藏状态</label>
-              <select id="filterFavorite" class="input" data-custom-select="true">
-                <option value="">全部</option>
-                <option value="1">已收藏</option>
-                <option value="0">未收藏</option>
-              </select>
-            </div>
-
-            <div class="filter-group">
-              <label>公共交通时间</label>
-              <select id="filterTransportTime" class="input" data-custom-select="true">
-                <option value="">全部</option>
-                <option value="20">20分钟以内</option>
-                <option value="40">40分钟以内</option>
-                <option value="60">60分钟以内</option>
-                <option value="80">80分钟以内</option>
-                <option value="100">100分钟以内</option>
-              </select>
-            </div>
-
-            <div class="filter-group">
-              <label>最近地铁站距离</label>
-              <select id="filterSubwayDistance" class="input" data-custom-select="true">
-                <option value="">全部</option>
-                <option value="none">无</option>
-                <option value="0.3">300米以内</option>
-                <option value="0.5">500米以内</option>
-                <option value="1">1km以内</option>
-                <option value="1.5">1.5km以内</option>
-              </select>
-            </div>
-
-            <div class="filter-group filter-group-full">
-              <label>按模板筛选</label>
-              <select id="filterTemplate" class="input" data-custom-select="true">
-                <option value="">全部</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="filter-spacer"></div>
-          <button class="btn btn-secondary btn-full" data-action="clear-filters">
-            清除筛选
-          </button>
-
-          <div class="sort-mode-section">
-            <h2 class="section-title">排序方式</h2>
-            <div class="sort-mode-list" role="radiogroup" aria-label="排序方式">
-              <label class="sort-mode-option">
-                <input type="radio" name="sortMode" value="review_high" checked>
-                <span>好评优先</span>
-              </label>
-              <label class="sort-mode-option">
-                <input type="radio" name="sortMode" value="price_low">
-                <span>低价优先</span>
-              </label>
-              <label class="sort-mode-option">
-                <input type="radio" name="sortMode" value="price_high">
-                <span>高价优先</span>
-              </label>
-              <label class="sort-mode-option">
-                <input type="radio" name="sortMode" value="distance_near">
-                <span>距离近优先</span>
-              </label>
-            </div>
-          </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:;"
+    />
+    <title>宾馆比较助手</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <div class="header-left">
+          <h1 class="app-title">🏨 宾馆比较助手</h1>
         </div>
-
-        <div class="panel-section">
-          <button class="btn btn-primary btn-full" data-action="open-add-hotel">
-            <span>➕</span> 添加宾馆
+        <div class="header-right">
+          <button class="btn btn-secondary" data-action="open-ai-assistant">
+            <span>🤖</span> 采集助手
           </button>
-          <button class="btn btn-accent btn-full" data-action="export-ranking-image">
-            <span>📷</span> 导出排名图片
+          <button class="btn btn-secondary" data-action="open-template-manager">
+            <span>📋</span> 模板管理
           </button>
-        </div>
-      </aside>
-
-      <section class="content-area">
-        <div class="content-header">
-          <h2 class="content-title">宾馆列表</h2>
-          <span class="hotel-count">共 <strong id="hotelCount">0</strong> 家宾馆，<strong id="roomTypeCount">0</strong> 种房型</span>
-          <div class="view-controls">
-            <button id="viewToggle" class="btn btn-secondary btn-sm" data-action="toggle-view-mode">
-              <span id="viewIcon">🛏️</span> <span id="viewText">卡片</span>
-            </button>
-            <button id="ruleDeleteBtn" class="btn btn-danger btn-sm" data-action="open-rule-delete">
-              <span>🗑️</span> 规则删除
-            </button>
-            <button id="batchDeleteBtn" class="btn btn-danger btn-sm" style="display: none;" data-action="confirm-batch-delete">
-              <span>🗑️</span> 删除选中
-            </button>
-          </div>
-        </div>
-        <div id="hotelList" class="hotel-list">
-        </div>
-      </section>
-    </main>
-
-    <main id="aiAssistantPage" class="ai-assistant-page" style="display: none;">
-      <header class="ai-assistant-header">
-        <div class="ai-header-copy">
-          <span class="task-header-icon" aria-hidden="true">
-            <span class="task-bot-face"></span>
-          </span>
-          <div>
-            <h2>携程酒店采集助手</h2>
-            <p>任务执行中心</p>
-          </div>
-        </div>
-        <div class="ai-header-actions">
-          <button class="ai-ghost-button" type="button" data-action="refresh-all-hotel-data">
-            <span aria-hidden="true">↻</span>
-            更新数据
+          <button class="btn btn-secondary" data-action="open-data-transfer">
+            <span>💾</span> 数据管理
           </button>
-          <button class="ai-ghost-button" type="button" data-action="clear-ai-task-records">
-            <span aria-hidden="true">⌫</span>
-            清空记录
+          <button class="btn btn-secondary" data-action="open-personalization">
+            <span>🎨</span> 个性化
           </button>
-          <button class="ai-ghost-button" type="button" data-action="close-ai-assistant">
-            <span aria-hidden="true">↩</span>
-            返回列表
+          <button class="btn btn-secondary" data-action="open-settings">
+            <span>⚙️</span> 设置
+          </button>
+          <button class="btn btn-secondary" data-action="open-about"><span>ℹ️</span> 关于</button>
+        </div>
+        <div id="windowControls" class="window-controls" aria-label="窗口控制">
+          <button
+            id="windowMinimizeBtn"
+            class="window-control-btn"
+            type="button"
+            aria-label="最小化"
+            data-action="window-minimize"
+          >
+            <span class="window-control-icon minimize-icon" aria-hidden="true"></span>
+          </button>
+          <button
+            id="windowMaximizeBtn"
+            class="window-control-btn"
+            type="button"
+            aria-label="最大化"
+            data-action="window-toggle-maximize"
+          >
+            <span class="window-control-icon maximize-icon" aria-hidden="true"></span>
+          </button>
+          <button
+            id="windowCloseBtn"
+            class="window-control-btn window-control-close"
+            type="button"
+            aria-label="关闭"
+            data-action="window-close"
+          >
+            <span class="window-control-icon close-icon" aria-hidden="true"></span>
           </button>
         </div>
       </header>
 
-      <div class="task-console-layout">
-        <div class="task-workspace-grid">
-          <section class="current-task-card">
-            <div class="task-card-header">
-              <div>
-                <h2>当前任务</h2>
-              </div>
-              <div class="task-card-header-actions">
-                <button class="task-prefilter-button" type="button" data-action="open-list-prefilter-settings">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M4 5h16l-6.4 7.3v4.8l-3.2 1.8v-6.6L4 5Z"></path>
-                  </svg>
-                  前筛设置
-                </button>
-                <button class="task-clear-button" type="button" data-action="clear-ai-task-records">清空记录</button>
-              </div>
-            </div>
-            <div id="aiCurrentTaskPanel" class="current-task-content"></div>
-          </section>
-
-          <aside id="aiTaskQueuePanel" class="task-queue-card" aria-label="任务队列"></aside>
-        </div>
-
-        <section class="task-start-card" aria-label="任务启动栏">
-          <div class="task-start-title">
-            <div>
-              <h2>任务启动栏</h2>
-            </div>
-            <span class="task-start-hint">按 Enter 键加入队列</span>
-          </div>
-          <div class="task-start-grid">
-            <div class="task-field task-field-template">
-              <span>模板</span>
-              <div id="aiTemplatePicker" class="ai-template-picker custom-select">
-                <select id="aiTemplateSelect" class="input ai-template-select custom-select-native" data-custom-select="false" data-custom-select-auto="false" aria-hidden="true" tabindex="-1">
-                  <option value="">请选择模板</option>
+      <main id="hotelMain" class="app-main">
+        <aside class="side-panel">
+          <div class="panel-section">
+            <h2 class="section-title">搜索筛选</h2>
+            <div class="filter-grid">
+              <div class="filter-group filter-group-full">
+                <label>宾馆名称</label>
+                <select id="filterName" class="input" data-custom-select="true">
+                  <option value="">全部</option>
                 </select>
-                <button id="aiTemplatePickerButton" class="input ai-template-picker-button custom-select-button" type="button" aria-haspopup="listbox" aria-expanded="false">
-                  <span id="aiTemplatePickerText" class="ai-template-picker-text custom-select-text">请选择模板</span>
-                  <span class="ai-template-picker-caret custom-select-caret" aria-hidden="true">⌄</span>
-                </button>
-                <div id="aiTemplatePickerMenu" class="ai-template-picker-menu custom-select-menu" role="listbox" hidden></div>
+              </div>
+
+              <div class="filter-group">
+                <label>携程评分</label>
+                <select id="filterScore" class="input" data-custom-select="true">
+                  <option value="">全部</option>
+                  <option value="4.5">4.5分以上</option>
+                  <option value="4.0">4.0分以上</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label>收藏状态</label>
+                <select id="filterFavorite" class="input" data-custom-select="true">
+                  <option value="">全部</option>
+                  <option value="1">已收藏</option>
+                  <option value="0">未收藏</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label>公共交通时间</label>
+                <select id="filterTransportTime" class="input" data-custom-select="true">
+                  <option value="">全部</option>
+                  <option value="20">20分钟以内</option>
+                  <option value="40">40分钟以内</option>
+                  <option value="60">60分钟以内</option>
+                  <option value="80">80分钟以内</option>
+                  <option value="100">100分钟以内</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label>最近地铁站距离</label>
+                <select id="filterSubwayDistance" class="input" data-custom-select="true">
+                  <option value="">全部</option>
+                  <option value="none">无</option>
+                  <option value="0.3">300米以内</option>
+                  <option value="0.5">500米以内</option>
+                  <option value="1">1km以内</option>
+                  <option value="1.5">1.5km以内</option>
+                </select>
+              </div>
+
+              <div class="filter-group filter-group-full">
+                <label>按模板筛选</label>
+                <select id="filterTemplate" class="input" data-custom-select="true">
+                  <option value="">全部</option>
+                </select>
               </div>
             </div>
-            <label class="task-field task-field-url" for="aiHotelUrlInput">
-              <span>链接</span>
-              <div class="task-url-input-wrap">
-                <span class="task-url-icon" aria-hidden="true">↗</span>
-                <textarea id="aiHotelUrlInput" class="input task-url-input" maxlength="4000" rows="1" placeholder="粘贴携程酒店详情页或列表页链接"></textarea>
-                <span id="aiInputCount" class="task-input-count">0 / 4000</span>
+
+            <div class="filter-spacer"></div>
+            <button class="btn btn-secondary btn-full" data-action="clear-filters">清除筛选</button>
+
+            <div class="sort-mode-section">
+              <h2 class="section-title">排序方式</h2>
+              <div class="sort-mode-list" role="radiogroup" aria-label="排序方式">
+                <label class="sort-mode-option">
+                  <input type="radio" name="sortMode" value="review_high" checked />
+                  <span>好评优先</span>
+                </label>
+                <label class="sort-mode-option">
+                  <input type="radio" name="sortMode" value="price_low" />
+                  <span>低价优先</span>
+                </label>
+                <label class="sort-mode-option">
+                  <input type="radio" name="sortMode" value="price_high" />
+                  <span>高价优先</span>
+                </label>
+                <label class="sort-mode-option">
+                  <input type="radio" name="sortMode" value="distance_near" />
+                  <span>距离近优先</span>
+                </label>
               </div>
-            </label>
-            <div class="task-start-action">
-              <button id="aiStartTaskBtn" class="task-start-button" type="button" data-action="enqueue-ai-collect-task">加入队列</button>
             </div>
           </div>
+
+          <div class="panel-section">
+            <button class="btn btn-primary btn-full" data-action="open-add-hotel">
+              <span>➕</span> 添加宾馆
+            </button>
+            <button class="btn btn-accent btn-full" data-action="export-ranking-image">
+              <span>📷</span> 导出排名图片
+            </button>
+          </div>
+        </aside>
+
+        <section class="content-area">
+          <div class="content-header">
+            <h2 class="content-title">宾馆列表</h2>
+            <span class="hotel-count"
+              >共 <strong id="hotelCount">0</strong> 家宾馆，<strong id="roomTypeCount">0</strong>
+              种房型</span
+            >
+            <div class="view-controls">
+              <button
+                id="viewToggle"
+                class="btn btn-secondary btn-sm"
+                data-action="toggle-view-mode"
+              >
+                <span id="viewIcon">🛏️</span> <span id="viewText">卡片</span>
+              </button>
+              <button
+                id="ruleDeleteBtn"
+                class="btn btn-danger btn-sm"
+                data-action="open-rule-delete"
+              >
+                <span>🗑️</span> 规则删除
+              </button>
+              <button
+                id="batchDeleteBtn"
+                class="btn btn-danger btn-sm"
+                style="display: none"
+                data-action="confirm-batch-delete"
+              >
+                <span>🗑️</span> 删除选中
+              </button>
+            </div>
+          </div>
+          <div id="hotelList" class="hotel-list"></div>
         </section>
-      </div>
-    </main>
+      </main>
 
-    <div id="hotelModal" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 id="modalTitle">添加宾馆</h2>
-          <button class="modal-close" data-action="close-hotel-modal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <form id="hotelForm">
-            <input type="hidden" id="hotelId">
-
-            <div class="form-group">
-              <label>选择模板（可选）</label>
-              <select id="hotelTemplateSelect" class="input" data-custom-select="true">
-                <option value="">不使用模板</option>
-              </select>
-            </div>
-            
-            <div class="form-row form-row-wide">
-              <div class="form-group form-span-2">
-                <label for="hotelName">宾馆名称 *</label>
-                <input type="text" id="hotelName" class="input" placeholder="请输入宾馆名称">
-              </div>
-              <div class="form-group">
-                <label for="hotelAddress">地址</label>
-                <input type="text" id="hotelAddress" class="input" placeholder="请输入地址">
-              </div>
-            </div>
-
-            <div class="form-group full-width">
-              <label for="hotelWebsite">网址</label>
-              <input type="url" id="hotelWebsite" class="input" placeholder="如: https://www.example.com">
-            </div>
-
-            <div class="form-row form-row-compact">
-              <div class="form-group">
-                <label for="totalPrice">总价格 (元)</label>
-                <input type="number" id="totalPrice" step="0.01" min="0" class="input" placeholder="总价格">
-              </div>
-              <div class="form-group">
-                <label for="dailyPrice">日均价格 (元)</label>
-                <input type="number" id="dailyPrice" step="0.01" min="0" class="input" placeholder="日均价格">
-              </div>
-            </div>
-
-            <div class="form-row form-row-dates">
-              <div class="form-group">
-                <label for="checkInDate">入住日期</label>
-                <input type="date" id="checkInDate" class="input">
-              </div>
-              <div class="form-group">
-                <label for="checkOutDate">离店日期</label>
-                <input type="date" id="checkOutDate" class="input">
-              </div>
-              <div class="form-group">
-                <label for="days">住宿天数</label>
-                <input type="number" id="days" min="1" class="input" placeholder="天数">
-              </div>
-              <div class="form-group">
-                <label for="ctripScore">携程评分 (0-5分)</label>
-                <input type="number" id="ctripScore" step="0.1" min="0" max="5" class="input" placeholder="如: 4.5">
-              </div>
-            </div>
-
-            <div class="form-row form-row-transport">
-              <div class="form-group">
-                <label for="destination">目的地</label>
-                <input type="text" id="destination" class="input" placeholder="如: 天安门">
-              </div>
-              <div class="form-group">
-                <label for="distance">距离目的地 (公里)</label>
-                <input type="text" id="distance" class="input" placeholder="如: 2.5">
-              </div>
-              <div class="form-group">
-                <label for="transportTime">公共交通时间 (分钟)</label>
-                <input type="text" id="transportTime" class="input" placeholder="如: 30">
-              </div>
-            </div>
-
-            <div class="form-row form-row-compact form-row-subway">
-              <div class="form-group">
-                <label for="subwayStation">最近地铁站</label>
-                <input type="text" id="subwayStation" class="input" placeholder="如: 徐泾东站">
-              </div>
-              <div class="form-group">
-                <label for="subwayDistance">距离最近地铁站 (公里)</label>
-                <input type="text" id="subwayDistance" class="input" placeholder="如: 0.6，填 0 表示无较近地铁站">
-              </div>
-            </div>
-
-            <div class="form-group full-width form-group-transport-route">
-              <label for="busRoute">公交路线</label>
-              <textarea id="busRoute" class="input" rows="3" placeholder="如: 步行8分钟至 XX 站\n乘地铁2号线直达\n出站后步行5分钟到达"></textarea>
-              <span class="help-text">支持多行填写完整换乘方案，便于记录步行、换乘和到站信息。</span>
-            </div>
-
-            <div class="form-row form-row-compact">
-              <div class="form-group">
-                <label for="roomType">房间类型</label>
-                <select id="roomType" class="input" data-custom-select="true">
-                  <option value="">请选择</option>
-                  <option value="大床房">大床房</option>
-                  <option value="双床房">双床房</option>
-                  <option value="大床房/双床房">大床房/双床房</option>
-                  <option value="家庭房">家庭房</option>
-                  <option value="三床房">三床房</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="originalRoomType">原始房型</label>
-                <input type="text" id="originalRoomType" class="input" placeholder="如: 三人间、商务双床房">
-              </div>
-              <div class="form-group">
-                <label for="roomCount">入住人数</label>
-                <select id="roomCount" class="input" data-custom-select="true">
-                  <option value="1">单人</option>
-                  <option value="2">双人</option>
-                  <option value="3">三人</option>
-                  <option value="4">四人</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="roomArea">房间面积 (㎡)</label>
-                <input type="text" id="roomArea" class="input" placeholder="如: 35">
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label for="notes">备注</label>
-              <textarea id="notes" class="input" rows="3" placeholder="其他需要记录的信息"></textarea>
-            </div>
-
-            <div class="form-group">
-              <label>
-                <input type="checkbox" id="isFavorite"> 收藏此宾馆
-              </label>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-action="close-hotel-modal">取消</button>
-          <button type="button" class="btn btn-primary" data-action="save-hotel">保存</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="ruleDeleteModal" class="modal">
-      <div class="modal-content modal-small">
-        <div class="modal-header">
-          <h2>规则删除</h2>
-          <button class="modal-close" data-action="close-rule-delete">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="ruleDeletePrice">总价格高于（元）</label>
-              <input type="number" id="ruleDeletePrice" class="input" min="0" step="0.01" placeholder="留空表示不限制">
-            </div>
-            <div class="form-group">
-              <label for="ruleDeleteSubwayDistance">最近地铁站距离高于（公里）</label>
-              <input type="number" id="ruleDeleteSubwayDistance" class="input" min="0" step="0.1" placeholder="留空表示不限制">
-            </div>
-            <div class="form-group">
-              <label for="ruleDeleteTransportTime">公共交通时间高于（分钟）</label>
-              <input type="number" id="ruleDeleteTransportTime" class="input" min="0" step="1" placeholder="留空表示不限制">
+      <main id="aiAssistantPage" class="ai-assistant-page" style="display: none">
+        <header class="ai-assistant-header">
+          <div class="ai-header-copy">
+            <span class="task-header-icon" aria-hidden="true">
+              <span class="task-bot-face"></span>
+            </span>
+            <div>
+              <h2>携程酒店采集助手</h2>
+              <p>任务执行中心</p>
             </div>
           </div>
-          <div class="rule-delete-summary">
-            <div id="ruleDeleteSummaryText">当前卡片结果 0 条，命中规则 0 条</div>
-            <div class="rule-delete-hint">留空表示不启用该规则；填写多个规则时，只要超过任一已填写阈值就会被删除。</div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-action="close-rule-delete">取消</button>
-          <button type="button" id="ruleDeleteConfirmBtn" class="btn btn-danger" data-action="confirm-rule-delete">删除命中项</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="templateModal" class="modal">
-      <div class="modal-content modal-large">
-        <div class="modal-header">
-          <h2>模板管理</h2>
-          <button class="modal-close" data-action="close-template-modal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="template-actions">
-            <button class="btn btn-primary" data-action="open-add-template-form">
-              <span>➕</span> 新建模板
+          <div class="ai-header-actions">
+            <button class="ai-ghost-button" type="button" data-action="refresh-all-hotel-data">
+              <span aria-hidden="true">↻</span>
+              更新数据
+            </button>
+            <button class="ai-ghost-button" type="button" data-action="clear-ai-task-records">
+              <span aria-hidden="true">⌫</span>
+              清空记录
+            </button>
+            <button class="ai-ghost-button" type="button" data-action="close-ai-assistant">
+              <span aria-hidden="true">↩</span>
+              返回列表
             </button>
           </div>
-          <div id="templateList" class="template-list">
-          </div>
-          
-          <div id="templateForm" style="display: none;">
-            <hr class="divider">
-            <h3 id="templateFormTitle">新建模板</h3>
-            <input type="hidden" id="templateId">
-            <div class="form-row">
-              <div class="form-group">
-                <label for="templateName">模板名称 *</label>
-                <input type="text" id="templateName" required class="input" placeholder="如: 春节出行">
-              </div>
-              <div class="form-group">
-                <label for="templateDestination">目的地</label>
-                <input type="text" id="templateDestination" class="input" placeholder="目的地">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="templateCheckIn">入住日期</label>
-                <input type="date" id="templateCheckIn" class="input">
-              </div>
-              <div class="form-group">
-                <label for="templateCheckOut">离店日期</label>
-                <input type="date" id="templateCheckOut" class="input">
-              </div>
-              <div class="form-group">
-                <label for="templateRoomCount">房间人数</label>
-                <select id="templateRoomCount" class="input" data-custom-select="true">
-                  <option value="1">单人</option>
-                  <option value="2">双人</option>
-                  <option value="3">三人</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn btn-secondary" data-action="cancel-template-form">取消</button>
-              <button type="button" class="btn btn-primary" data-action="save-template">保存模板</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+        </header>
 
-    <div id="listPrefilterModal" class="modal">
-      <div class="modal-content list-prefilter-modal-content">
-        <div class="list-prefilter-shell">
-          <header class="list-prefilter-header">
-            <div class="list-prefilter-title">
-              <span class="list-prefilter-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M4 5h16l-6.4 7.2v4.6l-3.2 1.9v-6.5L4 5Z"></path>
-                </svg>
-              </span>
+        <div class="task-console-layout">
+          <div class="task-workspace-grid">
+            <section class="current-task-card">
+              <div class="task-card-header">
+                <div>
+                  <h2>当前任务</h2>
+                </div>
+                <div class="task-card-header-actions">
+                  <button
+                    class="task-prefilter-button"
+                    type="button"
+                    data-action="open-list-prefilter-settings"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 5h16l-6.4 7.3v4.8l-3.2 1.8v-6.6L4 5Z"></path>
+                    </svg>
+                    前筛设置
+                  </button>
+                  <button
+                    class="task-clear-button"
+                    type="button"
+                    data-action="clear-ai-task-records"
+                  >
+                    清空记录
+                  </button>
+                </div>
+              </div>
+              <div id="aiCurrentTaskPanel" class="current-task-content"></div>
+            </section>
+
+            <aside id="aiTaskQueuePanel" class="task-queue-card" aria-label="任务队列"></aside>
+          </div>
+
+          <section class="task-start-card" aria-label="任务启动栏">
+            <div class="task-start-title">
               <div>
-                <h2>列表页前筛</h2>
-                <p>配置携程列表页采集的前置过滤条件，减少无效数据，提升采集效率</p>
+                <h2>任务启动栏</h2>
               </div>
+              <span class="task-start-hint">按 Enter 键加入队列</span>
             </div>
-            <div class="list-prefilter-actions">
-              <button class="list-prefilter-secondary-button" type="button" data-action="reset-list-prefilter-settings">重置</button>
-              <button class="list-prefilter-primary-button" type="button" data-action="save-list-prefilter-settings">保存设置</button>
-              <button class="modal-close list-prefilter-close" type="button" data-action="close-list-prefilter-settings" aria-label="关闭">&times;</button>
-            </div>
-          </header>
-
-          <div class="list-prefilter-body">
-            <section class="list-prefilter-card">
-              <div class="list-prefilter-section-header">
-                <span class="list-prefilter-section-index">1</span>
-                <div>
-                  <h3>携程前筛</h3>
-                  <p>设置在携程列表页生效的筛选条件</p>
-                </div>
-              </div>
-
-              <div class="list-prefilter-grid list-prefilter-grid-three">
-                <div class="prefilter-field">
-                  <label for="aiCtripPriceMin">携程价格下限</label>
-                  <div class="prefilter-input-with-unit">
-                    <input id="aiCtripPriceMin" class="input prefilter-input" type="number" min="0" step="1" data-setting-key="aiCtripPriceMin" placeholder="0">
-                    <span>元</span>
-                  </div>
-                </div>
-                <div class="prefilter-field">
-                  <label for="aiCtripPriceMax">携程价格上限</label>
-                  <div class="prefilter-input-with-unit">
-                    <input id="aiCtripPriceMax" class="input prefilter-input" type="text" maxlength="12" data-setting-key="aiCtripPriceMax" placeholder="如 200 或 max">
-                    <span>元</span>
-                  </div>
-                </div>
-                <div class="prefilter-field">
-                  <span class="prefilter-label">携程星级</span>
-                  <div id="aiCtripStarLevelPills" class="prefilter-star-pills" role="group" aria-label="携程星级多选">
-                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="2" aria-pressed="false">
-                      <span>两星及以下</span>
-                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
-                    </button>
-                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="3" aria-pressed="false">
-                      <span>三星</span>
-                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
-                    </button>
-                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="4" aria-pressed="false">
-                      <span>四星</span>
-                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
-                    </button>
-                    <button class="prefilter-star-pill" type="button" data-action="toggle-ai-ctrip-star" data-star-level="5" aria-pressed="false">
-                      <span>五星</span>
-                      <span class="prefilter-star-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg></span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="list-prefilter-grid list-prefilter-grid-four">
-                <div class="prefilter-field">
-                  <label for="aiCtripSortMode">携程排序</label>
-                  <select id="aiCtripSortMode" class="input prefilter-input" data-setting-key="aiCtripSortMode" data-custom-select="true">
-                    <option value="">不指定排序</option>
-                    <option value="popularity">欢迎度排序</option>
-                    <option value="price_low">低价优先</option>
-                    <option value="review_high">好评优先</option>
-                  </select>
-                </div>
-                <div class="prefilter-field">
-                  <label for="aiCtripReviewCountMin">携程点评数</label>
-                  <select id="aiCtripReviewCountMin" class="input prefilter-input" data-setting-key="aiCtripReviewCountMin" data-custom-select="true">
-                    <option value="">不限</option>
-                    <option value="100">100 条以上</option>
-                    <option value="200">200 条以上</option>
-                    <option value="500">500 条以上</option>
-                  </select>
-                </div>
-                <div class="prefilter-field">
-                  <label for="aiCtripScoreMin">携程评分档位</label>
-                  <select id="aiCtripScoreMin" class="input prefilter-input" data-setting-key="aiCtripScoreMin" data-custom-select="true">
-                    <option value="">不限</option>
-                    <option value="4">4.0 以上</option>
-                    <option value="4.5">4.5 以上</option>
-                    <option value="4.7">4.7 以上</option>
-                  </select>
-                </div>
-                <div class="prefilter-field">
-                  <span class="prefilter-label">携程免费取消</span>
-                  <label class="prefilter-toggle-row">
-                    <span>仅显示可免费取消的酒店</span>
-                    <span class="switch-label">
-                      <input id="aiCtripFreeCancel" type="checkbox" data-setting-key="aiCtripFreeCancel">
-                      <span class="switch-slider"></span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            </section>
-
-            <section class="list-prefilter-card">
-              <div class="list-prefilter-section-header">
-                <span class="list-prefilter-section-index">2</span>
-                <div>
-                  <h3>本地过滤</h3>
-                  <p>设置在本地生效的过滤条件，进一步提升数据质量</p>
-                </div>
-              </div>
-
-              <div class="list-prefilter-grid list-prefilter-grid-three">
-                <div class="prefilter-field">
-                  <label for="aiListDesiredHotelCount">本地目标宾馆数</label>
-                  <input id="aiListDesiredHotelCount" class="input prefilter-input" type="number" min="1" max="50" step="1" data-setting-key="aiListDesiredHotelCount" placeholder="10">
-                </div>
-                <div class="prefilter-field">
-                  <label for="aiListExcludeHotelTypes">本地排除住宿类型</label>
-                  <input id="aiListExcludeHotelTypes" class="input prefilter-input" type="text" maxlength="200" data-setting-key="aiListExcludeHotelTypes" placeholder="如：民宿, 客栈, 青年旅舍, 公寓">
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="settingsModal" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>设置</h2>
-          <button class="modal-close" data-action="close-settings">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>采集偏好</label>
-            <div class="setting-switch-container">
-              <label class="switch-label">
-                <input type="checkbox" id="includeFourPersonRoomsForThreePersonTemplate">
-                <span class="switch-slider"></span>
-              </label>
-              <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText">关闭</span>
-            </div>
-            <small class="help-text">开启后，当模板入住人数为 3 人时，采集器仍会额外保留携程页面上明确显示可住 4 人的房型；查询参数仍按 3 人发起。</small>
-          </div>
-          <div class="form-group">
-            <label>采集性能日志</label>
-            <div class="setting-switch-container">
-              <label class="switch-label">
-                <input type="checkbox" id="enableCollectPerfLog">
-                <span class="switch-slider"></span>
-              </label>
-              <span class="switch-text" id="enableCollectPerfLogText">关闭</span>
-            </div>
-            <small class="help-text">开启后会在数据目录下记录采集各阶段耗时 JSONL，用于排查慢任务和异常阶段；普通使用建议关闭。</small>
-          </div>
-          <div class="form-group">
-            <label for="collectBatchConcurrency">并发采集数</label>
-            <select id="collectBatchConcurrency" class="input" data-custom-select="true">
-              <option value="1">1 - 串行采集</option>
-              <option value="2">2 - 并发采集</option>
-            </select>
-            <small class="help-text">默认使用 1。选择 2 会额外打开一个临时 Edge 会话；如果携程登录态或网络不稳定，可以切回 1。</small>
-          </div>
-          <div class="form-group">
-            <label for="amapApiKeyInput">高德 API Key</label>
-            <div class="data-path-container">
-              <input type="password" id="amapApiKeyInput" class="input" placeholder="留空使用程序默认高德 Key" autocomplete="off">
-              <div class="data-path-actions">
-                <button class="btn btn-secondary btn-sm" data-action="save-amap-api-key">保存 Key</button>
-              </div>
-            </div>
-            <small class="help-text">用于采集时计算公共交通、地铁距离和路线。保存后新任务会使用这里填写的 Key；留空则继续使用内置默认 Key。</small>
-          </div>
-          <div class="form-group">
-            <label>数据存储位置</label>
-            <div class="data-path-container">
-              <input type="text" id="dataPathInput" class="input" readonly placeholder="加载中...">
-              <div class="data-path-actions">
-                <button class="btn btn-secondary btn-sm" data-action="show-data-folder">
-                  <span>📁</span> 查看位置
-                </button>
-                <button class="btn btn-secondary btn-sm" data-action="change-data-path">
-                  <span>📂</span> 更改位置
-                </button>
-              </div>
-            </div>
-            <small class="help-text">更改数据存储位置后，数据将迁移到新位置</small>
-          </div>
-          <div class="form-group">
-            <label>快捷链接</label>
-            <button class="btn btn-primary btn-full" data-action="open-ctrip">
-              <span>🌐</span> 访问携程官网
-            </button>
-            <button class="btn btn-primary btn-full" data-action="open-fliggy" style="margin-top: 8px;">
-              <span>🌐</span> 访问飞猪官网
-            </button>
-          </div>
-          <div class="form-group">
-            <label>应用说明书</label>
-            <button class="btn btn-primary btn-full" data-action="open-manual">
-              <span>📖</span> 查看完整功能说明
-            </button>
-            <small class="help-text">了解应用的所有功能和使用方法</small>
-          </div>
-          <div class="form-group">
-            <button class="btn btn-secondary btn-full" data-action="reset-settings">
-              恢复默认设置
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="personalizationModal" class="modal">
-      <div class="modal-content modal-medium">
-        <div class="modal-header">
-          <h2>个性化</h2>
-          <button class="modal-close" data-action="close-personalization">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="personalization-section">
-            <div class="theme-picker-inline" role="radiogroup" aria-label="界面主题">
-              <span class="theme-picker-label">主题</span>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="totoro-blue">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">天空蓝</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="sweet-lime">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">甜柠青</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="grass-green">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">小草绿</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="pineapple-yellow">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">菠萝黄</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="oak-brown">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">橡木棕</span>
-              </label>
-              <span class="theme-picker-spacer" aria-hidden="true"></span>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="cloud-white">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">云朵白</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="autumn-gold">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">秋仪金</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="diehard-pink">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">铁杆粉</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="grape-purple">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">葡萄紫</span>
-              </label>
-              <label class="theme-option">
-                <input type="radio" name="themeOption" value="colorful-mode">
-                <span class="theme-option-indicator"></span>
-                <span class="theme-option-text">糖果彩</span>
-              </label>
-            </div>
-            <small class="help-text">主题会即时应用到当前界面，并自动保存到本地设置。</small>
-          </div>
-
-          <div class="personalization-section">
-            <div class="personalization-section-title">宾馆卡片展示字段</div>
-            <small class="help-text">选择卡片视图中每个宾馆框展示的信息，排名、名称和操作按钮会始终保留。</small>
-            <div class="card-field-picker" id="cardFieldPicker">
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="original_room_type" checked>
-                <span>原始房型</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="address" checked>
-                <span>地址</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="website" checked>
-                <span>网址</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="total_price" checked>
-                <span>总价格</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="daily_price" checked>
-                <span>日均价格</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="ctrip_score" checked>
-                <span>携程评分</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="distance" checked>
-                <span>距离</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="subway" checked>
-                <span>最近地铁站</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="transport_time" checked>
-                <span>公共交通</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="bus_route" checked>
-                <span>公交路线</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="room_type" checked>
-                <span>房间类型</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="notes" checked>
-                <span>备注</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="template" checked>
+            <div class="task-start-grid">
+              <div class="task-field task-field-template">
                 <span>模板</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="destination">
-                <span>目的地</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="room_count">
-                <span>入住人数</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="room_area">
-                <span>房间面积</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="days">
-                <span>住宿天数</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="check_in_date">
-                <span>入住日期</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="check_out_date">
-                <span>离店日期</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="cancel_policy">
-                <span>取消政策</span>
-              </label>
-              <label class="card-field-option">
-                <input type="checkbox" data-card-field="window_status">
-                <span>房态/窗口状态</span>
-              </label>
-            </div>
-            <div class="card-field-actions">
-              <button class="btn btn-primary btn-sm" data-action="save-hotel-card-fields">保存卡片展示</button>
-              <button class="btn btn-secondary btn-sm" data-action="reset-hotel-card-fields">恢复默认</button>
-            </div>
-          </div>
-
-          <div class="personalization-section">
-            <div class="personalization-section-title">应用图标</div>
-            <div class="data-path-container">
-              <input type="text" id="appIconPathInput" class="input" readonly placeholder="当前使用默认图标">
-              <div class="data-path-actions">
-                <button class="btn btn-secondary btn-sm" data-action="choose-app-icon">
-                  <span>🖼️</span> 更换图标
-                </button>
-                <button class="btn btn-secondary btn-sm" data-action="reset-app-icon">
-                  <span>↺</span> 恢复默认
-                </button>
-              </div>
-            </div>
-            <small class="help-text" id="appIconStatus">当前使用内置默认图标</small>
-            <small class="help-text">支持选择 .ico、.png、.jpg、.jpeg、.bmp、.webp 文件；选择后会复制到当前数据目录内，删除原图不会影响窗口图标，导出 JSON 时也会一并带上当前自定义图标。</small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 宾馆详情模态框 -->
-    <div id="hotelDetailsModal" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>宾馆详情</h2>
-          <button class="modal-close" data-action="close-hotel-details">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div id="hotelDetailsContent"></div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-action="close-hotel-details">关闭</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="dataTransferModal" class="modal">
-      <div class="modal-content modal-small">
-        <div class="modal-header">
-          <h2>数据管理</h2>
-          <button class="modal-close" data-action="close-data-transfer">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="data-transfer-options">
-            <div class="transfer-option" data-action="export-data">
-              <div class="transfer-icon">📤</div>
-              <div class="transfer-info">
-                <h3>导出数据</h3>
-                <p>将所有宾馆、模板和设置导出到 JSON 文件</p>
-              </div>
-            </div>
-            <div class="transfer-option transfer-option-static" id="importTransferOption">
-              <div class="transfer-icon">📥</div>
-              <div class="transfer-info">
-                <h3>导入数据</h3>
-                <p>从 JSON 文件导入数据。直接在这里选择覆盖导入或追加导入，不再弹出导入方式选择框。</p>
-                <div class="transfer-option-actions">
-                  <button class="btn btn-primary" data-action="import-data" data-import-mode="replace">覆盖导入</button>
-                  <button class="btn btn-primary" data-action="import-data" data-import-mode="append">追加导入</button>
+                <div id="aiTemplatePicker" class="ai-template-picker custom-select">
+                  <select
+                    id="aiTemplateSelect"
+                    class="input ai-template-select custom-select-native"
+                    data-custom-select="false"
+                    data-custom-select-auto="false"
+                    aria-hidden="true"
+                    tabindex="-1"
+                  >
+                    <option value="">请选择模板</option>
+                  </select>
+                  <button
+                    id="aiTemplatePickerButton"
+                    class="input ai-template-picker-button custom-select-button"
+                    type="button"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                  >
+                    <span
+                      id="aiTemplatePickerText"
+                      class="ai-template-picker-text custom-select-text"
+                      >请选择模板</span
+                    >
+                    <span class="ai-template-picker-caret custom-select-caret" aria-hidden="true"
+                      >⌄</span
+                    >
+                  </button>
+                  <div
+                    id="aiTemplatePickerMenu"
+                    class="ai-template-picker-menu custom-select-menu"
+                    role="listbox"
+                    hidden
+                  ></div>
                 </div>
-                <div class="transfer-option-note">覆盖会替换当前数据；追加会保留当前设置和图标，并自动跳过重复宾馆与模板。</div>
+              </div>
+              <label class="task-field task-field-url" for="aiHotelUrlInput">
+                <span>链接</span>
+                <div class="task-url-input-wrap">
+                  <span class="task-url-icon" aria-hidden="true">↗</span>
+                  <textarea
+                    id="aiHotelUrlInput"
+                    class="input task-url-input"
+                    maxlength="4000"
+                    rows="1"
+                    placeholder="粘贴携程酒店详情页或列表页链接"
+                  ></textarea>
+                  <span id="aiInputCount" class="task-input-count">0 / 4000</span>
+                </div>
+              </label>
+              <div class="task-start-action">
+                <button
+                  id="aiStartTaskBtn"
+                  class="task-start-button"
+                  type="button"
+                  data-action="enqueue-ai-collect-task"
+                >
+                  加入队列
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <div id="hotelModal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 id="modalTitle">添加宾馆</h2>
+            <button class="modal-close" data-action="close-hotel-modal">&times;</button>
+          </div>
+          <div class="modal-body">
+            <form id="hotelForm">
+              <input type="hidden" id="hotelId" />
+
+              <div class="form-group">
+                <label>选择模板（可选）</label>
+                <select id="hotelTemplateSelect" class="input" data-custom-select="true">
+                  <option value="">不使用模板</option>
+                </select>
+              </div>
+
+              <div class="form-row form-row-wide">
+                <div class="form-group form-span-2">
+                  <label for="hotelName">宾馆名称 *</label>
+                  <input type="text" id="hotelName" class="input" placeholder="请输入宾馆名称" />
+                </div>
+                <div class="form-group">
+                  <label for="hotelAddress">地址</label>
+                  <input type="text" id="hotelAddress" class="input" placeholder="请输入地址" />
+                </div>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="hotelWebsite">网址</label>
+                <input
+                  type="url"
+                  id="hotelWebsite"
+                  class="input"
+                  placeholder="如: https://www.example.com"
+                />
+              </div>
+
+              <div class="form-row form-row-compact">
+                <div class="form-group">
+                  <label for="totalPrice">总价格 (元)</label>
+                  <input
+                    type="number"
+                    id="totalPrice"
+                    step="0.01"
+                    min="0"
+                    class="input"
+                    placeholder="总价格"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="dailyPrice">日均价格 (元)</label>
+                  <input
+                    type="number"
+                    id="dailyPrice"
+                    step="0.01"
+                    min="0"
+                    class="input"
+                    placeholder="日均价格"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row form-row-dates">
+                <div class="form-group">
+                  <label for="checkInDate">入住日期</label>
+                  <input type="date" id="checkInDate" class="input" />
+                </div>
+                <div class="form-group">
+                  <label for="checkOutDate">离店日期</label>
+                  <input type="date" id="checkOutDate" class="input" />
+                </div>
+                <div class="form-group">
+                  <label for="days">住宿天数</label>
+                  <input type="number" id="days" min="1" class="input" placeholder="天数" />
+                </div>
+                <div class="form-group">
+                  <label for="ctripScore">携程评分 (0-5分)</label>
+                  <input
+                    type="number"
+                    id="ctripScore"
+                    step="0.1"
+                    min="0"
+                    max="5"
+                    class="input"
+                    placeholder="如: 4.5"
+                  />
+                </div>
+              </div>
+
+              <div class="form-row form-row-transport">
+                <div class="form-group">
+                  <label for="destination">目的地</label>
+                  <input type="text" id="destination" class="input" placeholder="如: 天安门" />
+                </div>
+                <div class="form-group">
+                  <label for="distance">距离目的地 (公里)</label>
+                  <input type="text" id="distance" class="input" placeholder="如: 2.5" />
+                </div>
+                <div class="form-group">
+                  <label for="transportTime">公共交通时间 (分钟)</label>
+                  <input type="text" id="transportTime" class="input" placeholder="如: 30" />
+                </div>
+              </div>
+
+              <div class="form-row form-row-compact form-row-subway">
+                <div class="form-group">
+                  <label for="subwayStation">最近地铁站</label>
+                  <input type="text" id="subwayStation" class="input" placeholder="如: 徐泾东站" />
+                </div>
+                <div class="form-group">
+                  <label for="subwayDistance">距离最近地铁站 (公里)</label>
+                  <input
+                    type="text"
+                    id="subwayDistance"
+                    class="input"
+                    placeholder="如: 0.6，填 0 表示无较近地铁站"
+                  />
+                </div>
+              </div>
+
+              <div class="form-group full-width form-group-transport-route">
+                <label for="busRoute">公交路线</label>
+                <textarea
+                  id="busRoute"
+                  class="input"
+                  rows="3"
+                  placeholder="如: 步行8分钟至 XX 站\n乘地铁2号线直达\n出站后步行5分钟到达"
+                ></textarea>
+                <span class="help-text"
+                  >支持多行填写完整换乘方案，便于记录步行、换乘和到站信息。</span
+                >
+              </div>
+
+              <div class="form-row form-row-compact">
+                <div class="form-group">
+                  <label for="roomType">房间类型</label>
+                  <select id="roomType" class="input" data-custom-select="true">
+                    <option value="">请选择</option>
+                    <option value="大床房">大床房</option>
+                    <option value="双床房">双床房</option>
+                    <option value="大床房/双床房">大床房/双床房</option>
+                    <option value="家庭房">家庭房</option>
+                    <option value="三床房">三床房</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="originalRoomType">原始房型</label>
+                  <input
+                    type="text"
+                    id="originalRoomType"
+                    class="input"
+                    placeholder="如: 三人间、商务双床房"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="roomCount">入住人数</label>
+                  <select id="roomCount" class="input" data-custom-select="true">
+                    <option value="1">单人</option>
+                    <option value="2">双人</option>
+                    <option value="3">三人</option>
+                    <option value="4">四人</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="roomArea">房间面积 (㎡)</label>
+                  <input type="text" id="roomArea" class="input" placeholder="如: 35" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="notes">备注</label>
+                <textarea
+                  id="notes"
+                  class="input"
+                  rows="3"
+                  placeholder="其他需要记录的信息"
+                ></textarea>
+              </div>
+
+              <div class="form-group">
+                <label> <input type="checkbox" id="isFavorite" /> 收藏此宾馆 </label>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-action="close-hotel-modal">
+              取消
+            </button>
+            <button type="button" class="btn btn-primary" data-action="save-hotel">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <template data-modal-template="ruleDeleteModal">
+        <div id="ruleDeleteModal" class="modal">
+          <div class="modal-content modal-small">
+            <div class="modal-header">
+              <h2>规则删除</h2>
+              <button class="modal-close" data-action="close-rule-delete">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="ruleDeletePrice">总价格高于（元）</label>
+                  <input
+                    type="number"
+                    id="ruleDeletePrice"
+                    class="input"
+                    min="0"
+                    step="0.01"
+                    placeholder="留空表示不限制"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="ruleDeleteSubwayDistance">最近地铁站距离高于（公里）</label>
+                  <input
+                    type="number"
+                    id="ruleDeleteSubwayDistance"
+                    class="input"
+                    min="0"
+                    step="0.1"
+                    placeholder="留空表示不限制"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="ruleDeleteTransportTime">公共交通时间高于（分钟）</label>
+                  <input
+                    type="number"
+                    id="ruleDeleteTransportTime"
+                    class="input"
+                    min="0"
+                    step="1"
+                    placeholder="留空表示不限制"
+                  />
+                </div>
+              </div>
+              <div class="rule-delete-summary">
+                <div id="ruleDeleteSummaryText">当前卡片结果 0 条，命中规则 0 条</div>
+                <div class="rule-delete-hint">
+                  留空表示不启用该规则；填写多个规则时，只要超过任一已填写阈值就会被删除。
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-action="close-rule-delete">
+                取消
+              </button>
+              <button
+                type="button"
+                id="ruleDeleteConfirmBtn"
+                class="btn btn-danger"
+                data-action="confirm-rule-delete"
+              >
+                删除命中项
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template data-modal-template="templateModal">
+        <div id="templateModal" class="modal">
+          <div class="modal-content modal-large">
+            <div class="modal-header">
+              <h2>模板管理</h2>
+              <button class="modal-close" data-action="close-template-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="template-actions">
+                <button class="btn btn-primary" data-action="open-add-template-form">
+                  <span>➕</span> 新建模板
+                </button>
+              </div>
+              <div id="templateList" class="template-list"></div>
+
+              <div id="templateForm" style="display: none">
+                <hr class="divider" />
+                <h3 id="templateFormTitle">新建模板</h3>
+                <input type="hidden" id="templateId" />
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="templateName">模板名称 *</label>
+                    <input
+                      type="text"
+                      id="templateName"
+                      required
+                      class="input"
+                      placeholder="如: 春节出行"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="templateDestination">目的地</label>
+                    <input
+                      type="text"
+                      id="templateDestination"
+                      class="input"
+                      placeholder="目的地"
+                    />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="templateCheckIn">入住日期</label>
+                    <input type="date" id="templateCheckIn" class="input" />
+                  </div>
+                  <div class="form-group">
+                    <label for="templateCheckOut">离店日期</label>
+                    <input type="date" id="templateCheckOut" class="input" />
+                  </div>
+                  <div class="form-group">
+                    <label for="templateRoomCount">房间人数</label>
+                    <select id="templateRoomCount" class="input" data-custom-select="true">
+                      <option value="1">单人</option>
+                      <option value="2">双人</option>
+                      <option value="3">三人</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-action="cancel-template-form"
+                  >
+                    取消
+                  </button>
+                  <button type="button" class="btn btn-primary" data-action="save-template">
+                    保存模板
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
 
-    <div id="aboutModal" class="modal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>关于</h2>
-          <button class="modal-close" data-action="close-about">&times;</button>
+      <div id="listPrefilterModal" class="modal">
+        <div class="modal-content list-prefilter-modal-content">
+          <div class="list-prefilter-shell">
+            <header class="list-prefilter-header">
+              <div class="list-prefilter-title">
+                <span class="list-prefilter-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M4 5h16l-6.4 7.2v4.6l-3.2 1.9v-6.5L4 5Z"></path>
+                  </svg>
+                </span>
+                <div>
+                  <h2>列表页前筛</h2>
+                  <p>配置携程列表页采集的前置过滤条件，减少无效数据，提升采集效率</p>
+                </div>
+              </div>
+              <div class="list-prefilter-actions">
+                <button
+                  class="list-prefilter-secondary-button"
+                  type="button"
+                  data-action="reset-list-prefilter-settings"
+                >
+                  重置
+                </button>
+                <button
+                  class="list-prefilter-primary-button"
+                  type="button"
+                  data-action="save-list-prefilter-settings"
+                >
+                  保存设置
+                </button>
+                <button
+                  class="modal-close list-prefilter-close"
+                  type="button"
+                  data-action="close-list-prefilter-settings"
+                  aria-label="关闭"
+                >
+                  &times;
+                </button>
+              </div>
+            </header>
+
+            <div class="list-prefilter-body">
+              <section class="list-prefilter-card">
+                <div class="list-prefilter-section-header">
+                  <span class="list-prefilter-section-index">1</span>
+                  <div>
+                    <h3>携程前筛</h3>
+                    <p>设置在携程列表页生效的筛选条件</p>
+                  </div>
+                </div>
+
+                <div class="list-prefilter-grid list-prefilter-grid-three">
+                  <div class="prefilter-field">
+                    <label for="aiCtripPriceMin">携程价格下限</label>
+                    <div class="prefilter-input-with-unit">
+                      <input
+                        id="aiCtripPriceMin"
+                        class="input prefilter-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        data-setting-key="aiCtripPriceMin"
+                        placeholder="0"
+                      />
+                      <span>元</span>
+                    </div>
+                  </div>
+                  <div class="prefilter-field">
+                    <label for="aiCtripPriceMax">携程价格上限</label>
+                    <div class="prefilter-input-with-unit">
+                      <input
+                        id="aiCtripPriceMax"
+                        class="input prefilter-input"
+                        type="text"
+                        maxlength="12"
+                        data-setting-key="aiCtripPriceMax"
+                        placeholder="如 200 或 max"
+                      />
+                      <span>元</span>
+                    </div>
+                  </div>
+                  <div class="prefilter-field">
+                    <span class="prefilter-label">携程星级</span>
+                    <div
+                      id="aiCtripStarLevelPills"
+                      class="prefilter-star-pills"
+                      role="group"
+                      aria-label="携程星级多选"
+                    >
+                      <button
+                        class="prefilter-star-pill"
+                        type="button"
+                        data-action="toggle-ai-ctrip-star"
+                        data-star-level="2"
+                        aria-pressed="false"
+                      >
+                        <span>两星及以下</span>
+                        <span class="prefilter-star-check" aria-hidden="true"
+                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
+                        ></span>
+                      </button>
+                      <button
+                        class="prefilter-star-pill"
+                        type="button"
+                        data-action="toggle-ai-ctrip-star"
+                        data-star-level="3"
+                        aria-pressed="false"
+                      >
+                        <span>三星</span>
+                        <span class="prefilter-star-check" aria-hidden="true"
+                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
+                        ></span>
+                      </button>
+                      <button
+                        class="prefilter-star-pill"
+                        type="button"
+                        data-action="toggle-ai-ctrip-star"
+                        data-star-level="4"
+                        aria-pressed="false"
+                      >
+                        <span>四星</span>
+                        <span class="prefilter-star-check" aria-hidden="true"
+                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
+                        ></span>
+                      </button>
+                      <button
+                        class="prefilter-star-pill"
+                        type="button"
+                        data-action="toggle-ai-ctrip-star"
+                        data-star-level="5"
+                        aria-pressed="false"
+                      >
+                        <span>五星</span>
+                        <span class="prefilter-star-check" aria-hidden="true"
+                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
+                        ></span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="list-prefilter-grid list-prefilter-grid-four">
+                  <div class="prefilter-field">
+                    <label for="aiCtripSortMode">携程排序</label>
+                    <select
+                      id="aiCtripSortMode"
+                      class="input prefilter-input"
+                      data-setting-key="aiCtripSortMode"
+                      data-custom-select="true"
+                    >
+                      <option value="">不指定排序</option>
+                      <option value="popularity">欢迎度排序</option>
+                      <option value="price_low">低价优先</option>
+                      <option value="review_high">好评优先</option>
+                    </select>
+                  </div>
+                  <div class="prefilter-field">
+                    <label for="aiCtripReviewCountMin">携程点评数</label>
+                    <select
+                      id="aiCtripReviewCountMin"
+                      class="input prefilter-input"
+                      data-setting-key="aiCtripReviewCountMin"
+                      data-custom-select="true"
+                    >
+                      <option value="">不限</option>
+                      <option value="100">100 条以上</option>
+                      <option value="200">200 条以上</option>
+                      <option value="500">500 条以上</option>
+                    </select>
+                  </div>
+                  <div class="prefilter-field">
+                    <label for="aiCtripScoreMin">携程评分档位</label>
+                    <select
+                      id="aiCtripScoreMin"
+                      class="input prefilter-input"
+                      data-setting-key="aiCtripScoreMin"
+                      data-custom-select="true"
+                    >
+                      <option value="">不限</option>
+                      <option value="4">4.0 以上</option>
+                      <option value="4.5">4.5 以上</option>
+                      <option value="4.7">4.7 以上</option>
+                    </select>
+                  </div>
+                  <div class="prefilter-field">
+                    <span class="prefilter-label">携程免费取消</span>
+                    <label class="prefilter-toggle-row">
+                      <span>仅显示可免费取消的酒店</span>
+                      <span class="switch-label">
+                        <input
+                          id="aiCtripFreeCancel"
+                          type="checkbox"
+                          data-setting-key="aiCtripFreeCancel"
+                        />
+                        <span class="switch-slider"></span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </section>
+
+              <section class="list-prefilter-card">
+                <div class="list-prefilter-section-header">
+                  <span class="list-prefilter-section-index">2</span>
+                  <div>
+                    <h3>本地过滤</h3>
+                    <p>设置在本地生效的过滤条件，进一步提升数据质量</p>
+                  </div>
+                </div>
+
+                <div class="list-prefilter-grid list-prefilter-grid-three">
+                  <div class="prefilter-field">
+                    <label for="aiListDesiredHotelCount">本地目标宾馆数</label>
+                    <input
+                      id="aiListDesiredHotelCount"
+                      class="input prefilter-input"
+                      type="number"
+                      min="1"
+                      max="50"
+                      step="1"
+                      data-setting-key="aiListDesiredHotelCount"
+                      placeholder="10"
+                    />
+                  </div>
+                  <div class="prefilter-field">
+                    <label for="aiListExcludeHotelTypes">本地排除住宿类型</label>
+                    <input
+                      id="aiListExcludeHotelTypes"
+                      class="input prefilter-input"
+                      type="text"
+                      maxlength="200"
+                      data-setting-key="aiListExcludeHotelTypes"
+                      placeholder="如：民宿, 客栈, 青年旅舍, 公寓"
+                    />
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
-        <div class="modal-body">
-          <div class="author-info-modal">
-            <div class="author-section">
-              <h3>作者信息</h3>
-              <div class="author-item">
-                <span class="author-label">作者：</span>
-                <span class="author-name">Sea</span>
+      </div>
+
+      <div id="settingsModal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>设置</h2>
+            <button class="modal-close" data-action="close-settings">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>采集偏好</label>
+              <div class="setting-switch-container">
+                <label class="switch-label">
+                  <input type="checkbox" id="includeFourPersonRoomsForThreePersonTemplate" />
+                  <span class="switch-slider"></span>
+                </label>
+                <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText"
+                  >关闭</span
+                >
               </div>
-              <div class="author-item">
-                <span class="author-label">感谢：</span>
-                <span>Trae、GitHub Copilot、Codex</span>
+              <small class="help-text"
+                >开启后，当模板入住人数为 3 人时，采集器仍会额外保留携程页面上明确显示可住 4
+                人的房型；查询参数仍按 3 人发起。</small
+              >
+            </div>
+            <div class="form-group">
+              <label>采集性能日志</label>
+              <div class="setting-switch-container">
+                <label class="switch-label">
+                  <input type="checkbox" id="enableCollectPerfLog" />
+                  <span class="switch-slider"></span>
+                </label>
+                <span class="switch-text" id="enableCollectPerfLogText">关闭</span>
               </div>
-              <div class="author-item">
-                <span class="author-label">特别感谢：</span>
-                  <span><span class="thanks-name thanks-asagirl">Asagiri</span>、<span class="thanks-name thanks-moli">墨离</span>、<span class="thanks-name thanks-sixpence">六便士</span></span>
+              <small class="help-text"
+                >开启后会在数据目录下记录采集各阶段耗时
+                JSONL，用于排查慢任务和异常阶段；普通使用建议关闭。</small
+              >
+            </div>
+            <div class="form-group">
+              <label for="collectBatchConcurrency">并发采集数</label>
+              <select id="collectBatchConcurrency" class="input" data-custom-select="true">
+                <option value="1">1 - 串行采集</option>
+                <option value="2">2 - 并发采集</option>
+              </select>
+              <small class="help-text"
+                >默认使用 1。选择 2 会额外打开一个临时 Edge
+                会话；如果携程登录态或网络不稳定，可以切回 1。</small
+              >
+            </div>
+            <div class="form-group">
+              <label for="amapApiKeyInput">高德 API Key</label>
+              <div class="data-path-container">
+                <input
+                  type="password"
+                  id="amapApiKeyInput"
+                  class="input"
+                  placeholder="留空使用程序默认高德 Key"
+                  autocomplete="off"
+                />
+                <div class="data-path-actions">
+                  <button class="btn btn-secondary btn-sm" data-action="save-amap-api-key">
+                    保存 Key
+                  </button>
+                </div>
+              </div>
+              <small class="help-text"
+                >用于采集时计算公共交通、地铁距离和路线。保存后新任务会使用这里填写的
+                Key；留空则继续使用内置默认 Key。</small
+              >
+            </div>
+            <div class="form-group">
+              <label>数据存储位置</label>
+              <div class="data-path-container">
+                <input
+                  type="text"
+                  id="dataPathInput"
+                  class="input"
+                  readonly
+                  placeholder="加载中..."
+                />
+                <div class="data-path-actions">
+                  <button class="btn btn-secondary btn-sm" data-action="show-data-folder">
+                    <span>📁</span> 查看位置
+                  </button>
+                  <button class="btn btn-secondary btn-sm" data-action="change-data-path">
+                    <span>📂</span> 更改位置
+                  </button>
+                </div>
+              </div>
+              <small class="help-text">更改数据存储位置后，数据将迁移到新位置</small>
+            </div>
+            <div class="form-group">
+              <label>快捷链接</label>
+              <button class="btn btn-primary btn-full" data-action="open-ctrip">
+                <span>🌐</span> 访问携程官网
+              </button>
+              <button
+                class="btn btn-primary btn-full"
+                data-action="open-fliggy"
+                style="margin-top: 8px"
+              >
+                <span>🌐</span> 访问飞猪官网
+              </button>
+            </div>
+            <div class="form-group">
+              <label>应用说明书</label>
+              <button class="btn btn-primary btn-full" data-action="open-manual">
+                <span>📖</span> 查看完整功能说明
+              </button>
+              <small class="help-text">了解应用的所有功能和使用方法</small>
+            </div>
+            <div class="form-group">
+              <button class="btn btn-secondary btn-full" data-action="reset-settings">
+                恢复默认设置
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="personalizationModal" class="modal">
+        <div class="modal-content modal-medium">
+          <div class="modal-header">
+            <h2>个性化</h2>
+            <button class="modal-close" data-action="close-personalization">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="personalization-section">
+              <div class="theme-picker-inline" role="radiogroup" aria-label="界面主题">
+                <span class="theme-picker-label">主题</span>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="totoro-blue" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">天空蓝</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="sweet-lime" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">甜柠青</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="grass-green" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">小草绿</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="pineapple-yellow" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">菠萝黄</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="oak-brown" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">橡木棕</span>
+                </label>
+                <span class="theme-picker-spacer" aria-hidden="true"></span>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="cloud-white" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">云朵白</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="autumn-gold" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">秋仪金</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="diehard-pink" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">铁杆粉</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="grape-purple" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">葡萄紫</span>
+                </label>
+                <label class="theme-option">
+                  <input type="radio" name="themeOption" value="colorful-mode" />
+                  <span class="theme-option-indicator"></span>
+                  <span class="theme-option-text">糖果彩</span>
+                </label>
+              </div>
+              <small class="help-text">主题会即时应用到当前界面，并自动保存到本地设置。</small>
+            </div>
+
+            <div class="personalization-section">
+              <div class="personalization-section-title">宾馆卡片展示字段</div>
+              <small class="help-text"
+                >选择卡片视图中每个宾馆框展示的信息，排名、名称和操作按钮会始终保留。</small
+              >
+              <div class="card-field-picker" id="cardFieldPicker">
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="original_room_type" checked />
+                  <span>原始房型</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="address" checked />
+                  <span>地址</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="website" checked />
+                  <span>网址</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="total_price" checked />
+                  <span>总价格</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="daily_price" checked />
+                  <span>日均价格</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="ctrip_score" checked />
+                  <span>携程评分</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="distance" checked />
+                  <span>距离</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="subway" checked />
+                  <span>最近地铁站</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="transport_time" checked />
+                  <span>公共交通</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="bus_route" checked />
+                  <span>公交路线</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="room_type" checked />
+                  <span>房间类型</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="notes" checked />
+                  <span>备注</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="template" checked />
+                  <span>模板</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="destination" />
+                  <span>目的地</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="room_count" />
+                  <span>入住人数</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="room_area" />
+                  <span>房间面积</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="days" />
+                  <span>住宿天数</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="check_in_date" />
+                  <span>入住日期</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="check_out_date" />
+                  <span>离店日期</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="cancel_policy" />
+                  <span>取消政策</span>
+                </label>
+                <label class="card-field-option">
+                  <input type="checkbox" data-card-field="window_status" />
+                  <span>房态/窗口状态</span>
+                </label>
+              </div>
+              <div class="card-field-actions">
+                <button class="btn btn-primary btn-sm" data-action="save-hotel-card-fields">
+                  保存卡片展示
+                </button>
+                <button class="btn btn-secondary btn-sm" data-action="reset-hotel-card-fields">
+                  恢复默认
+                </button>
               </div>
             </div>
-            <div class="version-section">
-              <h3>版本信息</h3>
-              <div class="version-item">
-                <span>版本号：</span>
-                <span id="aboutVersionText">v8.8.1</span>
+
+            <div class="personalization-section">
+              <div class="personalization-section-title">应用图标</div>
+              <div class="data-path-container">
+                <input
+                  type="text"
+                  id="appIconPathInput"
+                  class="input"
+                  readonly
+                  placeholder="当前使用默认图标"
+                />
+                <div class="data-path-actions">
+                  <button class="btn btn-secondary btn-sm" data-action="choose-app-icon">
+                    <span>🖼️</span> 更换图标
+                  </button>
+                  <button class="btn btn-secondary btn-sm" data-action="reset-app-icon">
+                    <span>↺</span> 恢复默认
+                  </button>
+                </div>
               </div>
-              <div class="version-item">
-                <span>更新日期：</span>
-                <span id="aboutUpdateDateText">2026-05-27</span>
-              </div>
+              <small class="help-text" id="appIconStatus">当前使用内置默认图标</small>
+              <small class="help-text"
+                >支持选择 .ico、.png、.jpg、.jpeg、.bmp、.webp
+                文件；选择后会复制到当前数据目录内，删除原图不会影响窗口图标，导出 JSON
+                时也会一并带上当前自定义图标。</small
+              >
             </div>
           </div>
         </div>
       </div>
+
+      <!-- 宾馆详情模态框 -->
+      <template data-modal-template="hotelDetailsModal">
+        <div id="hotelDetailsModal" class="modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2>宾馆详情</h2>
+              <button class="modal-close" data-action="close-hotel-details">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div id="hotelDetailsContent"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-action="close-hotel-details">
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template data-modal-template="rankingExportModal">
+        <div id="rankingExportModal" class="modal">
+          <div class="modal-content modal-small">
+            <div class="modal-header">
+              <h2>导出排名图片</h2>
+              <button class="modal-close" data-action="close-ranking-export">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="ranking-export-summary">
+                当前筛选结果 <strong id="rankingExportAvailableCount">0</strong> 条
+              </div>
+              <div class="ranking-export-options" role="radiogroup" aria-label="导出数量">
+                <label class="ranking-export-option">
+                  <input type="radio" name="rankingExportCount" value="5" />
+                  <span>前 5 名</span>
+                </label>
+                <label class="ranking-export-option">
+                  <input type="radio" name="rankingExportCount" value="10" checked />
+                  <span>前 10 名</span>
+                </label>
+                <label class="ranking-export-option">
+                  <input type="radio" name="rankingExportCount" value="20" />
+                  <span>前 20 名</span>
+                </label>
+                <label class="ranking-export-option">
+                  <input type="radio" name="rankingExportCount" value="50" />
+                  <span>前 50 名</span>
+                </label>
+              </div>
+              <div class="form-group ranking-export-custom">
+                <label for="rankingExportCustomCount">自定义数量</label>
+                <input
+                  type="number"
+                  id="rankingExportCustomCount"
+                  class="input"
+                  min="1"
+                  step="1"
+                  placeholder="填写后优先生效"
+                />
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-action="close-ranking-export">
+                取消
+              </button>
+              <button type="button" class="btn btn-primary" data-action="confirm-ranking-export">
+                导出图片
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template data-modal-template="dataTransferModal">
+        <div id="dataTransferModal" class="modal">
+          <div class="modal-content modal-small">
+            <div class="modal-header">
+              <h2>数据管理</h2>
+              <button class="modal-close" data-action="close-data-transfer">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="data-transfer-options">
+                <div class="transfer-option" data-action="export-data">
+                  <div class="transfer-icon">📤</div>
+                  <div class="transfer-info">
+                    <h3>导出数据</h3>
+                    <p>将所有宾馆、模板和设置导出到 JSON 文件</p>
+                  </div>
+                </div>
+                <div class="transfer-option transfer-option-static" id="importTransferOption">
+                  <div class="transfer-icon">📥</div>
+                  <div class="transfer-info">
+                    <h3>导入数据</h3>
+                    <p>
+                      从 JSON
+                      文件导入数据。直接在这里选择覆盖导入或追加导入，不再弹出导入方式选择框。
+                    </p>
+                    <div class="transfer-option-actions">
+                      <button
+                        class="btn btn-primary"
+                        data-action="import-data"
+                        data-import-mode="replace"
+                      >
+                        覆盖导入
+                      </button>
+                      <button
+                        class="btn btn-primary"
+                        data-action="import-data"
+                        data-import-mode="append"
+                      >
+                        追加导入
+                      </button>
+                    </div>
+                    <div class="transfer-option-note">
+                      覆盖会替换当前数据；追加会保留当前设置和图标，并自动跳过重复宾馆与模板。
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template data-modal-template="aboutModal">
+        <div id="aboutModal" class="modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2>关于</h2>
+              <button class="modal-close" data-action="close-about">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="author-info-modal">
+                <div class="author-section">
+                  <h3>作者信息</h3>
+                  <div class="author-item">
+                    <span class="author-label">作者：</span>
+                    <span class="author-name">Sea</span>
+                  </div>
+                  <div class="author-item">
+                    <span class="author-label">感谢：</span>
+                    <span>Trae、GitHub Copilot、Codex</span>
+                  </div>
+                  <div class="author-item">
+                    <span class="author-label">特别感谢：</span>
+                    <span
+                      ><span class="thanks-name thanks-asagirl">Asagiri</span>、<span
+                        class="thanks-name thanks-moli"
+                        >墨离</span
+                      >、<span class="thanks-name thanks-sixpence">六便士</span></span
+                    >
+                  </div>
+                </div>
+                <div class="version-section">
+                  <h3>版本信息</h3>
+                  <div class="version-item">
+                    <span>版本号：</span>
+                    <span id="aboutVersionText">v8.8.1</span>
+                  </div>
+                  <div class="version-item">
+                    <span>更新日期：</span>
+                    <span id="aboutUpdateDateText">2026-05-27</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template data-modal-template="manualModal">
+        <div id="manualModal" class="modal">
+          <div class="modal-content modal-large">
+            <div class="modal-header">
+              <h2>📖 应用说明书</h2>
+              <button class="modal-close" data-action="close-manual">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div id="manualContent" class="manual-content" aria-live="polite">
+                <div class="manual-loading">正在加载说明书...</div>
+              </div>
+
+              <div class="manual-footer" id="manualFooter">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="dontShowManualAgain" />
+                  <span>以后不再自动弹出说明书</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <div id="modalTemplateMount"></div>
     </div>
 
-    <div id="manualModal" class="modal">
-      <div class="modal-content modal-large">
-        <div class="modal-header">
-          <h2>📖 应用说明书</h2>
-          <button class="modal-close" data-action="close-manual">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div id="manualContent" class="manual-content" aria-live="polite">
-            <div class="manual-loading">正在加载说明书...</div>
-          </div>
-          
-          <div class="manual-footer" id="manualFooter">
-            <label class="checkbox-label">
-              <input type="checkbox" id="dontShowManualAgain">
-              <span>以后不再自动弹出说明书</span>
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  <script type="module" src="./app.module.js"></script>
-</body>
+    <script type="module" src="./app.module.js"></script>
+  </body>
 </html>

@@ -81,7 +81,8 @@ export function renderVirtualHotelListView(
   listScrollShell.className = 'virtual-list-scroll-shell';
 
   const scrollContainer = document.createElement('div');
-  scrollContainer.className = 'hotel-table-body virtual-scroll-body virtual-list-scroll virtual-scroll-native-hidden';
+  scrollContainer.className =
+    'hotel-table-body virtual-scroll-body virtual-list-scroll virtual-scroll-native-hidden';
   scrollContainer.style.position = 'relative';
   scrollContainer.style.overflowY = 'auto';
   scrollContainer.style.maxHeight = 'none';
@@ -168,6 +169,8 @@ function renderVirtualHotelCollection({
   afterInitialRender = null,
   getRangeKeySuffix = null
 }) {
+  const renderOptions =
+    /** @type {{finishHotelRender?: (taskVersion: number, perfLabel: string) => void}} */ (options);
   virtualHotelListState.viewportHeight = scrollContainer.clientHeight || 600;
 
   let customScrollbar = null;
@@ -208,7 +211,7 @@ function renderVirtualHotelCollection({
     virtualHotelListState.endIndex = range.endIndex;
 
     if (taskVersion !== state.hotelListRenderVersion) {
-      options.finishHotelRender?.(taskVersion, perfLabel);
+      renderOptions.finishHotelRender?.(taskVersion, perfLabel);
       return;
     }
 
@@ -222,6 +225,7 @@ function renderVirtualHotelCollection({
     spacerBefore.style.height = range.beforeHeight + 'px';
     spacerAfter.style.height = range.afterHeight + 'px';
 
+    state.renderedHotelNodeMap?.clear?.();
     const fragment = document.createDocumentFragment();
     for (let i = range.startIndex; i < range.endIndex; i++) {
       fragment.appendChild(renderItem(sortedHotels[i], i));
@@ -263,8 +267,7 @@ function renderVirtualHotelCollection({
   scrollShell.appendChild(customScrollbar.element);
 
   wheelController = createSmoothWheelController(scrollContainer, {
-    getStep: () =>
-      typeof getWheelStep === 'function' ? getWheelStep(virtualHotelListState) : 160,
+    getStep: () => (typeof getWheelStep === 'function' ? getWheelStep(virtualHotelListState) : 160),
     duration: wheelDuration,
     onScrollProgress: scheduleScrollbarUpdate,
     onScrollRequest: scheduleVirtualUpdate
@@ -340,7 +343,7 @@ function renderVirtualHotelCollection({
     });
   }
 
-  options.finishHotelRender?.(taskVersion, perfLabel);
+  renderOptions.finishHotelRender?.(taskVersion, perfLabel);
 
   return {
     scheduleScrollbarUpdate,
@@ -357,7 +360,7 @@ function renderVirtualHotelCollection({
  * 每个 wheel 事件最多追加一个 step，防止飞滚。
  *
  * @param {HTMLElement} scrollContainer
- * @param {{ getStep?: () => number, onScrollRequest?: (() => void)|null, duration?: number }} [options]
+ * @param {{ getStep?: () => number, onScrollRequest?: (() => void)|null, onScrollProgress?: (() => void)|null, duration?: number }} [options]
  * @returns {{ handleWheel: (event: WheelEvent) => void, cleanup: () => void, stopAnimation: () => void, syncToCurrentScroll: (options?: { stop?: boolean }) => void }}
  */
 function createSmoothWheelController(scrollContainer, options = {}) {
@@ -403,18 +406,14 @@ function createSmoothWheelController(scrollContainer, options = {}) {
     targetScrollTop = current;
     animationStartScrollTop = current;
     animationStartTime =
-      typeof performance !== 'undefined' && performance.now
-        ? performance.now()
-        : Date.now();
+      typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   }
 
   function animate(now) {
     const elapsed = now - animationStartTime;
     const progress = duration <= 0 ? 1 : Math.min(1, elapsed / duration);
     const eased = easeOutCubic(progress);
-    const next =
-      animationStartScrollTop +
-      (targetScrollTop - animationStartScrollTop) * eased;
+    const next = animationStartScrollTop + (targetScrollTop - animationStartScrollTop) * eased;
 
     scrollContainer.scrollTop = next;
 
@@ -454,9 +453,7 @@ function createSmoothWheelController(scrollContainer, options = {}) {
 
     animationStartScrollTop = scrollContainer.scrollTop;
     animationStartTime =
-      typeof performance !== 'undefined' && performance.now
-        ? performance.now()
-        : Date.now();
+      typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 
     if (!animationFrameId) {
       animationFrameId = requestAnimationFrame(animate);
@@ -658,7 +655,11 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     document.body.classList.add('is-dragging-virtual-scrollbar');
     thumb.classList.add('is-dragging');
 
-    try { thumb.setPointerCapture?.(event.pointerId); } catch (_) { /* ignore */ }
+    try {
+      thumb.setPointerCapture?.(event.pointerId);
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   const handleScrollbarWheel = createControlledWheelHandler(scrollContainer, {
@@ -682,10 +683,18 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     jumpToPointer(event);
 
     const pointerId = event.pointerId;
-    try { track.setPointerCapture?.(pointerId); } catch (_) { /* ignore */ }
+    try {
+      track.setPointerCapture?.(pointerId);
+    } catch (_) {
+      /* ignore */
+    }
 
     const releaseTrackPress = () => {
-      try { track.releasePointerCapture?.(pointerId); } catch (_) { /* ignore */ }
+      try {
+        track.releasePointerCapture?.(pointerId);
+      } catch (_) {
+        /* ignore */
+      }
       track.removeEventListener('pointerup', releaseTrackPress);
       track.removeEventListener('pointercancel', releaseTrackPress);
     };

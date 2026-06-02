@@ -147,6 +147,22 @@ function installScraperMocks(state = {}) {
         calls.edge += 1;
         if (state.onEdgeStart) state.onEdgeStart();
         if (state.onEdgeOptions) state.onEdgeOptions(edgeOptions);
+        if (state.edgeWaitsForAbort) {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(resolve, state.edgeDelayMs || 120);
+            const abortEdge = () => {
+              clearTimeout(timeout);
+              const error = new Error('edge aborted after html fast path');
+              error.name = 'AbortError';
+              reject(error);
+            };
+            if (edgeOptions.signal && edgeOptions.signal.aborted) {
+              abortEdge();
+              return;
+            }
+            edgeOptions.signal?.addEventListener('abort', abortEdge, { once: true });
+          });
+        }
         if (state.edgeDelayMs) {
           await new Promise((resolve) => setTimeout(resolve, state.edgeDelayMs));
         }
@@ -261,6 +277,48 @@ test('captureStrategy parallel_edge starts HTML and Edge work in parallel', asyn
         records.some((record) => record.capture_strategy === 'parallel_edge'),
         true
       );
+    }
+  );
+});
+
+test('parallel_edge returns HTML and aborts Edge when HTML already has a priced room', async () => {
+  let edgeSignal = null;
+  let edgeAbortObserved = false;
+
+  await withScraper(
+    {
+      edgeDelayMs: 160,
+      edgeWaitsForAbort: true,
+      shouldAttemptSupplementalCapture: false,
+      onEdgeOptions: (edgeOptions) => {
+        edgeSignal = edgeOptions.signal;
+        edgeOptions.signal?.addEventListener(
+          'abort',
+          () => {
+            edgeAbortObserved = true;
+          },
+          { once: true }
+        );
+      }
+    },
+    async (scrapeCtripHotel, calls) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=3',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'parallel_edge',
+          perf: createPerfRecorder([])
+        }
+      );
+
+      assert.equal(calls.edge, 1);
+      assert.equal(result.room.title, 'HTML大床房');
+      assert.equal(result.page_snapshot.capture_method, 'html_only');
+      assert.equal(result.page_snapshot.edge_fallback_used, false);
+      assert.ok(edgeSignal);
+      assert.equal(edgeSignal.aborted, true);
+      assert.equal(edgeAbortObserved, true);
     }
   );
 });
@@ -416,7 +474,8 @@ test('scrapeCtripHotel passes cancellation signal into Edge capture', async () =
   await withScraper(
     {
       onEdgeOptions: (edgeOptions) => {
-        assert.equal(edgeOptions.signal, controller.signal);
+        assert.ok(edgeOptions.signal);
+        assert.equal(edgeOptions.signal.aborted, false);
       }
     },
     async (scrapeCtripHotel) => {

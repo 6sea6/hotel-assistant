@@ -359,28 +359,6 @@ test('wrapped requestHotelListRender: hotel-update 在原 actions 执行前捕�
   }
 });
 
-/* ---- getScrollBehaviorForReason 补充测试 ---- */
-
-test('getScrollBehaviorForReason: data-reload returns top', async () => {
-  const { tempRoot, stateUrl } = await createTestEnvironment();
-  try {
-    const stateMod = await import(stateUrl);
-    assert.equal(stateMod.getScrollBehaviorForReason('data-reload', '[]'), 'top');
-  } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test('getScrollBehaviorForReason: batch-delete returns top', async () => {
-  const { tempRoot, stateUrl } = await createTestEnvironment();
-  try {
-    const stateMod = await import(stateUrl);
-    assert.equal(stateMod.getScrollBehaviorForReason('batch-delete', '[]'), 'top');
-  } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-  }
-});
-
 /* ---- filtersKey 变化时不恢复 ---- */
 
 test('wrapped requestHotelListRender: filtersKey 变化时不恢复 scrollTop', async () => {

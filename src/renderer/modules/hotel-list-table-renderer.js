@@ -2,11 +2,7 @@
  * 宾馆列表行式表格渲染。
  */
 
-import {
-  state,
-  HOTEL_RENDER_BATCH_SIZE,
-  LARGE_HOTEL_RENDER_THRESHOLD
-} from './state.js';
+import { state, HOTEL_RENDER_BATCH_SIZE, LARGE_HOTEL_RENDER_THRESHOLD } from './state.js';
 import { escapeHtml, getSelectionKey, hasDisplayValue } from './dom-helpers.js';
 import { isHotelInputPriorityActive, queueHotelRenderResume } from './render-scheduler.js';
 import { formatSubwayInfo } from './hotel-filters.js';
@@ -23,6 +19,7 @@ export function createHotelListRow(hotel, index) {
   const row = document.createElement('div');
   row.className = `hotel-table-row ${hotel.is_favorite ? 'favorite' : ''} ${isSelected ? 'selected' : ''}`;
   row.dataset.id = hotelIdText;
+  state.renderedHotelNodeMap?.set(getSelectionKey(hotel.id), row);
 
   const dailyPrice = hotel.daily_price ? `¥${hotel.daily_price}` : '-';
   const totalPrice = hotel.total_price ? `¥${hotel.total_price}` : '-';
@@ -109,7 +106,13 @@ function renderHotelRowsInBatches(
   options.finishHotelRender?.(taskVersion, perfLabel);
 }
 
-export function renderHotelListView(container, hotelsToRender, taskVersion, perfLabel, options = {}) {
+export function renderHotelListView(
+  container,
+  hotelsToRender,
+  taskVersion,
+  perfLabel,
+  options = {}
+) {
   const table = document.createElement('div');
   table.className = 'hotel-table';
   const isAllSelected =

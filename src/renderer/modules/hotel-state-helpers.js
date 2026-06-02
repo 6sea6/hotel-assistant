@@ -3,6 +3,10 @@
  */
 
 /**
+ * @typedef {{id?: any}} EntityWithOptionalId
+ */
+
+/**
  * 校验 IPC 返回值，拦截 { success:false, error } 和 null/undefined。
  *
  * @param {any} result
@@ -17,7 +21,7 @@ export function assertSavedHotelResult(result, fallbackMessage) {
 }
 
 /**
- * @param {Array<{id: any}>} hotels
+ * @param {Array<EntityWithOptionalId>} hotels
  * @param {any} id
  * @returns {number}
  */
@@ -26,19 +30,21 @@ export function findHotelIndexById(hotels, id) {
 }
 
 /**
- * @param {Array<{id: any}>} hotels
- * @param {{id: any}} hotel
- * @returns {Array}
+ * @template {EntityWithOptionalId} T
+ * @param {T[]} hotels
+ * @param {T} hotel
+ * @returns {T[]}
  */
 export function appendHotelToList(hotels, hotel) {
   return [...hotels, hotel];
 }
 
 /**
- * @param {Array<{id: any}>} hotels
- * @param {{id: any}} updatedHotel
+ * @template {EntityWithOptionalId} T
+ * @param {T[]} hotels
+ * @param {T} updatedHotel
  * @param {any} [fallbackId]
- * @returns {{list: Array, replaced: boolean}}
+ * @returns {{list: T[], replaced: boolean}}
  */
 export function replaceHotelInList(hotels, updatedHotel, fallbackId) {
   const targetId = updatedHotel.id ?? fallbackId;
@@ -52,9 +58,10 @@ export function replaceHotelInList(hotels, updatedHotel, fallbackId) {
 }
 
 /**
- * @param {Array<{id: any}>} hotels
+ * @template {EntityWithOptionalId} T
+ * @param {T[]} hotels
  * @param {any} id
- * @returns {{list: Array, removed: boolean}}
+ * @returns {{list: T[], removed: boolean}}
  */
 export function removeHotelById(hotels, id) {
   const idx = findHotelIndexById(hotels, id);

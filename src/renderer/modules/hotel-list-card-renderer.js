@@ -2,24 +2,18 @@
  * 宾馆卡片视图渲染。
  */
 
-import {
-  state,
-  HOTEL_RENDER_BATCH_SIZE,
-  LARGE_HOTEL_RENDER_THRESHOLD
-} from './state.js';
+import { state, HOTEL_RENDER_BATCH_SIZE, LARGE_HOTEL_RENDER_THRESHOLD } from './state.js';
 import {
   escapeHtml,
   escapeHtmlWithLineBreaks,
   hasDisplayValue,
   formatDateChinese,
-  getRoomCountText
+  getRoomCountText,
+  getSelectionKey
 } from './dom-helpers.js';
 import { isHotelInputPriorityActive, queueHotelRenderResume } from './render-scheduler.js';
 import { formatSubwayInfo } from './hotel-filters.js';
-import {
-  normalizeHotelCardVisibleFields,
-  renderCardFields
-} from './hotel-card-fields.js';
+import { normalizeHotelCardVisibleFields, renderCardFields } from './hotel-card-fields.js';
 
 export function createHotelCard(hotel, index) {
   const rank = index + 1;
@@ -76,6 +70,7 @@ export function createHotelCard(hotel, index) {
   const card = document.createElement('div');
   card.className = `hotel-card ${hotel.is_favorite ? 'favorite' : ''}`;
   card.dataset.id = hotelIdText;
+  state.renderedHotelNodeMap?.set(getSelectionKey(hotel.id), card);
 
   const originalRoomHtml =
     headerFieldItems.find((item) => item.key === 'original_room_type')?.html || '';
@@ -167,7 +162,14 @@ function renderHotelCardsInBatches(
 
   if (isHotelInputPriorityActive()) {
     queueHotelRenderResume(() =>
-      renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, options, startIndex)
+      renderHotelCardsInBatches(
+        container,
+        hotelsToRender,
+        taskVersion,
+        perfLabel,
+        options,
+        startIndex
+      )
     );
     return;
   }
@@ -183,7 +185,14 @@ function renderHotelCardsInBatches(
 
   if (endIndex < hotelsToRender.length) {
     requestAnimationFrame(() =>
-      renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, options, endIndex)
+      renderHotelCardsInBatches(
+        container,
+        hotelsToRender,
+        taskVersion,
+        perfLabel,
+        options,
+        endIndex
+      )
     );
     return;
   }
@@ -192,7 +201,13 @@ function renderHotelCardsInBatches(
   options.finishHotelRender?.(taskVersion, perfLabel);
 }
 
-export function renderHotelCardGrid(container, hotelsToRender, taskVersion, perfLabel, options = {}) {
+export function renderHotelCardGrid(
+  container,
+  hotelsToRender,
+  taskVersion,
+  perfLabel,
+  options = {}
+) {
   if (hotelsToRender.length <= LARGE_HOTEL_RENDER_THRESHOLD) {
     const fragment = document.createDocumentFragment();
     hotelsToRender.forEach((hotel, index) => {

@@ -297,6 +297,49 @@
   gap: 16px;
 }
 
+.ranking-export-summary {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.ranking-export-summary strong {
+  color: var(--text-primary);
+}
+
+.ranking-export-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ranking-export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ranking-export-option:hover,
+.ranking-export-option:has(input[type='radio']:checked) {
+  border-color: var(--primary-color);
+  background: var(--bg-tertiary);
+}
+
+.ranking-export-custom {
+  margin-top: 16px;
+}
+
 .transfer-option {
   display: flex;
   align-items: center;

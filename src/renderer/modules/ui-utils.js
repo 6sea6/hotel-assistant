@@ -5,6 +5,7 @@
 import { $ } from './dom-helpers.js';
 import { state } from './state.js';
 import { resumeDeferredHotelRender } from './render-scheduler.js';
+import { ensureModalTemplateMounted } from './modal-templates.js';
 
 export function syncModalBodyState() {
   const hasActiveModal = document.querySelector('.modal.active');
@@ -12,7 +13,8 @@ export function syncModalBodyState() {
 }
 
 export function setModalActive(modalId, active) {
-  const modal = document.getElementById(modalId);
+  const modal =
+    document.getElementById(modalId) || (active ? ensureModalTemplateMounted(modalId) : null);
   if (!modal) return;
 
   if (active) {

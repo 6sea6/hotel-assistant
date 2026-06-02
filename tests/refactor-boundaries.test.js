@@ -14,6 +14,7 @@ test('hotel list responsibilities are split behind the existing facade', () => {
     'src/renderer/modules/hotel-list-controller.js',
     'src/renderer/modules/hotel-list-table-renderer.js',
     'src/renderer/modules/hotel-list-card-renderer.js',
+    'src/renderer/modules/hotel-list-model.js',
     'src/renderer/modules/hotel-list-selection.js',
     'src/renderer/modules/hotel-list-empty-state.js',
     'src/renderer/modules/hotel-list-virtual-adapter.js'
@@ -28,12 +29,20 @@ test('hotel list responsibilities are split behind the existing facade', () => {
     './hotel-list-controller.js',
     './hotel-list-table-renderer.js',
     './hotel-list-card-renderer.js',
+    './hotel-list-model.js',
     './hotel-list-selection.js',
     './hotel-list-empty-state.js',
     './hotel-list-virtual-adapter.js'
   ].forEach((importPath) => {
     assert.match(facade, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
+
+  const controller = readProjectFile('src/renderer/modules/hotel-list-controller.js');
+  ['./hotel-list-model.js'].forEach((importPath) => {
+    assert.match(controller, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+  assert.doesNotMatch(controller, /function getSortedVisibleHotels\(/);
+  assert.doesNotMatch(controller, /visibleHotelsCache\.(data|filtersKey|hitCount|missCount)/);
 });
 
 test('hotel virtual adapter shares list and card render plumbing', () => {
@@ -147,13 +156,133 @@ test('scraper runner responsibilities are split behind the existing facade', () 
   });
 
   const facade = readProjectFile('src/main/ai/scraper-runner.js');
-  ['./scraper-paths', './scraper-task-input', './refresh-runner', './scraper-write-rollback'].forEach(
-    (importPath) => {
-      assert.match(facade, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    }
-  );
+  [
+    './scraper-paths',
+    './scraper-task-input',
+    './refresh-runner',
+    './scraper-write-rollback'
+  ].forEach((importPath) => {
+    assert.match(facade, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
 
   const refreshRunner = readProjectFile('src/main/ai/refresh-runner.js');
   assert.match(refreshRunner, /async function refreshExistingCtripHotels/);
   assert.match(refreshRunner, /runRefreshHotelBatch/);
+});
+
+test('Ctrip detail capture strategy is expressed as reusable steps and a plan table', () => {
+  const scraper = readProjectFile('scraper/src/ctrip-scraper.js');
+
+  [
+    'runHtmlCaptureStep',
+    'runEdgeSupplementStep',
+    'runApiReplayStep',
+    'runSequentialCapturePlan'
+  ].forEach((functionName) => {
+    assert.match(scraper, new RegExp(`function ${functionName}\\b`));
+  });
+
+  assert.match(scraper, /const CAPTURE_STRATEGY_PLANS\s*=/);
+  assert.match(scraper, /CAPTURE_STRATEGY_PLANS\.edgePreferred/);
+  assert.match(scraper, /CAPTURE_STRATEGY_PLANS\.htmlFirst/);
+});
+
+test('Ctrip list page collector is split into URL Edge and strategy modules', () => {
+  const expectedModules = [
+    'scraper/src/scraper/list-page-url-builder.js',
+    'scraper/src/scraper/list-page-edge-capture.js',
+    'scraper/src/scraper/list-page-prefilter-strategy.js'
+  ];
+
+  expectedModules.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(projectRoot, relativePath)), true, relativePath);
+  });
+
+  const collector = readProjectFile('scraper/src/scraper/list-page-collector.js');
+  [
+    './list-page-url-builder',
+    './list-page-parser',
+    './list-page-edge-capture',
+    './list-page-prefilter-strategy'
+  ].forEach((importPath) => {
+    assert.match(collector, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+
+  assert.ok(collector.split(/\r?\n/).length <= 260, 'list-page-collector.js should stay thin');
+  assert.doesNotMatch(collector, /function fetchListApiPagesInEdgeSession/);
+  assert.doesNotMatch(collector, /function dispatchCdpWheelScroll/);
+  assert.doesNotMatch(collector, /function normalizeEdgePageDecision/);
+});
+
+test('settings UI is split behind a thin compatibility facade', () => {
+  const expectedModules = [
+    'src/renderer/modules/settings-form-ui.js',
+    'src/renderer/modules/personalization-ui.js',
+    'src/renderer/modules/data-transfer-ui.js',
+    'src/renderer/modules/list-prefilter-ui.js'
+  ];
+
+  expectedModules.forEach((relativePath) => {
+    assert.equal(fs.existsSync(path.join(projectRoot, relativePath)), true, relativePath);
+  });
+
+  const facade = readProjectFile('src/renderer/modules/settings-ui.js');
+  [
+    './settings-form-ui.js',
+    './personalization-ui.js',
+    './data-transfer-ui.js',
+    './list-prefilter-ui.js'
+  ].forEach((importPath) => {
+    assert.match(facade, new RegExp(importPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+
+  assert.ok(facade.split(/\r?\n/).length <= 90, 'settings-ui.js should remain a thin facade');
+  assert.doesNotMatch(facade, /function normalizeListPrefilterSettingValue/);
+  assert.doesNotMatch(facade, /function applyAppIconState/);
+  assert.doesNotMatch(facade, /function focusImportTransferOption/);
+});
+
+test('low-risk modals are stored in templates and mounted on demand', () => {
+  const indexHtml = readProjectFile('src/renderer/index.html');
+  const uiUtils = readProjectFile('src/renderer/modules/ui-utils.js');
+
+  [
+    'templateModal',
+    'ruleDeleteModal',
+    'hotelDetailsModal',
+    'dataTransferModal',
+    'aboutModal',
+    'manualModal'
+  ].forEach((modalId) => {
+    assert.match(indexHtml, new RegExp(`<template[^>]+data-modal-template="${modalId}"`));
+  });
+
+  assert.match(uiUtils, /ensureModalTemplateMounted/);
+});
+
+test('renderer entry lazy-loads heavy infrequent modules', () => {
+  const appModule = readProjectFile('src/renderer/app.module.js');
+
+  ['./modules/ai-assistant.js', './modules/ranking-image.js'].forEach((modulePath) => {
+    const escaped = modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(appModule, new RegExp(`import\\(['"]${escaped}['"]\\)`));
+    assert.doesNotMatch(appModule, new RegExp(`from ['"]${escaped}['"]`));
+  });
+});
+
+test('ranking image export uses an on-demand count chooser', () => {
+  const indexHtml = readProjectFile('src/renderer/index.html');
+  const appModule = readProjectFile('src/renderer/app.module.js');
+  const rankingImage = readProjectFile('src/renderer/modules/ranking-image.js');
+
+  assert.match(indexHtml, /data-modal-template="rankingExportModal"/);
+  [5, 10, 20, 50].forEach((count) => {
+    assert.match(indexHtml, new RegExp(`value="${count}"`));
+  });
+  assert.match(indexHtml, /id="rankingExportCustomCount"/);
+
+  assert.match(appModule, /openRankingImageExportModal/);
+  assert.match(appModule, /confirmRankingImageExport/);
+  assert.match(rankingImage, /function normalizeRankingExportLimit/);
+  assert.match(rankingImage, /sortedHotels\.slice\(0,\s*exportLimit\)/);
 });

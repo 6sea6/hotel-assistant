@@ -101,26 +101,6 @@ import {
   closeWindow
 } from './modules/window-controls.js';
 
-import {
-  openAiAssistant,
-  closeAiAssistant,
-  enqueueAiCollectTask,
-  enqueueRefreshHotelDataTask,
-  cancelAiTask,
-  clearAiTaskRecords,
-  clearAiTaskQueue,
-  selectAiQueueTask,
-  removeAiQueueTask,
-  retryAiQueueTask,
-  rerunCurrentAiTask,
-  handleAiTaskInputKeydown,
-  showAiTaskDetails,
-  focusAiTaskStartBar,
-  handleAiTaskInputChange,
-  syncAiCtripListUrlFromSettings
-} from './modules/ai-assistant.js';
-
-import { exportRankingImage } from './modules/ranking-image.js';
 import { setupCustomSelects, refreshCustomSelects } from './modules/custom-select.js';
 
 import {
@@ -133,6 +113,51 @@ import {
 } from './modules/about-manual.js';
 
 import { installHotelScrollRestorePatch } from './modules/hotel-scroll-restore.js';
+
+/** @type {Promise<typeof import('./modules/ai-assistant.js')>|null} */
+let aiAssistantModulePromise = null;
+/** @type {Promise<typeof import('./modules/ranking-image.js')>|null} */
+let rankingImageModulePromise = null;
+let delegatedContentEventsBound = false;
+let delegatedInputEventsBound = false;
+
+function loadAiAssistantModule() {
+  aiAssistantModulePromise ||= import('./modules/ai-assistant.js');
+  return aiAssistantModulePromise;
+}
+
+function loadRankingImageModule() {
+  rankingImageModulePromise ||= import('./modules/ranking-image.js');
+  return rankingImageModulePromise;
+}
+
+/**
+ * @param {keyof typeof import('./modules/ranking-image.js')} exportName
+ * @param {any[]} args
+ * @returns {Promise<void>}
+ */
+async function callRankingImage(exportName, ...args) {
+  const module = /** @type {Record<string, (...args: any[]) => unknown>} */ (
+    await loadRankingImageModule()
+  );
+  const handler = module[exportName];
+  if (typeof handler !== 'function') return;
+  await handler(...args);
+}
+
+/**
+ * @param {string} exportName
+ * @param {any[]} args
+ * @returns {Promise<void>}
+ */
+async function callAiAssistant(exportName, ...args) {
+  const module = /** @type {Record<string, (...args: any[]) => unknown>} */ (
+    await loadAiAssistantModule()
+  );
+  const handler = module[exportName];
+  if (typeof handler !== 'function') return;
+  await handler(...args);
+}
 
 /* ============ 全局错误捕获 ============ */
 
@@ -154,7 +179,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 /** @type {Record<string, ActionHandler>} */
 const ACTION_HANDLERS = {
-  'open-ai-assistant': () => openAiAssistant(),
+  'open-ai-assistant': () => callAiAssistant('openAiAssistant'),
   'open-template-manager': () => openTemplateManager(),
   'open-data-transfer': () => openDataTransfer(),
   'open-personalization': () => openPersonalization(),
@@ -166,7 +191,7 @@ const ACTION_HANDLERS = {
   'window-close': () => closeWindow(),
   'clear-filters': () => clearFilters(),
   'open-add-hotel': () => openAddHotelModal(),
-  'export-ranking-image': () => exportRankingImage(),
+  'export-ranking-image': () => callRankingImage('openRankingImageExportModal'),
   'toggle-view-mode': () => toggleViewMode(),
   'refresh-current-page': () => refreshCurrentPage(),
   'open-rule-delete': () => openRuleDeleteModal(),
@@ -191,19 +216,19 @@ const ACTION_HANDLERS = {
   'save-list-prefilter-settings': async () => {
     const saved = await saveAiListPrefilterSettings();
     if (saved) {
-      await syncAiCtripListUrlFromSettings();
+      await callAiAssistant('syncAiCtripListUrlFromSettings');
     }
   },
   'reset-list-prefilter-settings': async () => {
     const saved = await resetAiListPrefilterSettings();
     if (saved) {
-      await syncAiCtripListUrlFromSettings();
+      await callAiAssistant('syncAiCtripListUrlFromSettings');
     }
   },
   'toggle-ai-ctrip-star': async (_event, element) => {
     const saved = await toggleAiCtripStarLevel(element.dataset.starLevel);
     if (saved) {
-      await syncAiCtripListUrlFromSettings();
+      await callAiAssistant('syncAiCtripListUrlFromSettings');
     }
   },
   'close-personalization': () => closePersonalizationModal(),
@@ -212,23 +237,28 @@ const ACTION_HANDLERS = {
   'save-hotel-card-fields': () => saveHotelCardVisibleFields(),
   'reset-hotel-card-fields': () => resetHotelCardVisibleFields(),
   'close-hotel-details': () => closeHotelDetails(),
+  'close-ranking-export': () => callRankingImage('closeRankingImageExportModal'),
+  'confirm-ranking-export': () => callRankingImage('confirmRankingImageExport'),
   'close-data-transfer': () => closeDataTransfer(),
   'export-data': () => handleExportData(),
   'import-data': (_event, element) => handleImportData(element.dataset.importMode),
   'close-about': () => closeAbout(),
   'close-manual': () => closeManual(),
-  'clear-ai-task-records': () => clearAiTaskRecords(),
-  'clear-ai-task-queue': () => clearAiTaskQueue(),
-  'close-ai-assistant': () => closeAiAssistant(),
-  'enqueue-ai-collect-task': () => enqueueAiCollectTask(),
-  'refresh-all-hotel-data': () => enqueueRefreshHotelDataTask(),
-  'cancel-ai-task': () => cancelAiTask(),
-  'select-ai-queue-task': (_event, element) => selectAiQueueTask(element.dataset.taskId),
-  'retry-ai-queue-task': (_event, element) => retryAiQueueTask(element.dataset.taskId),
-  'remove-ai-queue-task': (_event, element) => removeAiQueueTask(element.dataset.taskId),
-  'rerun-current-ai-task': () => rerunCurrentAiTask(),
-  'show-ai-task-details': () => showAiTaskDetails(),
-  'focus-ai-task-start-bar': () => focusAiTaskStartBar()
+  'clear-ai-task-records': () => callAiAssistant('clearAiTaskRecords'),
+  'clear-ai-task-queue': () => callAiAssistant('clearAiTaskQueue'),
+  'close-ai-assistant': () => callAiAssistant('closeAiAssistant'),
+  'enqueue-ai-collect-task': () => callAiAssistant('enqueueAiCollectTask'),
+  'refresh-all-hotel-data': () => callAiAssistant('enqueueRefreshHotelDataTask'),
+  'cancel-ai-task': () => callAiAssistant('cancelAiTask'),
+  'select-ai-queue-task': (_event, element) =>
+    callAiAssistant('selectAiQueueTask', element.dataset.taskId),
+  'retry-ai-queue-task': (_event, element) =>
+    callAiAssistant('retryAiQueueTask', element.dataset.taskId),
+  'remove-ai-queue-task': (_event, element) =>
+    callAiAssistant('removeAiQueueTask', element.dataset.taskId),
+  'rerun-current-ai-task': () => callAiAssistant('rerunCurrentAiTask'),
+  'show-ai-task-details': () => callAiAssistant('showAiTaskDetails'),
+  'focus-ai-task-start-bar': () => callAiAssistant('focusAiTaskStartBar')
 };
 
 /**
@@ -239,11 +269,44 @@ function handleActionClick(event) {
   const actionElement = /** @type {HTMLElement|null} */ (target?.closest('[data-action]') || null);
   if (!actionElement) return;
 
+  if (actionElement.closest('#templateList')) {
+    event.preventDefault();
+    handleTemplateListClick(event);
+    return;
+  }
+
   const handler = ACTION_HANDLERS[actionElement.dataset.action || ''];
   if (!handler) return;
 
   event.preventDefault();
-  handler(event, actionElement);
+  Promise.resolve(handler(event, actionElement)).catch((error) => {
+    console.error('[页面动作失败]', actionElement.dataset.action, error);
+  });
+}
+
+/**
+ * @param {MouseEvent} event
+ */
+function handleDelegatedContentClick(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target?.closest('#hotelDetailsContent')) return;
+  handleHotelDetailsClick(event);
+}
+
+/**
+ * @param {Event} event
+ */
+function handleDelegatedInput(event) {
+  const target = event.target instanceof HTMLInputElement ? event.target : null;
+  if (!target) return;
+
+  if (
+    target.id === 'ruleDeletePrice' ||
+    target.id === 'ruleDeleteSubwayDistance' ||
+    target.id === 'ruleDeleteTransportTime'
+  ) {
+    updateRuleDeletePreview();
+  }
 }
 
 /* ============ DOM 事件绑定 ============ */
@@ -257,6 +320,7 @@ function handleGlobalKeydown(e) {
   /** @type {Array<[string, () => void]>} */
   const closers = [
     ['hotelDetailsModal', closeHotelDetails],
+    ['rankingExportModal', () => callRankingImage('closeRankingImageExportModal')],
     ['ruleDeleteModal', closeRuleDeleteModal],
     ['hotelModal', closeHotelModal],
     ['templateModal', closeTemplateModal],
@@ -289,8 +353,12 @@ function setupStaticFormListeners() {
     input.addEventListener('change', () => changeTheme(themeInput.value));
   });
 
-  addEvent('aiHotelUrlInput', 'input', handleAiTaskInputChange);
-  addEvent('aiHotelUrlInput', 'keydown', handleAiTaskInputKeydown);
+  addEvent('aiHotelUrlInput', 'input', (event) =>
+    callAiAssistant('handleAiTaskInputChange', event)
+  );
+  addEvent('aiHotelUrlInput', 'keydown', (event) =>
+    callAiAssistant('handleAiTaskInputKeydown', event)
+  );
   addEvent('hotelTemplateSelect', 'change', applyTemplateToForm);
   addEvent('totalPrice', 'input', calculateDailyPrice);
   addEvent('dailyPrice', 'input', calculateTotalPrice);
@@ -326,7 +394,7 @@ function setupStaticFormListeners() {
     addEvent(id, 'change', async (event) => {
       await saveAiListPrefilterSetting(event);
       if (id.startsWith('aiCtrip')) {
-        await syncAiCtripListUrlFromSettings();
+        await callAiAssistant('syncAiCtripListUrlFromSettings');
       }
     })
   );
@@ -340,6 +408,16 @@ function setupEventListeners() {
     state.globalActionEventsBound = true;
   }
 
+  if (!delegatedContentEventsBound) {
+    document.addEventListener('click', handleDelegatedContentClick);
+    delegatedContentEventsBound = true;
+  }
+
+  if (!delegatedInputEventsBound) {
+    document.addEventListener('input', handleDelegatedInput);
+    delegatedInputEventsBound = true;
+  }
+
   if (!state.globalKeyEventsBound) {
     document.addEventListener('keydown', handleGlobalKeydown);
     state.globalKeyEventsBound = true;
@@ -351,22 +429,6 @@ function setupEventListeners() {
       hotelList.addEventListener('click', handleHotelListClick);
       hotelList.addEventListener('change', handleHotelListChange);
       state.hotelListEventsBound = true;
-    }
-  }
-
-  if (!state.templateListEventsBound) {
-    const templateList = $('templateList');
-    if (templateList) {
-      templateList.addEventListener('click', handleTemplateListClick);
-      state.templateListEventsBound = true;
-    }
-  }
-
-  if (!state.hotelDetailsEventsBound) {
-    const hotelDetailsContent = $('hotelDetailsContent');
-    if (hotelDetailsContent) {
-      hotelDetailsContent.addEventListener('click', handleHotelDetailsClick);
-      state.hotelDetailsEventsBound = true;
     }
   }
 

@@ -58,6 +58,55 @@ function assertNotCancelled(signal) {
   }
 }
 
+function createAbortError(message) {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
+function createLinkedAbortControl(parentSignal = null) {
+  if (typeof AbortController !== 'function') {
+    return {
+      signal: parentSignal || null,
+      abort() {},
+      cleanup() {}
+    };
+  }
+
+  const controller = new AbortController();
+  let cleanup = () => {};
+  if (parentSignal) {
+    const abortFromParent = () => {
+      if (!controller.signal.aborted) {
+        controller.abort(parentSignal.reason || createAbortError('任务已取消'));
+      }
+    };
+    if (parentSignal.aborted) {
+      abortFromParent();
+    } else if (typeof parentSignal.addEventListener === 'function') {
+      parentSignal.addEventListener('abort', abortFromParent, { once: true });
+      cleanup = () => parentSignal.removeEventListener('abort', abortFromParent);
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    abort(message) {
+      if (!controller.signal.aborted) {
+        controller.abort(createAbortError(message));
+      }
+    },
+    cleanup
+  };
+}
+
+function settleWithSource(source, promise) {
+  return promise.then(
+    (value) => ({ source, status: 'fulfilled', value }),
+    (reason) => ({ source, status: 'rejected', reason })
+  );
+}
+
 function sumSourceRoomCount(parsedSources = [], sourceName) {
   return parsedSources
     .filter((item) => !sourceName || item.source === sourceName)
@@ -114,6 +163,24 @@ function normalizeCaptureStrategy(value) {
   return ['auto', 'html_first', 'parallel_edge', 'edge_full'].includes(normalized)
     ? normalized
     : 'auto';
+}
+
+function isHtmlCaptureSufficient(htmlResult, template, options = {}) {
+  if (
+    !htmlResult ||
+    !htmlResult.selectedRoom ||
+    htmlResult.selectedRoom.price === null ||
+    htmlResult.selectedRoom.price === undefined
+  ) {
+    return false;
+  }
+
+  return !shouldAttemptSupplementalCapture(
+    htmlResult.normalizedRoomBlocks,
+    htmlResult.selectedRoom,
+    template,
+    options
+  );
 }
 
 function normalizeSettleStats(settleStats = null) {
@@ -298,7 +365,8 @@ async function runEdgeCapture({
   retryCount,
   waitReason,
   captureMethod,
-  captureStrategy
+  captureStrategy,
+  signal = options.signal || null
 }) {
   const edgeStartedAt = Date.now();
   const result = await perf.runPhase(
@@ -322,7 +390,7 @@ async function runEdgeCapture({
         captureStrategy,
         onEvent: options.onEvent,
         matchingOptions: options.matchingOptions || {},
-        signal: options.signal || null
+        signal
       })
   );
 
@@ -330,6 +398,188 @@ async function runEdgeCapture({
     result,
     elapsedMs: durationSince(edgeStartedAt)
   };
+}
+
+function applyCaptureResultToState(captureState, captureResult) {
+  if (
+    !captureResult ||
+    !Array.isArray(captureResult.roomBlocks) ||
+    captureResult.roomBlocks.length === 0
+  ) {
+    return false;
+  }
+
+  captureState.normalizedRoomBlocks.splice(
+    0,
+    captureState.normalizedRoomBlocks.length,
+    ...captureResult.roomBlocks
+  );
+  captureState.selectedRoom =
+    captureResult.selectedRoom ||
+    selectBestRoom(
+      captureState.normalizedRoomBlocks,
+      captureState.template,
+      captureState.options.matchingOptions || {}
+    );
+  return true;
+}
+
+function applyHtmlResultToState(captureState, htmlResult) {
+  captureState.parsedSources = htmlResult.parsedSources;
+  captureState.normalizedRoomBlocks = htmlResult.normalizedRoomBlocks;
+  captureState.selectedRoom = htmlResult.selectedRoom;
+  captureState.performance.htmlMs = htmlResult.htmlMs;
+}
+
+function selectedRoomNeedsPrice(captureState) {
+  return !captureState.selectedRoom || captureState.selectedRoom.price === null;
+}
+
+function shouldRunSupplementStep(captureState, step) {
+  if (step.forceWhenStrategy === captureState.captureStrategy) {
+    return true;
+  }
+  if (step.requireMissingSelectedPrice && !selectedRoomNeedsPrice(captureState)) {
+    return false;
+  }
+  return shouldAttemptSupplementalCapture(
+    captureState.normalizedRoomBlocks,
+    captureState.selectedRoom,
+    captureState.template,
+    captureState.options
+  );
+}
+
+function deriveStepWaitReason(captureState, step) {
+  if (step.retryAfterStateKey && captureState[step.retryAfterStateKey]) {
+    return step.retryWaitReason;
+  }
+  return deriveWaitReason(
+    captureState.normalizedRoomBlocks,
+    captureState.selectedRoom,
+    captureState.template,
+    captureState.options
+  );
+}
+
+async function runHtmlCaptureStep(captureState) {
+  const htmlResult = await runHtmlCapture({
+    desktopUrl: captureState.desktopUrl,
+    mobileUrl: captureState.mobileUrl,
+    template: captureState.template,
+    options: captureState.options,
+    perf: captureState.perf
+  });
+  applyHtmlResultToState(captureState, htmlResult);
+  return htmlResult;
+}
+
+async function runEdgeSupplementStep(captureState, step) {
+  if (!shouldRunSupplementStep(captureState, step)) {
+    return null;
+  }
+
+  captureState.waitReason = deriveStepWaitReason(captureState, step);
+  const edgeCapture = await runEdgeCapture({
+    desktopUrl: captureState.desktopUrl,
+    template: captureState.template,
+    options: captureState.options,
+    perf: captureState.perf,
+    retryCount: step.retryCount,
+    waitReason: captureState.waitReason,
+    captureMethod: step.captureMethod,
+    captureStrategy: captureState.captureStrategy
+  });
+  captureState.fallbackCapture = edgeCapture.result;
+  captureState.performance.edgeCaptureMs += edgeCapture.elapsedMs;
+  captureState.performance.waitDataMs += edgeCapture.elapsedMs;
+  captureState.captureSteps.push('edge_cdp');
+  applyCaptureResultToState(captureState, captureState.fallbackCapture);
+  return edgeCapture;
+}
+
+async function runApiReplayStep(captureState, step) {
+  if (!shouldRunSupplementStep(captureState, step)) {
+    return null;
+  }
+
+  captureState.waitReason = deriveStepWaitReason(captureState, step);
+  const replayStartedAt = Date.now();
+  captureState.directReplay = await captureState.perf.runPhase(
+    'wait_data',
+    {
+      url: captureState.desktopUrl,
+      retryCount: step.retryCount,
+      waitReason: captureState.waitReason,
+      captureMethod: step.captureMethod,
+      capture_strategy: captureState.captureStrategy
+    },
+    async () =>
+      captureRoomCandidatesDirect(
+        captureState.desktopUrl,
+        captureState.template,
+        captureState.parsedSources,
+        {
+          perf: captureState.perf.child({
+            url: captureState.desktopUrl,
+            waitReason: captureState.waitReason,
+            captureMethod: step.captureMethod,
+            capture_strategy: captureState.captureStrategy
+          }),
+          captureMethod: step.captureMethod,
+          matchingOptions: captureState.options.matchingOptions || {},
+          signal: captureState.options.signal || null
+        }
+      )
+  );
+  captureState.performance.directReplayMs += durationSince(replayStartedAt);
+  captureState.performance.waitDataMs += durationSince(replayStartedAt);
+  captureState.captureSteps.push('api_replay');
+  applyCaptureResultToState(captureState, captureState.directReplay);
+  return captureState.directReplay;
+}
+
+const CAPTURE_STRATEGY_PLANS = {
+  edgePreferred: [
+    {
+      type: 'edge',
+      retryCount: 1,
+      captureMethod: 'html_then_edge_cdp',
+      forceWhenStrategy: 'edge_full'
+    },
+    {
+      type: 'api_replay',
+      retryCount: 2,
+      captureMethod: 'edge_cdp_then_api_replay',
+      retryAfterStateKey: 'fallbackCapture',
+      retryWaitReason: 'retry_after_edge_failed',
+      requireMissingSelectedPrice: true
+    }
+  ],
+  htmlFirst: [
+    {
+      type: 'api_replay',
+      retryCount: 1,
+      captureMethod: 'html_then_api_replay'
+    },
+    {
+      type: 'edge',
+      retryCount: 2,
+      captureMethod: 'html_then_edge_cdp',
+      retryAfterStateKey: 'directReplay',
+      retryWaitReason: 'retry_after_api_failed'
+    }
+  ]
+};
+
+async function runSequentialCapturePlan(captureState, plan) {
+  for (const step of plan) {
+    if (step.type === 'edge') {
+      await runEdgeSupplementStep(captureState, step);
+    } else if (step.type === 'api_replay') {
+      await runApiReplayStep(captureState, step);
+    }
+  }
 }
 
 async function scrapeCtripHotel(url, template, options = {}) {
@@ -373,32 +623,58 @@ async function scrapeCtripHotel(url, template, options = {}) {
   let edgeStartedBeforeHtmlDone = false;
   let htmlDone = false;
 
-  const applyCaptureResult = (captureResult) => {
-    if (
-      !captureResult ||
-      !Array.isArray(captureResult.roomBlocks) ||
-      captureResult.roomBlocks.length === 0
-    ) {
-      return false;
+  const captureState = {
+    desktopUrl,
+    mobileUrl,
+    template,
+    options,
+    perf,
+    performance,
+    warnings,
+    captureSteps,
+    captureStrategy,
+    get parsedSources() {
+      return parsedSources;
+    },
+    set parsedSources(value) {
+      parsedSources = value;
+    },
+    get normalizedRoomBlocks() {
+      return normalizedRoomBlocks;
+    },
+    set normalizedRoomBlocks(value) {
+      normalizedRoomBlocks = value;
+    },
+    get selectedRoom() {
+      return selectedRoom;
+    },
+    set selectedRoom(value) {
+      selectedRoom = value;
+    },
+    get directReplay() {
+      return directReplay;
+    },
+    set directReplay(value) {
+      directReplay = value;
+    },
+    get fallbackCapture() {
+      return fallbackCapture;
+    },
+    set fallbackCapture(value) {
+      fallbackCapture = value;
+    },
+    get waitReason() {
+      return waitReason;
+    },
+    set waitReason(value) {
+      waitReason = value;
     }
-
-    normalizedRoomBlocks.splice(0, normalizedRoomBlocks.length, ...captureResult.roomBlocks);
-    selectedRoom =
-      captureResult.selectedRoom ||
-      selectBestRoom(normalizedRoomBlocks, template, options.matchingOptions || {});
-    return true;
-  };
-
-  const applyHtmlResult = (htmlResult) => {
-    parsedSources = htmlResult.parsedSources;
-    normalizedRoomBlocks = htmlResult.normalizedRoomBlocks;
-    selectedRoom = htmlResult.selectedRoom;
-    performance.htmlMs = htmlResult.htmlMs;
   };
 
   if (useParallelEdge) {
     assertNotCancelled(options.signal);
     htmlEdgeParallelUsed = true;
+    const edgeAbortControl = createLinkedAbortControl(options.signal || null);
     const htmlTask = runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }).then(
       (htmlResult) => {
         htmlDone = true;
@@ -419,195 +695,90 @@ async function scrapeCtripHotel(url, template, options = {}) {
         retryCount: 1,
         waitReason: 'auto_edge_supplement',
         captureMethod: 'html_then_edge_cdp',
-        captureStrategy
+        captureStrategy,
+        signal: edgeAbortControl.signal
       });
     })();
 
-    const [htmlOutcome, edgeOutcome] = await Promise.allSettled([htmlTask, edgeTask]);
-    assertNotCancelled(options.signal);
-    if (htmlOutcome.status === 'rejected' && isCancellationError(htmlOutcome.reason)) {
-      throw htmlOutcome.reason;
-    }
-    if (edgeOutcome.status === 'rejected' && isCancellationError(edgeOutcome.reason)) {
-      throw edgeOutcome.reason;
-    }
-    if (htmlOutcome.status === 'fulfilled') {
-      applyHtmlResult(htmlOutcome.value);
-    } else {
-      warnings.push(
-        `HTML capture failed: ${htmlOutcome.reason && htmlOutcome.reason.message ? htmlOutcome.reason.message : String(htmlOutcome.reason)}`
-      );
-    }
+    const htmlOutcomeTask = settleWithSource('html', htmlTask);
+    const edgeOutcomeTask = settleWithSource('edge', edgeTask);
+    const firstOutcome = await Promise.race([htmlOutcomeTask, edgeOutcomeTask]);
+    let usedHtmlFastPath = false;
 
-    if (edgeOutcome.status === 'fulfilled') {
-      fallbackCapture = edgeOutcome.value.result;
-      performance.edgeCaptureMs += edgeOutcome.value.elapsedMs;
-      performance.waitDataMs += edgeOutcome.value.elapsedMs;
-      captureSteps.push('edge_cdp');
-      if (fallbackCapture && fallbackCapture.error) {
-        warnings.push(`Edge capture warning: ${fallbackCapture.error}`);
-      }
-      applyCaptureResult(fallbackCapture);
-    } else {
-      warnings.push(
-        `Edge capture failed: ${edgeOutcome.reason && edgeOutcome.reason.message ? edgeOutcome.reason.message : String(edgeOutcome.reason)}`
-      );
-    }
-
-    if (!parsedSources.length && (!selectedRoom || !fallbackCapture)) {
-      throw htmlOutcome.reason || new Error('HTML and Edge capture both failed');
-    }
-
-    if (
-      (!selectedRoom || selectedRoom.price === null) &&
-      shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
-    ) {
-      waitReason = fallbackCapture
-        ? 'retry_after_edge_failed'
-        : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const replayStartedAt = Date.now();
-      directReplay = await perf.runPhase(
-        'wait_data',
-        {
+    try {
+      assertNotCancelled(options.signal);
+      if (
+        firstOutcome.source === 'html' &&
+        firstOutcome.status === 'fulfilled' &&
+        isHtmlCaptureSufficient(firstOutcome.value, template, options)
+      ) {
+        edgeAbortControl.abort('Edge capture cancelled after HTML produced a priced room');
+        applyHtmlResultToState(captureState, firstOutcome.value);
+        usedHtmlFastPath = true;
+        perf.event('parallel_edge_html_fast_path', {
+          phase: 'wait_data',
+          status: 'success',
           url: desktopUrl,
-          retryCount: 2,
-          waitReason,
-          captureMethod: 'edge_cdp_then_api_replay',
-          capture_strategy: captureStrategy
-        },
-        async () =>
-          captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
-            perf: perf.child({
-              url: desktopUrl,
-              waitReason,
-              captureMethod: 'edge_cdp_then_api_replay',
-              capture_strategy: captureStrategy
-            }),
-            captureMethod: 'edge_cdp_then_api_replay',
-            matchingOptions: options.matchingOptions || {},
-            signal: options.signal || null
-          })
-      );
-      performance.directReplayMs += durationSince(replayStartedAt);
-      performance.waitDataMs += durationSince(replayStartedAt);
-      captureSteps.push('api_replay');
-      applyCaptureResult(directReplay);
+          capture_strategy: captureStrategy,
+          edge_started_before_html_done: edgeStartedBeforeHtmlDone
+        });
+      }
+
+      if (!usedHtmlFastPath) {
+        const [htmlOutcome, edgeOutcome] = await Promise.all([htmlOutcomeTask, edgeOutcomeTask]);
+        assertNotCancelled(options.signal);
+        if (htmlOutcome.status === 'rejected' && isCancellationError(htmlOutcome.reason)) {
+          throw htmlOutcome.reason;
+        }
+        if (edgeOutcome.status === 'rejected' && isCancellationError(edgeOutcome.reason)) {
+          throw edgeOutcome.reason;
+        }
+        if (htmlOutcome.status === 'fulfilled') {
+          applyHtmlResultToState(captureState, htmlOutcome.value);
+        } else {
+          warnings.push(
+            `HTML capture failed: ${htmlOutcome.reason && htmlOutcome.reason.message ? htmlOutcome.reason.message : String(htmlOutcome.reason)}`
+          );
+        }
+
+        if (edgeOutcome.status === 'fulfilled') {
+          fallbackCapture = edgeOutcome.value.result;
+          performance.edgeCaptureMs += edgeOutcome.value.elapsedMs;
+          performance.waitDataMs += edgeOutcome.value.elapsedMs;
+          captureSteps.push('edge_cdp');
+          if (fallbackCapture && fallbackCapture.error) {
+            warnings.push(`Edge capture warning: ${fallbackCapture.error}`);
+          }
+          applyCaptureResultToState(captureState, fallbackCapture);
+        } else {
+          warnings.push(
+            `Edge capture failed: ${edgeOutcome.reason && edgeOutcome.reason.message ? edgeOutcome.reason.message : String(edgeOutcome.reason)}`
+          );
+        }
+
+        if (!parsedSources.length && (!selectedRoom || !fallbackCapture)) {
+          throw htmlOutcome.reason || new Error('HTML and Edge capture both failed');
+        }
+
+        if (
+          (!selectedRoom || selectedRoom.price === null) &&
+          shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
+        ) {
+          await runApiReplayStep(captureState, CAPTURE_STRATEGY_PLANS.edgePreferred[1]);
+        }
+      }
+    } finally {
+      edgeAbortControl.cleanup();
     }
   } else {
-    const htmlResult = await runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf });
-    applyHtmlResult(htmlResult);
+    await runHtmlCaptureStep(captureState);
   }
 
-  if (!useParallelEdge && preferEdgeCapture) {
-    if (
-      captureStrategy === 'edge_full' ||
-      shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
-    ) {
-      waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const edgeCapture = await runEdgeCapture({
-        desktopUrl,
-        template,
-        options,
-        perf,
-        retryCount: 1,
-        waitReason,
-        captureMethod: 'html_then_edge_cdp',
-        captureStrategy
-      });
-      fallbackCapture = edgeCapture.result;
-      performance.edgeCaptureMs += edgeCapture.elapsedMs;
-      performance.waitDataMs += edgeCapture.elapsedMs;
-      captureSteps.push('edge_cdp');
-      applyCaptureResult(fallbackCapture);
-    }
-
-    if (
-      (!selectedRoom || selectedRoom.price === null) &&
-      shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)
-    ) {
-      waitReason = fallbackCapture
-        ? 'retry_after_edge_failed'
-        : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const replayStartedAt = Date.now();
-      directReplay = await perf.runPhase(
-        'wait_data',
-        {
-          url: desktopUrl,
-          retryCount: 2,
-          waitReason,
-          captureMethod: 'edge_cdp_then_api_replay',
-          capture_strategy: captureStrategy
-        },
-        async () =>
-          captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
-            perf: perf.child({
-              url: desktopUrl,
-              waitReason,
-              captureMethod: 'edge_cdp_then_api_replay',
-              capture_strategy: captureStrategy
-            }),
-            captureMethod: 'edge_cdp_then_api_replay',
-            matchingOptions: options.matchingOptions || {},
-            signal: options.signal || null
-          })
-      );
-      performance.directReplayMs += durationSince(replayStartedAt);
-      performance.waitDataMs += durationSince(replayStartedAt);
-      captureSteps.push('api_replay');
-      applyCaptureResult(directReplay);
-    }
-  } else if (!useParallelEdge) {
-    if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
-      waitReason = deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const replayStartedAt = Date.now();
-      directReplay = await perf.runPhase(
-        'wait_data',
-        {
-          url: desktopUrl,
-          retryCount: 1,
-          waitReason,
-          captureMethod: 'html_then_api_replay',
-          capture_strategy: captureStrategy
-        },
-        async () =>
-          captureRoomCandidatesDirect(desktopUrl, template, parsedSources, {
-            perf: perf.child({
-              url: desktopUrl,
-              waitReason,
-              captureMethod: 'html_then_api_replay',
-              capture_strategy: captureStrategy
-            }),
-            captureMethod: 'html_then_api_replay',
-            matchingOptions: options.matchingOptions || {},
-            signal: options.signal || null
-          })
-      );
-      performance.directReplayMs += durationSince(replayStartedAt);
-      performance.waitDataMs += durationSince(replayStartedAt);
-      captureSteps.push('api_replay');
-      applyCaptureResult(directReplay);
-    }
-
-    if (shouldAttemptSupplementalCapture(normalizedRoomBlocks, selectedRoom, template, options)) {
-      waitReason = directReplay
-        ? 'retry_after_api_failed'
-        : deriveWaitReason(normalizedRoomBlocks, selectedRoom, template, options);
-      const edgeCapture = await runEdgeCapture({
-        desktopUrl,
-        template,
-        options,
-        perf,
-        retryCount: 2,
-        waitReason,
-        captureMethod: 'html_then_edge_cdp',
-        captureStrategy
-      });
-      fallbackCapture = edgeCapture.result;
-      performance.edgeCaptureMs += edgeCapture.elapsedMs;
-      performance.waitDataMs += edgeCapture.elapsedMs;
-      captureSteps.push('edge_cdp');
-      applyCaptureResult(fallbackCapture);
-    }
+  if (!useParallelEdge) {
+    await runSequentialCapturePlan(
+      captureState,
+      preferEdgeCapture ? CAPTURE_STRATEGY_PLANS.edgePreferred : CAPTURE_STRATEGY_PLANS.htmlFirst
+    );
   }
 
   const primarySource = parsedSources.find((item) => item.meta.hotelName || item.meta.address) ||

@@ -131,9 +131,13 @@ async function loadTemplateUiModules() {
     );
 
     writeStub(
-      path.join(tempRoot, 'debug-log.js'),
-      `export function logRendererDebug() {}`
+      path.join(tempRoot, 'hotel-derived.js'),
+      `export function attachDerivedFieldsToHotel(hotel) {
+        return { ...hotel, _derived: { nameKey: String(hotel?.name || '').toLocaleLowerCase('zh-CN') } };
+      }`
     );
+
+    writeStub(path.join(tempRoot, 'debug-log.js'), `export function logRendererDebug() {}`);
 
     templateUiModuleUrl = pathToFileURL(path.join(tempRoot, 'template-ui.js')).href;
     templateUiStateModuleUrl = pathToFileURL(path.join(tempRoot, 'state.js')).href;

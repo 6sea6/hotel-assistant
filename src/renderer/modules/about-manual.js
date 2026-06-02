@@ -7,6 +7,7 @@ import { setModalActive } from './ui-utils.js';
 import { logRendererDebug } from './debug-log.js';
 
 let manualContentLoaded = false;
+let manualFooterDisplay = 'flex';
 
 const MANUAL_FALLBACK_HTML = `
   <div class="manual-load-error">
@@ -31,6 +32,7 @@ export function applyAppMetadata() {
 
 export function openAbout() {
   setModalActive('aboutModal', true);
+  applyAppMetadata();
 }
 
 export function closeAbout() {
@@ -61,20 +63,25 @@ export async function checkAndShowManual() {
   try {
     const showManual = await window.electronAPI.getSetting('showManualOnStartup');
     if (showManual === false) {
+      manualFooterDisplay = 'none';
       setStyle('manualFooter', 'display', 'none');
       return;
     }
+    manualFooterDisplay = 'flex';
     setStyle('manualFooter', 'display', 'flex');
-    openManual();
+    await openManual();
   } catch (error) {
     console.error('检查说明书设置失败:', error);
-    openManual();
+    manualFooterDisplay = 'flex';
+    await openManual();
   }
 }
 
 export async function openManual() {
   setModalActive('manualModal', true);
+  setStyle('manualFooter', 'display', manualFooterDisplay);
   await loadManualContent();
+  applyAppMetadata();
 }
 
 export async function closeManual() {

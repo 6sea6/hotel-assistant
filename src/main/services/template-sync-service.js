@@ -22,72 +22,84 @@ function buildTemplateInfo(template) {
 
 /**
  * @param {{hotelRepo: HotelRepository, templateId: import('../../shared/contracts').EntityId}} options
- * @returns {{affectedHotelCount: number}}
+ * @returns {{affectedHotelCount: number, affectedHotels: import('../../shared/contracts').NormalizedHotelRecord[]}}
  */
 function clearTemplateFromHotels({ hotelRepo, templateId }) {
   const hotels = hotelRepo.getAll();
-  let affectedHotelCount = 0;
-  const nextHotels = hotels.map((hotel) => {
+  const affectedHotels = [];
+  const updatedAt = new Date().toISOString();
+
+  for (const hotel of hotels) {
     if (
       !idsEqual(hotel.template_id, templateId) &&
       !idsEqual(hotel.template_info?.id, templateId)
     ) {
-      return hotel;
+      continue;
     }
 
-    affectedHotelCount += 1;
-    return hotelRepo.normalize(
-      {
-        ...hotel,
-        template_id: null,
-        template_info: null,
-        updated_at: new Date().toISOString()
-      },
-      hotel
+    affectedHotels.push(
+      hotelRepo.normalize(
+        {
+          ...hotel,
+          template_id: null,
+          template_info: null,
+          updated_at: updatedAt
+        },
+        hotel
+      )
     );
-  });
-
-  if (affectedHotelCount > 0) {
-    hotelRepo.replaceAll(nextHotels);
   }
 
-  return { affectedHotelCount };
+  if (affectedHotels.length > 0) {
+    hotelRepo.updateMany(affectedHotels);
+  }
+
+  return {
+    affectedHotelCount: affectedHotels.length,
+    affectedHotels
+  };
 }
 
 /**
  * @param {{hotelRepo: HotelRepository, template: NormalizedTemplateRecord}} options
- * @returns {{affectedCount: number}}
+ * @returns {{affectedCount: number, affectedHotels: import('../../shared/contracts').NormalizedHotelRecord[]}}
  */
 function syncTemplateToHotels({ hotelRepo, template }) {
   const hotels = hotelRepo.getAll();
   const templateInfo = buildTemplateInfo(template);
-  let affectedCount = 0;
-  const nextHotels = hotels.map((hotel) => {
+  const affectedHotels = [];
+  const updatedAt = new Date().toISOString();
+
+  for (const hotel of hotels) {
     if (hotel.template_id == null || !idsEqual(hotel.template_id, template.id)) {
-      return hotel;
+      continue;
     }
 
-    affectedCount += 1;
-    return hotelRepo.normalize(
-      {
-        ...hotel,
-        template_id: template.id,
-        template_info: templateInfo,
-        destination: template.destination,
-        check_in_date: template.check_in_date,
-        check_out_date: template.check_out_date,
-        room_count: template.room_count,
-        updated_at: new Date().toISOString()
-      },
-      hotel
+    affectedHotels.push(
+      hotelRepo.normalize(
+        {
+          ...hotel,
+          template_id: template.id,
+          template_info: templateInfo,
+          destination: template.destination,
+          check_in_date: template.check_in_date,
+          check_out_date: template.check_out_date,
+          room_count: template.room_count,
+          updated_at: updatedAt
+        },
+        hotel
+      )
     );
-  });
-
-  if (affectedCount > 0) {
-    hotelRepo.replaceAll(nextHotels);
   }
 
-  return { affectedCount };
+  if (affectedHotels.length > 0) {
+    hotelRepo.updateMany(affectedHotels);
+  }
+
+  return {
+    affectedCount: affectedHotels.length,
+    affectedHotels
+  };
 }
 
 module.exports = {

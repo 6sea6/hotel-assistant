@@ -61,6 +61,8 @@ export {
  * @typedef {import('../../shared/contracts').AiTaskConsoleState} AiTaskConsoleState
  * @typedef {import('../../shared/contracts').AiTaskQueueItem} AiTaskQueueItem
  * @typedef {import('../../shared/contracts').AiTaskBackendResult} AiTaskBackendResult
+ * @typedef {import('../../shared/contracts').AiListFilters} AiListFilters
+ * @typedef {import('../../shared/contracts').AiListUrlFilters} AiListUrlFilters
  */
 
 const BACKEND_BUSY_RETRY_DELAY_MS = 1200;

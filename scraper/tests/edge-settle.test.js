@@ -370,10 +370,22 @@ test('settleRoomListInEdgeSession skips main scroll when room API is already cap
       expressions.some((expression) => expression.includes('await scrollAllContainers')),
       false
     );
-    assert.equal(records.find((record) => record.phase === 'edge_settle_close_panels').status, 'success');
-    assert.equal(records.find((record) => record.phase === 'edge_settle_initial_expand').status, 'skipped');
-    assert.equal(records.find((record) => record.phase === 'edge_settle_main_scroll').status, 'skipped');
-    assert.equal(records.find((record) => record.phase === 'edge_settle_initial_expand').skip_reason, 'room_api_fast_path');
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_close_panels').status,
+      'success'
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_initial_expand').status,
+      'skipped'
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_main_scroll').status,
+      'skipped'
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_initial_expand').skip_reason,
+      'room_api_fast_path'
+    );
     assert.equal(stats.apiFastPathSkippedStepCount, 5);
   } finally {
     clearModules([settlePath, cdpUtilsPath]);
@@ -477,6 +489,15 @@ test('edge page ready performs a short confirmation after navigate ready signal'
   } finally {
     clearModules([networkCapturePath, cdpUtilsPath]);
   }
+});
+
+test('network capture exposes shared Edge target capture runner', async () => {
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  const networkCapture = require('../src/scraper/edge-capture-modules/network-capture');
+  assert.equal(typeof networkCapture.runEdgeTargetCapture, 'function');
+  assert.equal(Object.keys(networkCapture).includes('runEdgeTargetCapture'), false);
 });
 
 test('edge settle retries once after transient execution context destruction', async () => {

@@ -19,6 +19,7 @@ async function loadHotelListModule() {
     'hotel-list-empty-state.js',
     'hotel-list-table-renderer.js',
     'hotel-list-card-renderer.js',
+    'hotel-list-model.js',
     'hotel-list-selection.js',
     'hotel-list-virtual-adapter.js'
   ].forEach((fileName) => {

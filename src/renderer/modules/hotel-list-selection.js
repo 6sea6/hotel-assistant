@@ -10,11 +10,77 @@ import {
   syncVirtualSelectAllCheckboxState
 } from './hotel-list-virtual-adapter.js';
 
+/** @type {() => import('../../shared/contracts').NormalizedHotelRecord[]} */
 let getSortedVisibleHotels = () => [];
 
 export function configureHotelListSelection(dependencies = {}) {
   if (typeof dependencies.getSortedVisibleHotels === 'function') {
     getSortedVisibleHotels = dependencies.getSortedVisibleHotels;
+  }
+}
+
+/**
+ * @returns {HTMLElement[]}
+ */
+function getMountedHotelNodes() {
+  const nodeMap = state.renderedHotelNodeMap;
+  if (nodeMap instanceof Map) {
+    return Array.from(nodeMap.values()).filter((node) => node && node.dataset && node.dataset.id);
+  }
+
+  const container = $('hotelList');
+  if (!container || typeof container.querySelectorAll !== 'function') {
+    return [];
+  }
+  return /** @type {HTMLElement[]} */ (
+    Array.from(container.querySelectorAll('.hotel-table-row[data-id], .hotel-card[data-id]'))
+  );
+}
+
+/**
+ * @param {string|number|null|undefined} hotelId
+ * @returns {HTMLElement|null}
+ */
+function getMountedHotelNode(hotelId) {
+  const hotelKey = getSelectionKey(hotelId);
+  const nodeMap = state.renderedHotelNodeMap;
+  if (nodeMap instanceof Map) {
+    return nodeMap.get(hotelKey) || null;
+  }
+  return (
+    getMountedHotelNodes().find((node) => getSelectionKey(node.dataset.id) === hotelKey) || null
+  );
+}
+
+/**
+ * @param {HTMLElement[]} [mountedNodes]
+ * @returns {string[]}
+ */
+function getSelectionScopeIds(mountedNodes = getMountedHotelNodes()) {
+  const sortedHotels = getSortedVisibleHotels();
+  if (Array.isArray(sortedHotels) && sortedHotels.length > 0) {
+    return sortedHotels.map((hotel) => getSelectionKey(hotel.id));
+  }
+
+  return mountedNodes.map((node) => getSelectionKey(node.dataset.id)).filter(Boolean);
+}
+
+/**
+ * @param {HTMLElement|null} node
+ * @param {boolean} checked
+ */
+function applyMountedNodeSelection(node, checked) {
+  if (!node) return;
+  node.classList.toggle('selected', checked);
+  const checkbox = /** @type {HTMLInputElement|null} */ (
+    node.querySelector('input[data-action="toggle-selection"], input[type="checkbox"]')
+  );
+  if (checkbox) checkbox.checked = checked;
+}
+
+function syncMountedNodeSelectionStates() {
+  for (const node of getMountedHotelNodes()) {
+    applyMountedNodeSelection(node, state.selectedHotels.has(getSelectionKey(node.dataset.id)));
   }
 }
 
@@ -34,42 +100,22 @@ export function toggleSelectAll(checkbox) {
     } else {
       clearSelectedHotels();
     }
-    const itemsContainer = document.querySelector('.virtual-items, .virtual-card-items');
-    if (itemsContainer) {
-      itemsContainer.querySelectorAll('.hotel-table-row, .hotel-card').forEach((row) => {
-        const hotelId = row.dataset.id;
-        if (!hotelId) return;
-        row.classList.toggle('selected', checkbox.checked);
-        const cb = row.querySelector('input[type="checkbox"]');
-        if (cb instanceof HTMLInputElement) cb.checked = checkbox.checked;
-      });
-    }
+    syncMountedNodeSelectionStates();
     syncVirtualSelectAllCheckboxState(sortedHotels);
     resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
     return;
   }
 
-  const hotelRows = /** @type {NodeListOf<HTMLElement>} */ (
-    document.querySelectorAll('.hotel-table-row')
-  );
+  const mountedNodes = getMountedHotelNodes();
+  const selectionIds = getSelectionScopeIds(mountedNodes);
 
   if (checkbox.checked) {
-    hotelRows.forEach((row) => {
-      const hotelId = getSelectionKey(row.dataset.id);
-      state.selectedHotels.add(hotelId);
-      row.classList.add('selected');
-      const cb = /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'));
-      if (cb) cb.checked = true;
-    });
+    selectionIds.forEach((hotelId) => state.selectedHotels.add(hotelId));
   } else {
     clearSelectedHotels();
-    hotelRows.forEach((row) => {
-      row.classList.remove('selected');
-      const cb = /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'));
-      if (cb) cb.checked = false;
-    });
   }
 
+  syncMountedNodeSelectionStates();
   syncSelectAllCheckboxState();
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
 }
@@ -91,7 +137,7 @@ function setHotelRowSelection(row, checked) {
   } else {
     state.selectedHotels.delete(hotelKey);
   }
-  row.classList.toggle('selected', checked);
+  applyMountedNodeSelection(row, checked);
   if (checkbox) checkbox.checked = checked;
 }
 
@@ -123,19 +169,16 @@ export function syncSelectAllCheckboxState() {
 
   const selectAllCheckbox = /** @type {HTMLInputElement|null} */ ($('selectAll'));
   if (!selectAllCheckbox) return;
-  const hotelRows = /** @type {NodeListOf<HTMLElement>} */ (
-    document.querySelectorAll('.hotel-table-row')
-  );
-  if (hotelRows.length === 0) {
+  const mountedNodes = getMountedHotelNodes();
+  const selectionIds = getSelectionScopeIds(mountedNodes);
+  if (selectionIds.length === 0) {
     selectAllCheckbox.checked = false;
     selectAllCheckbox.indeterminate = false;
     return;
   }
-  const selectedCount = Array.from(hotelRows).filter((row) =>
-    state.selectedHotels.has(getSelectionKey(row.dataset.id))
-  ).length;
-  selectAllCheckbox.checked = selectedCount > 0 && selectedCount === hotelRows.length;
-  selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < hotelRows.length;
+  const selectedCount = selectionIds.filter((hotelId) => state.selectedHotels.has(hotelId)).length;
+  selectAllCheckbox.checked = selectedCount > 0 && selectedCount === selectionIds.length;
+  selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < selectionIds.length;
 }
 
 export function toggleHotelSelection(hotelId) {
@@ -145,6 +188,7 @@ export function toggleHotelSelection(hotelId) {
   } else {
     state.selectedHotels.add(hotelKey);
   }
+  applyMountedNodeSelection(getMountedHotelNode(hotelKey), state.selectedHotels.has(hotelKey));
   syncSelectAllCheckboxState();
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
 }

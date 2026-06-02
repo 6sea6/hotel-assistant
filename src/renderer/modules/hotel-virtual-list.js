@@ -128,7 +128,14 @@ export function calculateCardVirtualRange(params) {
   } = params;
 
   if (itemCount <= 0 || columns <= 0 || estimatedItemHeight <= 0 || viewportHeight <= 0) {
-    return { startIndex: 0, endIndex: 0, beforeHeight: 0, afterHeight: 0, rowStartIndex: 0, rowEndIndex: 0 };
+    return {
+      startIndex: 0,
+      endIndex: 0,
+      beforeHeight: 0,
+      afterHeight: 0,
+      rowStartIndex: 0,
+      rowEndIndex: 0
+    };
   }
 
   const rowHeight = estimatedItemHeight + gap;
@@ -166,7 +173,8 @@ export function calculateCardVirtualRange(params) {
  *   startIndex: number,
  *   endIndex: number,
  *   totalHeight: number,
- *   columns: number
+ *   columns: number,
+ *   hasMeasuredItemHeight: boolean
  * }}
  */
 export function createDefaultVirtualState(viewMode) {

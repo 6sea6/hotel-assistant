@@ -39,6 +39,7 @@ const templateChangeListeners = new Set();
  * @property {boolean} renderScheduled
  * @property {ViewMode} viewMode
  * @property {Set<EntityId>} selectedHotels
+ * @property {Map<string, HTMLElement>} renderedHotelNodeMap
  * @property {boolean} batchDeleteInProgress
  * @property {boolean} manualRefreshInProgress
  * @property {boolean} staticFormEventsBound
@@ -103,6 +104,7 @@ export const state = {
   renderScheduled: false,
   viewMode: 'card', // 'card' | 'list'
   selectedHotels: new Set(),
+  renderedHotelNodeMap: new Map(),
   batchDeleteInProgress: false,
   manualRefreshInProgress: false,
   staticFormEventsBound: false,
@@ -513,7 +515,14 @@ export function getScrollBehaviorForReason(reason, currentFiltersKey) {
  * @param {'card'|'list'} viewMode
  * @returns {number} 目标 scrollTop
  */
-export function calculateScrollTopForAnchor(sortedHotels, anchorHotelId, estimatedItemHeight, columns, gap, viewMode) {
+export function calculateScrollTopForAnchor(
+  sortedHotels,
+  anchorHotelId,
+  estimatedItemHeight,
+  columns,
+  gap,
+  viewMode
+) {
   if (anchorHotelId == null || !sortedHotels.length) return 0;
 
   const anchorIndex = sortedHotels.findIndex((h) => String(h.id) === String(anchorHotelId));
@@ -541,7 +550,15 @@ export function calculateScrollTopForAnchor(sortedHotels, anchorHotelId, estimat
  * @param {'card'|'list'} viewMode
  * @returns {number} 目标 scrollTop
  */
-export function calculateScrollTopAfterDelete(sortedHotelsBeforeDelete, deletedIds, currentScrollTop, estimatedItemHeight, columns, gap, viewMode) {
+export function calculateScrollTopAfterDelete(
+  sortedHotelsBeforeDelete,
+  deletedIds,
+  currentScrollTop,
+  estimatedItemHeight,
+  columns,
+  gap,
+  viewMode
+) {
   if (!sortedHotelsBeforeDelete.length || !deletedIds.size) return currentScrollTop;
 
   // 找到被删项中最大的 index（即最后可见的被删项）
@@ -639,7 +656,7 @@ export function markRankingCacheDirty() {
 
 /* ---- 可见宾馆缓存 ---- */
 
-/** @type {{data: NormalizedHotelRecord[]|null, hotelsVersion: number, filtersKey: string, sortMode: string, hitCount: number, missCount: number}} */
+/** @type {{data: NormalizedHotelRecord[]|null, hotelsVersion: number, filtersKey: string, sortMode: string, hitCount: number, missCount: number, invalidate: () => void}} */
 export const visibleHotelsCache = {
   data: null,
   hotelsVersion: -1,

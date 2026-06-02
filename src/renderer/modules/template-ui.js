@@ -25,14 +25,17 @@ import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from
 import { isHotelInputPriorityActive } from './render-scheduler.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
+import { attachDerivedFieldsToHotel } from './hotel-derived.js';
 import { logRendererDebug } from './debug-log.js';
 
 /**
  * @typedef {import('../../shared/contracts').RawTemplateRecord} RawTemplateRecord
+ * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
  * @typedef {import('../../shared/contracts').EntityId} EntityId
  * @typedef {object} TemplateMutationRefreshOptions
  * @property {string} [reason]
  * @property {number} [affectedHotelCount]
+ * @property {NormalizedHotelRecord[]} [affectedHotels]
  * @property {boolean} [interactionFirst]
  */
 
@@ -63,6 +66,46 @@ function normalizeAffectedHotelCount(value) {
 }
 
 /**
+ * @param {unknown} hotels
+ * @returns {NormalizedHotelRecord[]}
+ */
+function normalizeAffectedHotels(hotels) {
+  if (!Array.isArray(hotels)) return [];
+  return hotels.filter((hotel) => hotel && typeof hotel === 'object' && 'id' in hotel);
+}
+
+/**
+ * @param {unknown} affectedHotels
+ * @returns {boolean}
+ */
+function patchAffectedHotels(affectedHotels) {
+  const updates = normalizeAffectedHotels(affectedHotels);
+  if (updates.length === 0 || state.hotels.length === 0) return false;
+
+  const updatesById = new Map(
+    updates
+      .filter((hotel) => hotel.id !== null && hotel.id !== undefined)
+      .map((hotel) => [String(hotel.id), attachDerivedFieldsToHotel(hotel)])
+  );
+  if (updatesById.size === 0) return false;
+
+  let patched = false;
+  const nextHotels = state.hotels.map((hotel) => {
+    const key = hotel.id === null || hotel.id === undefined ? '' : String(hotel.id);
+    const updatedHotel = updatesById.get(key);
+    if (!updatedHotel) return hotel;
+    patched = true;
+    return updatedHotel;
+  });
+
+  if (!patched) return false;
+
+  setHotels(nextHotels);
+  markRankingCacheDirty();
+  return true;
+}
+
+/**
  * @param {EntityId|null|undefined} templateId
  * @returns {void}
  */
@@ -82,20 +125,26 @@ function rememberLocalTemplateUpdate(templateId) {
  */
 function getTemplateUpdateEventId(data) {
   if (!data || typeof data !== 'object') return '';
-  const payload = /** @type {{templateId?: EntityId, id?: EntityId, template?: {id?: EntityId}}} */ (data);
+  const payload =
+    /** @type {{templateId?: EntityId, id?: EntityId, template?: {id?: EntityId}}} */ (data);
   const value = payload.templateId ?? payload.template?.id ?? payload.id;
   return value === null || value === undefined || value === '' ? '' : String(value);
 }
 
 /**
- * @param {number|undefined} affectedHotelCount
- * @param {string} reason
+ * @param {Pick<TemplateMutationRefreshOptions, 'affectedHotelCount'|'affectedHotels'|'reason'>} options
  * @returns {Promise<boolean>}
  */
-async function reloadHotelsForTemplateMutation(affectedHotelCount, reason) {
-  if (normalizeAffectedHotelCount(affectedHotelCount) === 0) return false;
+async function reloadHotelsForTemplateMutation(options) {
+  const affectedHotelCount = normalizeAffectedHotelCount(options.affectedHotelCount);
+  const affectedHotels = normalizeAffectedHotels(options.affectedHotels);
+  if (affectedHotelCount === 0 && affectedHotels.length === 0) return false;
 
-  const hotels = await actions.loadHotels({ force: true, reason });
+  if (patchAffectedHotels(affectedHotels)) {
+    return true;
+  }
+
+  const hotels = await actions.loadHotels({ force: true, reason: options.reason });
   setHotels(hotels || []);
   markRankingCacheDirty();
   return true;
@@ -107,7 +156,11 @@ async function reloadHotelsForTemplateMutation(affectedHotelCount, reason) {
  */
 async function refreshTemplatesAfterMutation(options = {}) {
   const reason = options.reason || 'template-change';
-  const renderHotels = await reloadHotelsForTemplateMutation(options.affectedHotelCount, reason);
+  const renderHotels = await reloadHotelsForTemplateMutation({
+    reason,
+    affectedHotelCount: options.affectedHotelCount,
+    affectedHotels: options.affectedHotels
+  });
   const templates = await actions.loadTemplates();
   setTemplates(templates || [], {
     reason,
@@ -137,9 +190,13 @@ subscribeTemplateChanges(handleTemplateStateChanged);
 /* ---- 打开/关闭模板弹窗 ---- */
 
 export function openTemplateManager() {
-  renderTemplateList();
   setModalActive('templateModal', true);
+  renderTemplateList();
   setStyle('templateForm', 'display', 'none');
+  const modal = $('templateModal');
+  if (modal) {
+    refreshCustomSelects(modal, { auto: true });
+  }
 }
 
 export function closeTemplateModal() {
@@ -249,6 +306,8 @@ export function openAddTemplateForm() {
   setValue('templateCheckOut', '');
   setValue('templateRoomCount', '2');
   setStyle('templateForm', 'display', 'block');
+  const modal = $('templateModal');
+  refreshCustomSelects(modal || document, { auto: true });
 }
 
 export function editTemplate(id) {
@@ -263,6 +322,8 @@ export function editTemplate(id) {
   setValue('templateCheckOut', template.check_out_date || '');
   setValue('templateRoomCount', template.room_count || 2);
   setStyle('templateForm', 'display', 'block');
+  const modal = $('templateModal');
+  refreshCustomSelects(modal || document, { auto: true });
 }
 
 export function cancelTemplateForm() {
@@ -312,6 +373,7 @@ export async function saveTemplate() {
         await refreshTemplatesAfterMutation({
           reason: 'template-save',
           affectedHotelCount: result.affectedCount,
+          affectedHotels: result.affectedHotels,
           interactionFirst: true
         });
       } else {
@@ -352,6 +414,7 @@ export async function deleteTemplate(id) {
     await refreshTemplatesAfterMutation({
       reason: 'template-delete',
       affectedHotelCount: result.affectedHotelCount,
+      affectedHotels: result.affectedHotels,
       interactionFirst: true
     });
     showNotification(
@@ -442,6 +505,7 @@ export function setupTemplateSyncListener() {
       await refreshTemplatesAfterMutation({
         reason: 'template-event',
         affectedHotelCount: data?.affectedCount ?? data?.affectedHotelCount,
+        affectedHotels: data?.affectedHotels,
         interactionFirst: true
       });
       logRendererDebug('[事件监听] 模板同步完成:', data);

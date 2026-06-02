@@ -3,9 +3,15 @@
  */
 
 import { state } from './state.js';
-import { hasDisplayValue } from './dom-helpers.js';
+import { $, getValue, hasDisplayValue, setText, setValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
-import { applyFiltersToHotels, sortHotels, DEFAULT_SORT_MODE, formatSubwayDistanceValue } from './hotel-filters.js';
+import { setModalActive } from './ui-utils.js';
+import {
+  applyFiltersToHotels,
+  sortHotels,
+  DEFAULT_SORT_MODE,
+  formatSubwayDistanceValue
+} from './hotel-filters.js';
 
 export function roundRect(ctx, x, y, width, height, radius) {
   if (typeof radius === 'number') {
@@ -24,12 +30,85 @@ export function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
-export async function exportRankingImage() {
+function getSortedRankingHotels() {
+  const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
+  return sortHotels(filteredHotels, String(state.currentFilters.sortMode || DEFAULT_SORT_MODE));
+}
+
+/**
+ * @param {unknown} value
+ * @param {number} availableCount
+ * @returns {number|null}
+ */
+export function normalizeRankingExportLimit(value, availableCount) {
+  const max = Math.floor(Number(availableCount) || 0);
+  if (max <= 0) return null;
+
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return Math.min(10, max);
+  }
+
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.min(parsed, max);
+}
+
+function getSelectedRankingExportLimit(availableCount) {
+  const customValue = getValue('rankingExportCustomCount').trim();
+  const checked = /** @type {HTMLInputElement|null} */ (
+    document.querySelector('input[name="rankingExportCount"]:checked')
+  );
+  const selectedValue = customValue || checked?.value || '10';
+  return normalizeRankingExportLimit(selectedValue, availableCount);
+}
+
+export function closeRankingImageExportModal() {
+  setModalActive('rankingExportModal', false);
+}
+
+export function openRankingImageExportModal() {
   if (state.hotels.length === 0) {
     showNotification('暂无宾馆数据，无法导出排名图片', 'warning');
     return;
   }
 
+  const sortedHotels = getSortedRankingHotels();
+  if (sortedHotels.length === 0) {
+    showNotification('当前筛选条件下没有宾馆数据，无法导出排名图片', 'warning');
+    return;
+  }
+
+  setModalActive('rankingExportModal', true);
+  setText('rankingExportAvailableCount', String(sortedHotels.length));
+  setValue('rankingExportCustomCount', '');
+
+  const defaultOption = /** @type {HTMLInputElement|null} */ (
+    document.querySelector('input[name="rankingExportCount"][value="10"]')
+  );
+  if (defaultOption) defaultOption.checked = true;
+
+  const customInput = /** @type {HTMLInputElement|null} */ ($('rankingExportCustomCount'));
+  if (customInput) {
+    customInput.max = String(sortedHotels.length);
+  }
+}
+
+export async function confirmRankingImageExport() {
+  const sortedHotels = getSortedRankingHotels();
+  const limit = getSelectedRankingExportLimit(sortedHotels.length);
+  if (!limit) {
+    showNotification('请输入大于 0 的导出数量', 'warning');
+    return;
+  }
+
+  closeRankingImageExportModal();
+  await exportRankingImage({ limit });
+}
+
+/**
+ * @param {{limit?: number}} [options]
+ */
+export async function exportRankingImage(options = {}) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
@@ -38,14 +117,21 @@ export async function exportRankingImage() {
   const cardHeight = 166;
   const gap = 20;
 
-  let filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
-  const sortedHotels = sortHotels(filteredHotels, state.currentFilters.sortMode || DEFAULT_SORT_MODE);
+  const sortedHotels = getSortedRankingHotels();
 
-  const rows = sortedHotels.length;
-  if (rows === 0) {
+  if (sortedHotels.length === 0) {
     showNotification('当前筛选条件下没有宾馆数据，无法导出排名图片', 'warning');
     return;
   }
+
+  const exportLimit = normalizeRankingExportLimit(options.limit, sortedHotels.length);
+  if (!exportLimit) {
+    showNotification('请输入大于 0 的导出数量', 'warning');
+    return;
+  }
+
+  const exportedHotels = sortedHotels.slice(0, exportLimit);
+  const rows = exportedHotels.length;
 
   canvas.width = padding * 2 + cardWidth;
   const bottomPadding = 15;
@@ -57,7 +143,7 @@ export async function exportRankingImage() {
   ctx.fillStyle = '#1D2129';
   ctx.font = 'bold 24px "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('宾馆排名榜', canvas.width / 2, padding + 30);
+  ctx.fillText(`宾馆排名榜 · 前 ${rows} 名`, canvas.width / 2, padding + 30);
 
   const drawSingleLineText = (text, x, y, maxWidth) => {
     if (!text) return;
@@ -119,10 +205,10 @@ export async function exportRankingImage() {
   const batchSize = 10;
 
   const processBatch = (startIndex) => {
-    const endIndex = Math.min(startIndex + batchSize, sortedHotels.length);
+    const endIndex = Math.min(startIndex + batchSize, exportedHotels.length);
 
     for (let index = startIndex; index < endIndex; index++) {
-      const hotel = sortedHotels[index];
+      const hotel = exportedHotels[index];
       const x = padding;
       const y = padding + 60 + index * (cardHeight + gap);
       const rank = index + 1;
@@ -207,7 +293,7 @@ export async function exportRankingImage() {
       });
     }
 
-    if (endIndex < sortedHotels.length) {
+    if (endIndex < exportedHotels.length) {
       requestAnimationFrame(() => processBatch(endIndex));
     } else {
       finishExport();
@@ -219,7 +305,7 @@ export async function exportRankingImage() {
       const imageBuffer = canvas.toDataURL('image/png').split(',')[1];
       const result = await window.electronAPI.exportRankingImage(imageBuffer);
       if (result.success) {
-        showNotification(`排名图片已导出到: ${result.path}`, 'success');
+        showNotification(`排名图片已导出前 ${rows} 名到: ${result.path}`, 'success');
       }
     } catch (error) {
       console.error('导出图片失败:', error);

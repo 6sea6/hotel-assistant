@@ -246,6 +246,18 @@
  * @property {string|null} [updated_at]
  * @property {string|null} [cancel_policy]
  * @property {string|null} [window_status]
+ * @property {{
+ *   nameKey: string,
+ *   totalPriceNumber: number|null,
+ *   dailyPriceNumber: number|null,
+ *   scoreNumber: number|null,
+ *   distanceNumber: number|null,
+ *   subwayDistanceNumber: number|null,
+ *   transportTimeNumber: number|null,
+ *   roomTypeKey: string,
+ *   originalRoomTypeKey: string,
+ *   hotelIdentityKey: string
+ * }} [_derived] Renderer-only derived cache; stripped before IPC writes.
  */
 
 /**
@@ -375,7 +387,8 @@
  * @typedef {IpcResult<unknown> & {
  *   deletedCount?: number,
  *   affectedHotelCount?: number,
- *   affectedCount?: number
+ *   affectedCount?: number,
+ *   affectedHotels?: NormalizedHotelRecord[]
  * }} IpcMutationResult
  */
 
@@ -460,7 +473,7 @@
  * @property {ElectronAiAPI} ai
  * @property {(channel: string) => void} removeAllListeners
  * @property {(pattern?: string) => void} invalidateRendererCache
- * @property {(callback: (data: Record<string, unknown>) => void) => void} onTemplateUpdated
+ * @property {(callback: (data: IpcMutationResult & {templateId?: EntityId, template?: NormalizedTemplateRecord}) => void) => void} onTemplateUpdated
  */
 
 module.exports = {};

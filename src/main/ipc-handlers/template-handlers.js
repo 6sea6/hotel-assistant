@@ -100,7 +100,10 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       return { success: false, error: '未找到要删除的模板' };
     }
 
-    const { affectedHotelCount } = clearTemplateFromHotels({ hotelRepo, templateId });
+    const { affectedHotelCount, affectedHotels } = clearTemplateFromHotels({
+      hotelRepo,
+      templateId
+    });
     if (affectedHotelCount > 0) {
       cache.invalidate('hotels');
     }
@@ -108,7 +111,8 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
     return {
       success: true,
       deletedCount: deleteResult.deletedCount,
-      affectedHotelCount
+      affectedHotelCount,
+      affectedHotels
     };
   });
 
@@ -166,7 +170,7 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       matchedHotels.forEach((hotel) =>
         logMainDebug('[模板同步] ✓ 找到匹配酒店:', hotel.name, 'ID:', hotel.id)
       );
-      const { affectedCount: updatedCount } = syncTemplateToHotels({
+      const { affectedCount: updatedCount, affectedHotels } = syncTemplateToHotels({
         hotelRepo,
         template: syncedTemplate
       });
@@ -183,11 +187,17 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       notifyRenderer(getMainWindow(), 'template:updated', {
         templateId: syncedTemplate.id,
         affectedCount: updatedCount,
+        affectedHotels,
         template: syncedTemplate
       });
 
       logMainDebug('[模板同步] 完成');
-      return { success: true, template: syncedTemplate, affectedCount: updatedCount };
+      return {
+        success: true,
+        template: syncedTemplate,
+        affectedCount: updatedCount,
+        affectedHotels
+      };
     } catch (error) {
       console.error('模板更新失败:', error);
       return { success: false, error: toErrorMessage(error) };

@@ -15,9 +15,7 @@ import {
   bumpHotelListRenderVersion,
   setRenderScheduled,
   setPendingRenderInteractionFirst,
-  setHotelNameFilterOptionSignature,
-  visibleHotelsCache,
-  buildVisibleHotelsFiltersKey
+  setHotelNameFilterOptionSignature
 } from './state.js';
 import {
   $,
@@ -46,9 +44,7 @@ import {
 } from './ui-utils.js';
 import {
   applyFiltersToHotels,
-  sortHotels,
   DEFAULT_SORT_MODE,
-  getVisibleHotelSummary,
   formatSubwayInfo,
   formatDistanceValue,
   formatTransportValue,
@@ -56,17 +52,12 @@ import {
   extractTimeNumber
 } from './hotel-filters.js';
 import { getHotelListRenderDecision } from './hotel-render-decision.js';
+import { getSortedVisibleHotels, getVisibleHotelListSummary } from './hotel-list-model.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
-import {
-  shouldUseVirtualHotelList,
-  getVirtualScrollThreshold
-} from './hotel-virtual-list.js';
+import { shouldUseVirtualHotelList, getVirtualScrollThreshold } from './hotel-virtual-list.js';
 import { renderHotelListPreparingState } from './hotel-list-empty-state.js';
-import {
-  createHotelListRow,
-  renderHotelListView
-} from './hotel-list-table-renderer.js';
+import { createHotelListRow, renderHotelListView } from './hotel-list-table-renderer.js';
 import {
   cleanupHotelActionArtifacts,
   createHotelCard,
@@ -175,32 +166,6 @@ export function syncHotelNameFilterOptions(options = {}) {
 
 /* ---- 渲染主入口 ---- */
 
-function getSortedVisibleHotels() {
-  const sortMode = state.currentFilters.sortMode || DEFAULT_SORT_MODE;
-  const filtersKey = buildVisibleHotelsFiltersKey(state.currentFilters);
-
-  if (
-    visibleHotelsCache.data &&
-    visibleHotelsCache.hotelsVersion === state.hotelsVersion &&
-    visibleHotelsCache.filtersKey === filtersKey &&
-    visibleHotelsCache.sortMode === sortMode
-  ) {
-    visibleHotelsCache.hitCount += 1;
-    return visibleHotelsCache.data;
-  }
-
-  visibleHotelsCache.missCount += 1;
-  const filteredHotels = applyFiltersToHotels(state.hotels, state.currentFilters);
-  const sortedHotels = sortHotels(filteredHotels, sortMode);
-
-  visibleHotelsCache.data = sortedHotels;
-  visibleHotelsCache.hotelsVersion = state.hotelsVersion;
-  visibleHotelsCache.filtersKey = filtersKey;
-  visibleHotelsCache.sortMode = sortMode;
-
-  return sortedHotels;
-}
-
 configureHotelListSelection({ getSortedVisibleHotels });
 
 function updateVisibleHotelSummary(sortedHotels) {
@@ -208,13 +173,23 @@ function updateVisibleHotelSummary(sortedHotels) {
   const roomTypeCountElement = document.getElementById('roomTypeCount');
   if (!countElement || !roomTypeCountElement) return false;
 
-  const summary = getVisibleHotelSummary(sortedHotels);
+  const summary = getVisibleHotelListSummary(sortedHotels);
   countElement.textContent = String(summary.hotelCount);
   roomTypeCountElement.textContent = String(summary.roomTypeCount);
   return true;
 }
 
 function getRenderedHotelNodes(container) {
+  const nodeMap = state.renderedHotelNodeMap;
+  if (nodeMap instanceof Map) {
+    return Array.from(nodeMap.values()).filter(
+      (node) =>
+        node &&
+        node.dataset &&
+        (!container || typeof container.contains !== 'function' || container.contains(node))
+    );
+  }
+
   const selector = state.viewMode === 'list' ? '.hotel-table-row[data-id]' : '.hotel-card[data-id]';
   return Array.from(container.querySelectorAll(selector));
 }
@@ -285,6 +260,7 @@ export function patchHotelCards(changedIds, options = {}) {
       const existingNode = findRenderedHotelNode(container, id);
       if (existingNode) {
         existingNode.remove();
+        state.renderedHotelNodeMap?.delete?.(getSelectionKey(id));
         removedAny = true;
       }
     }
@@ -407,6 +383,7 @@ export function renderHotelList(options = {}) {
       const hasActiveFilters = Object.values(state.currentFilters).some(
         (value) => value !== undefined && value !== null && value !== ''
       );
+      state.renderedHotelNodeMap?.clear?.();
       const isFilterEmptyState = state.hotels.length > 0 && hasActiveFilters;
       const emptyAction = isFilterEmptyState ? 'clear-filters' : 'open-ai-assistant';
       const emptyActionText = isFilterEmptyState ? '清除筛选' : '打开采集助手';
@@ -422,19 +399,34 @@ export function renderHotelList(options = {}) {
     }
 
     container.innerHTML = '';
+    state.renderedHotelNodeMap?.clear?.();
     container.className = state.viewMode === 'list' ? 'hotel-list list-view' : 'hotel-list';
 
     try {
       const virtualScrollThreshold = getVirtualScrollThreshold(state.viewMode);
       if (shouldUseVirtualHotelList(sortedHotels.length, { threshold: virtualScrollThreshold })) {
         if (state.viewMode === 'list') {
-          renderVirtualHotelListView(container, sortedHotels, taskVersion, perfLabel, options.reason, {
-            finishHotelRender
-          });
+          renderVirtualHotelListView(
+            container,
+            sortedHotels,
+            taskVersion,
+            perfLabel,
+            options.reason,
+            {
+              finishHotelRender
+            }
+          );
         } else {
-          renderVirtualHotelCardGrid(container, sortedHotels, taskVersion, perfLabel, options.reason, {
-            finishHotelRender
-          });
+          renderVirtualHotelCardGrid(
+            container,
+            sortedHotels,
+            taskVersion,
+            perfLabel,
+            options.reason,
+            {
+              finishHotelRender
+            }
+          );
         }
         return;
       }
@@ -613,12 +605,12 @@ export function showHotelDetails(id) {
   content.push(getField('模板', hotel.template_info ? hotel.template_info.name : '-'));
   content.push(getField('收藏', hotel.is_favorite === 1 ? '是' : '否'));
 
+  setModalActive('hotelDetailsModal', true);
+
   const detailsEl = document.getElementById('hotelDetailsContent');
   if (detailsEl) {
     detailsEl.innerHTML = `<div class="hotel-details-grid">${content.join('')}</div>`;
   }
-
-  setModalActive('hotelDetailsModal', true);
 }
 
 export function closeHotelDetails() {
@@ -746,6 +738,8 @@ export function openRuleDeleteModal() {
     return;
   }
 
+  setModalActive(RULE_DELETE_MODAL_ID, true);
+
   const priceInput = getFormValueElement('ruleDeletePrice');
   const subwayInput = getFormValueElement('ruleDeleteSubwayDistance');
   const transportInput = getFormValueElement('ruleDeleteTransportTime');
@@ -754,7 +748,6 @@ export function openRuleDeleteModal() {
   if (transportInput) transportInput.value = '';
   resetRuleDeleteConfirmation();
 
-  setModalActive(RULE_DELETE_MODAL_ID, true);
   updateRuleDeletePreview();
 }
 

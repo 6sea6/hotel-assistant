@@ -53,6 +53,13 @@ function clearModules(paths) {
   }
 }
 
+function getListCollectorModulePaths() {
+  return [
+    require.resolve('../src/scraper/list-page-collector'),
+    require.resolve('../src/scraper/list-page-edge-capture')
+  ];
+}
+
 test('extractCtripUrlsFromInput accepts mixed pasted detail and list URLs', () => {
   const urls = extractCtripUrlsFromInput({
     text: [
@@ -683,8 +690,8 @@ test('captureListHtmlPagesWithEdge keeps scrolling while unique list candidates 
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
     killProcessTree: () => undefined
   });
-  const collectorPath = require.resolve('../src/scraper/list-page-collector');
-  delete require.cache[collectorPath];
+  const collectorModulePaths = getListCollectorModulePaths();
+  clearModules(collectorModulePaths);
 
   try {
     const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
@@ -715,7 +722,7 @@ test('captureListHtmlPagesWithEdge keeps scrolling while unique list candidates 
     assert.deepEqual([...seen], ['7001', '7002', '7003']);
     assert.equal(result.pages[0].scrollContainerCount, 1);
   } finally {
-    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+    clearModules([...collectorModulePaths, cdpUtilsPath, processUtilsPath]);
   }
 });
 
@@ -784,8 +791,8 @@ test('captureListHtmlPagesWithEdge returns candidate HTML without full document 
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
     killProcessTree: () => undefined
   });
-  const collectorPath = require.resolve('../src/scraper/list-page-collector');
-  delete require.cache[collectorPath];
+  const collectorModulePaths = getListCollectorModulePaths();
+  clearModules(collectorModulePaths);
 
   try {
     const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
@@ -812,7 +819,7 @@ test('captureListHtmlPagesWithEdge returns candidate HTML without full document 
       ['9301']
     );
   } finally {
-    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+    clearModules([...collectorModulePaths, cdpUtilsPath, processUtilsPath]);
   }
 });
 
@@ -908,8 +915,8 @@ test('captureListHtmlPagesWithEdge appends Ctrip list network responses to snaps
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
     killProcessTree: () => undefined
   });
-  const collectorPath = require.resolve('../src/scraper/list-page-collector');
-  delete require.cache[collectorPath];
+  const collectorModulePaths = getListCollectorModulePaths();
+  clearModules(collectorModulePaths);
 
   try {
     const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
@@ -933,7 +940,7 @@ test('captureListHtmlPagesWithEdge appends Ctrip list network responses to snaps
       ['9101']
     );
   } finally {
-    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+    clearModules([...collectorModulePaths, cdpUtilsPath, processUtilsPath]);
   }
 });
 
@@ -1028,8 +1035,8 @@ test('captureListHtmlPagesWithEdge appends Ctrip list API replay responses to sn
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
     killProcessTree: () => undefined
   });
-  const collectorPath = require.resolve('../src/scraper/list-page-collector');
-  delete require.cache[collectorPath];
+  const collectorModulePaths = getListCollectorModulePaths();
+  clearModules(collectorModulePaths);
 
   try {
     const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
@@ -1057,7 +1064,7 @@ test('captureListHtmlPagesWithEdge appends Ctrip list API replay responses to sn
       ['9201']
     );
   } finally {
-    clearModules([collectorPath, cdpUtilsPath, processUtilsPath]);
+    clearModules([...collectorModulePaths, cdpUtilsPath, processUtilsPath]);
   }
 });
 
