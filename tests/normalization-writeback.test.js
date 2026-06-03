@@ -200,7 +200,7 @@ test('settings normalization still fills defaults and removes deprecated fields'
 
   const settings = handlers['settings:getAll'](createTrustedIpcEvent());
 
-  assert.equal(settings.theme, 'oak-brown');
+  assert.equal(settings.theme, APP_CONFIG.STORE_DEFAULTS.settings.theme);
   assert.equal(settings.app_icon_file_name, '');
   assert.equal(settings.amapApiKey, 'custom-amap-key');
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'autoMatchTemplate'), false);

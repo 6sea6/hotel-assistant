@@ -7,7 +7,6 @@ const appIconManager = require('./app-icon-manager');
 
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
-  dark: 'oak-brown',
   'changing-mode': 'colorful-mode'
 });
 

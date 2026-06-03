@@ -9,7 +9,6 @@ const { hasNormalizedValueChanged } = require('../normalization-utils');
 
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
-  dark: 'oak-brown',
   'changing-mode': 'colorful-mode'
 });
 
@@ -101,16 +100,15 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
 
     if (
       Array.isArray(normalizedSettings.hotelCardVisibleFields) &&
-      (
-        (normalizedSettings.hotelCardVisibleFields.length === OLD_HOTEL_CARD_VISIBLE_FIELDS.length &&
-          OLD_HOTEL_CARD_VISIBLE_FIELDS.every(
-            (key, index) => normalizedSettings.hotelCardVisibleFields[index] === key
-          )) ||
-        (normalizedSettings.hotelCardVisibleFields.length === OLD_HOTEL_CARD_VISIBLE_FIELDS_V2.length &&
+      ((normalizedSettings.hotelCardVisibleFields.length === OLD_HOTEL_CARD_VISIBLE_FIELDS.length &&
+        OLD_HOTEL_CARD_VISIBLE_FIELDS.every(
+          (key, index) => normalizedSettings.hotelCardVisibleFields[index] === key
+        )) ||
+        (normalizedSettings.hotelCardVisibleFields.length ===
+          OLD_HOTEL_CARD_VISIBLE_FIELDS_V2.length &&
           OLD_HOTEL_CARD_VISIBLE_FIELDS_V2.every(
             (key, index) => normalizedSettings.hotelCardVisibleFields[index] === key
-          ))
-      )
+          )))
     ) {
       normalizedSettings.hotelCardVisibleFields = [
         ...APP_CONFIG.STORE_DEFAULTS.settings.hotelCardVisibleFields

@@ -44,7 +44,7 @@
 }
 
 .hotel-table-row.favorite {
-  background: rgba(255, 125, 0, 0.05);
+  background: var(--color-favorite-bg);
 }
 
 .hotel-table-row.favorite.selected {
@@ -157,7 +157,7 @@
 }
 
 .rank-badge.top3 {
-  background: linear-gradient(135deg, #ff7d00 0%, #ffb800 100%);
+  background: var(--gradient-rank-top);
   color: white;
 }
 
@@ -168,7 +168,7 @@
 }
 
 .hotel-table-row .hotel-name.favorite-name {
-  color: #ff7d00;
+  color: var(--color-favorite);
 }
 .hotel-table-row .hotel-original-room {
   font-size: 12px;
@@ -203,7 +203,7 @@
 
 .template-badge {
   display: inline-block;
-  background: #00b42a;
+  background: var(--color-template-badge);
   color: white;
   font-size: 11px;
   padding: 2px 6px;

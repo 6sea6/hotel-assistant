@@ -1,4 +1,31 @@
 :root {
+  --font-family-primary:
+    'Segoe UI', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-serif;
+  --font-family-mono: 'Courier New', Consolas, monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 24px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.6;
+  --line-height-relaxed: 1.75;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
   --primary-color: #6b8fb5;
   --primary-hover: #547899;
   --accent-color: #d49a63;
@@ -13,6 +40,43 @@
   --topbar-divider: transparent;
   --modal-divider-color: rgba(0, 0, 0, 0.5);
   --danger-color: #f53f3f;
+  --color-danger: var(--danger-color);
+  --color-danger-hover: #d93636;
+  --color-on-danger: #ffffff;
+  --color-success: #22c55e;
+  --color-success-text: #166534;
+  --color-on-success: #ffffff;
+  --color-warning: #ffb800;
+  --color-warning-hover: #ff9500;
+  --color-warning-text: #1d2129;
+  --color-info: #165dff;
+  --color-on-info: #ffffff;
+  --color-favorite: #ff7d00;
+  --color-favorite-border: #ffb800;
+  --color-favorite-bg: rgba(255, 125, 0, 0.05);
+  --color-template-badge: #00b42a;
+  --color-running: #2f80ed;
+  --color-pending: #7b8794;
+  --color-cancelled: #64748b;
+  --color-cancelled-muted: #94a3b8;
+  --color-rank-top-from: #ff7d00;
+  --color-rank-top-to: #ffb800;
+  --gradient-rank-top: linear-gradient(
+    135deg,
+    var(--color-rank-top-from) 0%,
+    var(--color-rank-top-to) 100%
+  );
+  --color-thanks-asagirl: #8a2be2;
+  --color-thanks-moli: #1677ff;
+  --gradient-thanks-sixpence: linear-gradient(
+    90deg,
+    #f97316,
+    #eab308,
+    #22c55e,
+    #06b6d4,
+    #6366f1,
+    #ec4899
+  );
   --bg-primary: #ffffff;
   --bg-secondary: #eef4f9;
   --bg-tertiary: #e4ecf4;
@@ -31,4 +95,9 @@
   --app-header-height: 72px;
   --transition-fast: 0.15s ease;
   --transition-normal: 0.3s ease;
+  --duration-motion-reduced: 0.01ms;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-color) 24%, transparent);
+  --z-dropdown: 2600;
+  --z-modal: 3000;
+  --z-notification: 10001;
 }

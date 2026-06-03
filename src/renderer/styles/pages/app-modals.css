@@ -32,13 +32,13 @@
   font-weight: 700;
 }
 .thanks-asagirl {
-  color: #8a2be2;
+  color: var(--color-thanks-asagirl);
 }
 .thanks-moli {
-  color: #1677ff;
+  color: var(--color-thanks-moli);
 }
 .thanks-sixpence {
-  background: linear-gradient(90deg, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899);
+  background: var(--gradient-thanks-sixpence);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

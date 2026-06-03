@@ -98,12 +98,16 @@ async function loadAiAssistantModules() {
   };
 }
 
-function createFakeElement(value = '') {
+function createFakeElement(value = '', tagName = 'div') {
   let textContentValue = '';
-  return {
+  const element = {
+    tagName: tagName.toUpperCase(),
     value,
     checked: false,
     maxLength: 4000,
+    children: [],
+    attributes: new Map(),
+    className: '',
     get innerHTML() {
       return textContentValue
         .replace(/&/g, '&amp;')
@@ -113,12 +117,15 @@ function createFakeElement(value = '') {
     },
     set innerHTML(v) {
       textContentValue = v;
+      element.children = [];
     },
     get textContent() {
-      return textContentValue;
+      if (textContentValue) return textContentValue;
+      return element.children.map((child) => child.textContent || '').join('');
     },
     set textContent(v) {
       textContentValue = String(v == null ? '' : v);
+      element.children = [];
     },
     dataset: {},
     options: [],
@@ -128,10 +135,37 @@ function createFakeElement(value = '') {
       remove() {},
       toggle() {}
     },
-    setAttribute() {},
-    appendChild() {},
+    setAttribute(name, v) {
+      element.attributes.set(name, String(v));
+    },
+    getAttribute(name) {
+      return element.attributes.get(name) || null;
+    },
+    appendChild(child) {
+      element.children.push(child);
+      child.parentNode = element;
+      return child;
+    },
+    addEventListener() {},
+    querySelector(selector) {
+      if (selector.startsWith('.')) {
+        const className = selector.slice(1);
+        return (
+          element.children.find((child) =>
+            String(child.className || '')
+              .split(/\s+/)
+              .includes(className)
+          ) || null
+        );
+      }
+      return (
+        element.children.find((child) => String(child.tagName || '').toLowerCase() === selector) ||
+        null
+      );
+    },
     remove() {}
   };
+  return element;
 }
 
 function installAiAssistantDom(inputUrl = '') {
@@ -171,8 +205,8 @@ function installAiAssistantDom(inputUrl = '') {
     querySelectorAll(selector) {
       return selector === '[data-star-level]' ? starButtons : [];
     },
-    createElement() {
-      return createFakeElement();
+    createElement(tagName) {
+      return createFakeElement('', tagName);
     },
     body: {
       appendChild(element) {
@@ -757,7 +791,11 @@ test('cancelled collection only shows one cancellation notification', async () =
   rejectStartTask(new Error('任务已取消'));
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  const cancelNotifications = notifications.filter((item) => item.textContent === '采集任务已取消');
+  const getNotificationMessage = (item) =>
+    item.querySelector?.('.notification-message')?.textContent || item.textContent;
+  const cancelNotifications = notifications.filter(
+    (item) => getNotificationMessage(item) === '采集任务已取消'
+  );
   assert.equal(cancelNotifications.length, 1);
   assert.equal(state.aiTaskQueue[0].status, 'cancelled');
 });

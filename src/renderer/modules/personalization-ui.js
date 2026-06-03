@@ -25,7 +25,6 @@ const getFormValueElement = (id) => /** @type {PersonalizationFormValueElement|n
 
 const THEME_ALIAS_MAP = Object.freeze({
   light: 'cloud-white',
-  dark: 'oak-brown',
   'changing-mode': 'colorful-mode'
 });
 

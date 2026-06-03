@@ -23,7 +23,7 @@
   transform: translateY(-2px);
 }
 .hotel-card.favorite {
-  border-color: #ffb800;
+  border-color: var(--color-favorite-border);
 }
 
 .hotel-card-header {
@@ -133,11 +133,11 @@
 }
 
 .hotel-rank.top3 {
-  background: linear-gradient(135deg, #ff7d00 0%, #ffb800 100%);
+  background: var(--gradient-rank-top);
 }
 
 .hotel-template-badge {
-  background: #00b42a;
+  background: var(--color-template-badge);
   color: white;
   font-weight: 500;
   padding: 4px 10px;
@@ -166,7 +166,7 @@
 }
 
 .hotel-name.favorite-name {
-  color: #ff7d00;
+  color: var(--color-favorite);
 }
 
 .hotel-meta-row {

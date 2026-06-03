@@ -421,12 +421,12 @@
   height: 8px;
   margin-right: 6px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--color-success);
 }
 
 .task-queue-status-completed .task-queue-badge {
-  color: #166534;
-  background: color-mix(in srgb, #22c55e 12%, var(--bg-primary));
+  color: var(--color-success-text);
+  background: color-mix(in srgb, var(--color-success) 12%, var(--bg-primary));
 }
 
 .task-queue-status-failed,
@@ -802,8 +802,8 @@
 }
 
 .task-progress-stat-icon-done {
-  color: #22c55e;
-  fill: #22c55e;
+  color: var(--color-success);
+  fill: var(--color-success);
 }
 
 .task-progress-stat-icon-done path {
@@ -812,7 +812,7 @@
 }
 
 .task-progress-stat-icon-running {
-  color: #2f80ed;
+  color: var(--color-running);
 }
 
 .loading-icon {
@@ -821,7 +821,7 @@
 }
 
 .task-progress-stat-icon-pending {
-  color: #7b8794;
+  color: var(--color-pending);
 }
 
 .task-timeline {
@@ -889,8 +889,8 @@
 }
 
 .task-step-success .task-step-marker {
-  border-color: #22c55e;
-  background: #22c55e;
+  border-color: var(--color-success);
+  background: var(--color-success);
 }
 
 .task-step-success .task-step-marker::before {
@@ -944,8 +944,8 @@
 }
 
 .task-step-cancelled .task-step-marker {
-  border-color: #94a3b8;
-  background: #94a3b8;
+  border-color: var(--color-cancelled-muted);
+  background: var(--color-cancelled-muted);
 }
 
 .task-step-cancelled .task-step-marker::before {
@@ -1002,12 +1002,12 @@
 }
 
 .task-result-hero-success {
-  background: color-mix(in srgb, #22c55e 8%, var(--bg-primary));
-  border-color: color-mix(in srgb, #22c55e 25%, var(--border-color));
+  background: color-mix(in srgb, var(--color-success) 8%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--color-success) 25%, var(--border-color));
 }
 
 .task-result-hero-success > span {
-  background: #22c55e;
+  background: var(--color-success);
 }
 
 .task-result-hero-running {
@@ -1031,12 +1031,12 @@
 }
 
 .task-result-hero-cancelled {
-  background: color-mix(in srgb, #64748b 7%, var(--bg-primary));
-  border-color: color-mix(in srgb, #64748b 24%, var(--border-color));
+  background: color-mix(in srgb, var(--color-cancelled) 7%, var(--bg-primary));
+  border-color: color-mix(in srgb, var(--color-cancelled) 24%, var(--border-color));
 }
 
 .task-result-hero-cancelled > span {
-  background: #64748b;
+  background: var(--color-cancelled);
 }
 
 .task-result-grid {

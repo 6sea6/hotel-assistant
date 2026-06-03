@@ -25,36 +25,92 @@
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 10001;
+  z-index: var(--z-notification);
   min-width: 220px;
   max-width: 360px;
-  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
   border-radius: 10px;
-  color: #fff;
+  color: var(--notification-text, var(--color-on-info));
+  background: var(--notification-bg, var(--color-info));
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
   animation: slideInRight 0.22s ease;
   white-space: pre-line;
+  font-family: var(--font-family-primary);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
 }
 
 .notification-info {
-  background: #165dff;
+  --notification-bg: var(--color-info);
+  --notification-text: var(--color-on-info);
 }
 .notification-success {
-  background: #00b42a;
+  --notification-bg: var(--color-success);
+  --notification-text: var(--color-on-success);
 }
 .notification-warning {
-  background: #ffb800;
-  color: #1d2129;
+  --notification-bg: var(--color-warning);
+  --notification-text: var(--color-warning-text);
 }
 .notification-error {
-  background: #f53f3f;
+  --notification-bg: var(--color-danger);
+  --notification-text: var(--color-on-danger);
+}
+
+.notification-icon {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--notification-bg, var(--color-info));
+  background: color-mix(in srgb, var(--notification-text, #fff) 92%, transparent);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-extrabold);
+  line-height: 1;
+}
+
+.notification-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-close {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: currentColor;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  opacity: 0.74;
+  transition:
+    background var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.notification-close:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  opacity: 1;
+}
+
+.notification-close:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 .notification-leave {
   animation: slideOutRight 0.22s ease forwards;
-}
-
-.notification {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
 }
