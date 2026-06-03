@@ -83,38 +83,82 @@ test('renderer CSS defines keyboard focus and reduced motion safeguards', () => 
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
 });
 
+test('modal layering uses z-index tokens without inline overrides', () => {
+  const modalCss = readStyleFile('components/modal-form.css');
+  const uiUtils = readProjectFile('src/renderer/modules/ui-utils.js');
+
+  assert.match(modalCss, /\.modal\s*{[\s\S]*z-index:\s*var\(--z-modal\)/);
+  assert.doesNotMatch(uiUtils, /style\.zIndex\s*=/);
+  assert.doesNotMatch(uiUtils, /['"]1000['"]/);
+  assert.doesNotMatch(uiUtils, /['"]3001['"]/);
+});
+
 class FakeClassList {
   constructor(owner) {
     this.owner = owner;
     this.values = new Set();
   }
 
+  syncFromOwner() {
+    this.values = new Set(
+      String(this.owner.className || '')
+        .split(/\s+/)
+        .filter(Boolean)
+    );
+  }
+
   add(...names) {
+    this.syncFromOwner();
     names.forEach((name) => this.values.add(name));
     this.owner.className = [...this.values].join(' ');
   }
 
   remove(...names) {
+    this.syncFromOwner();
     names.forEach((name) => this.values.delete(name));
     this.owner.className = [...this.values].join(' ');
   }
 
   contains(name) {
+    this.syncFromOwner();
     return this.values.has(name);
+  }
+
+  toggle(name, force) {
+    this.syncFromOwner();
+    const shouldAdd = force === undefined ? !this.values.has(name) : Boolean(force);
+    if (shouldAdd) {
+      this.values.add(name);
+    } else {
+      this.values.delete(name);
+    }
+    this.owner.className = [...this.values].join(' ');
+    return shouldAdd;
   }
 }
 
 class FakeElement {
-  constructor(tagName) {
+  constructor(tagName, ownerDocument = null) {
     this.tagName = tagName.toUpperCase();
     this.children = [];
     this.attributes = new Map();
     this.dataset = {};
+    this.ownerDocument = ownerDocument;
+    this.parentNode = null;
+    this.id = '';
     this.className = '';
     this.classList = new FakeClassList(this);
     this.textContent = '';
     this.eventListeners = new Map();
     this.removed = false;
+    this.disabled = false;
+    this.hidden = false;
+    this.tabIndex = 0;
+    this.style = {
+      removeProperty(name) {
+        delete this[name.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase())];
+      }
+    };
   }
 
   appendChild(child) {
@@ -125,29 +169,182 @@ class FakeElement {
 
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
+    if (name === 'id') {
+      this.id = String(value);
+    }
+    if (name === 'tabindex') {
+      this.tabIndex = Number(value);
+    }
   }
 
   getAttribute(name) {
     return this.attributes.get(name) || null;
   }
 
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
   addEventListener(name, callback) {
     this.eventListeners.set(name, callback);
+  }
+
+  removeEventListener(name, callback) {
+    if (!callback || this.eventListeners.get(name) === callback) {
+      this.eventListeners.delete(name);
+    }
+  }
+
+  dispatchEvent(event) {
+    const callback = this.eventListeners.get(event.type);
+    if (callback) callback(event);
+  }
+
+  focus() {
+    if (this.ownerDocument) {
+      this.ownerDocument.activeElement = this;
+    }
+  }
+
+  select() {
+    this.selected = true;
+  }
+
+  contains(node) {
+    if (node === this) return true;
+    return this.children.some((child) => child.contains?.(node));
   }
 
   remove() {
     this.removed = true;
   }
 
-  querySelector(selector) {
-    if (selector.startsWith('.')) {
-      const className = selector.slice(1);
-      return (
-        this.children.find((child) => child.className.split(/\s+/).includes(className)) || null
+  querySelectorAll(selector) {
+    const descendants = [];
+    const walk = (node) => {
+      node.children.forEach((child) => {
+        descendants.push(child);
+        walk(child);
+      });
+    };
+    walk(this);
+
+    if (selector.includes(',')) {
+      return descendants.filter((child) => child.isFocusableCandidate?.());
+    }
+    if (selector === '.modal-header h2') {
+      return descendants.filter(
+        (child) =>
+          child.tagName === 'H2' &&
+          child.parentNode?.className.split(/\s+/).includes('modal-header')
       );
     }
-    return this.children.find((child) => child.tagName.toLowerCase() === selector) || null;
+    if (selector === '*') {
+      return descendants;
+    }
+    if (selector.startsWith('.')) {
+      const classes = selector.slice(1).split('.').filter(Boolean);
+      return descendants.filter((child) =>
+        classes.every((className) => child.className.split(/\s+/).includes(className))
+      );
+    }
+    return descendants.filter((child) => child.tagName.toLowerCase() === selector);
   }
+
+  querySelector(selector) {
+    if (selector.startsWith('#')) {
+      return this.querySelectorAll('*').find((child) => child.id === selector.slice(1)) || null;
+    }
+    return this.querySelectorAll(selector)[0] || null;
+  }
+
+  isFocusableCandidate() {
+    if (this.disabled || this.hidden || this.getAttribute('aria-hidden') === 'true') return false;
+    const focusableTags = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A']);
+    if (focusableTags.has(this.tagName)) return true;
+    return this.getAttribute('tabindex') !== null && this.tabIndex >= 0;
+  }
+}
+
+class FakeDocument {
+  constructor() {
+    this.body = new FakeElement('body', this);
+    this.activeElement = this.body;
+  }
+
+  createElement(tagName) {
+    return new FakeElement(tagName, this);
+  }
+
+  getElementById(id) {
+    return this.body.querySelectorAll('*').find((child) => child.id === id) || null;
+  }
+
+  querySelector(selector) {
+    if (selector === '.modal.active') {
+      return (
+        this.body
+          .querySelectorAll('.modal')
+          .find((modal) => modal.className.split(/\s+/).includes('active')) || null
+      );
+    }
+    return this.body.querySelector(selector);
+  }
+}
+
+async function loadUiUtilsModule() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-ui-utils-'));
+  const sourceDir = path.join(projectRoot, 'src', 'renderer', 'modules');
+  fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
+  [
+    'dom-helpers.js',
+    'modal-templates.js',
+    'render-scheduler.js',
+    'state.js',
+    'ui-utils.js'
+  ].forEach((fileName) => {
+    fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+  });
+
+  const moduleUrl = pathToFileURL(path.join(tempRoot, 'ui-utils.js')).href;
+  const module = await import(moduleUrl);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  return module;
+}
+
+function createModalFixture(document) {
+  const trigger = document.createElement('button');
+  trigger.id = 'openSettings';
+
+  const modal = document.createElement('div');
+  modal.id = 'settingsModal';
+  modal.className = 'modal';
+
+  const content = document.createElement('div');
+  content.className = 'modal-content';
+
+  const header = document.createElement('div');
+  header.className = 'modal-header';
+
+  const title = document.createElement('h2');
+  title.textContent = '设置';
+
+  const closeButton = document.createElement('button');
+  closeButton.className = 'modal-close';
+
+  const input = document.createElement('input');
+  input.id = 'settingsInput';
+
+  header.appendChild(title);
+  header.appendChild(closeButton);
+  content.appendChild(header);
+  content.appendChild(input);
+  modal.appendChild(content);
+  document.body.appendChild(trigger);
+  document.body.appendChild(modal);
+  trigger.focus();
+
+  return { trigger, modal, content, title, closeButton, input };
 }
 
 async function loadNotificationModule() {
@@ -163,6 +360,69 @@ async function loadNotificationModule() {
   fs.rmSync(tempRoot, { recursive: true, force: true });
   return module;
 }
+
+test('modal activation applies dialog semantics traps focus and restores the trigger', async (t) => {
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const originalRequestAnimationFrame = global.requestAnimationFrame;
+  const originalSetTimeout = global.setTimeout;
+  const fakeDocument = new FakeDocument();
+  const { trigger, modal, content, title, closeButton, input } = createModalFixture(fakeDocument);
+
+  global.document = fakeDocument;
+  global.window = { setTimeout: global.setTimeout, clearTimeout: global.clearTimeout };
+  global.requestAnimationFrame = (callback) => callback();
+  global.setTimeout = (callback) => {
+    callback();
+    return 1;
+  };
+  t.after(() => {
+    global.document = originalDocument;
+    global.window = originalWindow;
+    global.requestAnimationFrame = originalRequestAnimationFrame;
+    global.setTimeout = originalSetTimeout;
+  });
+
+  const { setModalActive } = await loadUiUtilsModule();
+  setModalActive('settingsModal', true);
+
+  assert.equal(modal.getAttribute('role'), 'dialog');
+  assert.equal(modal.getAttribute('aria-modal'), 'true');
+  assert.equal(modal.getAttribute('aria-labelledby'), title.id);
+  assert.equal(content.getAttribute('tabindex'), '-1');
+  assert.equal(modal.style.display, 'flex');
+  assert.equal(modal.style.zIndex, undefined);
+  assert.equal(fakeDocument.activeElement, closeButton);
+
+  input.focus();
+  let prevented = false;
+  modal.dispatchEvent({
+    type: 'keydown',
+    key: 'Tab',
+    shiftKey: false,
+    preventDefault() {
+      prevented = true;
+    }
+  });
+  assert.equal(prevented, true);
+  assert.equal(fakeDocument.activeElement, closeButton);
+
+  prevented = false;
+  modal.dispatchEvent({
+    type: 'keydown',
+    key: 'Tab',
+    shiftKey: true,
+    preventDefault() {
+      prevented = true;
+    }
+  });
+  assert.equal(prevented, true);
+  assert.equal(fakeDocument.activeElement, input);
+
+  setModalActive('settingsModal', false);
+  assert.equal(fakeDocument.activeElement, trigger);
+  assert.equal(modal.eventListeners.has('keydown'), false);
+});
 
 test('notifications expose status semantics and a close control', async (t) => {
   const originalDocument = global.document;
