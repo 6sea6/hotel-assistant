@@ -14,6 +14,8 @@
 # Local application data
 /宾馆比较助手/
 **/hotel-data.json
+/.workbuddy/
+/deliverables/
 
 # Scraper/runtime outputs
 /output/
