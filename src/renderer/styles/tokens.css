@@ -97,6 +97,11 @@
   --transition-normal: 0.3s ease;
   --duration-motion-reduced: 0.01ms;
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-color) 24%, transparent);
+  --field-focus-border: var(--primary-color);
+  --field-focus-bg: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-secondary) 8%);
+  --field-focus-shadow:
+    0 0 0 3px color-mix(in srgb, var(--primary-color) 24%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--primary-color) 14%, transparent);
   --z-dropdown: 2600;
   --z-modal: 3000;
   --z-notification: 10001;

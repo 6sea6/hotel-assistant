@@ -15,6 +15,16 @@ function readStyleFile(relativePath) {
   return readProjectFile(path.posix.join('src/renderer/styles', relativePath));
 }
 
+function readCssRuleBlock(css, selector) {
+  const selectorIndex = css.indexOf(selector);
+  assert.notEqual(selectorIndex, -1, `missing selector: ${selector}`);
+  const blockStart = css.indexOf('{', selectorIndex);
+  const blockEnd = css.indexOf('}', blockStart);
+  assert.notEqual(blockStart, -1, `missing block start for selector: ${selector}`);
+  assert.notEqual(blockEnd, -1, `missing block end for selector: ${selector}`);
+  return css.slice(blockStart + 1, blockEnd);
+}
+
 test('theme aliases no longer expose a dark theme that maps to oak brown', () => {
   const themeFiles = [
     'src/main/window-manager.js',
@@ -81,6 +91,45 @@ test('renderer CSS defines keyboard focus and reduced motion safeguards', () => 
 
   assert.match(css, /:focus-visible/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+});
+
+test('form controls use the soft selected field focus treatment', () => {
+  const tokens = readStyleFile('tokens.css');
+  const appShell = readStyleFile('components/app-shell.css');
+  const customSelect = readStyleFile('components/custom-select.css');
+  const prefilter = readStyleFile('pages/settings-prefilter.css');
+
+  assert.match(tokens, /--field-focus-border\s*:/);
+  assert.match(tokens, /--field-focus-bg\s*:/);
+  assert.match(tokens, /--field-focus-shadow\s*:/);
+
+  const inputFocus = readCssRuleBlock(appShell, '.input:focus,\n.input:focus-visible');
+  assert.match(inputFocus, /outline:\s*none/);
+  assert.match(inputFocus, /border-color:\s*var\(--field-focus-border\)/);
+  assert.match(inputFocus, /background:\s*var\(--field-focus-bg\)/);
+  assert.match(inputFocus, /box-shadow:\s*var\(--field-focus-shadow\)/);
+
+  const keyboardFocusSelector = appShell.match(/\.btn:focus-visible,[\s\S]*?{/);
+  assert.ok(keyboardFocusSelector);
+  assert.doesNotMatch(keyboardFocusSelector[0], /\.input:focus-visible/);
+
+  const customSelectFocus = readCssRuleBlock(
+    customSelect,
+    '.custom-select.is-open .custom-select-button,\n.ai-template-picker.is-open .ai-template-picker-button,\n.custom-select-button:focus-visible,\n.ai-template-picker-button:focus-visible'
+  );
+  assert.match(customSelectFocus, /outline:\s*none/);
+  assert.match(customSelectFocus, /border-color:\s*var\(--field-focus-border\)/);
+  assert.match(customSelectFocus, /background:\s*var\(--field-focus-bg\)/);
+  assert.match(customSelectFocus, /box-shadow:\s*var\(--field-focus-shadow\)/);
+
+  const prefilterFocus = readCssRuleBlock(
+    prefilter,
+    '.prefilter-input:focus,\n.prefilter-input:focus-visible'
+  );
+  assert.match(prefilterFocus, /outline:\s*none/);
+  assert.match(prefilterFocus, /border-color:\s*var\(--field-focus-border\)/);
+  assert.match(prefilterFocus, /background:\s*var\(--field-focus-bg\)/);
+  assert.match(prefilterFocus, /box-shadow:\s*var\(--field-focus-shadow\)/);
 });
 
 test('modal layering uses z-index tokens without inline overrides', () => {

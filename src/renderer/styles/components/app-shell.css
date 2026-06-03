@@ -359,18 +359,22 @@ body.platform-windows .window-controls {
   font-size: 14px;
   color: var(--text-primary);
   background: var(--bg-primary);
-  transition: all var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
-.input:focus {
+.input:focus,
+.input:focus-visible {
   outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 16%, transparent);
+  border-color: var(--field-focus-border);
+  background: var(--field-focus-bg);
+  box-shadow: var(--field-focus-shadow);
 }
 
 .btn:focus-visible,
 .window-control-btn:focus-visible,
-.input:focus-visible,
 .sort-mode-option:has(input:focus-visible),
 .weight-item input[type='range']:focus-visible {
   outline: 2px solid var(--primary-color);

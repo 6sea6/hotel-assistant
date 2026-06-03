@@ -46,9 +46,14 @@
   transform: rotate(180deg);
 }
 
-.custom-select.is-open .custom-select-button {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 24%, transparent);
+.custom-select.is-open .custom-select-button,
+.ai-template-picker.is-open .ai-template-picker-button,
+.custom-select-button:focus-visible,
+.ai-template-picker-button:focus-visible {
+  outline: none;
+  border-color: var(--field-focus-border);
+  background: var(--field-focus-bg);
+  box-shadow: var(--field-focus-shadow);
 }
 
 .custom-select-menu,

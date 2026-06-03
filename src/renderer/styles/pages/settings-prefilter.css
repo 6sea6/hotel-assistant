@@ -232,6 +232,14 @@
   background: var(--bg-primary);
 }
 
+.prefilter-input:focus,
+.prefilter-input:focus-visible {
+  outline: none;
+  border-color: var(--field-focus-border);
+  background: var(--field-focus-bg);
+  box-shadow: var(--field-focus-shadow);
+}
+
 .prefilter-input::placeholder {
   color: var(--text-disabled);
 }
