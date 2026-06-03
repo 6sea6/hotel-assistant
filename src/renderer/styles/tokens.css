@@ -38,7 +38,6 @@
   --topbar-button-hover: rgba(255, 255, 255, 0.26);
   --topbar-button-border: rgba(255, 255, 255, 0.22);
   --topbar-divider: transparent;
-  --modal-divider-color: rgba(0, 0, 0, 0.5);
   --danger-color: #f53f3f;
   --color-danger: var(--danger-color);
   --color-danger-hover: #d93636;

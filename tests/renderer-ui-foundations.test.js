@@ -142,6 +142,17 @@ test('modal layering uses z-index tokens without inline overrides', () => {
   assert.doesNotMatch(uiUtils, /['"]3001['"]/);
 });
 
+test('modal overlay does not draw a divider between header and main content', () => {
+  const tokens = readStyleFile('tokens.css');
+  const modalCss = readStyleFile('components/modal-form.css');
+  const modalOverlay = readCssRuleBlock(modalCss, '.modal::before');
+
+  assert.doesNotMatch(tokens, /--modal-divider-color\s*:/);
+  assert.doesNotMatch(modalOverlay, /linear-gradient/);
+  assert.doesNotMatch(modalOverlay, /--modal-divider-color/);
+  assert.match(modalOverlay, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.5\)/);
+});
+
 class FakeClassList {
   constructor(owner) {
     this.owner = owner;

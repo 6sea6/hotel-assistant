@@ -17,15 +17,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background:
-    linear-gradient(
-      to bottom,
-      var(--modal-divider-color) 0,
-      var(--modal-divider-color) 1px,
-      transparent 1px,
-      transparent 100%
-    ),
-    rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .modal.active {
