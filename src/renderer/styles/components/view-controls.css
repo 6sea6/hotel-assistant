@@ -1,8 +1,68 @@
-/* 视图切换按钮 */
+/* 视图切换控件 */
 .view-controls {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.view-mode-segmented {
+  appearance: none;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-primary) 88%, var(--bg-tertiary) 12%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.view-mode-option {
+  min-width: 72px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.view-mode-segmented:hover .view-mode-option:not(.is-active) {
+  background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+  color: var(--primary-color);
+}
+
+.view-mode-option.is-active {
+  background: var(--primary-color);
+  color: #ffffff;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--primary-color) 22%, transparent);
+}
+
+.view-mode-segmented:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+.view-mode-option-icon {
+  font-size: 14px;
+  line-height: 1;
 }
 
 .btn-icon {

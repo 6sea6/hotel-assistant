@@ -42,6 +42,8 @@ import {
   handleHotelDetailsClick,
   closeHotelDetails,
   toggleViewMode,
+  setViewModeChoice,
+  syncViewModeControls,
   openRuleDeleteModal,
   closeRuleDeleteModal,
   updateRuleDeletePreview,
@@ -196,6 +198,7 @@ const ACTION_HANDLERS = {
   'refresh-current-page': () => refreshCurrentPage(),
   'open-rule-delete': () => openRuleDeleteModal(),
   'confirm-batch-delete': () => confirmBatchDelete(),
+  'set-view-mode': (_event, element) => setViewModeChoice(element.dataset.viewMode),
   'close-hotel-modal': () => closeHotelModal(),
   'save-hotel': () => saveHotel(),
   'close-rule-delete': () => closeRuleDeleteModal(),
@@ -473,6 +476,7 @@ async function initializeApp() {
       updateTemplateFilter();
       installHotelScrollRestorePatch();
       renderHotelList();
+      syncViewModeControls();
       setupEventListeners();
       setupMenuListeners();
       setupTemplateSyncListener();

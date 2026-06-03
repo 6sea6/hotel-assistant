@@ -222,29 +222,79 @@ export function closeHotelDetails() {
 
 /* ---- 视图切换 ---- */
 
-export function toggleViewMode() {
-  setViewMode(state.viewMode === 'card' ? 'list' : 'card');
+function normalizeViewModeChoice(viewMode) {
+  return viewMode === 'list' ? 'list' : 'card';
+}
 
-  const viewIcon = document.getElementById('viewIcon');
-  const viewText = document.getElementById('viewText');
+export function syncViewModeControls() {
+  const toggleButton = $('viewModeToggle');
+  const cardOption = $('viewModeCardOption');
+  const listOption = $('viewModeListOption');
+  const activeMode = normalizeViewModeChoice(state.viewMode);
+
+  if (toggleButton) {
+    toggleButton.setAttribute(
+      'aria-label',
+      activeMode === 'list'
+        ? '视图模式，当前表格，点击切换为卡片'
+        : '视图模式，当前卡片，点击切换为表格'
+    );
+  }
+
+  [
+    [cardOption, 'card'],
+    [listOption, 'list']
+  ].forEach(([option, mode]) => {
+    if (!option) return;
+    const isActive = activeMode === mode;
+    option.classList.toggle('is-active', isActive);
+    option.setAttribute('aria-current', isActive ? 'true' : 'false');
+  });
+
   const batchDeleteBtn = $('batchDeleteBtn');
   const ruleDeleteBtn = $('ruleDeleteBtn');
 
-  if (state.viewMode === 'list') {
-    if (viewIcon) viewIcon.textContent = '📝';
-    if (viewText) viewText.textContent = '行式';
-    if (batchDeleteBtn) batchDeleteBtn.style.display = 'inline-flex';
-    if (ruleDeleteBtn) ruleDeleteBtn.style.display = 'none';
+  if (activeMode === 'list') {
+    if (batchDeleteBtn) {
+      batchDeleteBtn.hidden = false;
+      batchDeleteBtn.style.display = 'inline-flex';
+    }
+    if (ruleDeleteBtn) {
+      ruleDeleteBtn.hidden = true;
+      ruleDeleteBtn.style.display = 'none';
+    }
   } else {
-    if (viewIcon) viewIcon.textContent = '🛏️';
-    if (viewText) viewText.textContent = '卡片';
-    if (batchDeleteBtn) batchDeleteBtn.style.display = 'none';
-    if (ruleDeleteBtn) ruleDeleteBtn.style.display = 'inline-flex';
+    if (batchDeleteBtn) {
+      batchDeleteBtn.hidden = true;
+      batchDeleteBtn.style.display = 'none';
+    }
+    if (ruleDeleteBtn) {
+      ruleDeleteBtn.hidden = false;
+      ruleDeleteBtn.style.display = 'inline-flex';
+    }
+  }
+}
+
+export function setViewModeChoice(viewMode) {
+  const nextMode = normalizeViewModeChoice(viewMode);
+  if (state.viewMode === nextMode) {
+    syncViewModeControls();
+    return;
+  }
+
+  setViewMode(nextMode);
+
+  if (nextMode === 'card') {
     clearSelectedHotels();
   }
 
+  syncViewModeControls();
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
   requestHotelListRender({ reason: 'view-mode-change', forceFull: true });
+}
+
+export function toggleViewMode() {
+  setViewModeChoice(state.viewMode === 'card' ? 'list' : 'card');
 }
 
 /* ---- 筛选 UI ---- */

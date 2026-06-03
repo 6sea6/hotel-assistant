@@ -172,11 +172,30 @@
             >
             <div class="view-controls">
               <button
-                id="viewToggle"
-                class="btn btn-secondary btn-sm"
+                id="viewModeToggle"
+                class="view-mode-segmented"
+                type="button"
                 data-action="toggle-view-mode"
+                aria-label="视图模式，当前卡片，点击切换为表格"
               >
-                <span id="viewIcon">🛏️</span> <span id="viewText">卡片</span>
+                <span
+                  id="viewModeCardOption"
+                  class="view-mode-option is-active"
+                  data-view-mode="card"
+                  aria-current="true"
+                >
+                  <span class="view-mode-option-icon" aria-hidden="true">🛏️</span>
+                  <span>卡片</span>
+                </span>
+                <span
+                  id="viewModeListOption"
+                  class="view-mode-option"
+                  data-view-mode="list"
+                  aria-current="false"
+                >
+                  <span class="view-mode-option-icon" aria-hidden="true">📝</span>
+                  <span>表格</span>
+                </span>
               </button>
               <button
                 id="ruleDeleteBtn"
@@ -188,7 +207,7 @@
               <button
                 id="batchDeleteBtn"
                 class="btn btn-danger btn-sm"
-                style="display: none"
+                hidden
                 data-action="confirm-batch-delete"
               >
                 <span>🗑️</span> 删除选中

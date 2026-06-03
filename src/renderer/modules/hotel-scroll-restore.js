@@ -60,8 +60,9 @@ function getVirtualViewMode(scrollContainer) {
  * @returns {{id: string|null, rank: number}}
  */
 function getCurrentAnchor(scrollContainer) {
-  const items = Array.from(scrollContainer.querySelectorAll(VIRTUAL_ITEM_SELECTOR))
-    .filter((item) => item instanceof HTMLElement);
+  const items = Array.from(scrollContainer.querySelectorAll(VIRTUAL_ITEM_SELECTOR)).filter(
+    (item) => item instanceof HTMLElement
+  );
 
   if (!items.length) {
     return { id: null, rank: 0 };
@@ -69,7 +70,9 @@ function getCurrentAnchor(scrollContainer) {
 
   const middleIndex = Math.floor(items.length / 2);
   const anchor = /** @type {HTMLElement} */ (items[middleIndex] || items[0]);
-  const renderedIndex = Number(anchor.querySelector('.hotel-rank, .rank-badge')?.textContent?.replace('#', ''));
+  const renderedIndex = Number(
+    anchor.querySelector('.hotel-rank, .rank-badge')?.textContent?.replace('#', '')
+  );
 
   return {
     id: anchor.dataset.id || null,
@@ -180,8 +183,14 @@ function resetViewModeScrollMemory() {
 
 function handleViewModeToggleReset(event) {
   const target = event.target instanceof Element ? event.target : null;
-  const actionElement = target?.closest('[data-action="toggle-view-mode"]');
+  const actionElement = target?.closest(
+    '[data-action="toggle-view-mode"], [data-action="set-view-mode"]'
+  );
   if (!actionElement) return;
+
+  const requestedMode = actionElement.dataset.viewMode;
+  if (requestedMode && requestedMode === state.viewMode) return;
+
   resetViewModeScrollMemory();
 }
 
@@ -212,7 +221,9 @@ export function installHotelScrollRestorePatch() {
   if (typeof originalRenderHotelList === 'function') {
     actions.renderHotelList = (options = {}) => {
       const opts = /** @type {Record<string, unknown>} */ (options);
-      const { snapshot, shouldRestore } = captureForRenderReason(typeof opts.reason === 'string' ? opts.reason : undefined);
+      const { snapshot, shouldRestore } = captureForRenderReason(
+        typeof opts.reason === 'string' ? opts.reason : undefined
+      );
       originalRenderHotelList(options);
       if (shouldRestore) scheduleRestore(snapshot);
     };
