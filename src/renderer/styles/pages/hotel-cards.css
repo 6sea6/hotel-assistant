@@ -48,10 +48,51 @@
 .hotel-card-header-main {
   display: grid;
   gap: 4px;
+  padding-right: 44px;
 }
 
 .hotel-card-header-main .hotel-name {
   margin-bottom: 0;
+  padding-right: 0;
+}
+
+.hotel-favorite-star {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+  transition:
+    color var(--transition-fast),
+    text-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.hotel-favorite-star:hover {
+  color: var(--color-favorite);
+  text-shadow: 0 1px 6px color-mix(in srgb, var(--color-favorite) 26%, transparent);
+}
+
+.hotel-favorite-star.is-active {
+  color: var(--color-favorite);
+  text-shadow: 0 1px 6px color-mix(in srgb, var(--color-favorite) 22%, transparent);
+}
+
+.hotel-favorite-star:focus-visible {
+  outline: 2px solid var(--color-favorite-border);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+.hotel-favorite-star:active {
+  transform: scale(0.96);
 }
 
 .hotel-card-header-meta {
@@ -120,10 +161,17 @@
   }
 }
 
-.hotel-rank {
+.hotel-card-corner {
   position: absolute;
   top: -1px;
   right: -1px;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.hotel-rank {
   background: var(--primary-color);
   color: white;
   font-weight: 600;
@@ -163,10 +211,6 @@
   margin-bottom: 4px;
   padding-right: 50px;
   min-width: 0;
-}
-
-.hotel-name.favorite-name {
-  color: var(--color-favorite);
 }
 
 .hotel-meta-row {

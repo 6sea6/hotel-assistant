@@ -107,13 +107,31 @@ export function createHotelCard(hotel, index) {
       : '';
   const infoItems = [...compactItems, ...fullItems];
   const notesHtml = footerItems.join('');
+  const favoriteLabel = hotel.is_favorite ? '取消收藏' : '收藏';
+  const favoriteIcon = hotel.is_favorite ? '★' : '☆';
+  const favoriteButtonClass = hotel.is_favorite
+    ? 'hotel-favorite-star is-active'
+    : 'hotel-favorite-star';
 
   card.innerHTML = `
-    <div class="hotel-rank ${isTop3 ? 'top3' : ''}">#${rank}</div>
+    <div class="hotel-card-corner">
+      <div class="hotel-rank ${isTop3 ? 'top3' : ''}">#${rank}</div>
+      <button
+        class="${favoriteButtonClass}"
+        type="button"
+        data-action="favorite"
+        data-id="${hotelIdAttr}"
+        data-favorite="${hotel.is_favorite}"
+        aria-label="${favoriteLabel} ${escapeHtml(hotel.name)}"
+        title="${favoriteLabel}"
+      >
+        <span aria-hidden="true">${favoriteIcon}</span>
+      </button>
+    </div>
 
     <div class="hotel-card-header">
       <div class="hotel-card-header-main">
-        <div class="hotel-name ${hotel.is_favorite ? 'favorite-name' : ''}">${escapeHtml(hotel.name)}</div>
+        <div class="hotel-name">${escapeHtml(hotel.name)}</div>
         ${headerMetaHtml}
       </div>
     </div>
@@ -124,9 +142,6 @@ export function createHotelCard(hotel, index) {
 
     <div class="hotel-actions">
       <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${hotelIdAttr}">✏️ 编辑</button>
-      <button class="btn btn-secondary btn-sm" data-action="favorite" data-id="${hotelIdAttr}" data-favorite="${hotel.is_favorite}">
-        ${hotel.is_favorite ? '💔 取消收藏' : '❤️ 收藏'}
-      </button>
       <button class="btn btn-danger btn-sm" data-action="delete" data-id="${hotelIdAttr}" data-confirming="false">
         🗑️ 删除
       </button>
