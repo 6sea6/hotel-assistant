@@ -226,7 +226,8 @@ function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
   const fastSettleGatePhases = new Set([
     'edge_settle_close_panels',
     'edge_settle_initial_expand',
-    'edge_settle_main_scroll'
+    'edge_settle_main_scroll',
+    'edge_settle_scroll_containers'
   ]);
   if (!fastSettleGatePhases.has(stepPhase)) {
     return false;

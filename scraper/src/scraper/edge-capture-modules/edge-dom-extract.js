@@ -108,7 +108,8 @@ async function extractEdgeDomRoomCandidates({
   roomBlocks,
   perf,
   signal,
-  apiCaptureComplete = false
+  apiCaptureComplete = false,
+  enableDomSupplement = false
 }) {
   const safePerf = perf || createNoopPerf();
   const candidateList = Array.isArray(roomBlocks) ? roomBlocks : [];
@@ -130,6 +131,52 @@ async function extractEdgeDomRoomCandidates({
     dom_extract_timeout_ms: timeoutMs,
     room_candidates_before: beforeDomCount
   });
+
+  if (!apiCaptureComplete) {
+    domPhase.end('skipped', {
+      roomCandidatesCount: 0,
+      dom_extract_mode: domExtractMode,
+      dom_extract_api_complete: false,
+      dom_extract_skipped: true,
+      dom_extract_skip_reason: 'api_capture_incomplete',
+      dom_extract_timeout_ms: timeoutMs,
+      room_candidates_before: beforeDomCount,
+      room_candidates_after: beforeDomCount,
+      dom_extract_timed_out: false
+    });
+    return {
+      roomCandidatesCount: 0,
+      roomCandidatesBefore: beforeDomCount,
+      roomCandidatesAfter: beforeDomCount,
+      timeoutMs,
+      timedOut: false,
+      skipped: true,
+      skipReason: 'api_capture_incomplete'
+    };
+  }
+
+  if (!enableDomSupplement) {
+    domPhase.end('skipped', {
+      roomCandidatesCount: 0,
+      dom_extract_mode: domExtractMode,
+      dom_extract_api_complete: true,
+      dom_extract_skipped: true,
+      dom_extract_skip_reason: 'dom_supplement_disabled',
+      dom_extract_timeout_ms: timeoutMs,
+      room_candidates_before: beforeDomCount,
+      room_candidates_after: beforeDomCount,
+      dom_extract_timed_out: false
+    });
+    return {
+      roomCandidatesCount: 0,
+      roomCandidatesBefore: beforeDomCount,
+      roomCandidatesAfter: beforeDomCount,
+      timeoutMs,
+      timedOut: false,
+      skipped: true,
+      skipReason: 'dom_supplement_disabled'
+    };
+  }
 
   try {
     const domPayloadResult = await evaluateInSession(

@@ -3,7 +3,8 @@ const test = require('node:test');
 
 const {
   isRoomListNetworkResponse,
-  buildEdgeResponseReadPlan
+  buildEdgeResponseReadPlan,
+  getEdgeNetworkWaitOptions
 } = require('../src/scraper/edge-capture-modules/network-response-classifier');
 const {
   decodeEdgeResponseBody,
@@ -46,6 +47,24 @@ test('network response classifier prioritizes latest room responses before other
     buildEdgeResponseReadPlan(entries).map(([requestId]) => requestId),
     ['room-new', 'room-old', 'room-pop', 'analytics']
   );
+});
+
+test('network wait uses short confirmation once a room response body is readable', () => {
+  const roomMeta = {
+    url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+    cachedBody: '{"rooms":[{"name":"标准大床房"}]}'
+  };
+  const requestMeta = new Map([['room', roomMeta]]);
+  const roomRequestMeta = new Map([['room', roomMeta]]);
+
+  const options = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta, {
+    readableRoomResponseCount: 1
+  });
+
+  assert.equal(options.waitMode, 'readable_room_response');
+  assert.equal(options.stableMs, 120);
+  assert.equal(options.intervalMs, 60);
+  assert.equal(options.maxWaitMs, 1500);
 });
 
 test('response body reader decodes base64 bodies and tracks timeout retry stats', async () => {

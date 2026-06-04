@@ -1,7 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { findRoomBlocksFromStructuredText } = require('../src/scraper/html-parser');
+const {
+  extractHotelMetaFromHtml,
+  findRoomBlocksFromStructuredText
+} = require('../src/scraper/html-parser');
+
+test('extractHotelMetaFromHtml tolerates transient empty detail HTML', () => {
+  const meta = extractHotelMetaFromHtml(
+    '<html><head></head><body></body></html>',
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=533161'
+  );
+
+  assert.equal(meta.hotelName, '');
+  assert.equal(meta.sourceUrl, 'https://hotels.ctrip.com/hotels/detail/?hotelId=533161');
+});
 
 test('findRoomBlocksFromStructuredText extracts mixed-bed advanced twin room from DOM-style snippet', () => {
   const blocks = findRoomBlocksFromStructuredText(

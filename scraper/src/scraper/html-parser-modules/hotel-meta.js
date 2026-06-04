@@ -32,7 +32,7 @@ function extractHotelMetaFromHtml(html, url) {
     )
   );
   const headingName = pickFirst(headingLabel, headingText);
-  const title = pickFirst(headingName, normalizedTitle, jsonName, seoName, titleTag);
+  const title = pickFirst(headingName, normalizedTitle, jsonName, seoName, titleTag) || '';
   const mergedText = normalizeText([title, description, bodyText].join(' '));
 
   const hotelName = pickFirst(

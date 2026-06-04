@@ -25,17 +25,25 @@ async function waitForEdgeNetworkStability({
   trackedUrls,
   requestMeta,
   roomRequestMeta,
-  signal = null
+  signal = null,
+  getReadableRoomResponseCount = null
 }) {
+  const readableRoomResponseCount =
+    typeof getReadableRoomResponseCount === 'function'
+      ? Number(getReadableRoomResponseCount() || 0)
+      : 0;
   const phase = perf.phase('edge_network_wait', {
     url,
     captureMethod,
     targetMode,
     trackedUrlCount: trackedUrls.size,
-    roomTrackedUrlCount: roomRequestMeta.size
+    roomTrackedUrlCount: roomRequestMeta.size,
+    readableRoomResponseCount
   });
   try {
-    const waitOptions = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta);
+    const waitOptions = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta, {
+      readableRoomResponseCount
+    });
     await waitForStableCount(() => getEdgeNetworkWaitCount(roomRequestMeta, requestMeta), {
       stableMs: waitOptions.stableMs,
       maxWaitMs: waitOptions.maxWaitMs,
@@ -51,10 +59,13 @@ async function waitForEdgeNetworkStability({
       network_wait_interval_ms: waitOptions.intervalMs,
       room_response_seen: waitOptions.roomResponseSeen,
       room_response_count: waitOptions.roomResponseCount,
+      readable_room_response_count: waitOptions.readableRoomResponseCount,
       network_wait_mode: waitOptions.waitMode
     });
   } catch (error) {
-    const waitOptions = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta);
+    const waitOptions = getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta, {
+      readableRoomResponseCount
+    });
     phase.error(error, {
       tracked_url_count_after: trackedUrls.size,
       room_tracked_url_count_after: roomRequestMeta.size,
@@ -64,6 +75,7 @@ async function waitForEdgeNetworkStability({
       network_wait_interval_ms: waitOptions.intervalMs,
       room_response_seen: waitOptions.roomResponseSeen,
       room_response_count: waitOptions.roomResponseCount,
+      readable_room_response_count: waitOptions.readableRoomResponseCount,
       network_wait_mode: waitOptions.waitMode
     });
     throw error;
@@ -204,6 +216,12 @@ async function runEdgeTargetCapture({
     });
     await notifyLoginPromptIfDetected('edge_page_ready');
 
+    const getReadableRoomResponseCount = () =>
+      [...roomRequestMeta.values()].filter((meta) =>
+        Boolean(
+          meta && ((meta.cachedBodyResult && meta.cachedBodyResult.body) || meta.cachedBody)
+        )
+      ).length;
     const settlePhase = perf.phase('edge_settle_room_list', { url, captureMethod, targetMode });
     let settleStats = null;
     try {
@@ -218,13 +236,7 @@ async function runEdgeTargetCapture({
         trackedUrls,
         getTrackedUrlCount: () => trackedUrls.size,
         getRoomTrackedUrlCount: () => roomRequestMeta.size,
-        getReadableRoomResponseCount: () =>
-          [...roomRequestMeta.values()].filter((meta) =>
-            Boolean(
-              meta &&
-                ((meta.cachedBodyResult && meta.cachedBodyResult.body) || meta.cachedBody)
-            )
-          ).length,
+        getReadableRoomResponseCount,
         signal
       });
       settleStats = settleResult.stats;
@@ -247,6 +259,7 @@ async function runEdgeTargetCapture({
       trackedUrls,
       requestMeta,
       roomRequestMeta,
+      getReadableRoomResponseCount,
       signal
     });
 

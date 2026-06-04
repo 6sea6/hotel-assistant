@@ -22,10 +22,27 @@ function getEdgeNetworkWaitCount(roomRequestMeta, requestMeta) {
   return requestMeta && requestMeta.size ? requestMeta.size : 0;
 }
 
-function getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta) {
+function getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta, options = {}) {
   const roomResponseCount = roomRequestMeta && roomRequestMeta.size ? roomRequestMeta.size : 0;
+  const readableRoomResponseCount = Math.max(
+    0,
+    Number(options.readableRoomResponseCount || 0)
+  );
+  const hasReadableRoomResponse = readableRoomResponseCount > 0;
   const hasRoomResponses = roomResponseCount > 0;
   const hasMultipleRoomResponses = roomResponseCount >= 2;
+  if (hasReadableRoomResponse) {
+    return {
+      stableMs: 120,
+      maxWaitMs: 1500,
+      intervalMs: 60,
+      networkWaitCount: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
+      roomResponseSeen: hasRoomResponses,
+      roomResponseCount,
+      readableRoomResponseCount,
+      waitMode: 'readable_room_response'
+    };
+  }
   return {
     stableMs: hasMultipleRoomResponses ? 300 : hasRoomResponses ? 650 : 1200,
     maxWaitMs: 4500,
@@ -33,6 +50,7 @@ function getEdgeNetworkWaitOptions(roomRequestMeta, requestMeta) {
     networkWaitCount: getEdgeNetworkWaitCount(roomRequestMeta, requestMeta),
     roomResponseSeen: hasRoomResponses,
     roomResponseCount,
+    readableRoomResponseCount,
     waitMode: hasMultipleRoomResponses
       ? 'multiple_room_responses'
       : hasRoomResponses

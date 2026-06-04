@@ -334,6 +334,71 @@ test('settleRoomListInEdgeSession skips late DOM settle steps after room API res
   }
 });
 
+test('settleRoomListInEdgeSession skips bottom settle steps after container scroll captures room API', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isScrollContainersStep = expression.includes('await scrollAllContainers');
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: isScrollContainersStep ? 3 : 1,
+        containerCount: isScrollContainersStep ? 1 : 0,
+        likelyContainerCount: isScrollContainersStep ? 1 : 0,
+        fallbackContainerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    let readableRoomResponseCount = 0;
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 4,
+      getRoomTrackedUrlCount: () => readableRoomResponseCount,
+      getReadableRoomResponseCount: () => readableRoomResponseCount,
+      onSettleStepComplete(phase) {
+        if (phase === 'edge_settle_scroll_containers') {
+          readableRoomResponseCount = 1;
+        }
+      }
+    });
+
+    assert.equal(
+      expressions.some((expression) =>
+        expression.includes('window.scrollTo({ top: document.body.scrollHeight')
+      ),
+      false
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_scroll_containers').status,
+      'success'
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_bottom_expand').skip_reason,
+      'room_api_fast_path'
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_return_top').skip_reason,
+      'room_api_fast_path'
+    );
+    assert.equal(stats.apiFastPathSkippedStepCount, 2);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settleRoomListInEdgeSession skips main scroll when room API is already captured', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
@@ -2093,7 +2158,9 @@ test('edge DOM extract keeps API rooms and uses short timeout after room API suc
       trackedUrls: new Set(['https://example.test/api/room']),
       debugHotelId: '112433891',
       roomBlocks,
-      perf: createPerfRecorder(records)
+      perf: createPerfRecorder(records),
+      apiCaptureComplete: true,
+      enableDomSupplement: true
     });
 
     assert.equal(evaluateTimeoutMs <= 2000, true);
@@ -2163,7 +2230,8 @@ test('edge DOM extract uses lightweight mode when room API capture is complete',
       debugHotelId: '112433891',
       roomBlocks,
       perf: createPerfRecorder(records),
-      apiCaptureComplete: true
+      apiCaptureComplete: true,
+      enableDomSupplement: true
     });
 
     assert.equal(
@@ -2191,7 +2259,73 @@ test('edge DOM extract uses lightweight mode when room API capture is complete',
   }
 });
 
-test('edge DOM extract keeps full timeout when API produced no room candidates', async () => {
+test('edge DOM extract skips lightweight supplement by default after API capture is complete', async () => {
+  let evaluateCalls = 0;
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async () => {
+      evaluateCalls += 1;
+      return JSON.stringify({
+        bodyText: '选择房间 标准大床房 每晚 ¥288 订房必读',
+        bodyHtml: '',
+        snippets: ['标准大床房 每晚 ¥288'],
+        snapshots: []
+      });
+    },
+    createCdpAbortError: (method) => {
+      const error = new Error(`CDP ${method} aborted`);
+      error.name = 'AbortError';
+      return error;
+    }
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      extractEdgeDomRoomCandidates
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const records = [];
+    const roomBlocks = [
+      {
+        title: '标准大床房',
+        standard_title: '大床房',
+        price: 288,
+        prices: [288],
+        occupancy: 2,
+        cancelPolicy: '免费取消',
+        source: 'edge-api'
+      }
+    ];
+
+    const stats = await extractEdgeDomRoomCandidates({
+      connection: {},
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'reuse',
+      trackedUrls: new Set(['https://example.test/api/room']),
+      debugHotelId: '112433891',
+      roomBlocks,
+      perf: createPerfRecorder(records),
+      apiCaptureComplete: true
+    });
+
+    assert.equal(evaluateCalls, 0);
+    assert.equal(stats.skipped, true);
+    assert.equal(stats.skipReason, 'dom_supplement_disabled');
+    assert.equal(roomBlocks.length, 1);
+    const phaseRecord = records.find((record) => record.phase === 'edge_dom_extract');
+    assert.equal(phaseRecord.status, 'skipped');
+    assert.equal(phaseRecord.dom_extract_skip_reason, 'dom_supplement_disabled');
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
+  }
+});
+
+test('edge DOM extract skips full-page mode when API produced no room candidates', async () => {
   let evaluateTimeoutMs = null;
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
     evaluateInSession: async (_connection, _sessionId, _expression, options = {}) => {
@@ -2214,7 +2348,8 @@ test('edge DOM extract keeps full timeout when API produced no room candidates',
     const {
       extractEdgeDomRoomCandidates
     } = require('../src/scraper/edge-capture-modules/network-capture');
-    await extractEdgeDomRoomCandidates({
+    const records = [];
+    const stats = await extractEdgeDomRoomCandidates({
       connection: {},
       sessionId: 'session-1',
       url: 'https://example.test/hotel',
@@ -2223,16 +2358,21 @@ test('edge DOM extract keeps full timeout when API produced no room candidates',
       trackedUrls: new Set(),
       debugHotelId: '112433891',
       roomBlocks: [],
-      perf: createPerfRecorder([])
+      perf: createPerfRecorder(records)
     });
 
-    assert.equal(evaluateTimeoutMs, 6000);
+    assert.equal(evaluateTimeoutMs, null);
+    assert.equal(stats.skipped, true);
+    assert.equal(stats.timeoutMs, 6000);
+    const phaseRecord = records.find((record) => record.phase === 'edge_dom_extract');
+    assert.equal(phaseRecord.status, 'skipped');
+    assert.equal(phaseRecord.dom_extract_skip_reason, 'api_capture_incomplete');
   } finally {
     clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
   }
 });
 
-test('edge DOM extract keeps full timeout when API candidates have no visible price', async () => {
+test('edge DOM extract skips full-page mode when API candidates have no visible price', async () => {
   let evaluateTimeoutMs = null;
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
     evaluateInSession: async (_connection, _sessionId, _expression, options = {}) => {
@@ -2255,7 +2395,8 @@ test('edge DOM extract keeps full timeout when API candidates have no visible pr
     const {
       extractEdgeDomRoomCandidates
     } = require('../src/scraper/edge-capture-modules/network-capture');
-    await extractEdgeDomRoomCandidates({
+    const records = [];
+    const stats = await extractEdgeDomRoomCandidates({
       connection: {},
       sessionId: 'session-1',
       url: 'https://example.test/hotel',
@@ -2264,10 +2405,15 @@ test('edge DOM extract keeps full timeout when API candidates have no visible pr
       trackedUrls: new Set(),
       debugHotelId: '112433891',
       roomBlocks: [{ title: '无价大床房', price: null, prices: [], source: 'edge-cdp-raw' }],
-      perf: createPerfRecorder([])
+      perf: createPerfRecorder(records)
     });
 
-    assert.equal(evaluateTimeoutMs, 6000);
+    assert.equal(evaluateTimeoutMs, null);
+    assert.equal(stats.skipped, true);
+    assert.equal(stats.timeoutMs, 6000);
+    const phaseRecord = records.find((record) => record.phase === 'edge_dom_extract');
+    assert.equal(phaseRecord.status, 'skipped');
+    assert.equal(phaseRecord.dom_extract_skip_reason, 'api_capture_incomplete');
   } finally {
     clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
   }
@@ -2311,6 +2457,56 @@ test('edge DOM extract does not add full-page DOM prices before API success', as
       perf: createPerfRecorder([])
     });
 
+    assert.equal(stats.roomCandidatesCount, 0);
+    assert.equal(roomBlocks.length, 0);
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
+  }
+});
+
+test('edge DOM extract skips full-page evaluation before API success', async () => {
+  let evaluateCalls = 0;
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async () => {
+      evaluateCalls += 1;
+      return JSON.stringify({
+        bodyText: '选择房间 高级大床房 今日价格 ¥288 立即确认',
+        bodyHtml: '',
+        snippets: [],
+        snapshots: []
+      });
+    },
+    createCdpAbortError: (method) => {
+      const error = new Error(`CDP ${method} aborted`);
+      error.name = 'AbortError';
+      return error;
+    }
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      extractEdgeDomRoomCandidates
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const roomBlocks = [];
+    const stats = await extractEdgeDomRoomCandidates({
+      connection: {},
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'reuse',
+      trackedUrls: new Set(),
+      debugHotelId: '112433891',
+      roomBlocks,
+      perf: createPerfRecorder([])
+    });
+
+    assert.equal(evaluateCalls, 0);
+    assert.equal(stats.skipped, true);
     assert.equal(stats.roomCandidatesCount, 0);
     assert.equal(roomBlocks.length, 0);
   } finally {
