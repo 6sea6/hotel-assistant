@@ -171,6 +171,7 @@ test('headerFieldItems contains address with card class', async () => {
   assert.ok(address, 'should have address in headerFieldItems');
   assert.ok(address.html.includes('hotel-card-address'), 'html should include hotel-card-address class');
   assert.ok(address.html.includes('hotel-address'), 'html should include original hotel-address class');
+  assert.ok(address.html.includes('hotel-card-address-text'), 'address text should have its own truncation target');
   assert.ok(address.html.includes('北京市朝阳区建国路100号'), 'html should include the address value');
 });
 

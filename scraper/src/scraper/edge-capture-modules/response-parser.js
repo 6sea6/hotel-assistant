@@ -15,6 +15,48 @@ const { assertEdgeNotAborted, isAbortLikeError } = require('./edge-retry-policy'
 const EDGE_RESPONSE_PARSE_MAX_MS = 12000;
 const EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET = 8;
 
+function hasUsableStructuredPrice(candidates) {
+  return (
+    Array.isArray(candidates) &&
+    candidates.some(
+      (candidate) =>
+        candidate &&
+        candidate.price !== null &&
+        candidate.price !== undefined &&
+        !candidate.price_locked
+    )
+  );
+}
+
+function isRawFallbackCandidate(candidate) {
+  return candidate && String(candidate.source || '') === 'edge-cdp-raw';
+}
+
+function pruneRawFallbackCandidatesAfterStructuredPrice(roomBlocks) {
+  if (!Array.isArray(roomBlocks) || roomBlocks.length === 0) {
+    return 0;
+  }
+
+  const hasStructuredPrice = roomBlocks.some(
+    (candidate) =>
+      candidate &&
+      !isRawFallbackCandidate(candidate) &&
+      candidate.price !== null &&
+      candidate.price !== undefined &&
+      !candidate.price_locked
+  );
+  if (!hasStructuredPrice) {
+    return 0;
+  }
+
+  const nextRoomBlocks = roomBlocks.filter((candidate) => !isRawFallbackCandidate(candidate));
+  const removedCount = roomBlocks.length - nextRoomBlocks.length;
+  if (removedCount > 0) {
+    roomBlocks.splice(0, roomBlocks.length, ...nextRoomBlocks);
+  }
+  return removedCount;
+}
+
 function shouldUseEdgeRawTextFallback({
   isRoomResponse,
   roomBlocks,
@@ -27,6 +69,9 @@ function shouldUseEdgeRawTextFallback({
   }
   if (!Array.isArray(structuredCandidates) || structuredCandidates.length === 0) {
     return true;
+  }
+  if (hasUsableStructuredPrice(structuredCandidates)) {
+    return false;
   }
   const hasTemplateSignal = Boolean(
     template &&
@@ -91,6 +136,42 @@ function buildResponseEntryDiagnostics(entries) {
   };
 }
 
+async function getPrefetchedResponseBody(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return null;
+  }
+
+  if (meta.cachedBodyResult && meta.cachedBodyResult.body) {
+    return {
+      ...meta.cachedBodyResult,
+      fromPrefetchCache: true
+    };
+  }
+
+  if (meta.cachedBody) {
+    return {
+      body: meta.cachedBody,
+      retryCount: 0,
+      timeoutCount: 0,
+      elapsedMs: 0,
+      error: null,
+      fromPrefetchCache: true
+    };
+  }
+
+  if (meta.bodyReadPromise && typeof meta.bodyReadPromise.then === 'function') {
+    const result = await meta.bodyReadPromise;
+    if (result && result.body) {
+      return {
+        ...result,
+        fromPrefetchCache: true
+      };
+    }
+  }
+
+  return null;
+}
+
 async function parseEdgeNetworkResponses({
   connection,
   sessionId,
@@ -148,9 +229,12 @@ async function parseEdgeNetworkResponses({
     roomResponseBodyEmptyCount: 0,
     roomResponseBodyParseErrorCount: 0,
     nonRoomResponseBodyTimeoutCount: 0,
+    cachedResponseBodyHitCount: 0,
+    cachedRoomResponseBodyHitCount: 0,
     rawFallbackUsedCount: 0,
     rawFallbackSkippedCount: 0,
     rawFallbackCandidateCount: 0,
+    rawFallbackPrunedCount: 0,
     structuredCandidateCount: 0,
     responseParseElapsedMs: 0,
     responseParseStoppedReason: '',
@@ -196,20 +280,28 @@ async function parseEdgeNetworkResponses({
         stats.responseParseStoppedReason = 'non_room_timeout_budget';
         break;
       }
-      const bodyResult = await readEdgeResponseBodyWithRetry({
-        connection,
-        sessionId,
-        requestId,
-        isRoomResponse,
-        timeoutMs:
-          Number.isFinite(responseBodyTimeoutMs) && responseBodyTimeoutMs > 0
-            ? responseBodyTimeoutMs
-            : isRoomResponse
-              ? 1200
-              : 350,
-        maxAttempts: isRoomResponse ? roomResponseBodyMaxAttempts : 1,
-        signal
-      });
+      let bodyResult = await getPrefetchedResponseBody(meta);
+      if (bodyResult) {
+        stats.cachedResponseBodyHitCount += 1;
+        if (isRoomResponse) {
+          stats.cachedRoomResponseBodyHitCount += 1;
+        }
+      } else {
+        bodyResult = await readEdgeResponseBodyWithRetry({
+          connection,
+          sessionId,
+          requestId,
+          isRoomResponse,
+          timeoutMs:
+            Number.isFinite(responseBodyTimeoutMs) && responseBodyTimeoutMs > 0
+              ? responseBodyTimeoutMs
+              : isRoomResponse
+                ? 1200
+                : 350,
+          maxAttempts: isRoomResponse ? roomResponseBodyMaxAttempts : 1,
+          signal
+        });
+      }
       const bodyReadElapsedMs = Number(bodyResult.elapsedMs) || 0;
       stats.responseBodyReadElapsedMs += bodyReadElapsedMs;
       stats.responseBodyReadMaxMs = Math.max(stats.responseBodyReadMaxMs, bodyReadElapsedMs);
@@ -316,6 +408,15 @@ async function parseEdgeNetworkResponses({
     }
   }
 
+  const rawFallbackPrunedCount = pruneRawFallbackCandidatesAfterStructuredPrice(roomBlocks);
+  if (rawFallbackPrunedCount > 0) {
+    stats.rawFallbackPrunedCount += rawFallbackPrunedCount;
+    stats.responseParseCandidateCount = Math.max(
+      0,
+      stats.responseParseCandidateCount - rawFallbackPrunedCount
+    );
+    state.fastPathComplete = isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions);
+  }
   stats.fastPathComplete = state.fastPathComplete;
   stats.responseParseElapsedMs = Date.now() - startedAt;
   if (roomEntryCount > 0 && !state.fastPathComplete) {

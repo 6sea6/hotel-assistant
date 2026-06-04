@@ -46,6 +46,12 @@ const ROOM_TITLE_PATTERN = new RegExp(
   'g'
 );
 const ROOM_TITLE_MATCHER = new RegExp(`(?:${ROOM_TITLE_SUFFIXES.join('|')})`);
+const MIN_PLAUSIBLE_ROOM_PRICE = 50;
+
+function isPlausibleRoomPrice(value) {
+  const price = toNumber(value);
+  return price !== null && price >= MIN_PLAUSIBLE_ROOM_PRICE;
+}
 
 function extractRoomSection(text) {
   const normalized = normalizeText(text);
@@ -125,7 +131,7 @@ function extractPrices(snippet) {
     )
   ];
 
-  const numbers = matches.map((match) => toNumber(match[1])).filter((value) => value !== null);
+  const numbers = matches.map((match) => toNumber(match[1])).filter(isPlausibleRoomPrice);
 
   return [...new Set(numbers)].sort((left, right) => left - right);
 }
@@ -155,7 +161,7 @@ function extractRelevantPricesFromSnippet(snippet) {
       continue;
     }
     const value = toNumber(match[1]);
-    if (value !== null) {
+    if (isPlausibleRoomPrice(value)) {
       prices.push(value);
     }
   }
@@ -350,8 +356,10 @@ function findRoomBlocksFromStructuredText(text) {
 
   for (let index = 0; index < matches.length; index += 1) {
     const current = matches[index];
+    const next = matches[index + 1];
     const start = current.index;
-    const snippet = compactText.slice(start, Math.min(compactText.length, start + 360));
+    const end = next ? next.index : Math.min(compactText.length, start + 360);
+    const snippet = compactText.slice(start, end);
     if (!isLikelyValidRoomSnippet(snippet)) {
       continue;
     }

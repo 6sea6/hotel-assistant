@@ -11,6 +11,9 @@ export const VIRTUAL_OVERSCAN = 10;
 export const LIST_ROW_ESTIMATED_HEIGHT = 96;
 export const CARD_ESTIMATED_HEIGHT = 260;
 export const CARD_GAP = 16;
+export const CARD_TWO_COLUMN_MIN_WIDTH = 768;
+export const CARD_THREE_COLUMN_MIN_WIDTH = 1000;
+export const CARD_FOUR_COLUMN_MIN_WIDTH = 1500;
 
 /**
  * 根据视图模式返回启用虚拟滚动的数量阈值。
@@ -225,7 +228,10 @@ export function measureAverageHeight(elements, fallback) {
  */
 export function calculateCardColumns(containerWidth) {
   if (containerWidth <= 0) return 1;
-  if (containerWidth < 768) return 1;
-  if (containerWidth < 1200) return 2;
-  return 3;
+  const width = Number(containerWidth);
+  if (!Number.isFinite(width) || width <= 0) return 1;
+  if (width >= CARD_FOUR_COLUMN_MIN_WIDTH) return 4;
+  if (width >= CARD_THREE_COLUMN_MIN_WIDTH) return 3;
+  if (width >= CARD_TWO_COLUMN_MIN_WIDTH) return 2;
+  return 1;
 }

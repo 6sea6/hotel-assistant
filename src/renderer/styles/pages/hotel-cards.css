@@ -123,6 +123,10 @@
   min-width: 0;
 }
 
+.hotel-card-meta-pair.is-single-meta {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .hotel-card-meta-cell {
   min-width: 0;
   overflow: hidden;
@@ -151,7 +155,21 @@
 }
 
 .hotel-card-address {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
   justify-content: flex-start;
+}
+
+.hotel-card-meta-icon {
+  flex: 0 0 auto;
+}
+
+.hotel-card-address-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {

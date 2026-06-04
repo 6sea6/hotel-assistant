@@ -253,6 +253,7 @@ async function settleRoomListWithEdgeRetry({
   trackedUrls,
   getTrackedUrlCount,
   getRoomTrackedUrlCount,
+  getReadableRoomResponseCount,
   settleRoomList = settleRoomListInEdgeSession,
   waitForPageReady = waitForEdgePageReadyAfterNavigate,
   waitForContextStable = waitForEdgeExecutionContextStable,
@@ -274,6 +275,7 @@ async function settleRoomListWithEdgeRetry({
       fields,
       getTrackedUrlCount,
       getRoomTrackedUrlCount,
+      getReadableRoomResponseCount,
       signal,
       evaluateTimeoutMs: EDGE_SETTLE_EVALUATE_TIMEOUT_MS
     });

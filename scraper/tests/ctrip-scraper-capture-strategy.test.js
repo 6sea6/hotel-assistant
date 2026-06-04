@@ -372,6 +372,30 @@ test('parallel_edge falls back to HTML when Edge fails', async () => {
   );
 });
 
+test('edge supplement does not replace priced HTML rooms with unpriced Edge rooms', async () => {
+  await withScraper(
+    {
+      htmlRoom: makeRoom('HTML大床房', 188, 'desktop'),
+      edgeRoom: makeRoom('Edge噪声房', null, 'edge-cdp-raw')
+    },
+    async (scrapeCtripHotel) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=9',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'auto',
+          perf: createPerfRecorder([])
+        }
+      );
+
+      assert.equal(result.room.title, 'HTML大床房');
+      assert.equal(result.page_snapshot.selected_room_source, 'desktop');
+      assert.equal(result.page_snapshot.room_price_visible, true);
+    }
+  );
+});
+
 test('parallel_edge can return Edge rooms with a warning when HTML fails', async () => {
   await withScraper(
     {

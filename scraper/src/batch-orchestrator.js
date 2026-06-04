@@ -6,6 +6,7 @@ const {
   assertNotCancelled,
   createTransitCache,
   durationSince,
+  isCancellationError,
   isReportDisabled,
   normalizeBatchConcurrency,
   resolveBatchCaptureStrategy
@@ -29,6 +30,44 @@ const { getEffectiveBoundedConcurrency } = require('./bounded-worker-runner');
 const { runPreparedDetailBatch } = require('./prepared-detail-batch-collector');
 
 const MAX_BATCH_CONCURRENCY = 2;
+const DEFAULT_UNCOLLECTED_RETRY_COUNT = 2;
+
+function normalizeUncollectedRetryCount(args = {}, batchOptions = {}) {
+  const explicit =
+    args.batchUncollectedRetries ??
+    args['batch-uncollected-retries'] ??
+    batchOptions.batchUncollectedRetries;
+  if (explicit !== null && explicit !== undefined && explicit !== '') {
+    const parsed = Number(explicit);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+  }
+
+  return args['auto-edge'] ? DEFAULT_UNCOLLECTED_RETRY_COUNT : 0;
+}
+
+function isRetryableUncollectedResult(childResult) {
+  if (!childResult || childResult.error || Number(childResult.eligibleCount || 0) > 0) {
+    return false;
+  }
+
+  const snapshot = childResult.pageSnapshot || {};
+  const candidateCount = Math.max(
+    0,
+    Number(snapshot.room_candidates_count || 0),
+    Number(snapshot.raw_room_candidates_count || 0)
+  );
+  if (candidateCount <= 0) {
+    return false;
+  }
+
+  return Boolean(
+    snapshot.edge_fallback_used ||
+      snapshot.api_replay_used ||
+      /edge|api|missing_price|retry_after/i.test(
+        `${snapshot.capture_method || ''} ${snapshot.wait_reason || ''}`
+      )
+  );
+}
 
 class BatchOrchestrator {
   constructor(context, options = {}) {
@@ -368,8 +407,18 @@ class BatchOrchestrator {
           }
         };
       },
-      mapPreparedResult: async ({ preparedResult, index, total, meta }) => {
+      mapPreparedResult: async ({ preparedResult, detailContext, index, total, meta }) => {
         const hotelInput = meta.hotelInput;
+        preparedResult = await this.retryUncollectedPreparedResult({
+          preparedResult,
+          detailContext,
+          hotelInput,
+          index,
+          total,
+          batchOptions,
+          batchPerf,
+          signal
+        });
         const childResult = preparedResult.result;
         childResult.inputIndex = index;
         childResult.inputSource = hotelInput.source;
@@ -486,6 +535,96 @@ class BatchOrchestrator {
         };
       }
     });
+  }
+
+  async retryUncollectedPreparedResult({
+    preparedResult,
+    detailContext,
+    hotelInput,
+    index,
+    total,
+    batchOptions,
+    batchPerf,
+    signal
+  }) {
+    const maxRetries = normalizeUncollectedRetryCount(this.context.args, batchOptions);
+    if (maxRetries <= 0 || !detailContext || !isRetryableUncollectedResult(preparedResult.result)) {
+      return preparedResult;
+    }
+
+    let bestPreparedResult = preparedResult;
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      if (!isRetryableUncollectedResult(bestPreparedResult.result)) {
+        break;
+      }
+
+      assertNotCancelled(signal);
+      batchPerf.event('batch_item_uncollected_retry', {
+        phase: 'batch_total',
+        status: 'retrying',
+        pageIndex: index,
+        hotelCount: total,
+        retry_count: attempt,
+        hotelId: hotelInput.hotelId,
+        hotelName: bestPreparedResult.result && bestPreparedResult.result.hotelName,
+        url: hotelInput.url,
+        eligible_count: bestPreparedResult.result && bestPreparedResult.result.eligibleCount,
+        wait_reason:
+          bestPreparedResult.result &&
+          bestPreparedResult.result.pageSnapshot &&
+          bestPreparedResult.result.pageSnapshot.wait_reason,
+        capture_method:
+          bestPreparedResult.result &&
+          bestPreparedResult.result.pageSnapshot &&
+          bestPreparedResult.result.pageSnapshot.capture_method
+      });
+
+      const retryContext = {
+        ...detailContext,
+        taskId: `${detailContext.taskId}-retry${attempt}`
+      };
+      try {
+        const retryPreparedResult = await this.singleDetailRunner.run(retryContext);
+        const previousEligible = Number(bestPreparedResult.result.eligibleCount || 0);
+        const retryEligible = Number(retryPreparedResult.result.eligibleCount || 0);
+        batchPerf.event('batch_item_uncollected_retry_result', {
+          phase: 'batch_total',
+          status: retryEligible > 0 ? 'success' : 'still_uncollected',
+          pageIndex: index,
+          hotelCount: total,
+          retry_count: attempt,
+          hotelId: hotelInput.hotelId,
+          hotelName: retryPreparedResult.result && retryPreparedResult.result.hotelName,
+          url: hotelInput.url,
+          eligible_count: retryEligible,
+          previous_eligible_count: previousEligible
+        });
+
+        if (retryEligible > previousEligible) {
+          bestPreparedResult = retryPreparedResult;
+        }
+        if (retryEligible > 0) {
+          break;
+        }
+      } catch (error) {
+        if (isCancellationError(error, signal)) {
+          throw error;
+        }
+        batchPerf.event('batch_item_uncollected_retry_error', {
+          phase: 'batch_total',
+          status: 'error',
+          pageIndex: index,
+          hotelCount: total,
+          retry_count: attempt,
+          hotelId: hotelInput.hotelId,
+          url: hotelInput.url,
+          error_type: error && error.name ? error.name : 'Error',
+          error_message: error && error.message ? error.message : String(error)
+        });
+      }
+    }
+
+    return bestPreparedResult;
   }
 
   async finalizeBatchResult({

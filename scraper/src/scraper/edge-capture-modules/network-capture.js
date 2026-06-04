@@ -197,7 +197,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       return targetSession.errorResult;
     }
 
-    const networkTracker = createEdgeNetworkResponseTracker({ connection, sessionId });
+    const networkTracker = createEdgeNetworkResponseTracker({ connection, sessionId, signal });
     const { requestMeta, roomRequestMeta, trackedUrls } = networkTracker;
     const roomBlocks = [];
     const spiderErrorCodes = new Set();

@@ -108,6 +108,8 @@ function buildEdgeResponseParseFields(parseStats) {
     room_response_body_empty_count: parseStats.roomResponseBodyEmptyCount,
     room_response_body_parse_error_count: parseStats.roomResponseBodyParseErrorCount,
     non_room_response_body_timeout_count: parseStats.nonRoomResponseBodyTimeoutCount,
+    cached_response_body_hit_count: parseStats.cachedResponseBodyHitCount,
+    cached_room_response_body_hit_count: parseStats.cachedRoomResponseBodyHitCount,
     response_parse_elapsed_ms: parseStats.responseParseElapsedMs,
     response_parse_stopped_reason: parseStats.responseParseStoppedReason
   };
@@ -216,6 +218,13 @@ async function runEdgeTargetCapture({
         trackedUrls,
         getTrackedUrlCount: () => trackedUrls.size,
         getRoomTrackedUrlCount: () => roomRequestMeta.size,
+        getReadableRoomResponseCount: () =>
+          [...roomRequestMeta.values()].filter((meta) =>
+            Boolean(
+              meta &&
+                ((meta.cachedBodyResult && meta.cachedBodyResult.body) || meta.cachedBody)
+            )
+          ).length,
         signal
       });
       settleStats = settleResult.stats;

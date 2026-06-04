@@ -551,38 +551,38 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
   let dragPointerId = null;
   let dragStartY = 0;
   let dragStartScrollTop = 0;
+  let dragMetrics = null;
+  let thumbUpdateRafId = 0;
+  let dragScrollRafId = 0;
+  let pendingThumbRenderMetrics = null;
+  let pendingDragScrollTop = null;
+
+  function buildThumbRenderMetrics(baseMetrics, scrollTop) {
+    const metrics = calculateThumbMetrics({
+      clientHeight: baseMetrics.clientHeight,
+      scrollHeight: baseMetrics.scrollHeight,
+      scrollTop,
+      trackHeight: baseMetrics.trackHeight,
+      minThumbHeight: 32
+    });
+
+    const thumbHeight = metrics.shouldHide ? 0 : metrics.thumbHeight;
+    return {
+      ...baseMetrics,
+      ...metrics,
+      thumbHeight,
+      maxThumbTop: Math.max(0, baseMetrics.trackHeight - thumbHeight)
+    };
+  }
 
   function getScrollMetrics() {
     const clientHeight = scrollContainer.clientHeight;
     const scrollHeight = scrollContainer.scrollHeight;
-    const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
     const trackHeight = track.clientHeight;
-    const thumbHeight = thumb.offsetHeight || 32;
-    const maxThumbTop = Math.max(0, trackHeight - thumbHeight);
-    return { clientHeight, scrollHeight, maxScrollTop, trackHeight, thumbHeight, maxThumbTop };
+    return buildThumbRenderMetrics({ clientHeight, scrollHeight, trackHeight }, scrollContainer.scrollTop);
   }
 
-  function setScrollTopSafely(nextScrollTop) {
-    const { maxScrollTop } = getScrollMetrics();
-    const target = clampValue(nextScrollTop, 0, maxScrollTop);
-    scrollContainer.scrollTop = target;
-    update();
-    if (typeof onExternalScrollChange === 'function') onExternalScrollChange();
-    if (typeof onScrollRequest === 'function') onScrollRequest();
-  }
-
-  function update() {
-    const { clientHeight, scrollHeight, trackHeight } = getScrollMetrics();
-    const scrollTop = scrollContainer.scrollTop;
-
-    const metrics = calculateThumbMetrics({
-      clientHeight,
-      scrollHeight,
-      scrollTop,
-      trackHeight,
-      minThumbHeight: 32
-    });
-
+  function renderThumb(metrics) {
     if (metrics.shouldHide) {
       scrollbar.hidden = true;
       return;
@@ -591,6 +591,82 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     scrollbar.hidden = false;
     thumb.style.height = `${metrics.thumbHeight}px`;
     thumb.style.transform = `translateY(${metrics.thumbTop}px)`;
+  }
+
+  function scheduleThumbRender(metrics) {
+    pendingThumbRenderMetrics = metrics;
+    if (thumbUpdateRafId) return;
+
+    thumbUpdateRafId = requestAnimationFrame(() => {
+      thumbUpdateRafId = 0;
+      const nextMetrics = pendingThumbRenderMetrics;
+      pendingThumbRenderMetrics = null;
+      if (nextMetrics) renderThumb(nextMetrics);
+    });
+  }
+
+  function flushScheduledThumbRender() {
+    if (thumbUpdateRafId) {
+      cancelAnimationFrame(thumbUpdateRafId);
+      thumbUpdateRafId = 0;
+    }
+    const nextMetrics = pendingThumbRenderMetrics;
+    pendingThumbRenderMetrics = null;
+    if (nextMetrics) renderThumb(nextMetrics);
+  }
+
+  function setScrollTopSafely(nextScrollTop, options = {}) {
+    const { metrics = getScrollMetrics(), updateMode = 'immediate' } = options;
+    const target = clampValue(nextScrollTop, 0, metrics.maxScrollTop);
+    scrollContainer.scrollTop = target;
+    const renderMetrics = buildThumbRenderMetrics(metrics, target);
+    if (updateMode === 'defer') {
+      scheduleThumbRender(renderMetrics);
+    } else {
+      renderThumb(renderMetrics);
+    }
+    if (typeof onExternalScrollChange === 'function') onExternalScrollChange();
+    if (typeof onScrollRequest === 'function') onScrollRequest();
+  }
+
+  function applyDragScroll(targetScrollTop, updateMode = 'defer') {
+    if (!dragMetrics) return;
+    setScrollTopSafely(targetScrollTop, { metrics: dragMetrics, updateMode });
+  }
+
+  function scheduleDragScroll(targetScrollTop) {
+    pendingDragScrollTop = targetScrollTop;
+    if (dragScrollRafId) return;
+
+    dragScrollRafId = requestAnimationFrame(() => {
+      dragScrollRafId = 0;
+      const nextScrollTop = pendingDragScrollTop;
+      pendingDragScrollTop = null;
+      if (nextScrollTop === null || !isDragging) return;
+      applyDragScroll(nextScrollTop, 'defer');
+    });
+  }
+
+  function flushScheduledDragScroll() {
+    if (dragScrollRafId) {
+      cancelAnimationFrame(dragScrollRafId);
+      dragScrollRafId = 0;
+    }
+    const nextScrollTop = pendingDragScrollTop;
+    pendingDragScrollTop = null;
+    if (nextScrollTop !== null) {
+      applyDragScroll(nextScrollTop, 'immediate');
+    }
+  }
+
+  function update() {
+    if (isDragging && dragMetrics) {
+      scheduleThumbRender(buildThumbRenderMetrics(dragMetrics, scrollContainer.scrollTop));
+      return;
+    }
+
+    flushScheduledThumbRender();
+    renderThumb(getScrollMetrics());
   }
 
   function jumpToPointer(event) {
@@ -612,30 +688,34 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
   function handlePointerMove(event) {
     if (!isDragging) return;
     if (dragPointerId !== null && event.pointerId !== dragPointerId) return;
+    if (!dragMetrics) return;
     event.preventDefault();
 
-    const metrics = getScrollMetrics();
     const deltaY = event.clientY - dragStartY;
     const targetScrollTop = calculateScrollTopFromDrag({
       deltaY,
-      maxThumbTop: metrics.maxThumbTop,
-      maxScrollTop: metrics.maxScrollTop,
+      maxThumbTop: dragMetrics.maxThumbTop,
+      maxScrollTop: dragMetrics.maxScrollTop,
       startScrollTop: dragStartScrollTop
     });
 
-    setScrollTopSafely(targetScrollTop);
+    scheduleDragScroll(targetScrollTop);
   }
 
   function stopDragging() {
     if (!isDragging) return;
+    flushScheduledDragScroll();
+    flushScheduledThumbRender();
     isDragging = false;
     dragPointerId = null;
+    dragMetrics = null;
     document.removeEventListener('pointermove', handlePointerMove);
     document.removeEventListener('pointerup', stopDragging);
     document.removeEventListener('pointercancel', stopDragging);
     window.removeEventListener('blur', stopDragging);
     document.body.classList.remove('is-dragging-virtual-scrollbar');
     thumb.classList.remove('is-dragging');
+    update();
   }
 
   function startDragging(event) {
@@ -647,6 +727,8 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
     dragPointerId = event.pointerId;
     dragStartY = event.clientY;
     dragStartScrollTop = scrollContainer.scrollTop;
+    dragMetrics = getScrollMetrics();
+    pendingDragScrollTop = null;
 
     document.addEventListener('pointermove', handlePointerMove);
     document.addEventListener('pointerup', stopDragging);
@@ -708,6 +790,8 @@ function createCustomVirtualScrollbar(scrollContainer, options = {}) {
 
   function cleanup() {
     stopDragging();
+    flushScheduledDragScroll();
+    flushScheduledThumbRender();
     scrollbar.removeEventListener('wheel', handleScrollbarWheel);
     track.removeEventListener('pointerdown', handleTrackPointerDown);
     document.removeEventListener('pointermove', handlePointerMove);

@@ -232,11 +232,16 @@ function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
     return false;
   }
 
-  if (typeof options.getRoomTrackedUrlCount !== 'function') {
+  const getFastSettleCount =
+    typeof options.getReadableRoomResponseCount === 'function'
+      ? options.getReadableRoomResponseCount
+      : options.getRoomTrackedUrlCount;
+
+  if (typeof getFastSettleCount !== 'function') {
     return false;
   }
 
-  return Number(options.getRoomTrackedUrlCount() || 0) >= getRoomApiFastSettleThreshold(options);
+  return Number(getFastSettleCount() || 0) >= getRoomApiFastSettleThreshold(options);
 }
 
 function buildRoomApiFastPathSkippedStats(aggregate, stepPhase) {
@@ -579,6 +584,10 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         typeof options.getRoomTrackedUrlCount === 'function'
           ? Number(options.getRoomTrackedUrlCount() || 0)
           : null;
+      const readableRoomResponseCount =
+        typeof options.getReadableRoomResponseCount === 'function'
+          ? Number(options.getReadableRoomResponseCount() || 0)
+          : null;
       const phaseTimer = perf.phase(step.phase, {
         ...baseFields,
         tracked_url_count_before: trackedUrlCount
@@ -590,6 +599,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
       phaseTimer.end('skipped', {
         ...toPerfFields(stats, trackedUrlCount, trackedUrlCount),
         room_tracked_url_count: roomTrackedUrlCount,
+        readable_room_response_count: readableRoomResponseCount,
         skip_reason: 'room_api_fast_path'
       });
       continue;

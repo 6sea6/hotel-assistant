@@ -248,8 +248,11 @@ body.platform-windows .window-controls {
 }
 
 .content-area {
+  --content-area-padding-x: 24px;
+  --content-area-padding-y: 24px;
+  --content-area-scrollbar-width: 8px;
   flex: 1;
-  padding: 24px;
+  padding: var(--content-area-padding-y) var(--content-area-padding-x);
   overflow-y: auto;
   scrollbar-gutter: stable;
   background: var(--bg-secondary);

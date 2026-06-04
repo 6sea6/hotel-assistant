@@ -80,9 +80,16 @@ function getEdgeDomExtractTimeoutMs(roomBlocks, options = {}) {
   if (options && options.apiCaptureComplete) {
     return EDGE_DOM_EXTRACT_API_COMPLETE_TIMEOUT_MS;
   }
-  return Array.isArray(roomBlocks) && roomBlocks.length > 0
-    ? EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS
-    : EDGE_DOM_EXTRACT_TIMEOUT_MS;
+  const hasPricedRoom =
+    Array.isArray(roomBlocks) &&
+    roomBlocks.some(
+      (room) =>
+        room &&
+        room.price !== null &&
+        room.price !== undefined &&
+        !room.price_locked
+    );
+  return hasPricedRoom ? EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS : EDGE_DOM_EXTRACT_TIMEOUT_MS;
 }
 
 function isEdgeDomExtractTimeoutError(error) {
@@ -139,12 +146,13 @@ async function extractEdgeDomRoomCandidates({
     const domPayload =
       typeof domPayloadResult === 'string' ? safeJsonParse(domPayloadResult) : domPayloadResult;
     writeEdgeDebugArtifact(`${debugHotelId}-dom-payload.json`, domPayload);
-    const candidates = collectRoomCandidatesFromDomPayload(domPayload);
+    const candidates = apiCaptureComplete ? collectRoomCandidatesFromDomPayload(domPayload) : [];
     candidateList.push(...candidates);
     domPhase.end('success', {
       roomCandidatesCount: candidateList.length - beforeDomCount,
       dom_extract_mode: domExtractMode,
       dom_extract_api_complete: Boolean(apiCaptureComplete),
+      dom_extract_candidates_suppressed: !apiCaptureComplete,
       dom_extract_timeout_ms: timeoutMs,
       room_candidates_before: beforeDomCount,
       room_candidates_after: candidateList.length,

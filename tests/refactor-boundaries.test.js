@@ -97,6 +97,32 @@ test('hotel virtual adapter shares list and card render plumbing', () => {
   );
 });
 
+test('virtual scrollbar drag path avoids synchronous layout work on pointermove', () => {
+  const adapter = readProjectFile('src/renderer/modules/hotel-list-virtual-adapter.js');
+  const scrollbarStart = adapter.indexOf('function createCustomVirtualScrollbar');
+  const scrollbarEnd = adapter.indexOf('/* ---- 虚拟滚动：卡片视图 ---- */');
+  assert.ok(scrollbarStart > 0, 'Should find custom scrollbar implementation');
+  assert.ok(scrollbarEnd > scrollbarStart, 'Should find custom scrollbar implementation end');
+
+  const scrollbarBody = adapter.slice(scrollbarStart, scrollbarEnd);
+  const pointerMoveStart = scrollbarBody.indexOf('function handlePointerMove');
+  const pointerMoveEnd = scrollbarBody.indexOf('function stopDragging', pointerMoveStart);
+  assert.ok(pointerMoveStart > 0, 'Should find pointermove handler');
+  assert.ok(pointerMoveEnd > pointerMoveStart, 'Should find pointermove handler end');
+
+  const pointerMoveBody = scrollbarBody.slice(pointerMoveStart, pointerMoveEnd);
+  assert.match(scrollbarBody, /let dragMetrics = null/);
+  assert.match(scrollbarBody, /let thumbUpdateRafId = 0/);
+  assert.match(scrollbarBody, /let dragScrollRafId = 0/);
+  assert.match(scrollbarBody, /function scheduleThumbRender/);
+  assert.match(scrollbarBody, /function scheduleDragScroll/);
+  assert.doesNotMatch(pointerMoveBody, /getScrollMetrics\(\)/);
+  assert.doesNotMatch(pointerMoveBody, /update\(\)/);
+  assert.doesNotMatch(pointerMoveBody, /setScrollTopSafely\(/);
+  assert.match(pointerMoveBody, /dragMetrics/);
+  assert.match(pointerMoveBody, /scheduleDragScroll\(targetScrollTop\)/);
+});
+
 test('AI assistant task page is split into payload queue template and event modules', () => {
   const expectedModules = [
     'src/renderer/modules/ai-task-payload.js',

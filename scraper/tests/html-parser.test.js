@@ -14,3 +14,12 @@ test('findRoomBlocksFromStructuredText extracts mixed-bed advanced twin room fro
   assert.equal(blocks[0].occupancy, 3);
   assert.equal(blocks[0].price, 530);
 });
+
+test('findRoomBlocksFromStructuredText ignores implausibly small decorative prices', () => {
+  const blocks = findRoomBlocksFromStructuredText(
+    '高级大床房 房型摘要 可住人数 2人 今日价格 ¥1 立即确认 高级双床房 房型摘要 可住人数 2人 今日价格 ¥268 立即确认'
+  );
+
+  assert.equal(blocks.find((room) => room.title.includes('高级大床房')).price, null);
+  assert.equal(blocks.find((room) => room.title.includes('高级双床房')).price, 268);
+});

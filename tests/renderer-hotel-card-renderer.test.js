@@ -59,7 +59,7 @@ export function queueHotelRenderResume(callback) { callback(); }
       `
 export function normalizeHotelCardVisibleFields() { return []; }
 export function renderCardFields() {
-  return { headerFieldItems: [], compactItems: [], fullItems: [], footerItems: [], actionItems: [] };
+  return globalThis.__hotelCardRendererFields || { headerFieldItems: [], compactItems: [], fullItems: [], footerItems: [], actionItems: [] };
 }
 `
     );
@@ -115,6 +115,7 @@ test('hotel card renders the favorite star below the top-right rank without a fr
     settings: { hotelCardVisibleFields: [] },
     renderedHotelNodeMap: new Map()
   };
+  globalThis.__hotelCardRendererFields = null;
 
   try {
     const { createHotelCard } = await loadCardRendererModule();
@@ -152,4 +153,61 @@ test('hotel card renders the favorite star below the top-right rank without a fr
   } finally {
     restoreDom();
   }
+});
+
+test('hotel card meta row lets a single address use the full row', async () => {
+  const restoreDom = installCardRendererDom();
+  globalThis.__hotelCardRendererState = {
+    settings: { hotelCardVisibleFields: [] },
+    renderedHotelNodeMap: new Map()
+  };
+  globalThis.__hotelCardRendererFields = {
+    headerFieldItems: [
+      {
+        key: 'address',
+        html: '<div class="hotel-address hotel-card-address"><span class="hotel-card-address-text">湖北武汉武昌区沿江大道159号</span></div>'
+      }
+    ],
+    compactItems: [],
+    fullItems: [],
+    footerItems: [],
+    actionItems: []
+  };
+
+  try {
+    const { createHotelCard } = await loadCardRendererModule();
+    const card = createHotelCard(makeHotel(), 0);
+    const html = card.innerHTML;
+    const metaRow = html.match(/<div class="hotel-card-meta-pair[^"]*">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || '';
+
+    assert.match(metaRow, /hotel-card-meta-pair[^"]*\bis-single-meta\b/);
+    assert.match(metaRow, /hotel-card-meta-pair[^"]*\bhas-address\b/);
+    assert.match(metaRow, /hotel-card-meta-cell-address/);
+    assert.doesNotMatch(metaRow, /hotel-card-meta-cell-website/);
+  } finally {
+    globalThis.__hotelCardRendererFields = null;
+    restoreDom();
+  }
+});
+
+test('hotel card metadata css lets address consume available row space before truncating', () => {
+  const css = fs.readFileSync(
+    path.join(projectRoot, 'src', 'renderer', 'styles', 'pages', 'hotel-cards.css'),
+    'utf-8'
+  );
+  const metaPairRule = css.match(/\.hotel-card-meta-pair\s*{([\s\S]*?)}/)?.[1] || '';
+  const singleMetaRule = css.match(/\.hotel-card-meta-pair\.is-single-meta\s*{([\s\S]*?)}/)?.[1] || '';
+  const addressRuleStart = css.lastIndexOf('\n.hotel-card-address {');
+  assert.notEqual(addressRuleStart, -1, 'missing standalone hotel-card-address rule');
+  const addressRuleBlockStart = css.indexOf('{', addressRuleStart);
+  const addressRuleBlockEnd = css.indexOf('}', addressRuleBlockStart);
+  const addressRule = css.slice(addressRuleBlockStart + 1, addressRuleBlockEnd);
+  const addressTextRule = css.match(/\.hotel-card-address-text\s*{([\s\S]*?)}/)?.[1] || '';
+
+  assert.match(metaPairRule, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/);
+  assert.match(singleMetaRule, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(addressRule, /display:\s*grid/);
+  assert.match(addressRule, /grid-template-columns:\s*auto\s+minmax\(0,\s*1fr\)/);
+  assert.match(addressTextRule, /min-width:\s*0/);
+  assert.match(addressTextRule, /text-overflow:\s*ellipsis/);
 });

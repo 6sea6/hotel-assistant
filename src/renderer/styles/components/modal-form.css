@@ -316,7 +316,7 @@ body.modal-open .modal.active {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 1400px) {
+@media (max-width: 1180px) {
   .hotel-list {
     grid-template-columns: repeat(2, 1fr);
   }

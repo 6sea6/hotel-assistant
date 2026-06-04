@@ -395,6 +395,52 @@ test('settleRoomListInEdgeSession skips main scroll when room API is already cap
   }
 });
 
+test('settleRoomListInEdgeSession keeps scrolling until a room API body is readable', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: expression.includes('stableHeightRounds') ? 3 : 1,
+        containerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 3,
+      getRoomTrackedUrlCount: () => 1,
+      getReadableRoomResponseCount: () => 0
+    });
+
+    assert.equal(
+      expressions.some((expression) => expression.includes('stableHeightRounds')),
+      true
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_main_scroll').status,
+      'success'
+    );
+    assert.equal(stats.apiFastPathSkippedStepCount, 0);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settleRoomListInEdgeSession treats duplicate skipped clicks as stable for bottom expand', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
@@ -1190,6 +1236,77 @@ test('edge response parse retries room response body reads before dropping room 
   }
 });
 
+test('edge response parse uses prefetched room body when delayed CDP body reads fail', async () => {
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.roomName
+        ? [
+            {
+              title: payload.roomName,
+              standard_title: payload.roomName,
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const roomBlocks = [];
+    let bodyReadCount = 0;
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async () => {
+          bodyReadCount += 1;
+          throw new Error('No data found for resource with given identifier');
+        }
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'room-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+            mimeType: 'application/json',
+            cachedBody: JSON.stringify({ roomName: '标准大床房' }),
+            cachedBodyResult: {
+              body: JSON.stringify({ roomName: '标准大床房' }),
+              retryCount: 0,
+              timeoutCount: 0,
+              elapsedMs: 4,
+              error: null
+            }
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.equal(bodyReadCount, 0);
+    assert.equal(stats.cachedResponseBodyHitCount, 1);
+    assert.equal(stats.cachedRoomResponseBodyHitCount, 1);
+    assert.equal(stats.roomResponseCount, 1);
+    assert.equal(stats.responseParseCandidateCount, 1);
+    assert.equal(roomBlocks.length, 1);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, debugPath]);
+  }
+});
+
 test('edge response parse stops reading non-room responses after room API fast path is complete', async () => {
   const extractorPath = installMock('../src/scraper/structured-extractor', {
     collectRoomCandidatesFromPayload: (payload) =>
@@ -1625,8 +1742,8 @@ test('edge response parse keeps raw text fallback when structured room data is i
       {
         title: '商务单人房',
         standard_title: '商务单人房',
-        price: 268,
-        prices: [268],
+        price: null,
+        prices: [],
         occupancy: 1,
         cancelPolicy: '免费取消',
         source: 'edge-api'
@@ -1671,6 +1788,188 @@ test('edge response parse keeps raw text fallback when structured room data is i
     assert.equal(stats.rawFallbackUsedCount, 1);
     assert.equal(stats.rawFallbackSkippedCount, 0);
     assert.equal(roomBlocks.length, 2);
+    assert.equal(stats.fastPathComplete, true);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, htmlParserPath, debugPath]);
+  }
+});
+
+test('edge response parse skips raw fallback when structured room data already has prices', async () => {
+  let rawFallbackCalls = 0;
+  const htmlParserPath = installMock('../src/scraper/html-parser', {
+    findRoomBlocksFromStructuredText: () => {
+      rawFallbackCalls += 1;
+      return [
+        {
+          title: '原始文本噪声大床房',
+          standard_title: '大床房',
+          price: 100,
+          prices: [100],
+          occupancy: 2,
+          cancelPolicy: '免费取消',
+          source: 'edge-cdp-raw'
+        }
+      ];
+    },
+    findRoomBlocksFromHtml: () => [],
+    safeJsonParse: (text) => {
+      try {
+        return JSON.parse(text);
+      } catch (_error) {
+        return null;
+      }
+    }
+  });
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: () => [
+      {
+        title: '商务单人房',
+        standard_title: '商务单人房',
+        price: 268,
+        prices: [268],
+        occupancy: 1,
+        cancelPolicy: '免费取消',
+        source: 'edge-api'
+      }
+    ]
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const roomBlocks = [];
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async () => ({
+          body: JSON.stringify({ roomName: '商务单人房' }),
+          base64Encoded: false
+        })
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'room-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.equal(rawFallbackCalls, 0);
+    assert.equal(stats.rawFallbackUsedCount, 0);
+    assert.equal(stats.rawFallbackSkippedCount, 1);
+    assert.equal(roomBlocks.length, 1);
+    assert.equal(roomBlocks[0].price, 268);
+    assert.equal(stats.fastPathComplete, false);
+  } finally {
+    clearModules([networkCapturePath, extractorPath, htmlParserPath, debugPath]);
+  }
+});
+
+test('edge response parse prunes earlier raw fallback after structured prices arrive', async () => {
+  let rawFallbackCalls = 0;
+  const htmlParserPath = installMock('../src/scraper/html-parser', {
+    findRoomBlocksFromStructuredText: () => {
+      rawFallbackCalls += 1;
+      return [
+        {
+          title: '原始文本噪声大床房',
+          standard_title: '大床房',
+          price: 100,
+          prices: [100],
+          occupancy: 2,
+          cancelPolicy: '免费取消',
+          source: 'edge-cdp-raw'
+        }
+      ];
+    },
+    findRoomBlocksFromHtml: () => [],
+    safeJsonParse: (text) => {
+      try {
+        return JSON.parse(text);
+      } catch (_error) {
+        return null;
+      }
+    }
+  });
+  const extractorPath = installMock('../src/scraper/structured-extractor', {
+    collectRoomCandidatesFromPayload: (payload) =>
+      payload && payload.stage === 'structured'
+        ? [
+            {
+              title: '标准大床房',
+              standard_title: '大床房',
+              price: 288,
+              prices: [288],
+              occupancy: 2,
+              cancelPolicy: '免费取消',
+              source: 'edge-api'
+            }
+          ]
+        : []
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      parseEdgeNetworkResponses
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const roomBlocks = [];
+    const stats = await parseEdgeNetworkResponses({
+      connection: {
+        send: async (_method, params) => ({
+          body: JSON.stringify({
+            stage: params.requestId === 'structured-request' ? 'structured' : 'raw'
+          }),
+          base64Encoded: false
+        })
+      },
+      sessionId: 'session-1',
+      requestMeta: new Map([
+        [
+          'raw-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList?stage=raw',
+            mimeType: 'application/json'
+          }
+        ],
+        [
+          'structured-request',
+          {
+            url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList?stage=structured',
+            mimeType: 'application/json'
+          }
+        ]
+      ]),
+      template: { room_type: '大床房', room_count: 2 },
+      roomBlocks,
+      spiderErrorCodes: new Set(),
+      debugHotelId: '112433891'
+    });
+
+    assert.equal(rawFallbackCalls, 1);
+    assert.equal(stats.rawFallbackUsedCount, 1);
+    assert.equal(stats.rawFallbackCandidateCount, 1);
+    assert.equal(stats.rawFallbackPrunedCount, 1);
+    assert.equal(roomBlocks.length, 1);
+    assert.equal(roomBlocks[0].title, '标准大床房');
+    assert.equal(roomBlocks[0].price, 288);
     assert.equal(stats.fastPathComplete, true);
   } finally {
     clearModules([networkCapturePath, extractorPath, htmlParserPath, debugPath]);
@@ -1928,6 +2227,92 @@ test('edge DOM extract keeps full timeout when API produced no room candidates',
     });
 
     assert.equal(evaluateTimeoutMs, 6000);
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
+  }
+});
+
+test('edge DOM extract keeps full timeout when API candidates have no visible price', async () => {
+  let evaluateTimeoutMs = null;
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, _expression, options = {}) => {
+      evaluateTimeoutMs = options.timeoutMs;
+      throw new Error(`CDP Runtime.evaluate timed out after ${options.timeoutMs}ms`);
+    },
+    createCdpAbortError: (method) => {
+      const error = new Error(`CDP ${method} aborted`);
+      error.name = 'AbortError';
+      return error;
+    }
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      extractEdgeDomRoomCandidates
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    await extractEdgeDomRoomCandidates({
+      connection: {},
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'reuse',
+      trackedUrls: new Set(),
+      debugHotelId: '112433891',
+      roomBlocks: [{ title: '无价大床房', price: null, prices: [], source: 'edge-cdp-raw' }],
+      perf: createPerfRecorder([])
+    });
+
+    assert.equal(evaluateTimeoutMs, 6000);
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
+  }
+});
+
+test('edge DOM extract does not add full-page DOM prices before API success', async () => {
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async () =>
+      JSON.stringify({
+        bodyText: '选择房间 高级大床房 房型摘要 可住人数 2人 今日价格 ¥100 立即确认',
+        bodyHtml: '',
+        snippets: [],
+        snapshots: []
+      }),
+    createCdpAbortError: (method) => {
+      const error = new Error(`CDP ${method} aborted`);
+      error.name = 'AbortError';
+      return error;
+    }
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      extractEdgeDomRoomCandidates
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const roomBlocks = [];
+    const stats = await extractEdgeDomRoomCandidates({
+      connection: {},
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'reuse',
+      trackedUrls: new Set(),
+      debugHotelId: '112433891',
+      roomBlocks,
+      perf: createPerfRecorder([])
+    });
+
+    assert.equal(stats.roomCandidatesCount, 0);
+    assert.equal(roomBlocks.length, 0);
   } finally {
     clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
   }

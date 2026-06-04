@@ -110,7 +110,8 @@ export const HOTEL_CARD_FIELDS = [
     label: '地址',
     group: 'header',
     getValue: (hotel) => hotel.address || null,
-    render: (value) => `<div class="hotel-address hotel-card-address">📍 ${escapeHtml(value)}</div>`
+    render: (value) =>
+      `<div class="hotel-address hotel-card-address"><span class="hotel-card-meta-icon" aria-hidden="true">📍</span><span class="hotel-card-address-text">${escapeHtml(value)}</span></div>`
   },
   {
     key: 'website',

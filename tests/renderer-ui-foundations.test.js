@@ -153,6 +153,109 @@ test('modal overlay does not draw a divider between header and main content', ()
   assert.match(modalOverlay, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.5\)/);
 });
 
+test('default app window width keeps hotel card grid at three columns', () => {
+  const modalCss = readStyleFile('components/modal-form.css');
+  const defaultWindowBreakpoint = /@media\s*\(max-width:\s*1400px\)\s*{\s*\.hotel-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*1fr\)/;
+
+  assert.doesNotMatch(modalCss, defaultWindowBreakpoint);
+  assert.match(
+    modalCss,
+    /@media\s*\(max-width:\s*1180px\)\s*{[\s\S]*?\.hotel-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*1fr\)/
+  );
+});
+
+test('virtual scrollbars mimic the content area native scrollbar frame', () => {
+  const appShell = readStyleFile('components/app-shell.css');
+  const virtualScroll = readStyleFile('components/virtual-scroll.css');
+
+  const contentArea = readCssRuleBlock(appShell, '.content-area');
+  assert.match(contentArea, /--content-area-padding-x:\s*24px/);
+  assert.match(contentArea, /--content-area-scrollbar-width:\s*8px/);
+  assert.match(
+    contentArea,
+    /padding:\s*var\(--content-area-padding-y\)\s+var\(--content-area-padding-x\)/
+  );
+
+  const virtualPageScrollbar = readCssRuleBlock(
+    virtualScroll,
+    '.virtual-card-scrollbar,\n.virtual-list-scrollbar'
+  );
+  assert.match(virtualPageScrollbar, /position:\s*fixed/);
+  assert.match(virtualPageScrollbar, /top:\s*var\(--app-header-height\)/);
+  assert.match(virtualPageScrollbar, /right:\s*0/);
+  assert.match(virtualPageScrollbar, /bottom:\s*0/);
+  assert.match(virtualPageScrollbar, /width:\s*var\(--content-area-scrollbar-width\)/);
+  assert.doesNotMatch(virtualPageScrollbar, /--content-area-padding-x/);
+
+  const virtualPageThumb = readCssRuleBlock(
+    virtualScroll,
+    '.virtual-card-scrollbar .virtual-scrollbar-thumb,\n.virtual-list-scrollbar .virtual-scrollbar-thumb'
+  );
+  assert.match(virtualPageThumb, /left:\s*0/);
+  assert.match(virtualPageThumb, /width:\s*100%/);
+});
+
+test('virtual hotel lists do not reserve extra space for their custom scrollbars', () => {
+  const virtualScroll = readStyleFile('components/virtual-scroll.css');
+
+  const virtualCardScroll = readCssRuleBlock(virtualScroll, '.virtual-card-scroll');
+  assert.doesNotMatch(virtualCardScroll, /scrollbar-gutter:\s*stable/);
+  const virtualListScroll = readCssRuleBlock(virtualScroll, '.virtual-list-scroll');
+  assert.doesNotMatch(virtualListScroll, /scrollbar-gutter:\s*stable/);
+
+  const virtualCardItems = readCssRuleBlock(virtualScroll, '.virtual-card-items');
+  assert.doesNotMatch(virtualCardItems, /padding-right/);
+  assert.doesNotMatch(virtualScroll, /\.virtual-list-scroll\s+\.virtual-items\s*{/);
+});
+
+test('non-virtual hotel table body lets the content area own the page scrollbar', () => {
+  const tableCss = readStyleFile('pages/hotel-table.css');
+  const appShell = readStyleFile('components/app-shell.css');
+
+  const tableBody = readCssRuleBlock(tableCss, '.hotel-table-body');
+  assert.doesNotMatch(tableBody, /max-height/);
+  assert.doesNotMatch(tableBody, /overflow-y:\s*auto/);
+
+  const contentArea = readCssRuleBlock(appShell, '.content-area');
+  assert.match(contentArea, /overflow-y:\s*auto/);
+  assert.match(contentArea, /scrollbar-gutter:\s*stable/);
+});
+
+test('native and virtual card scrollbar widths share the same visual contract', () => {
+  const modalCss = readStyleFile('components/modal-form.css');
+  const appShell = readStyleFile('components/app-shell.css');
+  const nativeScrollbar = readCssRuleBlock(modalCss, '::-webkit-scrollbar');
+  const contentArea = readCssRuleBlock(appShell, '.content-area');
+
+  assert.match(nativeScrollbar, /width:\s*8px/);
+  assert.match(
+    contentArea,
+    /--content-area-scrollbar-width:\s*8px/
+  );
+});
+
+test('virtual scrollbar uses the same subdued default colors as native scrollbars', () => {
+  const modalCss = readStyleFile('components/modal-form.css');
+  const virtualScroll = readStyleFile('components/virtual-scroll.css');
+
+  const nativeTrack = readCssRuleBlock(modalCss, '::-webkit-scrollbar-track');
+  const nativeThumb = readCssRuleBlock(modalCss, '::-webkit-scrollbar-thumb');
+  const nativeThumbHover = readCssRuleBlock(modalCss, '::-webkit-scrollbar-thumb:hover');
+  const virtualTrack = readCssRuleBlock(virtualScroll, '.virtual-scrollbar-track');
+  const virtualThumb = readCssRuleBlock(virtualScroll, '\n.virtual-scrollbar-thumb');
+  const virtualThumbHover = readCssRuleBlock(
+    virtualScroll,
+    '.virtual-scrollbar-thumb:hover,\n.virtual-scrollbar-thumb.is-dragging'
+  );
+
+  assert.match(nativeTrack, /background:\s*var\(--bg-tertiary\)/);
+  assert.match(nativeThumb, /background:\s*var\(--border-color\)/);
+  assert.match(nativeThumbHover, /background:\s*var\(--text-tertiary\)/);
+  assert.match(virtualTrack, /background:\s*var\(--bg-tertiary\)/);
+  assert.match(virtualThumb, /background:\s*var\(--border-color\)/);
+  assert.match(virtualThumbHover, /background:\s*var\(--text-tertiary\)/);
+});
+
 class FakeClassList {
   constructor(owner) {
     this.owner = owner;

@@ -322,6 +322,26 @@ test('calculateCardColumns: large width returns 3', async () => {
   assert.equal(calculateCardColumns(1400), 3);
 });
 
+test('calculateCardColumns: enough room for three compact cards returns 3', async () => {
+  const { calculateCardColumns } = await loadModule();
+  assert.equal(calculateCardColumns(1150), 3);
+});
+
+test('calculateCardColumns: common virtual card viewport width returns 3', async () => {
+  const { calculateCardColumns } = await loadModule();
+  assert.equal(calculateCardColumns(1120), 3);
+});
+
+test('calculateCardColumns: default app window content width returns 3', async () => {
+  const { calculateCardColumns } = await loadModule();
+  assert.equal(calculateCardColumns(1032), 3);
+});
+
+test('calculateCardColumns: very large width can show more than 3 cards', async () => {
+  const { calculateCardColumns } = await loadModule();
+  assert.equal(calculateCardColumns(1600), 4);
+});
+
 test('calculateCardColumns: 0 returns 1', async () => {
   const { calculateCardColumns } = await loadModule();
   assert.equal(calculateCardColumns(0), 1);

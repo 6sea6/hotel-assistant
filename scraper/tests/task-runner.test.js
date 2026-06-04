@@ -985,6 +985,107 @@ test('batch continues after one detail item fails', async () => {
   }
 });
 
+test('batch retries uncollected priced-room misses and keeps the retry result', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-uncollected-retry-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=retry-ok',
+      hotelId: 'retry-ok',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=retry-miss',
+      hotelId: 'retry-miss',
+      source: 'detail-input'
+    }
+  ];
+  const attempts = new Map();
+  const makeScrapeResult = (hotelInput, price) => ({
+    hotel_name: `重试酒店${hotelInput.hotelId}`,
+    address: `重试地址${hotelInput.hotelId}`,
+    ctrip_score: 4.8,
+    geo: { location: '114.1,30.1' },
+    room: {
+      title: '大床房',
+      standard_title: '大床房',
+      price,
+      prices: price === null ? [] : [price],
+      occupancy: 2
+    },
+    room_candidates: [{ title: '大床房', standard_title: '大床房', price }],
+    raw_room_candidates: [{ title: '大床房', price, raw: true }],
+    eligible_rooms:
+      price === null ? [] : [{ title: '大床房', standard_title: '大床房', price, occupancy: 2 }],
+    room_selection_diagnostics: {
+      evaluations: [{ action: price === null ? 'rejected' : 'selected' }],
+      eligibleRooms: []
+    },
+    page_snapshot: {
+      source_url: hotelInput.url,
+      room_candidates_count: 1,
+      raw_room_candidates_count: 1,
+      eligible_room_count: price === null ? 0 : 1,
+      room_price_visible: price !== null,
+      selected_room_source: price === null ? 'desktop' : 'edge-cdp',
+      capture_method: price === null ? 'edge_cdp_then_api_replay' : 'html_then_edge_cdp',
+      wait_reason: price === null ? 'retry_after_edge_failed' : 'missing_price',
+      edge_fallback_used: true,
+      api_replay_used: price === null,
+      tracked_url_count: 1,
+      sources: []
+    },
+    performance: {
+      totalMs: 3,
+      htmlMs: 1,
+      edgeCaptureMs: 1,
+      directReplayMs: price === null ? 1 : 0,
+      waitDataMs: 1
+    }
+  });
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      const nextAttempt = (attempts.get(hotelInput.hotelId) || 0) + 1;
+      attempts.set(hotelInput.hotelId, nextAttempt);
+      if (hotelInput.hotelId === 'retry-miss' && nextAttempt === 1) {
+        return makeScrapeResult(hotelInput, null);
+      }
+      return makeScrapeResult(hotelInput, hotelInput.hotelId === 'retry-ok' ? 188 : 266);
+    }
+  });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(calls.scrape, 3);
+    assert.equal(attempts.get('retry-miss'), 2);
+    assert.equal(result.eligibleCount, 2);
+    assert.deepEqual(
+      result.items.map((item) => item.eligibleCount),
+      [1, 1]
+    );
+    assert.equal(result.items[1].totalPrice, 266);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('batch rethrows cancellation from the last detail item instead of partial success', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
@@ -1298,7 +1399,7 @@ test('batch-concurrency argument enables parallel collection while preserving re
   }
 });
 
-test('batch auto-edge defaults detail items to parallel_edge capture strategy', async () => {
+test('batch auto-edge lets detail items use default capture strategy unless explicitly set', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1338,7 +1439,7 @@ test('batch auto-edge defaults detail items to parallel_edge capture strategy', 
     assert.equal(calls.scrapeOptions.length, 2);
     assert.deepEqual(
       calls.scrapeOptions.map((item) => item.captureStrategy),
-      ['parallel_edge', 'parallel_edge']
+      [null, null]
     );
     assert.deepEqual(
       calls.scrapeOptions.map((item) => item.edgeParallelCancelPolicy),

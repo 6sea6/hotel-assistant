@@ -85,11 +85,20 @@ export function createHotelCard(hotel, index) {
     ? `<div class="hotel-card-original-room-row">${originalRoomHtml}</div>`
     : '';
 
+  const metaPairClasses = [
+    'hotel-card-meta-pair',
+    websiteHtml ? 'has-website' : '',
+    addressHtml ? 'has-address' : '',
+    websiteHtml && addressHtml ? '' : 'is-single-meta'
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   const metaPairHtml =
     websiteHtml || addressHtml
-      ? `<div class="hotel-card-meta-pair">
-        <div class="hotel-card-meta-cell hotel-card-meta-cell-website">${websiteHtml || ''}</div>
-        <div class="hotel-card-meta-cell hotel-card-meta-cell-address">${addressHtml || ''}</div>
+      ? `<div class="${metaPairClasses}">
+        ${websiteHtml ? `<div class="hotel-card-meta-cell hotel-card-meta-cell-website">${websiteHtml}</div>` : ''}
+        ${addressHtml ? `<div class="hotel-card-meta-cell hotel-card-meta-cell-address">${addressHtml}</div>` : ''}
       </div>`
       : '';
 

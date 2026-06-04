@@ -9,6 +9,10 @@ function createMockConnection() {
   const listeners = [];
   return {
     listeners,
+    send: async () => ({
+      body: JSON.stringify({ roomName: '标准大床房' }),
+      base64Encoded: false
+    }),
     addListener(listener) {
       listeners.push(listener);
       return () => {
@@ -86,4 +90,36 @@ test('edge network response tracker detaches its listener', () => {
 
   assert.equal(tracker.trackedUrls.size, 0);
   assert.equal(tracker.roomRequestMeta.size, 0);
+});
+
+test('edge network response tracker prefetches room response body after loading finishes', async () => {
+  const connection = createMockConnection();
+  const tracker = createEdgeNetworkResponseTracker({ connection, sessionId: 'session-1' });
+
+  tracker.attach();
+  connection.emit({
+    sessionId: 'session-1',
+    method: 'Network.responseReceived',
+    params: {
+      requestId: 'room-1',
+      response: {
+        url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+        mimeType: 'application/json'
+      }
+    }
+  });
+  connection.emit({
+    sessionId: 'session-1',
+    method: 'Network.loadingFinished',
+    params: {
+      requestId: 'room-1'
+    }
+  });
+
+  const meta = tracker.requestMeta.get('room-1');
+  assert.ok(meta.bodyReadPromise);
+  const bodyResult = await meta.bodyReadPromise;
+
+  assert.equal(bodyResult.body, JSON.stringify({ roomName: '标准大床房' }));
+  assert.equal(meta.cachedBody, JSON.stringify({ roomName: '标准大床房' }));
 });

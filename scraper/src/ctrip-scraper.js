@@ -409,18 +409,28 @@ function applyCaptureResultToState(captureState, captureResult) {
     return false;
   }
 
+  const nextSelectedRoom =
+    captureResult.selectedRoom ||
+    selectBestRoom(
+      captureResult.roomBlocks,
+      captureState.template,
+      captureState.options.matchingOptions || {}
+    );
+  if (
+    !nextSelectedRoom ||
+    nextSelectedRoom.price === null ||
+    nextSelectedRoom.price === undefined ||
+    nextSelectedRoom.price_locked
+  ) {
+    return false;
+  }
+
   captureState.normalizedRoomBlocks.splice(
     0,
     captureState.normalizedRoomBlocks.length,
     ...captureResult.roomBlocks
   );
-  captureState.selectedRoom =
-    captureResult.selectedRoom ||
-    selectBestRoom(
-      captureState.normalizedRoomBlocks,
-      captureState.template,
-      captureState.options.matchingOptions || {}
-    );
+  captureState.selectedRoom = nextSelectedRoom;
   return true;
 }
 

@@ -88,14 +88,14 @@ function isReportDisabled(reportLevel) {
   return reportLevel === 'off';
 }
 
-function resolveBatchCaptureStrategy(args = {}, options = {}, autoEdge = false) {
+function resolveBatchCaptureStrategy(args = {}, options = {}, _autoEdge = false) {
   const explicitCaptureStrategy =
     args.captureStrategy || args['capture-strategy'] || options.captureStrategy || null;
   if (explicitCaptureStrategy) {
     return explicitCaptureStrategy;
   }
 
-  return autoEdge ? 'parallel_edge' : null;
+  return null;
 }
 
 function shouldCleanupOutputArtifactsForRun(reportLevel, args = {}) {
