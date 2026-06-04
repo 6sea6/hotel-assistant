@@ -724,6 +724,40 @@ test('package test scripts discover renderer and scraper test files automaticall
   assert.ok(scraperTestFiles.includes(path.join('scraper', 'tests', 'prompt-rules.test.js')));
 });
 
+test('typecheck config covers renderer modules by directory glob', () => {
+  const jsconfig = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'jsconfig.json'), 'utf-8')
+  );
+
+  assert.ok(jsconfig.include.includes('src/renderer/**/*.js'));
+  assert.ok(jsconfig.include.includes('src/shared/**/*.js'));
+  assert.ok(jsconfig.include.includes('src/main/domain/**/*.js'));
+  assert.ok(jsconfig.include.includes('src/main/repositories/**/*.js'));
+});
+
+test('low-frequency settings modals are lazy-mounted templates', () => {
+  const projectRoot = path.resolve(__dirname, '..');
+  const indexHtml = fs.readFileSync(
+    path.join(projectRoot, 'src', 'renderer', 'index.html'),
+    'utf-8'
+  );
+  const appModule = fs.readFileSync(
+    path.join(projectRoot, 'src', 'renderer', 'app.module.js'),
+    'utf-8'
+  );
+
+  ['listPrefilterModal', 'settingsModal', 'personalizationModal'].forEach((modalId) => {
+    assert.match(indexHtml, new RegExp(`<template data-modal-template="${modalId}">`));
+    assert.match(indexHtml, new RegExp(`<div id="${modalId}" class="modal"`));
+  });
+  assert.match(appModule, /document\.addEventListener\('change', handleDelegatedChange\)/);
+  assert.doesNotMatch(
+    appModule,
+    /addEvent\('includeFourPersonRoomsForThreePersonTemplate',\s*'change'/
+  );
+  assert.doesNotMatch(appModule, /document\.querySelectorAll\('input\[name="themeOption"\]'\)/);
+});
+
 test('runtime artifact cleanup removes only known generated output directories', () => {
   const tempRoot = makeTempRoot();
   const generatedFiles = [

@@ -241,10 +241,13 @@ export function syncViewModeControls() {
     );
   }
 
-  [
+  /** @type {Array<[HTMLElement|null, 'card'|'list']>} */
+  const viewModeOptions = [
     [cardOption, 'card'],
     [listOption, 'list']
-  ].forEach(([option, mode]) => {
+  ];
+
+  viewModeOptions.forEach(([option, mode]) => {
     if (!option) return;
     const isActive = activeMode === mode;
     option.classList.toggle('is-active', isActive);

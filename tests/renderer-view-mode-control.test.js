@@ -23,7 +23,7 @@ test('main toolbar exposes an explicit whole-frame card/table view toggle', () =
   assert.match(html, /data-action="toggle-view-mode"/);
   assert.match(html, /id="viewModeCardOption"[\s\S]*data-view-mode="card"/);
   assert.match(html, /id="viewModeListOption"[\s\S]*data-view-mode="list"/);
-  assert.match(html, /🛏️/);
+  assert.match(html, /🗂️/);
   assert.match(html, /📝/);
   assert.doesNotMatch(html, /data-action="set-view-mode"/);
 });

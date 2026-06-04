@@ -122,6 +122,7 @@ let aiAssistantModulePromise = null;
 let rankingImageModulePromise = null;
 let delegatedContentEventsBound = false;
 let delegatedInputEventsBound = false;
+let delegatedChangeEventsBound = false;
 
 function loadAiAssistantModule() {
   aiAssistantModulePromise ||= import('./modules/ai-assistant.js');
@@ -312,6 +313,51 @@ function handleDelegatedInput(event) {
   }
 }
 
+/**
+ * @param {Event} event
+ */
+function handleDelegatedChange(event) {
+  const target =
+    event.target instanceof HTMLInputElement ||
+    event.target instanceof HTMLSelectElement ||
+    event.target instanceof HTMLTextAreaElement
+      ? event.target
+      : null;
+  if (!target) return;
+
+  if (target.name === 'themeOption') {
+    changeTheme(target.value);
+    return;
+  }
+
+  if (target.id === 'includeFourPersonRoomsForThreePersonTemplate') {
+    toggleIncludeFourPersonRoomsForThreePersonTemplate();
+    return;
+  }
+
+  if (target.id === 'enableCollectPerfLog') {
+    toggleEnableCollectPerfLog();
+    return;
+  }
+
+  if (target.id === 'collectBatchConcurrency') {
+    saveCollectBatchConcurrencySetting();
+    return;
+  }
+
+  if (target.dataset.settingKey) {
+    Promise.resolve(saveAiListPrefilterSetting(event))
+      .then(async () => {
+        if (target.id.startsWith('aiCtrip')) {
+          await callAiAssistant('syncAiCtripListUrlFromSettings');
+        }
+      })
+      .catch((error) => {
+        console.error('[设置变更失败]', target.id, error);
+      });
+  }
+}
+
 /* ============ DOM 事件绑定 ============ */
 
 /**
@@ -351,11 +397,6 @@ function setupStaticFormListeners() {
     input.addEventListener('change', applyFilters);
   });
 
-  document.querySelectorAll('input[name="themeOption"]').forEach((input) => {
-    const themeInput = /** @type {HTMLInputElement} */ (input);
-    input.addEventListener('change', () => changeTheme(themeInput.value));
-  });
-
   addEvent('aiHotelUrlInput', 'input', (event) =>
     callAiAssistant('handleAiTaskInputChange', event)
   );
@@ -377,31 +418,6 @@ function setupStaticFormListeners() {
   addEvent('ruleDeletePrice', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
-  addEvent(
-    'includeFourPersonRoomsForThreePersonTemplate',
-    'change',
-    toggleIncludeFourPersonRoomsForThreePersonTemplate
-  );
-  addEvent('enableCollectPerfLog', 'change', toggleEnableCollectPerfLog);
-  addEvent('collectBatchConcurrency', 'change', saveCollectBatchConcurrencySetting);
-  [
-    'aiCtripPriceMin',
-    'aiCtripPriceMax',
-    'aiCtripSortMode',
-    'aiCtripFreeCancel',
-    'aiCtripReviewCountMin',
-    'aiCtripScoreMin',
-    'aiListDesiredHotelCount',
-    'aiListExcludeHotelTypes'
-  ].forEach((id) =>
-    addEvent(id, 'change', async (event) => {
-      await saveAiListPrefilterSetting(event);
-      if (id.startsWith('aiCtrip')) {
-        await callAiAssistant('syncAiCtripListUrlFromSettings');
-      }
-    })
-  );
-
   state.staticFormEventsBound = true;
 }
 
@@ -419,6 +435,11 @@ function setupEventListeners() {
   if (!delegatedInputEventsBound) {
     document.addEventListener('input', handleDelegatedInput);
     delegatedInputEventsBound = true;
+  }
+
+  if (!delegatedChangeEventsBound) {
+    document.addEventListener('change', handleDelegatedChange);
+    delegatedChangeEventsBound = true;
   }
 
   if (!state.globalKeyEventsBound) {

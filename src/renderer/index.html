@@ -184,7 +184,7 @@
                   data-view-mode="card"
                   aria-current="true"
                 >
-                  <span class="view-mode-option-icon" aria-hidden="true">🛏️</span>
+                  <span class="view-mode-option-icon" aria-hidden="true">🗂️</span>
                   <span>卡片</span>
                 </span>
                 <span
@@ -689,7 +689,8 @@
         </div>
       </template>
 
-      <div id="listPrefilterModal" class="modal">
+      <template data-modal-template="listPrefilterModal">
+        <div id="listPrefilterModal" class="modal">
         <div class="modal-content list-prefilter-modal-content">
           <div class="list-prefilter-shell">
             <header class="list-prefilter-header">
@@ -929,9 +930,11 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </template>
 
-      <div id="settingsModal" class="modal">
+      <template data-modal-template="settingsModal">
+        <div id="settingsModal" class="modal">
         <div class="modal-content">
           <div class="modal-header">
             <h2>设置</h2>
@@ -1048,9 +1051,11 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </template>
 
-      <div id="personalizationModal" class="modal">
+      <template data-modal-template="personalizationModal">
+        <div id="personalizationModal" class="modal">
         <div class="modal-content modal-medium">
           <div class="modal-header">
             <h2>个性化</h2>
@@ -1244,7 +1249,8 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </template>
 
       <!-- 宾馆详情模态框 -->
       <template data-modal-template="hotelDetailsModal">

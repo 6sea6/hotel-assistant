@@ -46,5 +46,57 @@
  * @property {() => Promise<void>} loadAppIconState
  */
 
+export const ACTION_REGISTRY_KEYS = Object.freeze([
+  'renderHotelList',
+  'requestHotelListRender',
+  'showHotelDetails',
+  'editHotel',
+  'deleteHotel',
+  'toggleFavorite',
+  'loadHotels',
+  'loadTemplates',
+  'loadSettings',
+  'reloadAllData',
+  'findTemplateById',
+  'openAddHotelModal',
+  'renderTemplateList',
+  'updateTemplateFilter',
+  'renderAiTemplateOptions',
+  'openWebsite',
+  'applySettings',
+  'refreshCurrentPage',
+  'loadDataPath',
+  'loadAppIconState'
+]);
+
+const ACTION_REGISTRY_KEY_SET = new Set(ACTION_REGISTRY_KEYS);
+
+/**
+ * @param {string|symbol} property
+ * @param {unknown} value
+ * @returns {void}
+ */
+function assertActionAssignment(property, value) {
+  if (typeof property !== 'string') {
+    return;
+  }
+  if (!ACTION_REGISTRY_KEY_SET.has(property)) {
+    throw new Error(`Unknown renderer action: ${property}`);
+  }
+  if (typeof value !== 'function') {
+    throw new TypeError(`Renderer action must be a function: ${property}`);
+  }
+}
+
 /** @type {ActionsRegistry} */
-export const actions = /** @type {ActionsRegistry} */ ({});
+export const actions = /** @type {ActionsRegistry} */ (
+  new Proxy(
+    {},
+    {
+      set(target, property, value) {
+        assertActionAssignment(property, value);
+        return Reflect.set(target, property, value);
+      }
+    }
+  )
+);
