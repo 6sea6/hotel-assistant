@@ -49,6 +49,9 @@ function normalizeImportedSettings(settings) {
     ...APP_CONFIG.STORE_DEFAULTS.settings,
     ...(isPlainObject(settings) ? settings : {})
   };
+  for (const key of APP_CONFIG.DEPRECATED_SETTING_KEYS || []) {
+    delete normalizedSettings[key];
+  }
   normalizedSettings.ai_provider_config = normalizeAiProviderConfig(
     normalizedSettings.ai_provider_config
   );

@@ -1,5 +1,9 @@
 const fs = require('fs');
-const { findEdgeExecutable, killProcessTree } = require('../process-utils');
+const {
+  findEdgeExecutable,
+  killBrowserProcessesByCommandLine,
+  killProcessTree
+} = require('../process-utils');
 const {
   normalizeEdgeSessionOptions,
   launchManagedEdgeSession,
@@ -39,6 +43,8 @@ async function connectEdgeDebugger({
   const sessionOptions = normalizeEdgeSessionOptions(edgeSessionOptions);
   const result = {
     browser: null,
+    browserExecutable: '',
+    browserPort: 0,
     connection: null,
     userDataDir: '',
     shouldCleanupUserDataDir: false,
@@ -71,6 +77,8 @@ async function connectEdgeDebugger({
             sessionOptions.debuggingPort
           );
           result.browser = launched.browser;
+          result.browserExecutable = launched.browserExecutable || edgeExecutable;
+          result.browserPort = launched.port || sessionOptions.debuggingPort || 0;
           result.userDataDir = launched.userDataDir;
           result.shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
           result.connection = await connectToDebugger(launched.debuggerUrl, EdgeWebSocket);
@@ -78,6 +86,8 @@ async function connectEdgeDebugger({
       } else {
         const launched = await launchManagedEdgeSession(edgeExecutable, sessionOptions);
         result.browser = launched.browser;
+        result.browserExecutable = launched.browserExecutable || edgeExecutable;
+        result.browserPort = launched.port || 0;
         result.userDataDir = launched.userDataDir;
         result.shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
         result.connection = await connectToDebugger(launched.debuggerUrl, EdgeWebSocket);
@@ -209,6 +219,8 @@ async function cleanupEdgeTargetSession({
   sessionId,
   targetId,
   browser,
+  browserExecutable = '',
+  browserPort = 0,
   userDataDir
 }) {
   const cleanupPhase = perf.phase('edge_cleanup', {
@@ -236,6 +248,11 @@ async function cleanupEdgeTargetSession({
     }
     if (browser && browser.pid) {
       killProcessTree(browser.pid);
+      killBrowserProcessesByCommandLine({
+        browserExecutable,
+        port: browserPort,
+        userDataDir
+      });
     }
     if (temporaryProfile && userDataDir) {
       try {

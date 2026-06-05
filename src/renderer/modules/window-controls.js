@@ -1,6 +1,8 @@
 import { $ } from './dom-helpers.js';
 
 let controlsInitialized = false;
+/** @type {null|(() => void)} */
+let disposeWindowStateListener = null;
 
 function isWindowsPlatform() {
   if (window.electronAPI?.appInfo?.platform) {
@@ -54,10 +56,14 @@ export async function initializeWindowControls() {
     console.error('读取窗口状态失败:', error);
   }
 
-  if (window.electronAPI?.onWindowStateChanged) {
-    window.electronAPI.onWindowStateChanged((state) => {
+  if (window.electronAPI?.onWindowStateChanged && !disposeWindowStateListener) {
+    const unsubscribe = window.electronAPI.onWindowStateChanged((state) => {
       updateMaximizeState(Boolean(state?.isMaximized));
     });
+    disposeWindowStateListener = () => {
+      unsubscribe?.();
+      disposeWindowStateListener = null;
+    };
   }
 
   controlsInitialized = true;

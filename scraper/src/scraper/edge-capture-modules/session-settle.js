@@ -408,7 +408,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         const before = collectStats();
         window.scrollTo({ top: 0, behavior: 'instant' });
         await sleep(90);
-        const clickStats = clickExpandButtons();
+        const clickStats = clickExpandButtons({ allowGenericFallback: false });
         let initialExpandFastPathCount = 0;
         if (clickStats.clickedCount > 0) {
           await waitForDomIdle(200, 800);

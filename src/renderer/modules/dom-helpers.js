@@ -108,22 +108,23 @@ export const setStyle = (id, property, value) => {
 };
 
 /**
- * @param {string} text
+ * @param {unknown} text
  * @returns {string}
  */
 export function escapeHtml(text) {
-  if (!text) return '';
-  if (escapeHtmlCache.has(text)) {
-    return escapeHtmlCache.get(text);
+  const normalizedText = text === null || text === undefined ? '' : String(text);
+  if (normalizedText === '') return '';
+  if (escapeHtmlCache.has(normalizedText)) {
+    return escapeHtmlCache.get(normalizedText);
   }
   const div = document.createElement('div');
-  div.textContent = text;
+  div.textContent = normalizedText;
   const result = div.innerHTML;
   if (escapeHtmlCache.size >= ESCAPE_CACHE_MAX_SIZE) {
     const firstKey = escapeHtmlCache.keys().next().value;
     escapeHtmlCache.delete(firstKey);
   }
-  escapeHtmlCache.set(text, result);
+  escapeHtmlCache.set(normalizedText, result);
   return result;
 }
 

@@ -1,8 +1,11 @@
 const path = require('path');
 const { APP_INFO } = require('../shared/app-info.generated');
 const { requireSharedCompareAppModule } = require('./shared-compare-app');
-const { BASE_COMPARE_APP_SETTINGS, DEFAULT_COMPARE_APP_FILES } =
-  requireSharedCompareAppModule('constants.js');
+const {
+  BASE_COMPARE_APP_SETTINGS,
+  DEPRECATED_COMPARE_APP_SETTING_KEYS,
+  DEFAULT_COMPARE_APP_FILES
+} = requireSharedCompareAppModule('constants.js');
 const { getDefaultAiProviderConfig } = require('./ai/provider-presets');
 
 const HOTEL_EDITABLE_FIELDS = [
@@ -236,6 +239,7 @@ const APP_CONFIG = {
       ai_provider_config: getDefaultAiProviderConfig()
     }
   },
+  DEPRECATED_SETTING_KEYS: [...DEPRECATED_COMPARE_APP_SETTING_KEYS],
 
   // 缓存配置
   CACHE_TTL: 5000,

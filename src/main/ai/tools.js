@@ -164,7 +164,7 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
     type: 'function',
     function: {
       name: 'open_visible_edge_login',
-      description: '打开可见 Edge 登录准备窗口，用于携程登录态失效或价格不可见时让用户手动登录。',
+      description: '打开可见采集浏览器登录准备窗口，用于携程登录态失效或价格不可见时让用户手动登录。',
       parameters: {
         type: 'object',
         properties: {
@@ -211,7 +211,8 @@ function sanitizeSettings(settings = {}) {
 }
 
 function normalizeCollectBatchConcurrency(value) {
-  return Number(value) === 2 ? 2 : 1;
+  const concurrency = Number(value);
+  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
 }
 
 async function executeAiTool(name, rawArguments, context) {
@@ -239,6 +240,8 @@ async function executeAiTool(name, rawArguments, context) {
           collectArgs.amapKey = settings.amapApiKey;
         }
         collectArgs.enableCollectPerfLog = Boolean(settings.enableCollectPerfLog);
+        collectArgs.collectBrowser =
+          String(settings.collectBrowser || '').trim() === '360' ? '360' : 'edge';
         collectArgs.batchConcurrency = normalizeCollectBatchConcurrency(
           settings.collectBatchConcurrency
         );
@@ -251,6 +254,10 @@ async function executeAiTool(name, rawArguments, context) {
     case 'get_task_status':
       return getTaskStatus();
     case 'open_visible_edge_login':
+      args.collectBrowser =
+        String((store.get('settings') || {}).collectBrowser || '').trim() === '360'
+          ? '360'
+          : 'edge';
       return loadScraperRunner().then(({ openVisibleEdgeLogin }) =>
         openVisibleEdgeLogin(args, {
           dataFolderPath: dataService.getDataFolderPath()

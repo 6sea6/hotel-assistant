@@ -59,7 +59,12 @@ function getCtripHotelInputUrls(input = {}) {
 }
 
 function normalizeBatchConcurrency(value) {
-  return Number(value) === 2 ? 2 : 1;
+  const concurrency = Number(value);
+  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
+}
+
+function normalizeCollectBrowser(value) {
+  return String(value || '').trim() === '360' ? '360' : 'edge';
 }
 
 function buildScraperArgs(input, workDir) {
@@ -77,6 +82,7 @@ function buildScraperArgs(input, workDir) {
     'edge-user-data-dir': path.join(workDir, 'state', 'edge-profile'),
     'edge-profile-directory': 'Default',
     'edge-debugging-port': 9222,
+    browser: normalizeCollectBrowser(input.collectBrowser),
     latestRun: path.join(workDir, 'output', 'latest-run.json')
   };
 
@@ -202,5 +208,6 @@ module.exports = {
   getCtripHotelInputUrls,
   isCtripHotelUrl,
   isTaskCancelled,
+  normalizeCollectBrowser,
   normalizeBatchConcurrency
 };

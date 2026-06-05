@@ -51,6 +51,7 @@ import {
  *   matchedRooms?: Array<Record<string, unknown>>,
  *   reasons?: unknown[],
  *   writeBackStatus?: string,
+ *   skipReasonText?: string,
  *   summary?: string,
  *   raw?: Record<string, unknown>
  * }} AiTaskResultViewModel
@@ -171,6 +172,48 @@ export function getTaskCollectResult(task = {}) {
   );
 }
 
+function getSkippedHotelName(item = {}) {
+  const source = isRecord(item.item) ? item.item : item;
+  return String(
+    source.hotelName ||
+      source.hotel_name ||
+      source.name ||
+      source.title ||
+      item.hotelName ||
+      item.hotel_name ||
+      ''
+  ).trim();
+}
+
+function getSkippedHotelReason(item = {}) {
+  return String(
+    item.reason ||
+      item.skipReason ||
+      item.skip_reason ||
+      item.writeSkipReason ||
+      item.write_skip_reason ||
+      item.error ||
+      '未写入'
+  ).trim();
+}
+
+export function formatSkippedHotelReasons(collectResult = {}) {
+  const writeResult = collectResult.writeResult;
+  const skippedItems =
+    isRecord(writeResult) && Array.isArray(writeResult.items)
+      ? writeResult.items.filter((item) => isRecord(item) && item.skipped)
+      : [];
+
+  if (!skippedItems.length) return '';
+
+  return skippedItems
+    .map((item, index) => {
+      const hotelName = getSkippedHotelName(item) || `第 ${index + 1} 家宾馆`;
+      return `${hotelName}：${getSkippedHotelReason(item)}`;
+    })
+    .join('；');
+}
+
 /**
  * @param {AiTaskConsoleState} [task]
  * @returns {Record<string, unknown>}
@@ -208,6 +251,7 @@ export function buildTaskResult(task = {}) {
       matchedRooms: [],
       reasons: [],
       writeBackStatus: wroteResult ? '已写入数据' : '未写入数据',
+      skipReasonText: '',
       summary: refreshResultText,
       raw: collectResult
     };
@@ -242,6 +286,7 @@ export function buildTaskResult(task = {}) {
   );
   const isBatchResult = Boolean(collectResult.batchMode);
   const batchWriteStats = getBatchWriteStats(collectResult);
+  const skipReasonText = formatSkippedHotelReasons(collectResult);
   const batchWriteText = `本次最终写入 ${batchWriteStats.hotelCount} 家宾馆，${batchWriteStats.roomTypeCount} 种房型`;
   const batchResultText =
     batchCount > 0 ? `批量 ${batchCount} 家，${batchWriteText}` : `批量采集完成，${batchWriteText}`;
@@ -277,6 +322,7 @@ export function buildTaskResult(task = {}) {
         })),
     reasons,
     writeBackStatus: wroteResult ? '已写入数据' : '未写入数据',
+    skipReasonText,
     summary: collectResult.writeSkipped
       ? '采集完成，但未写入宾馆数据。'
       : isBatchResult

@@ -51,7 +51,7 @@ async function loadCrudModule() {
       export function setTemplates(t) { state.templates = t; }
       export function setSettings(s) { state.settings = s; }
       export function clearSelectedHotels() { state.selectedHotels.clear(); }
-      export function markRankingCacheDirty() { state._rankingDirty = true; }
+      export function markVisibleHotelsCacheDirty() { state._visibleHotelsDirty = true; }
       export function getLocalHotelsRevision() { return globalThis.__localHotelsRevision ?? null; }
       export function setLocalHotelsRevision(meta) { globalThis.__localHotelsRevision = meta?.revision ?? null; }
       export function markLocalHotelsRevisionUnknown() { globalThis.__localHotelsRevision = null; }
@@ -145,7 +145,7 @@ function initTestState(hotels = []) {
       currentFilters: {},
       lastEditedPriceField: null,
       hotelTemplateSelectRenderVersion: 0,
-      _rankingDirty: false
+      _visibleHotelsDirty: false
     };
   }
   const s = globalThis.__testState;
@@ -156,7 +156,7 @@ function initTestState(hotels = []) {
   s.currentFilters = {};
   s.lastEditedPriceField = null;
   s.hotelTemplateSelectRenderVersion = 0;
-  s._rankingDirty = false;
+  s._visibleHotelsDirty = false;
   globalThis.__localHotelsRevision = null;
   globalThis.__formFields = {};
   globalThis.__notifications = [];

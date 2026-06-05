@@ -156,7 +156,7 @@ function buildSystemPrompt() {
 4. 不要手工写入 hotel-data.json，不要创建临时数据文件。
 5. 写入前必须满足：采集成功、模板有效、eligibleCount > 0、存在有效价格、房型未被安全门排除。
 6. 如果工具返回 writeSkipped、error、无价格、无符合房型，要如实说明原因。
-7. 如果检测到登录看低价、解锁优惠、无有效价格，应提示程序打开可见 Edge 登录窗口；用户登录携程并关闭窗口后，采集会自动重试。
+7. 如果检测到登录看低价、解锁优惠、无有效价格，应提示程序打开可见采集浏览器登录窗口；用户登录携程并关闭窗口后，采集会自动重试。
 8. 成功写入时说明：酒店名、可用房型数、价格摘要、写入状态。
 9. 成功但未写入时说明：这是采集完成但安全门阻止写入，不等于程序崩溃。
 10. 列表页会先合并携程 URL 前筛，并按本地排除住宿类型、目标数量做候选筛选，再逐个进入详情页复用原采集链路。
@@ -395,6 +395,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
           reviewCountMin: payload.reviewCountMin,
           ctripScoreMin: payload.ctripScoreMin,
           enableCollectPerfLog: payload.enableCollectPerfLog,
+          collectBrowser: payload.collectBrowser,
           batchConcurrency: payload.batchConcurrency
         },
         {
@@ -556,6 +557,7 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       return scraperRunner.refreshExistingCtripHotels(
         {
           amapKey: payload.amapKey,
+          collectBrowser: payload.collectBrowser,
           batchConcurrency: payload.batchConcurrency
         },
         {

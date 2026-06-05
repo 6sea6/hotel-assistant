@@ -7,6 +7,7 @@ const {
   closeAutoEdge,
   hasReusableEdgeProfile,
   launchAndWaitForEdge,
+  resolveAutoEdgeRuntime,
   runInteractiveEdgeLoginPrep
 } = require('./cli/auto-edge');
 const { applyReviewedOutput } = require('./cli/reviewed-output');
@@ -168,14 +169,26 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       const outputDir = path.resolve('output');
       ensureDir(outputDir);
 
+      let autoEdgeProcess = null;
       let autoEdgePid = null;
       let preparedEdgeWorkerProfileDirs = [];
       const autoEdge = Boolean(args['auto-edge']);
+      const autoEdgeRuntime = autoEdge
+        ? resolveAutoEdgeRuntime({
+            userDataDir: effectiveTemplate.edge_user_data_dir,
+            profileDirectory: effectiveTemplate.edge_profile_directory,
+            browserPreference: effectiveTemplate.browser_preference
+          })
+        : null;
 
       try {
         assertNotCancelled(signal);
         if (autoEdge) {
-          emit('edge:start', '正在准备 Edge 登录态');
+          if (autoEdgeRuntime && autoEdgeRuntime.userDataDir) {
+            effectiveTemplate.edge_user_data_dir = autoEdgeRuntime.userDataDir;
+            effectiveTemplate.edge_profile_directory = autoEdgeRuntime.profileDirectory;
+          }
+          emit('edge:start', '正在准备浏览器登录态');
           await perf.runPhase('browser_context', { taskId, taskKind: 'login_prep' }, async () => {
             if (
               !hasReusableEdgeProfile(
@@ -184,13 +197,14 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
               )
             ) {
               emit('edge:login-required', '首次采集需要登录携程后继续', {
-                reason: '未检测到可复用的 Edge 携程登录资料。',
+                reason: '未检测到可复用的携程登录资料。',
                 instruction:
-                  '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，当前采集任务会自动继续。'
+                  '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，当前采集任务会自动继续。'
               });
               await runInteractiveEdgeLoginPrep({
                 userDataDir: effectiveTemplate.edge_user_data_dir,
                 profileDirectory: effectiveTemplate.edge_profile_directory,
+                browserPreference: effectiveTemplate.browser_preference,
                 port: effectiveTemplate.edge_debugging_port || 9222,
                 url: effectiveTemplate.ctrip_url || 'https://hotels.ctrip.com/'
               });
@@ -210,11 +224,13 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             return launchAndWaitForEdge({
               userDataDir: effectiveTemplate.edge_user_data_dir,
               profileDirectory: effectiveTemplate.edge_profile_directory,
+              browserPreference: effectiveTemplate.browser_preference,
               port: effectiveTemplate.edge_debugging_port || 9222,
               url: 'about:blank',
               headless: effectiveTemplate.edge_headless
             });
           });
+          autoEdgeProcess = edgeResult;
           autoEdgePid = edgeResult.pid;
           if (!effectiveTemplate.edge_debugging_port) {
             effectiveTemplate.edge_debugging_port = edgeResult.port;
@@ -275,7 +291,9 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
                     pid: autoEdgePid,
                     port: effectiveTemplate.edge_debugging_port,
                     userDataDir: effectiveTemplate.edge_user_data_dir,
-                    profileDirectory: effectiveTemplate.edge_profile_directory
+                    profileDirectory: effectiveTemplate.edge_profile_directory,
+                    browserExecutable: autoEdgeProcess && autoEdgeProcess.browserExecutable,
+                    browserName: autoEdgeProcess && autoEdgeProcess.browserName
                   }
                 : null
           });
@@ -329,7 +347,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       } finally {
         if (autoEdge && autoEdgePid) {
           await perf.runPhase('close_resource', { taskId }, async () => {
-            closeAutoEdge(autoEdgePid);
+            closeAutoEdge(autoEdgePid, autoEdgeProcess);
           });
         }
         cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);

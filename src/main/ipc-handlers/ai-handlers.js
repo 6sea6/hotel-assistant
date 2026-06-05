@@ -1,6 +1,7 @@
 const { requireSharedCompareAppModule } = require('../shared-compare-app');
 const { assertPlainObject, isPlainObject, safeHandle } = require('../ipc-safe-handler');
 const {
+  assertAllowedValue,
   assertHttpsUrl,
   assertNumberField,
   assertOptionalStringField,
@@ -107,6 +108,14 @@ function validateAiTaskPayload(payload) {
     const fieldError = assertOptionalStringField(taskPayload, field, AI_REQUEST_ERROR);
     if (fieldError) return fieldError;
   }
+  if (Object.prototype.hasOwnProperty.call(taskPayload, 'collectBrowser')) {
+    const browserError = assertAllowedValue(
+      taskPayload.collectBrowser,
+      ['edge', '360'],
+      AI_REQUEST_ERROR
+    );
+    if (browserError) return browserError;
+  }
   if (
     Object.prototype.hasOwnProperty.call(taskPayload, 'urls') &&
     taskPayload.urls != null &&
@@ -127,7 +136,7 @@ function validateAiTaskPayload(payload) {
     optional: true,
     integer: true,
     min: 1,
-    max: 2
+    max: 3
   });
   if (concurrencyError) return concurrencyError;
   for (const field of ['priceMin', 'reviewCountMin', 'ctripScoreMin']) {
@@ -202,12 +211,20 @@ function validateAiRefreshPayload(payload) {
 
   const amapKeyError = assertOptionalStringField(taskPayload, 'amapKey', AI_REQUEST_ERROR);
   if (amapKeyError) return amapKeyError;
+  if (Object.prototype.hasOwnProperty.call(taskPayload, 'collectBrowser')) {
+    const browserError = assertAllowedValue(
+      taskPayload.collectBrowser,
+      ['edge', '360'],
+      AI_REQUEST_ERROR
+    );
+    if (browserError) return browserError;
+  }
 
   return assertNumberField(taskPayload, 'batchConcurrency', AI_REQUEST_ERROR, {
     optional: true,
     integer: true,
     min: 1,
-    max: 2
+    max: 3
   });
 }
 

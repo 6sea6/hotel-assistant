@@ -524,6 +524,20 @@ async function loadNotificationModule() {
   return module;
 }
 
+async function loadDomHelpersModule() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-dom-helpers-'));
+  fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
+  fs.copyFileSync(
+    path.join(projectRoot, 'src', 'renderer', 'modules', 'dom-helpers.js'),
+    path.join(tempRoot, 'dom-helpers.js')
+  );
+
+  const moduleUrl = pathToFileURL(path.join(tempRoot, 'dom-helpers.js')).href;
+  const module = await import(moduleUrl);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  return module;
+}
+
 test('modal activation applies dialog semantics traps focus and restores the trigger', async (t) => {
   const originalDocument = global.document;
   const originalWindow = global.window;
@@ -628,4 +642,30 @@ test('notifications expose status semantics and a close control', async (t) => {
   const closeButton = notification.querySelector('button');
   assert.ok(closeButton, 'notification should include a close button');
   assert.equal(closeButton.getAttribute('aria-label'), '关闭通知');
+});
+
+test('escapeHtml preserves numeric zero while escaping markup', async (t) => {
+  const originalDocument = global.document;
+  global.document = {
+    createElement() {
+      return {
+        innerHTML: '',
+        set textContent(value) {
+          this.innerHTML = String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        }
+      };
+    }
+  };
+  t.after(() => {
+    global.document = originalDocument;
+  });
+
+  const { escapeHtml } = await loadDomHelpersModule();
+
+  assert.equal(escapeHtml(0), '0');
+  assert.equal(escapeHtml('<b>&</b>'), '&lt;b&gt;&amp;&lt;/b&gt;');
+  assert.equal(escapeHtml(null), '');
 });

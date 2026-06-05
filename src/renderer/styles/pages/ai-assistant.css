@@ -1161,3 +1161,82 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
 }
+
+@media (max-width: 1200px) {
+  .task-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .task-workspace-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  }
+}
+
+@media (max-width: 900px) {
+  .task-console-layout {
+    width: calc(100% - 28px);
+  }
+
+  .task-start-grid,
+  .task-workspace-grid,
+  .task-result-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .task-result-card:nth-child(3) {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .ai-assistant-header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px 18px 16px;
+  }
+
+  .ai-header-actions {
+    width: 100%;
+  }
+
+  .ai-ghost-button {
+    flex: 1;
+  }
+
+  .task-console-layout {
+    width: calc(100% - 20px);
+    margin-top: 10px;
+  }
+
+  .task-card-header,
+  .task-start-title,
+  .task-start-grid {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .task-card-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .task-prefilter-button,
+  .task-clear-button {
+    flex: 1;
+  }
+
+  .task-info-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .task-timeline-row {
+    grid-template-columns: 72px 20px minmax(0, 1fr);
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .task-result-card dl div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}

@@ -35,7 +35,7 @@ async function loadTemplateUiModules() {
         state.templateListeners.add(listener);
         return () => state.templateListeners.delete(listener);
       }
-      export function markRankingCacheDirty() { state.rankingDirty = true; }
+      export function markVisibleHotelsCacheDirty() { state.visibleHotelsDirty = true; }
       `
     );
 
@@ -204,7 +204,7 @@ function installTemplateUiDom() {
     templates: [],
     hotels: [],
     templateFilterRenderVersion: 0,
-    rankingDirty: false,
+    visibleHotelsDirty: false,
     templateListeners
   });
   globalThis.__templateUiNextTemplates = [];

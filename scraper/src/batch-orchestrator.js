@@ -29,8 +29,16 @@ const { createBatchEdgeWorkerPool } = require('./batch-edge-worker-pool');
 const { getEffectiveBoundedConcurrency } = require('./bounded-worker-runner');
 const { runPreparedDetailBatch } = require('./prepared-detail-batch-collector');
 
-const MAX_BATCH_CONCURRENCY = 2;
+const MAX_BATCH_CONCURRENCY = 3;
 const DEFAULT_UNCOLLECTED_RETRY_COUNT = 2;
+
+function resolveMaxBatchConcurrency(_args = {}, batchOptions = {}) {
+  if (batchOptions.maxConcurrency) {
+    return Math.min(Number(batchOptions.maxConcurrency), MAX_BATCH_CONCURRENCY);
+  }
+
+  return MAX_BATCH_CONCURRENCY;
+}
 
 function normalizeUncollectedRetryCount(args = {}, batchOptions = {}) {
   const explicit =
@@ -99,7 +107,7 @@ class BatchOrchestrator {
     const effectiveConcurrency = getEffectiveBoundedConcurrency({
       requestedConcurrency: concurrency,
       total,
-      maxConcurrency: batchOptions.maxConcurrency || MAX_BATCH_CONCURRENCY
+      maxConcurrency: resolveMaxBatchConcurrency(this.context.args, batchOptions)
     });
 
     if (effectiveConcurrency <= 1) {

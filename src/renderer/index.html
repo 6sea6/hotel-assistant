@@ -972,13 +972,25 @@
               >
             </div>
             <div class="form-group">
+              <label for="collectBrowser">携程采集浏览器</label>
+              <select id="collectBrowser" class="input" data-custom-select="true">
+                <option value="edge">Edge（默认）</option>
+                <option value="360">360 浏览器</option>
+              </select>
+              <small class="help-text"
+                >默认优先使用 Edge；如果电脑没有 Edge，会继续尝试 360。选择 360 后会明确使用
+                360 浏览器。</small
+              >
+            </div>
+            <div class="form-group">
               <label for="collectBatchConcurrency">并发采集数</label>
               <select id="collectBatchConcurrency" class="input" data-custom-select="true">
                 <option value="1">1 - 串行采集</option>
                 <option value="2">2 - 并发采集</option>
+                <option value="3">3 - 并发采集</option>
               </select>
               <small class="help-text"
-                >默认使用 1。选择 2 会额外打开一个临时 Edge
+                >默认使用 1。选择 2 或 3 会额外打开临时 Edge
                 会话；如果携程登录态或网络不稳定，可以切回 1。</small
               >
             </div>

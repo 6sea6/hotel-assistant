@@ -56,11 +56,6 @@ test('getScrollBehaviorForReason: sort-change returns top', async () => {
   assert.equal(getScrollBehaviorForReason('sort-change', '[]'), 'top');
 });
 
-test('getScrollBehaviorForReason: ranking-change returns top', async () => {
-  const { getScrollBehaviorForReason } = await loadModule();
-  assert.equal(getScrollBehaviorForReason('ranking-change', '[]'), 'top');
-});
-
 test('getScrollBehaviorForReason: template-sync returns top', async () => {
   const { getScrollBehaviorForReason } = await loadModule();
   assert.equal(getScrollBehaviorForReason('template-sync', '[]'), 'top');

@@ -290,6 +290,10 @@ export function renderSummaryCards(taskState, variant, taskKind = 'collect') {
         ${reasonItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
       </ul>`
     : '';
+  const collectSkipReasonRow =
+    !isRefresh && !isError && !isCancelled && result.skipReasonText
+      ? `<div><dt>跳过原因</dt><dd>${escapeHtml(result.skipReasonText)}</dd></div>`
+      : '';
 
   const resultAnalysisContent = isRefresh
     ? `
@@ -309,7 +313,7 @@ export function renderSummaryCards(taskState, variant, taskKind = 'collect') {
         <dl>
           <div><dt>模板规则</dt><dd>${escapeHtml(taskInfo.templateName || '暂无')}</dd></div>
           <div><dt>实际采集结果</dt><dd>${escapeHtml(result.actualResultText || result.hotelName)}</dd></div>
-          <div><dt>写入状态</dt><dd>${escapeHtml(result.writeBackStatus)}</dd></div>
+          ${collectSkipReasonRow}
         </dl>
       `;
 

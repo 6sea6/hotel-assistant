@@ -153,7 +153,7 @@ async function closeBatchEdgeWorkerPool(pool) {
 
   for (const worker of pool.workers) {
     if (worker.pid && worker.shouldClose !== false) {
-      closeAutoEdge(worker.pid);
+      closeAutoEdge(worker.pid, worker);
     }
   }
 
@@ -191,6 +191,8 @@ async function createBatchEdgeWorkerPool({
         port: Number(existingWorker.port),
         userDataDir: sourceUserDataDir,
         profileDirectory,
+        browserExecutable: existingWorker.browserExecutable || '',
+        browserName: existingWorker.browserName || '',
         cleanupUserDataDir: false,
         shouldClose: false
       };
@@ -210,6 +212,7 @@ async function createBatchEdgeWorkerPool({
         const launched = await launchAndWaitForEdge({
           userDataDir,
           profileDirectory,
+          browserPreference: effectiveTemplate.browser_preference,
           port,
           url: 'about:blank',
           headless: effectiveTemplate.edge_headless,
@@ -221,6 +224,8 @@ async function createBatchEdgeWorkerPool({
           port: Number(launched.port || port),
           userDataDir,
           profileDirectory,
+          browserExecutable: launched.browserExecutable || '',
+          browserName: launched.browserName || '',
           cleanupUserDataDir: true,
           shouldClose: true
         };

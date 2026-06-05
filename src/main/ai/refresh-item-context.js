@@ -52,7 +52,8 @@ function buildRefreshCollectArgs({
       url,
       templateId: firstHotel.template_id || '',
       templateName: '',
-      amapKey: input.amapKey
+      amapKey: input.amapKey,
+      collectBrowser: input.collectBrowser
     },
     workDir
   );

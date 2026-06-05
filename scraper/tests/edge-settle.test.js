@@ -1136,6 +1136,44 @@ test('settle initial expand records fast path when no expand button was clicked'
   }
 });
 
+test('settle initial expand suppresses generic fallback scan', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: 1,
+        containerCount: 0,
+        documentHeightBefore: 1000,
+        documentHeightAfter: 1000,
+        bodyTextLength: 3000,
+        roomKeywordCount: 8
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder([]),
+      getTrackedUrlCount: () => 0
+    });
+
+    const initialExpandExpression = expressions.find((expression) =>
+      expression.includes('let initialExpandFastPathCount')
+    );
+    assert.ok(initialExpandExpression);
+    assert.ok(initialExpandExpression.includes('allowGenericFallback: false'));
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settle step retries transient execution context destruction locally', async () => {
   let evaluateCount = 0;
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {

@@ -58,12 +58,13 @@ function printHelp() {
   --templateId <ID>        关联宾馆比较助手中已有模板
   --templateName <名称>    按模板名称精确匹配宾馆比较助手中的模板，不再默认 bw
   --amapKey <KEY>          覆盖默认高德 Key
-  --edge-user-data-dir <路径>      复用现有 Edge 用户数据目录，例如 C:/Users/你/AppData/Local/Microsoft/Edge/User Data
-  --edge-profile-directory <名称>  指定 Edge Profile 目录名，例如 Default 或 Profile 1
-  --edge-debugger-url <地址>       直接附着到已开启远程调试的 Edge WebSocket 地址
-  --edge-debugging-port <端口>     直接附着到已开启远程调试的 Edge 端口，例如 9222
-  --edge-headless <true|false>     启动复用 profile 的 Edge 时是否使用 headless，默认 true
-  --auto-edge               自动在后台隐藏启动 Edge，会话采集完成后自动关闭
+  --edge-user-data-dir <路径>      复用现有 Edge/360 用户数据目录，例如 C:/Users/你/AppData/Local/Microsoft/Edge/User Data
+  --edge-profile-directory <名称>  指定 Edge/360 Profile 目录名，例如 Default 或 Profile 1
+  --edge-debugger-url <地址>       直接附着到已开启远程调试的 Edge/360 WebSocket 地址
+  --edge-debugging-port <端口>     直接附着到已开启远程调试的 Edge/360 端口，例如 9222
+  --edge-headless <true|false>     启动复用 profile 的 Edge/360 时是否使用 headless，默认 true
+  --browser <edge|360>      采集浏览器选择，默认 edge；edge 缺失时会尝试 360
+  --auto-edge               自动在后台隐藏启动 Edge/360，会话采集完成后自动关闭
   --help                   显示帮助
 `);
 }

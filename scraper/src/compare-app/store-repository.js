@@ -1,5 +1,6 @@
 const { requireSharedCompareAppModule } = require('./shared-module');
-const { BASE_COMPARE_APP_SETTINGS } = requireSharedCompareAppModule('constants.js');
+const { BASE_COMPARE_APP_SETTINGS, DEPRECATED_COMPARE_APP_SETTING_KEYS } =
+  requireSharedCompareAppModule('constants.js');
 const { createDefaultStore } = require('../constants');
 const { readJsonFile, writeJsonFile } = require('../utils');
 const { getCompareAppDataFolder, getCompareAppPaths } = require('./path-resolver');
@@ -15,7 +16,9 @@ function loadCompareAppStore(options = {}) {
     ...BASE_COMPARE_APP_SETTINGS,
     ...((store && store.settings) || {})
   };
-  delete normalizedSettings.autoMatchTemplate;
+  for (const key of DEPRECATED_COMPARE_APP_SETTING_KEYS) {
+    delete normalizedSettings[key];
+  }
 
   if (JSON.stringify(normalizedSettings) !== JSON.stringify((store && store.settings) || {})) {
     store.settings = normalizedSettings;

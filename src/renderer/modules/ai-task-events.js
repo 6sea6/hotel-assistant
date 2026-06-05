@@ -47,7 +47,7 @@ export function createRafRenderScheduler(render) {
 export const BASE_STEP_DEFINITIONS = [
   { key: 'received', title: '已接收任务', doneTitle: '任务创建' },
   { key: 'template', title: '正在读取模板与比较助手设置', doneTitle: '模板解析' },
-  { key: 'edge', title: '正在准备 Edge 登录态', doneTitle: '准备 Edge 登录态' },
+  { key: 'edge', title: '正在准备浏览器登录态', doneTitle: '准备浏览器登录态' },
   { key: 'scrape', title: '正在采集携程酒店页面', doneTitle: '房型采集与筛选' },
   { key: 'transit', title: '正在计算交通与地铁信息', doneTitle: '交通与地铁计算' },
   { key: 'write', title: '等待回写采集结果', doneTitle: '结果汇总' }
@@ -57,7 +57,7 @@ export const BASE_STEP_DEFINITIONS = [
 export const REFRESH_STEP_DEFINITIONS = [
   { key: 'received', title: '已接收任务', doneTitle: '任务创建' },
   { key: 'load-data', title: '正在读取当前宾馆数据', doneTitle: '读取当前宾馆数据' },
-  { key: 'edge', title: '正在准备 Edge 登录态', doneTitle: '准备 Edge 登录态' },
+  { key: 'edge', title: '正在准备浏览器登录态', doneTitle: '准备浏览器登录态' },
   { key: 'refresh', title: '正在更新房型与价格', doneTitle: '房型与价格更新' },
   { key: 'write', title: '等待写入更新结果', doneTitle: '结果汇总' }
 ];
@@ -167,10 +167,10 @@ export function getReadableEventTitle(event = {}, taskKind = 'collect') {
   if (type === 'refresh:write') return '等待写入更新结果';
   if (type === 'refresh:summary') return '结果汇总';
   if (type === 'edge:login-required')
-    return isRefresh ? '正在准备 Edge 登录态' : event.message || '需要登录携程后继续采集';
-  if (type === 'edge:login-window') return event.message || '已打开 Edge 登录窗口，等待你完成登录';
+    return isRefresh ? '正在准备浏览器登录态' : event.message || '需要登录携程后继续采集';
+  if (type === 'edge:login-window') return event.message || '已打开浏览器登录窗口，等待你完成登录';
   if (type === 'edge:login-done')
-    return isRefresh ? 'Edge 登录态已准备完成' : event.message || '携程登录窗口已关闭，继续采集';
+    return isRefresh ? '浏览器登录态已准备完成' : event.message || '携程登录窗口已关闭，继续采集';
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
   if (type.startsWith('batch:') || type.startsWith('list:'))
     return event.message || '正在处理批量采集任务';

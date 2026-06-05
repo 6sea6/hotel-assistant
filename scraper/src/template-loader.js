@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildDesktopUrl, extractCtripUrlsFromInput } = require('./ctrip-url');
 const { differenceInDays, normalizeText, readJsonFile, toNumber } = require('./utils');
+const { normalizeBrowserPreference } = require('./scraper/process-utils');
 
 function normalizeTemplateRoomCount(value) {
   const parsed = toNumber(value);
@@ -73,7 +74,15 @@ function normalizeTemplate(raw = {}) {
     ),
     edge_debugger_url: normalizeText(raw.edge_debugger_url || raw.edgeDebuggerUrl || ''),
     edge_debugging_port: toNumber(raw.edge_debugging_port || raw.edgeDebuggingPort),
-    edge_headless: toBoolean(raw.edge_headless ?? raw.edgeHeadless, true)
+    edge_headless: toBoolean(raw.edge_headless ?? raw.edgeHeadless, true),
+    browser_preference:
+      normalizeBrowserPreference(
+        raw.browser_preference ||
+          raw.browserPreference ||
+          raw.browser ||
+          raw.collectBrowser ||
+          raw.collect_browser
+      ) || 'edge'
   };
 
   normalized.days = differenceInDays(normalized.check_in_date, normalized.check_out_date);
@@ -120,7 +129,15 @@ function mergeTemplateWithArgs(template, args) {
       args.edge_debugging_port ||
       template.edge_debugging_port,
     edge_headless:
-      args.edgeHeadless ?? args['edge-headless'] ?? args.edge_headless ?? template.edge_headless
+      args.edgeHeadless ?? args['edge-headless'] ?? args.edge_headless ?? template.edge_headless,
+    browser_preference:
+      args.browserPreference ||
+      args['browser-preference'] ||
+      args.browser ||
+      args.collectBrowser ||
+      args['collect-browser'] ||
+      args.browser_preference ||
+      template.browser_preference
   });
 }
 

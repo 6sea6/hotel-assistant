@@ -172,19 +172,53 @@ function sanitizeRecord(record = {}) {
   return sanitizeForLog(record) || {};
 }
 
-function normalizeDateSegment(date = new Date()) {
+const allocatedLogPaths = new Set();
+
+function padTimePart(value, width = 2) {
+  return String(value).padStart(width, '0');
+}
+
+function normalizeTimestampSegment(date = new Date()) {
   if (typeof date === 'string' && date) {
     return date;
   }
-  return date.toISOString().slice(0, 10);
+
+  const timestamp = date instanceof Date ? date : new Date(date);
+  const safeTimestamp = Number.isNaN(timestamp.getTime()) ? new Date() : timestamp;
+  return [
+    `${safeTimestamp.getFullYear()}-${padTimePart(safeTimestamp.getMonth() + 1)}-${padTimePart(
+      safeTimestamp.getDate()
+    )}`,
+    `${padTimePart(safeTimestamp.getHours())}-${padTimePart(
+      safeTimestamp.getMinutes()
+    )}-${padTimePart(safeTimestamp.getSeconds())}-${padTimePart(
+      safeTimestamp.getMilliseconds(),
+      3
+    )}`
+  ].join('_');
+}
+
+function reserveUniqueLogPath(logPath) {
+  const parsed = path.parse(logPath);
+  let candidate = logPath;
+  let suffix = 2;
+
+  while (allocatedLogPaths.has(candidate) || fs.existsSync(candidate)) {
+    candidate = path.join(parsed.dir, `${parsed.name}_${suffix}${parsed.ext}`);
+    suffix += 1;
+  }
+
+  allocatedLogPaths.add(candidate);
+  return candidate;
 }
 
 function setup_perf_logger(options = {}) {
-  const dateSegment = normalizeDateSegment(options.date);
+  const timestampSegment = normalizeTimestampSegment(options.date);
   const logDir = path.resolve(options.logDir || path.join('logs', 'perf'));
-  const logPath = path.resolve(
-    options.logPath || path.join(logDir, `collect_perf_${dateSegment}.jsonl`)
+  const requestedLogPath = path.resolve(
+    options.logPath || path.join(logDir, `collect_perf_${timestampSegment}.jsonl`)
   );
+  const logPath = options.logPath ? requestedLogPath : reserveUniqueLogPath(requestedLogPath);
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
 
   return {

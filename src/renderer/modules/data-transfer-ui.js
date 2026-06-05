@@ -12,6 +12,11 @@ import {
 } from './ui-utils.js';
 import { actions } from './actions.js';
 
+/** @type {null|(() => void)} */
+let disposeMenuExportListener = null;
+/** @type {null|(() => void)} */
+let disposeMenuImportListener = null;
+
 export async function loadDataPath() {
   try {
     const path = await window.electronAPI.getDataPath();
@@ -171,6 +176,22 @@ export async function openWebsite(url) {
 }
 
 export function setupMenuListeners() {
-  window.electronAPI.onMenuExportData(() => handleExportData());
-  window.electronAPI.onMenuImportData(() => openDataTransfer('import'));
+  if (disposeMenuExportListener || disposeMenuImportListener) {
+    return () => {
+      disposeMenuExportListener?.();
+      disposeMenuImportListener?.();
+      disposeMenuExportListener = null;
+      disposeMenuImportListener = null;
+    };
+  }
+
+  disposeMenuExportListener = window.electronAPI.onMenuExportData(() => handleExportData());
+  disposeMenuImportListener = window.electronAPI.onMenuImportData(() => openDataTransfer('import'));
+
+  return () => {
+    disposeMenuExportListener?.();
+    disposeMenuImportListener?.();
+    disposeMenuExportListener = null;
+    disposeMenuImportListener = null;
+  };
 }

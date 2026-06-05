@@ -8,7 +8,7 @@ import {
   setHotels,
   setTemplates,
   subscribeTemplateChanges,
-  markRankingCacheDirty
+  markVisibleHotelsCacheDirty
 } from './state.js';
 import {
   $,
@@ -40,6 +40,8 @@ import { logRendererDebug } from './debug-log.js';
  */
 
 const localTemplateUpdateIds = new Set();
+/** @type {null|(() => void)} */
+let disposeTemplateUpdatedListener = null;
 
 function requestTemplateSyncedHotelRender() {
   if (typeof actions.requestHotelListRender === 'function') {
@@ -101,7 +103,7 @@ function patchAffectedHotels(affectedHotels) {
   if (!patched) return false;
 
   setHotels(nextHotels);
-  markRankingCacheDirty();
+  markVisibleHotelsCacheDirty();
   return true;
 }
 
@@ -146,7 +148,7 @@ async function reloadHotelsForTemplateMutation(options) {
 
   const hotels = await actions.loadHotels({ force: true, reason: options.reason });
   setHotels(hotels || []);
-  markRankingCacheDirty();
+  markVisibleHotelsCacheDirty();
   return true;
 }
 
@@ -180,7 +182,7 @@ function handleTemplateStateChanged(event = {}) {
   renderTemplateList();
 
   if (event.renderHotels) {
-    markRankingCacheDirty();
+    markVisibleHotelsCacheDirty();
     requestTemplateSyncedHotelRender();
   }
 }
@@ -493,8 +495,12 @@ export function updateTemplateFilter(options = {}) {
 /* ---- 模板同步监听器 ---- */
 
 export function setupTemplateSyncListener() {
+  if (disposeTemplateUpdatedListener) {
+    return disposeTemplateUpdatedListener;
+  }
+
   logRendererDebug('[事件监听] 设置 template:updated 监听器');
-  window.electronAPI.onTemplateUpdated(async (data) => {
+  const unsubscribe = window.electronAPI.onTemplateUpdated(async (data) => {
     try {
       const eventId = getTemplateUpdateEventId(data);
       if (eventId && localTemplateUpdateIds.has(eventId)) {
@@ -514,7 +520,12 @@ export function setupTemplateSyncListener() {
       showNotification('模板同步后刷新失败，请手动点击刷新按钮', 'error');
     }
   });
+  disposeTemplateUpdatedListener = () => {
+    unsubscribe?.();
+    disposeTemplateUpdatedListener = null;
+  };
   logRendererDebug('[事件监听] template:updated 监听器已设置完成');
+  return disposeTemplateUpdatedListener;
 }
 
 /* ---- 注册到 actions ---- */

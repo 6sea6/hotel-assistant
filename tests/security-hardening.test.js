@@ -116,6 +116,19 @@ test('in-app manual content is extracted into a separate renderer resource', () 
   assert.match(otherHandlers, /safeHandle\([\s\S]*?ipcMain,[\s\S]*?'manual:getContent'/);
 });
 
+test('manual content is sanitized and excluded from global data-action delegation', () => {
+  const appModule = fs.readFileSync(path.join(rendererDir, 'app.module.js'), 'utf8');
+  const aboutManual = fs.readFileSync(
+    path.join(rendererDir, 'modules', 'about-manual.js'),
+    'utf8'
+  );
+
+  assert.match(appModule, /closest\('#manualContent'\)/);
+  assert.match(aboutManual, /function sanitizeManualContent/);
+  assert.match(aboutManual, /name\.startsWith\('on'\)/);
+  assert.match(aboutManual, /name === 'data-action'/);
+});
+
 test('core IPC handlers use the safe handler wrapper', () => {
   const mainDir = path.join(__dirname, '..', 'src', 'main');
   const safeHandler = fs.readFileSync(path.join(mainDir, 'ipc-safe-handler.js'), 'utf8');

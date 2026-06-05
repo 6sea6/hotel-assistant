@@ -5,7 +5,11 @@ const {
   normalizeEdgeSessionOptions,
   waitForDebuggerEndpoint
 } = require('./cdp-utils');
-const { findEdgeExecutable, killProcessTree } = require('./process-utils');
+const {
+  findEdgeExecutable,
+  killBrowserProcessesByCommandLine,
+  killProcessTree
+} = require('./process-utils');
 
 function getEdgeWebSocket() {
   if (typeof globalThis.WebSocket === 'function') {
@@ -23,6 +27,8 @@ async function connectListEdgeSession(edgeSessionOptions = {}, EdgeWebSocket, ed
   const sessionOptions = normalizeEdgeSessionOptions(edgeSessionOptions);
   const result = {
     browser: null,
+    browserExecutable: '',
+    browserPort: 0,
     connection: null,
     userDataDir: '',
     shouldCleanupUserDataDir: false,
@@ -45,6 +51,8 @@ async function connectListEdgeSession(edgeSessionOptions = {}, EdgeWebSocket, ed
         sessionOptions.debuggingPort
       );
       result.browser = launched.browser;
+      result.browserExecutable = launched.browserExecutable || edgeExecutable;
+      result.browserPort = launched.port || sessionOptions.debuggingPort || 0;
       result.userDataDir = launched.userDataDir;
       result.shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
       result.connection = await connectToDebugger(launched.debuggerUrl, EdgeWebSocket);
@@ -52,6 +60,8 @@ async function connectListEdgeSession(edgeSessionOptions = {}, EdgeWebSocket, ed
   } else {
     const launched = await launchManagedEdgeSession(edgeExecutable, sessionOptions);
     result.browser = launched.browser;
+    result.browserExecutable = launched.browserExecutable || edgeExecutable;
+    result.browserPort = launched.port || 0;
     result.userDataDir = launched.userDataDir;
     result.shouldCleanupUserDataDir = launched.shouldCleanupUserDataDir;
     result.connection = await connectToDebugger(launched.debuggerUrl, EdgeWebSocket);
@@ -121,6 +131,8 @@ async function cleanupListEdgeSession({
   targetId,
   shouldCloseTarget,
   browser,
+  browserExecutable = '',
+  browserPort = 0,
   shouldCleanupUserDataDir,
   userDataDir
 }) {
@@ -138,6 +150,11 @@ async function cleanupListEdgeSession({
   }
   if (browser && browser.pid) {
     killProcessTree(browser.pid);
+    killBrowserProcessesByCommandLine({
+      browserExecutable,
+      port: browserPort,
+      userDataDir
+    });
   }
   if (shouldCleanupUserDataDir && userDataDir) {
     try {

@@ -7,7 +7,7 @@ import {
   replaceCurrentFilters,
   clearSelectedHotels,
   setViewMode,
-  markRankingCacheDirty
+  markVisibleHotelsCacheDirty
 } from './state.js';
 import {
   $,
@@ -317,7 +317,7 @@ export function applyFilters() {
     subwayDistance: getValue('filterSubwayDistance'),
     sortMode: getSelectedSortMode()
   });
-  markRankingCacheDirty();
+  markVisibleHotelsCacheDirty();
   requestHotelListRender({ reason: 'sort-change', forceFull: true });
 }
 
@@ -339,7 +339,7 @@ export function clearFilters() {
   });
 
   refreshCustomSelects();
-  markRankingCacheDirty();
+  markVisibleHotelsCacheDirty();
   requestHotelListRender({ reason: 'filter-change', forceFull: true });
 }
 

@@ -203,10 +203,10 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         emitScraperEvent(context, 'edge:login-required', '需要重新登录携程后继续采集', {
           reason: retryNeed.reason,
           instruction:
-            '程序会打开一个可见 Edge 窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
+            '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
         });
-        emitScraperEvent(context, 'edge:login-window', '已打开 Edge 登录窗口，等待你完成登录', {
-          instruction: '登录完成后请关闭 Edge 窗口；关闭后程序会继续采集，不需要重新发送链接。'
+        emitScraperEvent(context, 'edge:login-window', '已打开浏览器登录窗口，等待你完成登录', {
+          instruction: '登录完成后请关闭浏览器窗口；关闭后程序会继续采集，不需要重新发送链接。'
         });
 
         assertNotCancelled(context.signal);
@@ -217,6 +217,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         await runInteractiveEdgeLoginPrep({
           userDataDir: path.join(workDir, 'state', 'edge-profile'),
           profileDirectory: 'Default',
+          browserPreference: input.collectBrowser,
           port: 9222,
           url: input.url || 'https://hotels.ctrip.com/'
         });
@@ -262,7 +263,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
           ...collectResult,
           writeSkipped: true,
           writeSkipReason: retriedButStillMissingPrice
-            ? `${writeSafety.reason} 已自动打开 Edge 让你重新登录携程并重试一次；如果页面仍看不到价格，请在 Edge 中确认账号已登录且目标酒店页显示具体房价后再重新采集。`
+            ? `${writeSafety.reason} 已自动打开浏览器让你重新登录携程并重试一次；如果页面仍看不到价格，请在采集浏览器中确认账号已登录且目标酒店页显示具体房价后再重新采集。`
             : writeSafety.reason,
           writeResult: null
         };
@@ -309,13 +310,14 @@ async function openVisibleEdgeLogin(input, context = {}) {
     await runInteractiveEdgeLoginPrep({
       userDataDir: path.join(workDir, 'state', 'edge-profile'),
       profileDirectory: 'Default',
+      browserPreference: input.collectBrowser,
       port: 9222,
       url: input.url || 'https://hotels.ctrip.com/'
     });
 
     return {
       success: true,
-      message: 'Edge 登录态准备完成。'
+      message: '浏览器登录态准备完成。'
     };
   });
 }

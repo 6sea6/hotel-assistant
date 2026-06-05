@@ -423,6 +423,8 @@ test(
           templates: [],
           settings: {
             autoMatchTemplate: true,
+            weight_price: 0.9,
+            weight_score: 0.1,
             includeFourPersonRoomsForThreePersonTemplate: true
           }
         },
@@ -436,6 +438,8 @@ test(
 
     assert.equal(store.settings.includeFourPersonRoomsForThreePersonTemplate, true);
     assert.equal(Object.prototype.hasOwnProperty.call(store.settings, 'autoMatchTemplate'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(store.settings, 'weight_price'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(store.settings, 'weight_score'), false);
   })
 );
 

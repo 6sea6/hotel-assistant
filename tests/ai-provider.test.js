@@ -465,10 +465,21 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     success: false,
     error: '无效的 AI 请求参数'
   });
-  assert.deepEqual(await handlers.get('ai:task:refresh-data')(event, { batchConcurrency: 3 }), {
+  assert.deepEqual(await handlers.get('ai:task:refresh-data')(event, { batchConcurrency: 4 }), {
     success: false,
     error: '无效的 AI 请求参数'
   });
+  assert.deepEqual(await handlers.get('ai:task:start')(event, { collectBrowser: 'chrome' }), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
+  assert.deepEqual(
+    await handlers.get('ai:task:refresh-data')(event, { collectBrowser: 'chrome' }),
+    {
+      success: false,
+      error: '无效的 AI 请求参数'
+    }
+  );
   assert.deepEqual(await handlers.get('ai:task:start')(event, { url: 123 }), {
     success: false,
     error: '无效的 AI 请求参数'
@@ -503,10 +514,40 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
       error: '无效的 AI 请求参数'
     }
   );
+  assert.deepEqual(
+    await handlers.get('ai:task:start')(event, {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      collectBrowser: '360',
+      batchConcurrency: 3
+    }),
+    { success: true }
+  );
+  assert.deepEqual(
+    await handlers.get('ai:task:refresh-data')(event, {
+      collectBrowser: '360',
+      batchConcurrency: 3
+    }),
+    { success: true }
+  );
 
   assert.deepEqual(received, [
     { channel: 'save', config: {} },
-    { channel: 'test', config: {} }
+    { channel: 'test', config: {} },
+    {
+      channel: 'start',
+      payload: {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+        collectBrowser: '360',
+        batchConcurrency: 3
+      }
+    },
+    {
+      channel: 'refresh',
+      payload: {
+        collectBrowser: '360',
+        batchConcurrency: 3
+      }
+    }
   ]);
 });
 
@@ -602,12 +643,14 @@ test('scraper runner maps batch concurrency to scraper arguments', () => {
     {
       url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
       templateId: '100',
-      batchConcurrency: 2
+      collectBrowser: '360',
+      batchConcurrency: 3
     },
     path.join(os.tmpdir(), 'hotel-scraper-workdir')
   );
 
-  assert.equal(args['batch-concurrency'], 2);
+  assert.equal(args.browser, '360');
+  assert.equal(args['batch-concurrency'], 3);
 });
 
 test('scraper runner perfLogDir is independent of workDir', () => {
@@ -767,7 +810,8 @@ test('direct AI task start runs the hotel task runner without provider config', 
     desiredHotelCount: 5,
     excludeHotelTypes: ['民宿'],
     amapKey: 'custom-amap-key',
-    batchConcurrency: 2,
+    collectBrowser: '360',
+    batchConcurrency: 3,
     listUrlFilters: {
       priceMin: 50,
       priceMax: 200,
@@ -784,7 +828,8 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(calls[0].input.desiredHotelCount, 5);
   assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
   assert.equal(calls[0].input.amapKey, 'custom-amap-key');
-  assert.equal(calls[0].input.batchConcurrency, 2);
+  assert.equal(calls[0].input.collectBrowser, '360');
+  assert.equal(calls[0].input.batchConcurrency, 3);
   assert.deepEqual(calls[0].input.listUrlFilters, {
     priceMin: 50,
     priceMax: 200,
@@ -862,12 +907,14 @@ test('direct AI refresh passes batch concurrency to scraper runner', async (t) =
 
   const result = await service.refreshHotelData({
     amapKey: 'custom-amap-key',
-    batchConcurrency: 2
+    collectBrowser: '360',
+    batchConcurrency: 3
   });
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].input.amapKey, 'custom-amap-key');
-  assert.equal(calls[0].input.batchConcurrency, 2);
+  assert.equal(calls[0].input.collectBrowser, '360');
+  assert.equal(calls[0].input.batchConcurrency, 3);
   assert.equal(calls[0].context.dataFolderPath, 'E:/实验/1/宾馆比较助手');
   assert.equal(result.collectResult.updatedHotelCount, 2);
   assert.ok(

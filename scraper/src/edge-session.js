@@ -6,7 +6,11 @@ const {
   resolveEdgeUserDataDir,
   toBoolean
 } = require('./edge-runtime');
-const { findEdgeExecutable } = require('./scraper/process-utils');
+const {
+  findChromiumBrowserExecutable,
+  getBrowserDisplayName,
+  normalizeBrowserPreference
+} = require('./scraper/process-utils');
 
 function printHelp() {
   console.log(`
@@ -15,8 +19,8 @@ function printHelp() {
   node src/edge-session.js --userDataDir ./state/edge-profile --profileDirectory Default --port 9222 --url https://hotels.ctrip.com/
 
 说明:
-  这个脚本用于初始化或保持一个可复用的 Edge 登录会话。
-  推荐先运行一次 --login，在打开的 Edge 中登录携程；之后采集脚本即可复用该 profile。
+  这个脚本用于初始化或保持一个可复用的 Edge/360 登录会话。
+  推荐先运行一次 --login，在打开的浏览器中登录携程；之后采集脚本即可复用该 profile。
 
 可选参数:
   --login                        以可见窗口启动，方便手工登录并保存会话
@@ -24,6 +28,7 @@ function printHelp() {
   --profileDirectory <名称>      Profile 名称，默认 Default
   --port <端口>                  远程调试端口，默认 9222
   --url <地址>                   启动后打开的页面，默认 https://hotels.ctrip.com/
+  --browser <edge|360|auto>       浏览器选择，默认自动发现
   --headless <true|false>        非 login 模式下是否 headless，默认 false
   --help                         显示帮助
 `);
@@ -36,9 +41,13 @@ function main() {
     return;
   }
 
-  const edgeExecutable = findEdgeExecutable();
+  const browser = findChromiumBrowserExecutable({
+    browserPreference: normalizeBrowserPreference(args.browser || args['browser-preference'])
+  });
+  const edgeExecutable = browser.executablePath;
+  const browserName = browser.browserName || getBrowserDisplayName(edgeExecutable);
   if (!edgeExecutable) {
-    throw new Error('未找到 msedge.exe，无法启动 Edge 会话');
+    throw new Error('未找到 Edge 或 360 浏览器，无法启动浏览器会话');
   }
 
   const userDataDir = resolveEdgeUserDataDir(args.userDataDir || args['user-data-dir']);
@@ -76,6 +85,7 @@ function main() {
 
   const summary = {
     mode: loginMode ? 'login' : 'session',
+    browserName,
     edgeExecutable,
     userDataDir,
     profileDirectory,

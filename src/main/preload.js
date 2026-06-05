@@ -96,6 +96,20 @@ const invalidateCache = (pattern) => {
   }
 };
 
+const subscribeIpc = (channel, callback, mapEvent) => {
+  const listener = (event, ...args) => {
+    if (typeof mapEvent === 'function') {
+      mapEvent(event, ...args);
+      return;
+    }
+    callback(event, ...args);
+  };
+  ipcRenderer.on(channel, listener);
+  return () => {
+    ipcRenderer.removeListener(channel, listener);
+  };
+};
+
 const batchOperations = {
   async updateMultipleHotels(hotels) {
     const result = await ipcRenderer.invoke('hotel:updateMultiple', hotels);
@@ -212,20 +226,15 @@ const electronAPI = {
 
   batch: batchOperations,
 
-  onMenuExportData: (callback) => {
-    ipcRenderer.on('menu-export-data', callback);
-  },
-  onMenuImportData: (callback) => {
-    ipcRenderer.on('menu-import-data', callback);
-  },
+  onMenuExportData: (callback) => subscribeIpc('menu-export-data', callback),
+  onMenuImportData: (callback) => subscribeIpc('menu-import-data', callback),
 
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggleMaximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   getWindowState: () => ipcRenderer.invoke('window:getState'),
-  onWindowStateChanged: (callback) => {
-    ipcRenderer.on('window:stateChanged', (event, state) => callback(state));
-  },
+  onWindowStateChanged: (callback) =>
+    subscribeIpc('window:stateChanged', callback, (_event, state) => callback(state)),
 
   // 采集助手相关
   ai: {
@@ -243,9 +252,8 @@ const electronAPI = {
     getTaskStatus: () => ipcRenderer.invoke('ai:task:status'),
     parseCtripListUrl: (url) => ipcRenderer.invoke('ai:ctrip-list-url:parse', url),
     buildCtripListUrl: (payload) => ipcRenderer.invoke('ai:ctrip-list-url:build', payload),
-    onTaskEvent: (callback) => {
-      ipcRenderer.on('ai:task:event', (event, data) => callback(data));
-    }
+    onTaskEvent: (callback) =>
+      subscribeIpc('ai:task:event', callback, (_event, data) => callback(data))
   },
 
   removeAllListeners: (channel) => {
@@ -257,9 +265,8 @@ const electronAPI = {
   },
 
   // 事件监听
-  onTemplateUpdated: (callback) => {
-    ipcRenderer.on('template:updated', (event, data) => callback(data));
-  }
+  onTemplateUpdated: (callback) =>
+    subscribeIpc('template:updated', callback, (_event, data) => callback(data))
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

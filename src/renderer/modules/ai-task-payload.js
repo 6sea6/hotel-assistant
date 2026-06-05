@@ -307,10 +307,18 @@ export function readListFilterForm() {
 }
 
 /**
- * @returns {1|2}
+ * @returns {1|2|3}
  */
 export function readCollectBatchConcurrency() {
-  return Number(state.settings.collectBatchConcurrency) === 2 ? 2 : 1;
+  const concurrency = Number(state.settings.collectBatchConcurrency);
+  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
+}
+
+/**
+ * @returns {'edge'|'360'}
+ */
+export function readCollectBrowser() {
+  return String(state.settings.collectBrowser || '').trim() === '360' ? '360' : 'edge';
 }
 
 /**
@@ -337,6 +345,7 @@ export function buildTaskPayload(task) {
     reviewCountMin: task.listUrlFilters ? task.listUrlFilters.reviewCountMin : undefined,
     ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined,
     enableCollectPerfLog: Boolean(state.settings.enableCollectPerfLog),
+    collectBrowser: readCollectBrowser(),
     batchConcurrency: readCollectBatchConcurrency()
   };
 }

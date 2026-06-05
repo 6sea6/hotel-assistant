@@ -154,7 +154,7 @@ node src/cli.js --url "携程链接" --templateName "模板名" \
 
 ## 房型过滤规则（写入比较助手前必须执行）
 
-采集程序的 eligible rooms 只做基础筛选。写入比较助手前，AI 必须额外过滤：
+采集程序会先把缺价/锁价、无有效窗、人数不匹配、取消规则不合规等房型排除到 `rejected_rooms`，`eligible_rooms` 是第一层自动业务过滤后的候选。写入比较助手前，AI/人工仍必须复核：
 
 1. **排除无窗/部分有窗/走廊窗房型** — 携程标注"无窗"、"部分有窗"、"窗户位于走廊"或"窗户位于过道"的房型直接排除
 2. **人数按模板匹配，1 人模板有大床例外** — 当 `room_count = 1` 时，保留 `occupancy = 1` 的房型，也允许 `occupancy = 2` 且标准化后为“大床房”的房型；`occupancy = 2` 的双床房、家庭房、三床房等非大床房仍排除。其他模板默认只保留 `occupancy == 模板 room_count` 的房型；如果比较助手设置里开启“3人模板时额外保留4人房”，则在 `room_count = 3` 时也允许保留 `occupancy = 4` 的房型；写回比较助手的酒店记录 `room_count` 应按房型实际可住人数填写
@@ -220,7 +220,7 @@ node src/cli.js --url "携程链接" --templateName "模板名" \
 ### edge-cdp 价格抓取
 
 - edge-cdp 是获取实时价格的最终兜底，代码在 `src/ctrip-scraper.js` 的 `captureRoomCandidatesWithEdge`
-- **标签页复用**：必须用 `Target.getTargets` → `Page.reload`，**禁止** `Target.createTarget` 新建标签页（触发反爬）
+- **标签页策略**：优先用 `Target.getTargets` 复用已存在的目标页或空白页，再通过 `Page.reload`/导航刷新；只有没有可复用目标页时，才兜底 `Target.createTarget` 创建临时空白页，并在结束后关闭
 - **网络捕获时序**：必须先 `Network.enable` 再 `Page.reload`
 - **价格字段格式多变**：可能是数字、字符串或嵌套对象。用 `unwrapPriceValue()` 递归展开
 - **核心数据结构**：

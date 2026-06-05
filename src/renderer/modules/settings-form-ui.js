@@ -1,8 +1,8 @@
 /**
- * 设置表单 UI —— 主设置弹窗、采集偏好、权重和页面刷新。
+ * 设置表单 UI —— 主设置弹窗、采集偏好和页面刷新。
  */
 
-import { state, rankingCache } from './state.js';
+import { state } from './state.js';
 import { $, setValue } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
@@ -29,10 +29,19 @@ const getFormValueElement = (id) => /** @type {SettingsFormValueElement|null} */
 
 /**
  * @param {unknown} value
- * @returns {1|2}
+ * @returns {1|2|3}
  */
 function normalizeCollectBatchConcurrency(value) {
-  return Number(value) === 2 ? 2 : 1;
+  const concurrency = Number(value);
+  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {'edge'|'360'}
+ */
+function normalizeCollectBrowser(value) {
+  return String(value || '').trim() === '360' ? '360' : 'edge';
 }
 
 export async function openSettings() {
@@ -63,25 +72,10 @@ export function applySettings() {
     'collectBatchConcurrency',
     String(normalizeCollectBatchConcurrency(state.settings.collectBatchConcurrency))
   );
+  setValue('collectBrowser', normalizeCollectBrowser(state.settings.collectBrowser));
   setValue('amapApiKeyInput', state.settings.amapApiKey || '');
   applyListPrefilterSettings();
   refreshCustomSelects();
-
-  const weightMappings = [
-    { key: 'weight_price', id: 'weightPrice', valueId: 'priceWeightValue' },
-    { key: 'weight_score', id: 'weightScore', valueId: 'scoreWeightValue' },
-    { key: 'weight_distance', id: 'weightDistance', valueId: 'distanceWeightValue' },
-    { key: 'weight_transport', id: 'weightTransport', valueId: 'transportWeightValue' }
-  ];
-
-  weightMappings.forEach(({ key, id, valueId }) => {
-    if (state.settings[key]) {
-      const weightEl = /** @type {HTMLInputElement|null} */ (document.getElementById(id));
-      const valueEl = document.getElementById(valueId);
-      if (weightEl) weightEl.value = String(state.settings[key]);
-      if (valueEl) valueEl.textContent = String(state.settings[key]);
-    }
-  });
 }
 
 function applyBooleanSettingToggle(settingKey, checkboxId, textId) {
@@ -154,13 +148,36 @@ export async function saveCollectBatchConcurrencySetting() {
     state.settings.collectBatchConcurrency = nextValue;
     setValue('collectBatchConcurrency', String(nextValue));
     refreshCustomSelects();
-    showNotification(nextValue === 2 ? '已开启并发采集' : '已切换为串行采集', 'success');
+    showNotification(nextValue > 1 ? `已开启 ${nextValue} 并发采集` : '已切换为串行采集', 'success');
   } catch (error) {
     console.error('保存并发采集设置失败:', error);
     state.settings.collectBatchConcurrency = previousValue;
     setValue('collectBatchConcurrency', String(previousValue));
     refreshCustomSelects();
     showNotification('保存并发采集设置失败，请重试', 'error');
+  }
+}
+
+export async function saveCollectBrowserSetting() {
+  const input = getFormValueElement('collectBrowser');
+  const previousValue = normalizeCollectBrowser(state.settings.collectBrowser);
+  const nextValue = normalizeCollectBrowser(input ? input.value : previousValue);
+
+  try {
+    await window.electronAPI.setSetting('collectBrowser', nextValue);
+    state.settings.collectBrowser = nextValue;
+    setValue('collectBrowser', nextValue);
+    refreshCustomSelects();
+    showNotification(
+      nextValue === '360' ? '已切换为 360 浏览器采集' : '已切换为 Edge 采集',
+      'success'
+    );
+  } catch (error) {
+    console.error('保存采集浏览器设置失败:', error);
+    state.settings.collectBrowser = previousValue;
+    setValue('collectBrowser', previousValue);
+    refreshCustomSelects();
+    showNotification('保存采集浏览器设置失败，请重试', 'error');
   }
 }
 
@@ -204,7 +221,6 @@ export async function resetSettings(eventLike) {
     }
 
     state.settings = result.settings || (await actions.loadSettings());
-    rankingCache.invalidate();
     applySettings();
     applyAppIconState(result.iconState);
     showNotification('设置已恢复默认', 'success');
@@ -243,7 +259,6 @@ export async function refreshCurrentPage(options = {}) {
       await loadAppIconState();
     }
 
-    rankingCache.invalidate();
     actions.renderHotelList({ interactionFirst });
 
     if (showSuccess) {

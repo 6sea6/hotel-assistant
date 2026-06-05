@@ -189,7 +189,9 @@ test('settings normalization still fills defaults and removes deprecated fields'
     settings: {
       theme: 'dark',
       amapApiKey: '  custom-amap-key  ',
-      autoMatchTemplate: true
+      autoMatchTemplate: true,
+      weight_price: 0.9,
+      weight_score: 0.1
     }
   });
   const handlers = registerHandler(registerSettingsHandlers, store, {
@@ -201,9 +203,12 @@ test('settings normalization still fills defaults and removes deprecated fields'
   const settings = handlers['settings:getAll'](createTrustedIpcEvent());
 
   assert.equal(settings.theme, APP_CONFIG.STORE_DEFAULTS.settings.theme);
+  assert.equal(settings.collectBrowser, 'edge');
   assert.equal(settings.app_icon_file_name, '');
   assert.equal(settings.amapApiKey, 'custom-amap-key');
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'autoMatchTemplate'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'weight_price'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'weight_score'), false);
   assert.ok(store.setCalls.some((call) => call.key === 'settings'));
 });
 

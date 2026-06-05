@@ -15,6 +15,45 @@ const MANUAL_FALLBACK_HTML = `
     <p>未能读取本地说明书资源，请关闭弹窗后重试，或检查应用文件是否完整。</p>
   </div>
 `;
+const MANUAL_BLOCKED_SELECTOR = 'script, style, iframe, object, embed, link, meta, base';
+const MANUAL_URL_ATTRS = new Set(['href', 'src']);
+
+function isSafeManualUrl(value) {
+  const text = String(value || '').trim();
+  if (!text || text.startsWith('#')) return true;
+
+  try {
+    const url = new URL(text, window.location.href);
+    return url.origin === window.location.origin && ['app:', 'file:'].includes(url.protocol);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function sanitizeManualContent(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+
+  template.content.querySelectorAll(MANUAL_BLOCKED_SELECTOR).forEach((element) => {
+    element.remove();
+  });
+
+  template.content.querySelectorAll('*').forEach((element) => {
+    Array.from(element.attributes).forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      if (name.startsWith('on') || name === 'data-action' || name === 'srcdoc') {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if (MANUAL_URL_ATTRS.has(name) && !isSafeManualUrl(attribute.value)) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+
+  return template.innerHTML;
+}
 
 export function applyAppMetadata() {
   const appInfo = window.electronAPI?.appInfo;
@@ -50,7 +89,7 @@ async function loadManualContent() {
     if (!content || !content.trim()) {
       throw new Error('说明书内容为空');
     }
-    container.innerHTML = content;
+    container.innerHTML = sanitizeManualContent(content);
     manualContentLoaded = true;
     applyAppMetadata();
   } catch (error) {

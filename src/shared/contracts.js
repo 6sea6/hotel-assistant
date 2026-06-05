@@ -276,10 +276,6 @@
 
 /**
  * @typedef {Record<string, unknown> & {
- *   weight_price?: number|string,
- *   weight_score?: number|string,
- *   weight_distance?: number|string,
- *   weight_transport?: number|string,
  *   theme?: string,
  *   activeTheme?: string,
  *   language?: string,
@@ -295,6 +291,7 @@
  *   aiCtripScoreMin?: number|string,
  *   amapApiKey?: string,
  *   enableCollectPerfLog?: boolean,
+ *   collectBrowser?: 'edge'|'360'|string,
  *   collectBatchConcurrency?: number|string,
  *   app_icon_path?: string,
  *   app_icon_file_name?: string,
@@ -407,6 +404,11 @@
  */
 
 /**
+ * @callback IpcUnsubscribe
+ * @returns {void}
+ */
+
+/**
  * @typedef {object} ElectronAiAPI
  * @property {() => Promise<Record<string, unknown>|null>} getConfig
  * @property {() => Promise<Array<Record<string, unknown>>>} getPresets
@@ -419,7 +421,7 @@
  * @property {() => Promise<AiTaskBackendResult>} getTaskStatus
  * @property {(url: string) => Promise<AiListUrlFilters>} parseCtripListUrl
  * @property {(payload: {baseUrl: string, settings: CtripUrlFilterSettings}) => Promise<string>} buildCtripListUrl
- * @property {(callback: (event: AiTaskEvent) => void) => void} onTaskEvent
+ * @property {(callback: (event: AiTaskEvent) => void) => IpcUnsubscribe} onTaskEvent
  */
 
 /**
@@ -463,17 +465,17 @@
  * @property {() => Promise<IpcResult<unknown>>} showDataInFolder
  * @property {() => Promise<IpcPathResult>} changeDataPath
  * @property {ElectronBatchAPI} batch
- * @property {(callback: (...args: unknown[]) => void) => void} onMenuExportData
- * @property {(callback: (...args: unknown[]) => void) => void} onMenuImportData
+ * @property {(callback: (...args: unknown[]) => void) => IpcUnsubscribe} onMenuExportData
+ * @property {(callback: (...args: unknown[]) => void) => IpcUnsubscribe} onMenuImportData
  * @property {() => Promise<unknown>} minimizeWindow
  * @property {() => Promise<Record<string, unknown>>} toggleMaximizeWindow
  * @property {() => Promise<unknown>} closeWindow
  * @property {() => Promise<Record<string, unknown>>} getWindowState
- * @property {(callback: (state: Record<string, unknown>) => void) => void} onWindowStateChanged
+ * @property {(callback: (state: Record<string, unknown>) => void) => IpcUnsubscribe} onWindowStateChanged
  * @property {ElectronAiAPI} ai
  * @property {(channel: string) => void} removeAllListeners
  * @property {(pattern?: string) => void} invalidateRendererCache
- * @property {(callback: (data: IpcMutationResult & {templateId?: EntityId, template?: NormalizedTemplateRecord}) => void) => void} onTemplateUpdated
+ * @property {(callback: (data: IpcMutationResult & {templateId?: EntityId, template?: NormalizedTemplateRecord}) => void) => IpcUnsubscribe} onTemplateUpdated
  */
 
 module.exports = {};

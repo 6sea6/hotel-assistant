@@ -508,8 +508,8 @@ test('refresh-data: buildRefreshProgressStats calculates from refresh:item-start
   const events = [
     { type: 'task:start', at: '2026-01-01T00:00:00Z' },
     { type: 'refresh:load-data', message: '正在读取当前宾馆数据', at: '2026-01-01T00:00:01Z' },
-    { type: 'edge:login-required', message: '正在准备 Edge 登录态', at: '2026-01-01T00:00:02Z' },
-    { type: 'edge:login-done', message: 'Edge 登录态已准备完成', at: '2026-01-01T00:00:05Z' },
+    { type: 'edge:login-required', message: '正在准备浏览器登录态', at: '2026-01-01T00:00:02Z' },
+    { type: 'edge:login-done', message: '浏览器登录态已准备完成', at: '2026-01-01T00:00:05Z' },
     {
       type: 'refresh:item-start',
       message: '正在更新第 1/3 家：酒店A',
@@ -727,7 +727,7 @@ test('refresh-data: getReadableEventTitle returns correct titles', () => {
   assert.ok(code.includes('结果汇总'), 'Should have refresh:summary title');
   // Check edge:login-done title for refresh
   assert.ok(
-    code.includes('Edge 登录态已准备完成'),
+    code.includes('浏览器登录态已准备完成'),
     'Should have refresh-specific edge:login-done title'
   );
   // Should NOT contain "采集任务完成" for task:done in refresh mode

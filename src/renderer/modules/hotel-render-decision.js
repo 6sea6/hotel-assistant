@@ -24,7 +24,6 @@ const FULL_RERENDER_REASONS = new Set([
   'hotel-add',
   'batch-delete',
   'template-sync',
-  'ranking-change',
   'view-mode-change',
   'data-reload',
   'settings-change',

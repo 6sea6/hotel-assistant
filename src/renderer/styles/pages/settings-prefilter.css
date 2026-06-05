@@ -408,3 +408,46 @@
   font-size: 14px;
   color: var(--text-secondary);
 }
+
+@media (max-width: 900px) {
+  .settings-prefilter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .list-prefilter-header,
+  .list-prefilter-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .list-prefilter-primary-button,
+  .list-prefilter-secondary-button {
+    flex: 1;
+  }
+
+  .list-prefilter-modal-content {
+    width: calc(100% - 20px);
+    max-height: calc(100vh - var(--app-header-height) - 28px);
+  }
+
+  .list-prefilter-header,
+  .list-prefilter-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .list-prefilter-title {
+    align-items: flex-start;
+  }
+
+  .list-prefilter-grid-three,
+  .list-prefilter-grid-four {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .list-prefilter-card {
+    padding: 18px;
+  }
+}

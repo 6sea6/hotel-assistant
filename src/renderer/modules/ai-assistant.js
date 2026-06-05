@@ -25,6 +25,7 @@ import {
   buildTaskPayload,
   getSubmittedUrl,
   handleAiTaskInputChange,
+  readCollectBrowser,
   readCollectBatchConcurrency,
   readCtripUrlFilterSettings,
   readListFilterForm,
@@ -69,6 +70,8 @@ const BACKEND_BUSY_RETRY_DELAY_MS = 1200;
 let activeCollectTaskId = '';
 let backendIdleRetryTimer = 0;
 let queueStartCheckInProgress = false;
+/** @type {null|(() => void)} */
+let disposeAiTaskEventListener = null;
 
 function setPageVisible(id, visible) {
   const el = $(id);
@@ -428,6 +431,7 @@ async function executeCollectTask(task) {
     if (isRefresh) {
       result = await window.electronAPI.ai.refreshHotelData({
         amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
+        collectBrowser: readCollectBrowser(),
         batchConcurrency: readCollectBatchConcurrency()
       });
     } else {
@@ -518,38 +522,44 @@ async function initializeAiAssistant() {
     if (!state.aiTaskConsole) {
       setAiTaskConsole(createEmptyTaskConsole());
     }
-    window.electronAPI.ai.onTaskEvent((event) => {
-      const task = findQueueTaskByBackendTaskId(event.taskId) || getRunningQueueTask();
-      if (task) {
-        if (event.taskId) {
-          task.backendTaskId = event.taskId;
-          task.console = {
-            ...(task.console || createEmptyTaskConsole()),
-            taskId: event.taskId
-          };
-        }
-        task.events = task.events || [];
-        const existingCancelEvent =
-          event.type === 'task:cancel'
-            ? task.events.find((item) => item.type === 'task:cancel')
-            : null;
-        if (existingCancelEvent) {
-          existingCancelEvent.taskId = event.taskId || existingCancelEvent.taskId;
-          existingCancelEvent.message = event.message || existingCancelEvent.message;
-          existingCancelEvent.at = event.at || existingCancelEvent.at;
+    if (!disposeAiTaskEventListener) {
+      const unsubscribe = window.electronAPI.ai.onTaskEvent((event) => {
+        const task = findQueueTaskByBackendTaskId(event.taskId) || getRunningQueueTask();
+        if (task) {
+          if (event.taskId) {
+            task.backendTaskId = event.taskId;
+            task.console = {
+              ...(task.console || createEmptyTaskConsole()),
+              taskId: event.taskId
+            };
+          }
+          task.events = task.events || [];
+          const existingCancelEvent =
+            event.type === 'task:cancel'
+              ? task.events.find((item) => item.type === 'task:cancel')
+              : null;
+          if (existingCancelEvent) {
+            existingCancelEvent.taskId = event.taskId || existingCancelEvent.taskId;
+            existingCancelEvent.message = event.message || existingCancelEvent.message;
+            existingCancelEvent.at = event.at || existingCancelEvent.at;
+          } else {
+            task.events.push(event);
+          }
+          task.currentStep = event.message || task.currentStep || '';
+          if (String(state.aiSelectedQueueTaskId) === String(task.id)) {
+            setAiTaskEvents(task.events);
+            setAiTaskConsole(task.console || createEmptyTaskConsole());
+          }
         } else {
-          task.events.push(event);
+          pushAiTaskEvent(event);
         }
-        task.currentStep = event.message || task.currentStep || '';
-        if (String(state.aiSelectedQueueTaskId) === String(task.id)) {
-          setAiTaskEvents(task.events);
-          setAiTaskConsole(task.console || createEmptyTaskConsole());
-        }
-      } else {
-        pushAiTaskEvent(event);
-      }
-      scheduleTaskConsoleRender();
-    });
+        scheduleTaskConsoleRender();
+      });
+      disposeAiTaskEventListener = () => {
+        unsubscribe?.();
+        disposeAiTaskEventListener = null;
+      };
+    }
     setAiAssistantInitialized(true);
   }
 

@@ -45,7 +45,7 @@ async function loadHotelListModule() {
     export function replaceCurrentFilters(filters) { state.currentFilters = { ...filters }; }
     export function clearSelectedHotels() { state.selectedHotels.clear(); }
     export function setViewMode(viewMode) { state.viewMode = viewMode; }
-    export function markRankingCacheDirty() {}
+    export function markVisibleHotelsCacheDirty() {}
     export function bumpHotelListRenderVersion() { state.hotelListRenderVersion += 1; }
     export function setRenderScheduled(value) { state.renderScheduled = value; }
     export function setPendingRenderInteractionFirst(value) { state.pendingRenderInteractionFirst = value; }

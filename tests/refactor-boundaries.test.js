@@ -192,6 +192,9 @@ test('renderer CSS is split into token theme component and page layers', () => {
     './styles/components/virtual-scroll.css'
   ]);
   assert.ok(manifest.split(/\r?\n/).length <= 24, 'styles.css should stay as a thin manifest');
+
+  const hotelTableCss = readProjectFile('src/renderer/styles/pages/hotel-table.css');
+  assert.doesNotMatch(hotelTableCss, /\.ai-|\.task-|\.settings-prefilter|\.list-prefilter/);
 });
 
 test('scraper runner responsibilities are split behind the existing facade', () => {

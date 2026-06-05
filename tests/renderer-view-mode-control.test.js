@@ -49,7 +49,7 @@ async function loadControllerModule() {
       state.viewMode = viewMode;
       globalThis.__viewModeSetCalls.push(viewMode);
     }
-    export function markRankingCacheDirty() {}
+    export function markVisibleHotelsCacheDirty() {}
     `
   );
   writeFile(

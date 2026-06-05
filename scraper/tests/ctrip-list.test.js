@@ -691,6 +691,7 @@ test('captureListHtmlPagesWithEdge keeps scrolling while unique list candidates 
   });
   const processUtilsPath = installMock('../src/scraper/process-utils', {
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killBrowserProcessesByCommandLine: () => false,
     killProcessTree: () => undefined
   });
   const collectorModulePaths = getListCollectorModulePaths();
@@ -792,6 +793,7 @@ test('captureListHtmlPagesWithEdge returns candidate HTML without full document 
   });
   const processUtilsPath = installMock('../src/scraper/process-utils', {
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killBrowserProcessesByCommandLine: () => false,
     killProcessTree: () => undefined
   });
   const collectorModulePaths = getListCollectorModulePaths();
@@ -916,6 +918,7 @@ test('captureListHtmlPagesWithEdge appends Ctrip list network responses to snaps
   });
   const processUtilsPath = installMock('../src/scraper/process-utils', {
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killBrowserProcessesByCommandLine: () => false,
     killProcessTree: () => undefined
   });
   const collectorModulePaths = getListCollectorModulePaths();
@@ -1036,6 +1039,7 @@ test('captureListHtmlPagesWithEdge appends Ctrip list API replay responses to sn
   });
   const processUtilsPath = installMock('../src/scraper/process-utils', {
     findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killBrowserProcessesByCommandLine: () => false,
     killProcessTree: () => undefined
   });
   const collectorModulePaths = getListCollectorModulePaths();

@@ -167,6 +167,37 @@ test('dev perf child meta aliases override empty parent defaults', async () => {
   });
 });
 
+test('dev perf logger default filename includes local timestamp and is unique per run', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-perf-unique-'));
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(tempDir);
+    await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
+      const { setup_perf_logger } = require('../src/runtime/perf');
+      const firstLogger = setup_perf_logger({
+        date: new Date(2026, 4, 20, 8, 9, 10, 123)
+      });
+      const secondLogger = setup_perf_logger({
+        date: new Date(2026, 4, 20, 8, 9, 10, 124)
+      });
+
+      assert.notEqual(firstLogger.logPath, secondLogger.logPath);
+      assert.match(
+        path.basename(firstLogger.logPath),
+        /^collect_perf_2026-05-20_08-09-10-123\.jsonl$/
+      );
+      assert.match(
+        path.basename(secondLogger.logPath),
+        /^collect_perf_2026-05-20_08-09-10-124\.jsonl$/
+      );
+    });
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('BatchStats summary exposes item percentiles, phase totals and slowest items', async () => {
   await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
     const { PerfTimer, BatchStats } = require('../src/runtime/perf');

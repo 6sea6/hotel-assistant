@@ -53,6 +53,7 @@ export {
   buildTaskError,
   buildTaskResult,
   buildTaskSteps,
+  formatSkippedHotelReasons,
   formatDuration,
   getElapsedText,
   getTaskCollectResult,

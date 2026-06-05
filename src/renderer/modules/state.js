@@ -34,7 +34,6 @@ const templateChangeListeners = new Set();
  * @property {NormalizedTemplateRecord[]} templates
  * @property {AppSettings} settings
  * @property {CurrentFilters} currentFilters
- * @property {string} rankingMode
  * @property {boolean} isInitialized
  * @property {boolean} renderScheduled
  * @property {ViewMode} viewMode
@@ -99,7 +98,6 @@ export const state = {
   templates: [],
   settings: {},
   currentFilters: {},
-  rankingMode: 'auto',
   isInitialized: false,
   renderScheduled: false,
   viewMode: 'card', // 'card' | 'list'
@@ -489,7 +487,6 @@ export function getScrollBehaviorForReason(reason, currentFiltersKey) {
   if (
     reason === 'filter-change' ||
     reason === 'sort-change' ||
-    reason === 'ranking-change' ||
     reason === 'template-sync' ||
     reason === 'settings-change'
   ) {
@@ -631,27 +628,6 @@ export function setLocalHotelsRevision(meta) {
  */
 export function markLocalHotelsRevisionUnknown() {
   hotelDataClientCache.revision = null;
-}
-
-/* ---- 排名缓存 ---- */
-export const rankingCache = {
-  data: null,
-  filters: null,
-  hotelsHash: null,
-  weights: null,
-  invalidate() {
-    this.data = null;
-    this.filters = null;
-    this.hotelsHash = null;
-    this.weights = null;
-  }
-};
-
-/**
- * @returns {void}
- */
-export function markRankingCacheDirty() {
-  rankingCache.invalidate();
 }
 
 /* ---- 可见宾馆缓存 ---- */

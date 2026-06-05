@@ -72,6 +72,7 @@ import {
   changeTheme,
   toggleIncludeFourPersonRoomsForThreePersonTemplate,
   toggleEnableCollectPerfLog,
+  saveCollectBrowserSetting,
   saveCollectBatchConcurrencySetting,
   saveAmapApiKeySetting,
   saveAiListPrefilterSetting,
@@ -103,7 +104,12 @@ import {
   closeWindow
 } from './modules/window-controls.js';
 
-import { setupCustomSelects, refreshCustomSelects } from './modules/custom-select.js';
+import {
+  closeAllCustomSelects,
+  hasOpenCustomSelect,
+  refreshCustomSelects,
+  setupCustomSelects
+} from './modules/custom-select.js';
 
 import {
   applyAppMetadata,
@@ -273,6 +279,10 @@ function handleActionClick(event) {
   const actionElement = /** @type {HTMLElement|null} */ (target?.closest('[data-action]') || null);
   if (!actionElement) return;
 
+  if (actionElement.closest('#manualContent')) {
+    return;
+  }
+
   if (actionElement.closest('#templateList')) {
     event.preventDefault();
     handleTemplateListClick(event);
@@ -340,6 +350,11 @@ function handleDelegatedChange(event) {
     return;
   }
 
+  if (target.id === 'collectBrowser') {
+    saveCollectBrowserSetting();
+    return;
+  }
+
   if (target.id === 'collectBatchConcurrency') {
     saveCollectBatchConcurrencySetting();
     return;
@@ -365,6 +380,12 @@ function handleDelegatedChange(event) {
  */
 function handleGlobalKeydown(e) {
   if (e.key !== 'Escape') return;
+
+  if (hasOpenCustomSelect()) {
+    e.preventDefault();
+    closeAllCustomSelects();
+    return;
+  }
 
   /** @type {Array<[string, () => void]>} */
   const closers = [

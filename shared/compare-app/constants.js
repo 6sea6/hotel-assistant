@@ -1,8 +1,4 @@
 const BASE_COMPARE_APP_SETTINGS = Object.freeze({
-  weight_price: 0.25,
-  weight_score: 0.35,
-  weight_distance: 0.2,
-  weight_transport: 0.2,
   theme: 'totoro-blue',
   language: 'zh-CN',
   includeFourPersonRoomsForThreePersonTemplate: false,
@@ -17,6 +13,7 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   aiCtripScoreMin: '',
   amapApiKey: '',
   enableCollectPerfLog: false,
+  collectBrowser: 'edge',
   collectBatchConcurrency: 1,
   hotelCardVisibleFields: [
     'original_room_type',
@@ -34,6 +31,14 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
     'template'
   ]
 });
+
+const DEPRECATED_COMPARE_APP_SETTING_KEYS = Object.freeze([
+  'autoMatchTemplate',
+  'weight_price',
+  'weight_score',
+  'weight_distance',
+  'weight_transport'
+]);
 
 const DEFAULT_COMPARE_APP_FILES = Object.freeze({
   appFolderName: '宾馆比较助手',
@@ -53,6 +58,7 @@ function createBaseCompareAppStore() {
 
 module.exports = {
   BASE_COMPARE_APP_SETTINGS,
+  DEPRECATED_COMPARE_APP_SETTING_KEYS,
   DEFAULT_COMPARE_APP_FILES,
   createBaseCompareAppStore
 };

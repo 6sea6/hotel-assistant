@@ -25,6 +25,13 @@ const {
   mergeTemplateWithArgs,
   validateTemplate
 } = require('../src/template-loader');
+const {
+  findChromiumBrowserExecutable,
+  findEdgeExecutable,
+  getBrowserDisplayName,
+  normalizeBrowserPreference
+} = require('../src/scraper/process-utils');
+const { resolveAutoEdgeRuntime } = require('../src/cli/auto-edge');
 
 test('buildPageSnapshotSummary keeps only compact fields needed for latest-run', () => {
   const summary = buildPageSnapshotSummary({
@@ -381,6 +388,100 @@ test('edge runtime resolves profile paths and detects reusable profile markers',
   assert.equal(hasReusableEdgeProfile(userDataDir, 'Profile 1'), true);
 });
 
+test('browser executable discovery falls back to 360 browser when Edge is missing', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-discovery-'));
+  const fakeProgramFiles = path.join(tempRoot, 'Program Files');
+  const fakeProgramFilesX86 = path.join(tempRoot, 'Program Files (x86)');
+  const fakeLocalAppData = path.join(tempRoot, 'LocalAppData');
+  const fakeDriveRoot = path.join(tempRoot, 'E-drive');
+  const fake360Executable = path.join(fakeDriveRoot, '360se6', 'Application', '360se.exe');
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(path.dirname(fake360Executable), { recursive: true });
+  fs.writeFileSync(fake360Executable, '');
+
+  const env = {
+    PROGRAMFILES: fakeProgramFiles,
+    'PROGRAMFILES(X86)': fakeProgramFilesX86,
+    LOCALAPPDATA: fakeLocalAppData
+  };
+  const driveRoots = [fakeDriveRoot];
+
+  assert.equal(findEdgeExecutable({ env, driveRoots }), fake360Executable);
+  assert.deepEqual(findChromiumBrowserExecutable({ env, driveRoots }), {
+    executablePath: fake360Executable,
+    browserName: '360 Browser'
+  });
+  assert.equal(getBrowserDisplayName(fake360Executable), '360 Browser');
+});
+
+test('browser executable discovery honors explicit browser preference', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-preference-'));
+  const fakeProgramFiles = path.join(tempRoot, 'Program Files');
+  const fakeDriveRoot = path.join(tempRoot, 'E-drive');
+  const fakeEdgeExecutable = path.join(
+    fakeProgramFiles,
+    'Microsoft',
+    'Edge',
+    'Application',
+    'msedge.exe'
+  );
+  const fake360Executable = path.join(fakeDriveRoot, '360se6', 'Application', '360se.exe');
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  fs.mkdirSync(path.dirname(fakeEdgeExecutable), { recursive: true });
+  fs.mkdirSync(path.dirname(fake360Executable), { recursive: true });
+  fs.writeFileSync(fakeEdgeExecutable, '');
+  fs.writeFileSync(fake360Executable, '');
+
+  const env = {
+    PROGRAMFILES: fakeProgramFiles,
+    HOTEL_COLLECTOR_BROWSER_EXECUTABLE: fake360Executable
+  };
+  const driveRoots = [fakeDriveRoot];
+
+  assert.equal(normalizeBrowserPreference('360-browser'), '360');
+  assert.deepEqual(findChromiumBrowserExecutable({ env, driveRoots, browserPreference: 'edge' }), {
+    executablePath: fakeEdgeExecutable,
+    browserName: 'Edge'
+  });
+  assert.deepEqual(findChromiumBrowserExecutable({ env, driveRoots, browserPreference: '360' }), {
+    executablePath: fake360Executable,
+    browserName: '360 Browser'
+  });
+});
+
+test('auto edge runtime keeps 360 browser away from Edge user data dir', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-edge-runtime-'));
+  const fake360Executable = path.join(tempRoot, '360se6', 'Application', '360se.exe');
+  const edgeProfileDir = path.join(tempRoot, 'state', 'edge-profile');
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    delete process.env.HOTEL_COLLECTOR_BROWSER_EXECUTABLE;
+  });
+
+  fs.mkdirSync(path.dirname(fake360Executable), { recursive: true });
+  fs.writeFileSync(fake360Executable, '');
+  process.env.HOTEL_COLLECTOR_BROWSER_EXECUTABLE = fake360Executable;
+
+  const runtime = resolveAutoEdgeRuntime({
+    userDataDir: edgeProfileDir,
+    profileDirectory: 'Default'
+  });
+
+  assert.equal(runtime.browserName, '360 Browser');
+  assert.equal(runtime.userDataDir, path.join(tempRoot, 'state', '360-profile'));
+  assert.equal(runtime.profileDirectory, 'Default');
+  assert.equal(runtime.usingSeparate360Profile, true);
+});
+
 test('parseArgs preserves underscore and kebab-case url flags for downstream compatibility', () => {
   const underscored = parseArgs(['node', 'cli.js', '--ctrip_url', 'https://example.com/hotel']);
   const kebab = parseArgs(['node', 'cli.js', '--ctrip-url', 'https://example.com/hotel']);
@@ -401,11 +502,14 @@ test('mergeTemplateWithArgs accepts url aliases and keeps template validation pa
     ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1'
   });
   const mergedFromKebab = mergeTemplateWithArgs(baseTemplate, {
-    'ctrip-url': 'https://hotels.ctrip.com/hotels/detail/?hotelId=2'
+    'ctrip-url': 'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
+    browser: '360'
   });
 
   assert.equal(mergedFromUnderscore.ctrip_url, 'https://hotels.ctrip.com/hotels/detail/?hotelId=1');
   assert.equal(mergedFromKebab.ctrip_url, 'https://hotels.ctrip.com/hotels/detail/?hotelId=2');
+  assert.equal(mergedFromUnderscore.browser_preference, 'edge');
+  assert.equal(mergedFromKebab.browser_preference, '360');
   assert.doesNotThrow(() => validateTemplate(mergedFromUnderscore));
   assert.doesNotThrow(() => validateTemplate(mergedFromKebab));
 });

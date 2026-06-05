@@ -7,8 +7,10 @@ const { normalizeText, toNumber, ensureDir } = require('../utils');
 const {
   delay,
   scheduleProcessWindowHide,
+  killBrowserProcessesByCommandLine,
   killProcessTree,
-  findEdgeExecutable
+  findEdgeExecutable,
+  normalizeBrowserPreference
 } = require('./process-utils');
 
 function findAvailablePort() {
@@ -41,7 +43,11 @@ function normalizeEdgeSessionOptions(options = {}) {
     profileDirectory: normalizeText(options.profileDirectory || ''),
     debuggerUrl: normalizeText(options.debuggerUrl || ''),
     debuggingPort: toNumber(options.debuggingPort),
-    headless: options.headless !== false
+    headless: options.headless !== false,
+    browserPreference:
+      normalizeBrowserPreference(
+        options.browserPreference || options.browser || options.collectBrowser
+      ) || 'edge'
   };
 }
 
@@ -108,11 +114,18 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
       return {
         browser,
         debuggerUrl,
+        browserExecutable: edgeExecutable,
+        port,
         userDataDir,
         shouldCleanupUserDataDir
       };
     } catch (error) {
       killProcessTree(browser.pid);
+      killBrowserProcessesByCommandLine({
+        browserExecutable: edgeExecutable,
+        port,
+        userDataDir
+      });
       if (shouldCleanupUserDataDir) {
         try {
           fs.rmSync(userDataDir, { recursive: true, force: true });

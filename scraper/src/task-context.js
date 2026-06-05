@@ -76,7 +76,8 @@ function buildEdgeSessionOptions(effectiveTemplate = {}) {
     profileDirectory: effectiveTemplate.edge_profile_directory,
     debuggerUrl: effectiveTemplate.edge_debugger_url,
     debuggingPort: effectiveTemplate.edge_debugging_port,
-    headless: effectiveTemplate.edge_headless
+    headless: effectiveTemplate.edge_headless,
+    browserPreference: effectiveTemplate.browser_preference
   };
 }
 

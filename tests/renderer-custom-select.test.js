@@ -246,8 +246,10 @@ function installMockDom() {
     }
   }
 
+  const documentListeners = {};
   const mockDocument = {
     elements,
+    _listeners: documentListeners,
     getElementById(id) {
       return elements.get(id) || null;
     },
@@ -257,8 +259,15 @@ function installMockDom() {
     createElement(tag) {
       return createMockElement(tag);
     },
-    addEventListener() {},
-    removeEventListener() {}
+    addEventListener(event, fn, options) {
+      if (!documentListeners[event]) documentListeners[event] = [];
+      documentListeners[event].push({ fn, options });
+    },
+    removeEventListener(event, fn) {
+      if (documentListeners[event]) {
+        documentListeners[event] = documentListeners[event].filter((entry) => entry.fn !== fn);
+      }
+    }
   };
   const mockWindow = {
     innerHeight: 800,
@@ -892,4 +901,47 @@ test('custom-select: openMenu uses getAnimationFrame fallback when requestAnimat
 
   // Restore
   global.requestAnimationFrame = origRaf;
+});
+
+test('custom-select: closing before scheduled document listeners avoids stale global listeners', async () => {
+  const { mockDocument } = installMockDom();
+  const pendingFrames = [];
+  const originalRaf = global.requestAnimationFrame;
+  const originalCancelRaf = global.cancelAnimationFrame;
+  global.requestAnimationFrame = (callback) => {
+    pendingFrames.push(callback);
+    return pendingFrames.length;
+  };
+  global.cancelAnimationFrame = (id) => {
+    pendingFrames[id - 1] = null;
+  };
+
+  try {
+    const { enhanceCustomSelect, closeAllCustomSelects } = await loadCustomSelectModule();
+
+    const select = createMockSelect('staleListenerSelect', [{ value: 'a', text: 'A' }]);
+    document.elements.set('staleListenerSelect', select);
+
+    const wrapper = createMockElement('div');
+    const button = createMockElement('button');
+    const textSpan = createMockElement('span');
+    const menu = createMockElement('div');
+    wrapper.appendChild(button);
+    button.appendChild(textSpan);
+    wrapper.appendChild(menu);
+
+    enhanceCustomSelect(select, {
+      existingElements: { wrapper, button, textSpan, menu }
+    });
+
+    button._listeners['click'][0]({ preventDefault() {} });
+    closeAllCustomSelects();
+    pendingFrames.forEach((callback) => callback?.());
+
+    assert.equal((mockDocument._listeners.mousedown || []).length, 0);
+    assert.equal((mockDocument._listeners.keydown || []).length, 0);
+  } finally {
+    global.requestAnimationFrame = originalRaf;
+    global.cancelAnimationFrame = originalCancelRaf;
+  }
 });

@@ -43,15 +43,19 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
   }
 
   const sessionOptions = normalizeEdgeSessionOptions(edgeSessionOptions);
-  const edgeExecutable = findEdgeExecutable();
+  const edgeExecutable = findEdgeExecutable({
+    browserPreference: sessionOptions.browserPreference
+  });
   if (!sessionOptions.debuggerUrl && !edgeExecutable) {
     return {
       pages: [],
-      error: 'edge-cdp list fallback unavailable: msedge.exe not found'
+      error: 'edge-cdp list fallback unavailable: Edge or 360 browser not found'
     };
   }
 
   let browser = null;
+  let browserExecutable = '';
+  let browserPort = 0;
   let connection = null;
   let userDataDir = '';
   let shouldCleanupUserDataDir = false;
@@ -67,6 +71,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       edgeExecutable
     );
     browser = connectedSession.browser;
+    browserExecutable = connectedSession.browserExecutable || edgeExecutable;
+    browserPort = connectedSession.browserPort || sessionOptions.debuggingPort || 0;
     connection = connectedSession.connection;
     userDataDir = connectedSession.userDataDir;
     shouldCleanupUserDataDir = connectedSession.shouldCleanupUserDataDir;
@@ -270,6 +276,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       targetId,
       shouldCloseTarget,
       browser,
+      browserExecutable,
+      browserPort,
       shouldCleanupUserDataDir,
       userDataDir
     });

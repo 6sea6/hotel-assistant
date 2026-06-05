@@ -2,7 +2,7 @@
  * 卡片视图规则删除 —— 阈值解析、预览和批量删除确认流程。
  */
 
-import { state, setHotels, markRankingCacheDirty } from './state.js';
+import { state, setHotels, markVisibleHotelsCacheDirty } from './state.js';
 import { $, getValue, getSelectionKey } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
@@ -203,7 +203,7 @@ export async function confirmRuleDelete() {
     }
 
     setHotels(previousHotels.filter((hotel) => !deleteIdSet.has(getSelectionKey(hotel.id))));
-    markRankingCacheDirty();
+    markVisibleHotelsCacheDirty();
     requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     closeRuleDeleteModal(true);
     showNotification(`成功删除 ${candidates.length} 个命中规则的宾馆`, 'success');
@@ -211,7 +211,7 @@ export async function confirmRuleDelete() {
     console.error('规则删除失败:', error);
     if (previousHotels) {
       setHotels(previousHotels);
-      markRankingCacheDirty();
+      markVisibleHotelsCacheDirty();
       requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     }
     showNotification('规则删除失败，请重试', 'error');

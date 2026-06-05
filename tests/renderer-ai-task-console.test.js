@@ -497,6 +497,140 @@ test('normalizeTaskState counts full batch item room types before apply-output s
   assert.equal(taskState.result.actualResultText, '批量 3 家，本次最终写入 2 家宾馆，5 种房型');
 });
 
+test('normalizeTaskState exposes skipped batch hotel reasons', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const taskState = normalizeTaskState({
+    task: {
+      submitted: true,
+      taskId: 'batch-task-skipped-reasons',
+      templateLabel: '武汉模板',
+      collectResult: {
+        success: true,
+        batchMode: true,
+        batchStats: {
+          expandedHotelCount: 2
+        },
+        eligibleCount: 3,
+        writeResult: {
+          batchMode: true,
+          appliedCount: 1,
+          skippedCount: 1,
+          items: [
+            {
+              item: {
+                hotelName: '酒店A',
+                eligibleCount: 3
+              },
+              skipped: false,
+              latestApplyResult: {
+                writeResult: [{ operation: 'inserted' }]
+              }
+            },
+            {
+              item: {
+                hotelName: '酒店B'
+              },
+              skipped: true,
+              reason: '所有候选房型都不可取消'
+            }
+          ]
+        }
+      }
+    },
+    events: [],
+    inProgress: false
+  });
+
+  assert.equal(taskState.result.skipReasonText, '酒店B：所有候选房型都不可取消');
+});
+
+test('renderSummaryCards replaces write status row with skipped hotel reasons only when needed', async () => {
+  const { normalizeTaskState, renderSummaryCards } = await loadTaskConsoleModule();
+  const originalDocument = global.document;
+  global.document = {
+    createElement(tagName) {
+      return createFakeElement('', tagName);
+    }
+  };
+  try {
+    const baseTask = {
+      submitted: true,
+      taskId: 'batch-task-render-skips',
+      templateLabel: '武汉模板',
+      collectResult: {
+        success: true,
+        batchMode: true,
+        batchStats: {
+          expandedHotelCount: 1
+        },
+        eligibleCount: 2,
+        writeResult: {
+          batchMode: true,
+          appliedCount: 1,
+          skippedCount: 0,
+          items: [
+            {
+              item: {
+                hotelName: '酒店A',
+                eligibleCount: 2
+              },
+              skipped: false,
+              latestApplyResult: {
+                writeResult: [{ operation: 'inserted' }]
+              }
+            }
+          ]
+        }
+      }
+    };
+    const noSkipState = normalizeTaskState({
+      task: baseTask,
+      events: [],
+      inProgress: false
+    });
+    const noSkipHtml = renderSummaryCards(noSkipState, 'success', 'collect');
+
+    assert.doesNotMatch(noSkipHtml, /写入状态/);
+    assert.doesNotMatch(noSkipHtml, /跳过原因/);
+
+    const skippedState = normalizeTaskState({
+      task: {
+        ...baseTask,
+        collectResult: {
+          ...baseTask.collectResult,
+          batchStats: {
+            expandedHotelCount: 2
+          },
+          writeResult: {
+            batchMode: true,
+            appliedCount: 1,
+            skippedCount: 1,
+            items: [
+              ...baseTask.collectResult.writeResult.items,
+              {
+                item: {
+                  hotelName: '酒店B'
+                },
+                skipped: true,
+                reason: '不符合模板规则'
+              },
+            ]
+          }
+        }
+      },
+      events: [],
+      inProgress: false
+    });
+    const skippedHtml = renderSummaryCards(skippedState, 'success', 'collect');
+
+    assert.doesNotMatch(skippedHtml, /写入状态/);
+    assert.match(skippedHtml, /跳过原因/);
+    assert.match(skippedHtml, /酒店B：不符合模板规则/);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
 test('normalizeTaskState does not expose AI review for collection results', async () => {
   const { normalizeTaskState } = await loadTaskConsoleModule();
 
@@ -1088,7 +1222,8 @@ test('AI collect task payload includes saved batch concurrency setting', async (
 
   state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
   state.settings = {
-    collectBatchConcurrency: 2
+    collectBrowser: '360',
+    collectBatchConcurrency: 3
   };
   state.aiTaskQueue = [];
   state.aiTaskQueueCounter = 0;
@@ -1126,7 +1261,8 @@ test('AI collect task payload includes saved batch concurrency setting', async (
   await module.enqueueAiCollectTask();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.equal(capturedPayload.batchConcurrency, 2);
+  assert.equal(capturedPayload.collectBrowser, '360');
+  assert.equal(capturedPayload.batchConcurrency, 3);
 });
 
 test('AI refresh task payload includes saved batch concurrency setting', async () => {
@@ -1135,7 +1271,8 @@ test('AI refresh task payload includes saved batch concurrency setting', async (
   let capturedPayload = null;
 
   state.settings = {
-    collectBatchConcurrency: 2
+    collectBrowser: '360',
+    collectBatchConcurrency: 3
   };
   state.aiTaskQueue = [];
   state.aiTaskQueueCounter = 0;
@@ -1183,7 +1320,8 @@ test('AI refresh task payload includes saved batch concurrency setting', async (
   await module.enqueueRefreshHotelDataTask();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.equal(capturedPayload.batchConcurrency, 2);
+  assert.equal(capturedPayload.collectBrowser, '360');
+  assert.equal(capturedPayload.batchConcurrency, 3);
 });
 
 test('AI collect enqueue uses saved list prefilter settings instead of stale list URL filters', async () => {
@@ -1268,8 +1406,11 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.match(settingsHtml, /amapApiKeyInput/);
   assert.match(settingsHtml, /高德 API Key/);
   assert.match(settingsHtml, /save-amap-api-key/);
+  assert.match(settingsHtml, /collectBrowser/);
+  assert.match(settingsHtml, /携程采集浏览器/);
   assert.match(settingsHtml, /collectBatchConcurrency/);
   assert.match(settingsHtml, /并发采集数/);
+  assert.match(settingsHtml, /<option value="3">3 - 并发采集<\/option>/);
   assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
   assert.match(currentTaskHeaderHtml, /前筛设置/);
   assert.match(prefilterHtml, /列表页前筛/);

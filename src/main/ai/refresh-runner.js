@@ -11,6 +11,7 @@ const {
   assertNotCancelled,
   isCtripHotelUrl,
   isTaskCancelled,
+  normalizeCollectBrowser,
   normalizeBatchConcurrency
 } = require('./scraper-task-input');
 const {
@@ -443,8 +444,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
 
       // 3. Prepare Edge sessions
       assertNotCancelled(context.signal);
-      emit('edge:login-required', '正在准备 Edge 登录态');
+      emit('edge:login-required', '正在准备浏览器登录态');
       const requestedConcurrency = normalizeBatchConcurrency(input.batchConcurrency);
+      const collectBrowser = normalizeCollectBrowser(input.collectBrowser);
       const { getEffectiveBoundedConcurrency, runBoundedWorkers } = await loadScraperModule(
         scraperPath,
         'bounded-worker-runner.js'
@@ -462,12 +464,22 @@ async function refreshExistingCtripHotels(input, context = {}) {
         edge_user_data_dir: baseEdgeUserDataDir,
         edge_profile_directory: baseEdgeProfileDirectory,
         edge_debugging_port: baseEdgeDebuggingPort,
-        edge_headless: true
+        edge_headless: true,
+        browser_preference: collectBrowser
       };
-      const { closeAutoEdge, launchAndWaitForEdge } = await loadScraperModule(
+      const { closeAutoEdge, launchAndWaitForEdge, resolveAutoEdgeRuntime } = await loadScraperModule(
         scraperPath,
         'cli/auto-edge.js'
       );
+      const autoEdgeRuntime = resolveAutoEdgeRuntime({
+        userDataDir: baseEdgeTemplate.edge_user_data_dir,
+        profileDirectory: baseEdgeTemplate.edge_profile_directory,
+        browserPreference: collectBrowser
+      });
+      if (autoEdgeRuntime && autoEdgeRuntime.userDataDir) {
+        baseEdgeTemplate.edge_user_data_dir = autoEdgeRuntime.userDataDir;
+        baseEdgeTemplate.edge_profile_directory = autoEdgeRuntime.profileDirectory;
+      }
       const {
         createBatchEdgeWorkerPool,
         cleanupBatchEdgeWorkerProfileClones,
@@ -482,6 +494,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
         await loadScraperModule(scraperPath, 'template-loader.js');
       const { normalizePlaceName } = await loadScraperModule(scraperPath, 'utils.js');
       let primaryEdgePid = null;
+      let primaryEdgeProcess = null;
       let edgeWorkerPool = null;
       let workerContexts = [];
       let preparedEdgeWorkerProfileDirs = [];
@@ -496,18 +509,22 @@ async function refreshExistingCtripHotels(input, context = {}) {
         }
 
         const primaryEdge = await launchAndWaitForEdge({
-          userDataDir: baseEdgeUserDataDir,
-          profileDirectory: baseEdgeProfileDirectory,
+          userDataDir: baseEdgeTemplate.edge_user_data_dir,
+          profileDirectory: baseEdgeTemplate.edge_profile_directory,
+          browserPreference: collectBrowser,
           port: baseEdgeDebuggingPort,
           url: hotelUrls[0] || 'https://hotels.ctrip.com/'
         });
+        primaryEdgeProcess = primaryEdge;
         primaryEdgePid = primaryEdge.pid || null;
         const primaryWorker = {
           id: 1,
           pid: primaryEdge.pid || null,
           port: Number(primaryEdge.port || baseEdgeDebuggingPort),
-          userDataDir: baseEdgeUserDataDir,
-          profileDirectory: baseEdgeProfileDirectory,
+          userDataDir: baseEdgeTemplate.edge_user_data_dir,
+          profileDirectory: baseEdgeTemplate.edge_profile_directory,
+          browserExecutable: primaryEdge.browserExecutable || '',
+          browserName: primaryEdge.browserName || '',
           cleanupUserDataDir: false,
           shouldClose: false,
           effectiveTemplate: {
@@ -542,7 +559,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
           }
         }
 
-        emit('edge:login-done', 'Edge 登录态已准备完成', {
+        emit('edge:login-done', '浏览器登录态已准备完成', {
           requestedConcurrency,
           effectiveConcurrency: getEffectiveRefreshConcurrency(
             requestedConcurrency,
@@ -563,8 +580,8 @@ async function refreshExistingCtripHotels(input, context = {}) {
           bridge,
           store,
           compareAppSettings,
-          baseEdgeUserDataDir,
-          baseEdgeProfileDirectory,
+          baseEdgeUserDataDir: baseEdgeTemplate.edge_user_data_dir,
+          baseEdgeProfileDirectory: baseEdgeTemplate.edge_profile_directory,
           emit,
           createScrapeEventForwarder,
           applyMatchedTemplate,
@@ -653,7 +670,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
           await edgeWorkerPool.close();
         }
         if (primaryEdgePid) {
-          closeAutoEdge(primaryEdgePid);
+          closeAutoEdge(primaryEdgePid, primaryEdgeProcess);
         }
         cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
       }

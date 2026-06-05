@@ -1,14 +1,12 @@
 /**
- * 筛选与排序 —— 宾馆列表的多条件过滤、排序和历史排名兼容逻辑。
+ * 筛选与排序 —— 宾馆列表的多条件过滤和显式排序逻辑。
  */
 
-import { state, rankingCache } from './state.js';
-import { getValue, idsEqual, hasDisplayValue, normalizeFilterOptionKey } from './dom-helpers.js';
+import { idsEqual, hasDisplayValue, normalizeFilterOptionKey } from './dom-helpers.js';
 
 /**
  * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
  * @typedef {Record<string, string|number|boolean|null|undefined>} HotelFilters
- * @typedef {NormalizedHotelRecord & {score?: number}} RankedHotelRecord
  */
 
 /**
@@ -57,18 +55,6 @@ export function formatSubwayInfo(station, distance, unit = '公里') {
   }
   const distanceText = `${String(distance).trim()} ${unit}`;
   return normalizedStation ? `${normalizedStation} · ${distanceText}` : distanceText;
-}
-
-export function computeHotelsHash(hotels) {
-  let hash = hotels.length;
-  for (let i = 0; i < hotels.length; i++) {
-    const h = hotels[i];
-    hash = ((hash << 5) - hash + (h.id || 0)) | 0;
-    hash = ((hash << 5) - hash + (h.daily_price || 0)) | 0;
-    hash = ((hash << 5) - hash + (h.ctrip_score || 0)) | 0;
-    hash = ((hash << 5) - hash + (h.is_favorite || 0)) | 0;
-  }
-  return hash;
 }
 
 /**
@@ -139,112 +125,6 @@ export function applyFiltersToHotels(hotels, filters) {
 
     return true;
   });
-}
-
-/**
- * @param {NormalizedHotelRecord[]} hotels
- * @returns {RankedHotelRecord[]}
- */
-export function rankHotels(hotels) {
-  if (hotels.length === 0) return [];
-
-  const weights =
-    state.rankingMode === 'manual'
-      ? {
-          price: parseFloat(getValue('weightPrice', '0.25')),
-          score: parseFloat(getValue('weightScore', '0.35')),
-          distance: parseFloat(getValue('weightDistance', '0.2')),
-          transport: parseFloat(getValue('weightTransport', '0.2'))
-        }
-      : {
-          price: parseFloat(String(state.settings.weight_price || 0.25)),
-          score: parseFloat(String(state.settings.weight_score || 0.35)),
-          distance: parseFloat(String(state.settings.weight_distance || 0.2)),
-          transport: parseFloat(String(state.settings.weight_transport || 0.2))
-        };
-
-  const weightsKey = `${weights.price}-${weights.score}-${weights.distance}-${weights.transport}`;
-  const filtersKey = state.currentFilters.name || '';
-  const hotelsHash = computeHotelsHash(hotels);
-
-  if (
-    rankingCache.data &&
-    rankingCache.hotelsHash === hotelsHash &&
-    rankingCache.filters === filtersKey &&
-    rankingCache.weights === weightsKey
-  ) {
-    return rankingCache.data;
-  }
-
-  let maxPrice = 0,
-    minPrice = Infinity;
-  let maxDistance = 0,
-    minDistance = Infinity;
-  let maxTime = 0,
-    minTime = Infinity;
-
-  for (let i = 0; i < hotels.length; i++) {
-    const hotel = hotels[i];
-    if (hotel.daily_price) {
-      maxPrice = Math.max(maxPrice, hotel.daily_price);
-      minPrice = Math.min(minPrice, hotel.daily_price);
-    }
-    if (hotel.distance) {
-      const dist = hotel._derived?.distanceNumber ?? extractDistanceNumber(hotel.distance);
-      if (dist !== null) {
-        maxDistance = Math.max(maxDistance, dist);
-        minDistance = Math.min(minDistance, dist);
-      }
-    }
-    if (hotel.transport_time) {
-      const time = hotel._derived?.transportTimeNumber ?? extractTimeNumber(hotel.transport_time);
-      if (time !== null) {
-        maxTime = Math.max(maxTime, time);
-        minTime = Math.min(minTime, time);
-      }
-    }
-  }
-
-  const priceRange = maxPrice - minPrice;
-  const distanceRange = maxDistance - minDistance;
-  const timeRange = maxTime - minTime;
-
-  const scoredHotels = hotels.map((hotel) => {
-    let score = 0;
-
-    if (hotel.daily_price && priceRange > 0) {
-      score += (1 - (hotel.daily_price - minPrice) / priceRange) * weights.price;
-    }
-
-    if (hotel.ctrip_score) {
-      score += (hotel.ctrip_score / 5) * weights.score;
-    }
-
-    if (hotel.distance && distanceRange > 0) {
-      const distance = hotel._derived?.distanceNumber ?? extractDistanceNumber(hotel.distance);
-      if (distance !== null) {
-        score += (1 - (distance - minDistance) / distanceRange) * weights.distance;
-      }
-    }
-
-    if (hotel.transport_time && timeRange > 0) {
-      const time = hotel._derived?.transportTimeNumber ?? extractTimeNumber(hotel.transport_time);
-      if (time !== null) {
-        score += (1 - (time - minTime) / timeRange) * weights.transport;
-      }
-    }
-
-    return { ...hotel, score };
-  });
-
-  const result = scoredHotels.sort((a, b) => b.score - a.score);
-
-  rankingCache.data = result;
-  rankingCache.hotelsHash = hotelsHash;
-  rankingCache.filters = filtersKey;
-  rankingCache.weights = weightsKey;
-
-  return result;
 }
 
 export const DEFAULT_SORT_MODE = 'review_high';
@@ -348,7 +228,7 @@ export function sortHotels(hotels = [], sortMode = DEFAULT_SORT_MODE) {
 }
 
 /**
- * @param {Array<NormalizedHotelRecord|RankedHotelRecord>} [sourceHotels]
+ * @param {NormalizedHotelRecord[]} [sourceHotels]
  * @returns {{hotelCount: number, roomTypeCount: number}}
  */
 export function getVisibleHotelSummary(sourceHotels = []) {

@@ -234,16 +234,6 @@
   }
 }
 
-@media (max-width: 1200px) {
-  .task-info-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .task-workspace-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
-  }
-}
-
 @media (max-width: 900px) {
   .distance-col,
   .transport-col {
@@ -254,101 +244,5 @@
   }
   .actions-col {
     width: 90px;
-  }
-
-  .task-console-layout {
-    width: calc(100% - 28px);
-  }
-
-  .task-start-grid,
-  .settings-prefilter-grid,
-  .task-workspace-grid,
-  .task-result-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .task-result-card:nth-child(3) {
-    grid-column: auto;
-  }
-}
-
-@media (max-width: 720px) {
-  .ai-assistant-header {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 18px 18px 16px;
-  }
-
-  .ai-header-actions {
-    width: 100%;
-  }
-
-  .ai-ghost-button {
-    flex: 1;
-  }
-
-  .task-console-layout {
-    width: calc(100% - 20px);
-    margin-top: 10px;
-  }
-
-  .task-card-header,
-  .task-start-title,
-  .task-start-grid {
-    padding-left: 14px;
-    padding-right: 14px;
-  }
-
-  .task-card-header-actions,
-  .list-prefilter-header,
-  .list-prefilter-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-
-  .task-prefilter-button,
-  .task-clear-button,
-  .list-prefilter-primary-button,
-  .list-prefilter-secondary-button {
-    flex: 1;
-  }
-
-  .list-prefilter-modal-content {
-    width: calc(100% - 20px);
-    max-height: calc(100vh - var(--app-header-height) - 28px);
-  }
-
-  .list-prefilter-header,
-  .list-prefilter-body {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .list-prefilter-title {
-    align-items: flex-start;
-  }
-
-  .list-prefilter-grid-three,
-  .list-prefilter-grid-four {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .list-prefilter-card {
-    padding: 18px;
-  }
-
-  .task-info-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .task-timeline-row {
-    grid-template-columns: 72px 20px minmax(0, 1fr);
-    padding-left: 4px;
-    padding-right: 4px;
-  }
-
-  .task-result-card dl div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 2px;
   }
 }

@@ -34,7 +34,6 @@ test('hotel render decision marks structural changes as full rerender reasons', 
     'hotel-add',
     'batch-delete',
     'template-sync',
-    'ranking-change',
     'view-mode-change'
   ]) {
     assert.equal(shouldFullRerender(reason), true, `${reason} should force full rerender`);

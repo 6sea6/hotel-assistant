@@ -33,6 +33,8 @@ const OPTION_SELECTOR = `[data-custom-select-option="true"]`;
 const instances = new WeakMap();
 let openInstance = null;
 let pendingPositionFrame = 0;
+let pendingDocumentListenerFrame = 0;
+let documentInteractionListenersBound = false;
 
 /**
  * 清除失效的 ready 标记。
@@ -84,6 +86,36 @@ function cancelPendingPositionFrame() {
   if (!pendingPositionFrame) return;
   getCancelAnimationFrame()(pendingPositionFrame);
   pendingPositionFrame = 0;
+}
+
+function scheduleOpenMenuDocumentListeners(ctx) {
+  cancelPendingDocumentListenerFrame();
+  const raf = getAnimationFrame();
+  pendingDocumentListenerFrame = raf(() => {
+    pendingDocumentListenerFrame = 0;
+    if (openInstance !== ctx || ctx.menu.hidden) return;
+    addOpenMenuDocumentListeners();
+  });
+}
+
+function cancelPendingDocumentListenerFrame() {
+  if (!pendingDocumentListenerFrame) return;
+  getCancelAnimationFrame()(pendingDocumentListenerFrame);
+  pendingDocumentListenerFrame = 0;
+}
+
+function addOpenMenuDocumentListeners() {
+  if (documentInteractionListenersBound) return;
+  documentInteractionListenersBound = true;
+  document.addEventListener('mousedown', handleOutsideClick);
+  document.addEventListener('keydown', handleGlobalKey, true);
+}
+
+function removeOpenMenuDocumentListeners() {
+  if (!documentInteractionListenersBound) return;
+  documentInteractionListenersBound = false;
+  document.removeEventListener('mousedown', handleOutsideClick);
+  document.removeEventListener('keydown', handleGlobalKey, true);
 }
 
 /* ============================================================
@@ -276,6 +308,10 @@ export function closeAllCustomSelects() {
     openInstance = null;
     cancelPendingPositionFrame();
   }
+}
+
+export function hasOpenCustomSelect() {
+  return Boolean(openInstance);
 }
 
 /**
@@ -563,12 +599,7 @@ function openMenu(ctx) {
 
   openInstance = ctx;
   ensureGlobalListeners();
-
-  const raf = getAnimationFrame();
-  raf(() => {
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('keydown', handleGlobalKey);
-  });
+  scheduleOpenMenuDocumentListeners(ctx);
 }
 
 function closeMenu(ctx) {
@@ -579,8 +610,8 @@ function closeMenu(ctx) {
   menu.hidden = true;
   clearActive(ctx);
 
-  document.removeEventListener('mousedown', handleOutsideClick);
-  document.removeEventListener('keydown', handleGlobalKey);
+  cancelPendingDocumentListenerFrame();
+  removeOpenMenuDocumentListeners();
 
   if (openInstance === ctx) {
     openInstance = null;
@@ -600,6 +631,8 @@ function handleGlobalKey(e) {
   if (!openInstance) return;
   if (e.key === 'Escape') {
     e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
     openInstance.button.focus();
     closeMenu(openInstance);
   } else if (e.key === 'Tab') {

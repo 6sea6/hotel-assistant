@@ -81,14 +81,24 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       : APP_CONFIG.STORE_DEFAULTS.settings.theme;
   };
 
-  const normalizeCollectBatchConcurrency = (value) => (Number(value) === 2 ? 2 : 1);
+  const normalizeCollectBatchConcurrency = (value) => {
+    const concurrency = Number(value);
+    return concurrency === 2 || concurrency === 3 ? concurrency : 1;
+  };
+
+  const normalizeCollectBrowser = (value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === '360' ? '360' : 'edge';
+  };
 
   const normalizeSettings = (settings = {}) => {
     const normalizedSettings = {
       ...APP_CONFIG.STORE_DEFAULTS.settings,
       ...settings
     };
-    delete normalizedSettings.autoMatchTemplate;
+    for (const key of APP_CONFIG.DEPRECATED_SETTING_KEYS || []) {
+      delete normalizedSettings[key];
+    }
     normalizedSettings.theme = normalizeThemeSetting(normalizedSettings.theme);
     normalizedSettings.ai_provider_config = normalizeAiProviderConfig(
       normalizedSettings.ai_provider_config
@@ -97,6 +107,7 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
     normalizedSettings.collectBatchConcurrency = normalizeCollectBatchConcurrency(
       normalizedSettings.collectBatchConcurrency
     );
+    normalizedSettings.collectBrowser = normalizeCollectBrowser(normalizedSettings.collectBrowser);
 
     if (
       Array.isArray(normalizedSettings.hotelCardVisibleFields) &&

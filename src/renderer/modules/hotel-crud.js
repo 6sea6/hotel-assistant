@@ -9,7 +9,7 @@ import {
   setTemplates,
   setSettings,
   clearSelectedHotels,
-  markRankingCacheDirty,
+  markVisibleHotelsCacheDirty,
   getLocalHotelsRevision,
   setLocalHotelsRevision,
   markLocalHotelsRevisionUnknown
@@ -491,7 +491,7 @@ export async function saveHotel() {
         '更新宾馆失败'
       ));
       setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
-      markRankingCacheDirty();
+      markVisibleHotelsCacheDirty();
       markLocalHotelsRevisionUnknown();
       requestHotelRender({
         reason: 'hotel-update',
@@ -503,7 +503,7 @@ export async function saveHotel() {
         '新增宾馆失败'
       ));
       setHotels(appendHotelToList(state.hotels, savedHotel));
-      markRankingCacheDirty();
+      markVisibleHotelsCacheDirty();
       markLocalHotelsRevisionUnknown();
       requestHotelRender({
         reason: 'hotel-add',
@@ -516,7 +516,7 @@ export async function saveHotel() {
     console.error('保存宾馆失败:', error);
     try {
       setHotels(previousHotels || (await loadHotels()));
-      markRankingCacheDirty();
+      markVisibleHotelsCacheDirty();
       requestHotelRender({ reason: 'fallback', forceFull: true });
     } catch (recoveryError) {
       console.error('恢复宾馆数据失败:', recoveryError);
@@ -535,7 +535,7 @@ export async function deleteHotel(id) {
     const { list: nextHotels, removed } = removeHotelById(state.hotels, id);
     if (removed) {
       setHotels(nextHotels);
-      markRankingCacheDirty();
+      markVisibleHotelsCacheDirty();
       markLocalHotelsRevisionUnknown();
       requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
     }
@@ -553,7 +553,7 @@ export async function deleteHotel(id) {
         console.error('后台删除失败:', err);
         try {
           setHotels(previousHotels || (await loadHotels()));
-          markRankingCacheDirty();
+          markVisibleHotelsCacheDirty();
           requestHotelRender({ reason: 'fallback', forceFull: true });
         } catch (recoveryErr) {
           console.error('恢复宾馆列表失败:', recoveryErr);
@@ -590,7 +590,7 @@ export async function toggleFavorite(id, currentStatus) {
           '更新收藏状态失败'
         ));
         setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
-        markRankingCacheDirty();
+        markVisibleHotelsCacheDirty();
         markLocalHotelsRevisionUnknown();
         requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
         perfEnd('toggleFavorite');
@@ -599,7 +599,7 @@ export async function toggleFavorite(id, currentStatus) {
         console.error('更新收藏状态失败（后台）:', err);
         try {
           setHotels(previousHotels || (await loadHotels()));
-          markRankingCacheDirty();
+          markVisibleHotelsCacheDirty();
           requestHotelRender({ reason: 'fallback', forceFull: true });
         } catch (recoveryErr) {
           console.error('恢复宾馆列表失败:', recoveryErr);
@@ -650,7 +650,7 @@ export async function confirmBatchDelete() {
 
     setHotels(previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id))));
     clearSelectedHotels();
-    markRankingCacheDirty();
+    markVisibleHotelsCacheDirty();
     markLocalHotelsRevisionUnknown();
     requestHotelRender({ reason: 'batch-delete', forceFull: true });
 
@@ -665,7 +665,7 @@ export async function confirmBatchDelete() {
     console.error('批量删除失败:', error);
     state.batchDeleteInProgress = false;
     setHotels(previousHotels || state.hotels);
-    markRankingCacheDirty();
+    markVisibleHotelsCacheDirty();
     requestHotelRender({ reason: 'batch-delete', forceFull: true });
     resetBatchDeleteConfirmation({ count: state.selectedHotels.size, disabled: false });
     showNotification('删除失败，请重试', 'error');

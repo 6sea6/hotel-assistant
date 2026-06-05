@@ -113,17 +113,21 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   }
 
   const sessionOptions = normalizeEdgeSessionOptions(edgeSessionOptions);
-  const edgeExecutable = findEdgeExecutable();
+  const edgeExecutable = findEdgeExecutable({
+    browserPreference: sessionOptions.browserPreference
+  });
   if (!sessionOptions.debuggerUrl && !edgeExecutable) {
     return {
       roomBlocks: [],
       selectedRoom: null,
       trackedUrls: [],
-      error: 'edge-cdp fallback unavailable: msedge.exe not found'
+      error: 'edge-cdp fallback unavailable: Edge or 360 browser not found'
     };
   }
 
   let browser = null;
+  let browserExecutable = '';
+  let browserPort = 0;
   let connection = null;
   let userDataDir = '';
   let shouldCleanupUserDataDir = false;
@@ -177,6 +181,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       signal
     });
     browser = connectedSession.browser;
+    browserExecutable = connectedSession.browserExecutable || edgeExecutable;
+    browserPort = connectedSession.browserPort || sessionOptions.debuggingPort || 0;
     connection = connectedSession.connection;
     userDataDir = connectedSession.userDataDir;
     shouldCleanupUserDataDir = connectedSession.shouldCleanupUserDataDir;
@@ -352,6 +358,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       sessionId,
       targetId,
       browser,
+      browserExecutable,
+      browserPort,
       userDataDir
     });
   }

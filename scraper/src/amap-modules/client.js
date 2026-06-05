@@ -5,18 +5,49 @@ const { normalizePlaceName, toNumber } = require('../utils');
 const DEFAULT_TRANSIT_TIME = '08:00';
 const AMAP_TIMEOUT_MS = 20000;
 const AMAP_RETRIES = 1;
+const AMAP_MAX_CONCURRENT_REQUESTS = 3;
 
-async function fetchAmapJson(url, params) {
-  const response = await get(url, {
-    params,
-    timeoutMs: AMAP_TIMEOUT_MS,
-    retries: AMAP_RETRIES,
-    retryDelayMs: 300,
-    responseType: 'json',
-    headers: {
-      accept: 'application/json'
+let activeAmapRequests = 0;
+const amapRequestQueue = [];
+
+function runWithAmapConcurrencyLimit(task) {
+  return new Promise((resolve, reject) => {
+    const run = async () => {
+      activeAmapRequests += 1;
+      try {
+        resolve(await task());
+      } catch (error) {
+        reject(error);
+      } finally {
+        activeAmapRequests -= 1;
+        const next = amapRequestQueue.shift();
+        if (next) {
+          next();
+        }
+      }
+    };
+
+    if (activeAmapRequests < AMAP_MAX_CONCURRENT_REQUESTS) {
+      run();
+    } else {
+      amapRequestQueue.push(run);
     }
   });
+}
+
+async function fetchAmapJson(url, params) {
+  const response = await runWithAmapConcurrencyLimit(() =>
+    get(url, {
+      params,
+      timeoutMs: AMAP_TIMEOUT_MS,
+      retries: AMAP_RETRIES,
+      retryDelayMs: 300,
+      responseType: 'json',
+      headers: {
+        accept: 'application/json'
+      }
+    })
+  );
   return response.data;
 }
 
@@ -163,6 +194,7 @@ async function fetchWalkingRoute(originLocation, destinationLocation, key = DEFA
 }
 
 module.exports = {
+  AMAP_MAX_CONCURRENT_REQUESTS,
   DEFAULT_TRANSIT_TIME,
   fetchTransitRoute,
   fetchWalkingRoute,
