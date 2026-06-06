@@ -1,7 +1,12 @@
 const { safeJsonParse } = require('../html-parser');
 const { evaluateInSession } = require('../cdp-utils');
 
-function detectCtripLoginPromptFromText(text = '') {
+const PRICE_LOGIN_PATTERN =
+  /登录看低价|解锁优惠|登录后(?:查看|享|可|才)?[^。；，,.]{0,16}(?:低价|价格|优惠|房价)/;
+const LOGIN_DIALOG_PATTERN =
+  /扫码登录|手机号登录|账号密码登录|验证码登录|携程账号登录|登录携程|会员登录|立即登录|请登录后|登录后继续/;
+
+function detectCtripLoginPromptFromText(text = '', options = {}) {
   const normalizedText = String(text || '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -12,18 +17,14 @@ function detectCtripLoginPromptFromText(text = '') {
     };
   }
 
-  const priceLoginPattern =
-    /登录看低价|解锁优惠|登录后(?:查看|享|可|才)?[^。；，,.]{0,16}(?:低价|价格|优惠|房价)/;
-  if (priceLoginPattern.test(normalizedText)) {
+  if (PRICE_LOGIN_PATTERN.test(normalizedText)) {
     return {
       detected: true,
       reason: '携程页面提示登录后才能查看价格或优惠。'
     };
   }
 
-  const loginDialogPattern =
-    /扫码登录|手机号登录|账号密码登录|验证码登录|携程账号登录|登录携程|会员登录|立即登录|请登录后|登录后继续/;
-  if (loginDialogPattern.test(normalizedText)) {
+  if (options.allowGenericLogin !== false && LOGIN_DIALOG_PATTERN.test(normalizedText)) {
     return {
       detected: true,
       reason: '携程页面出现登录弹窗或登录入口。'
@@ -83,7 +84,13 @@ async function detectCtripLoginPromptInSession(connection, sessionId, options = 
   ]
     .filter(Boolean)
     .join('\n');
-  return detectCtripLoginPromptFromText(combinedText);
+  const priceLockDetection = detectCtripLoginPromptFromText(combinedText, {
+    allowGenericLogin: false
+  });
+  if (priceLockDetection.detected) {
+    return priceLockDetection;
+  }
+  return detectCtripLoginPromptFromText((payload && payload.modalText) || '');
 }
 
 module.exports = {

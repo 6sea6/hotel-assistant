@@ -155,7 +155,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         stage,
         url,
         instruction:
-          '请在已打开的 Edge 携程页面完成登录；本次采集会继续，若仍缺价格可登录后重新采集。'
+          '当前采集浏览器登录态可能无效；请在采集浏览器中登录携程后重新采集。'
       });
       perf.event('edge_login_prompt_detected', {
         phase: stage,

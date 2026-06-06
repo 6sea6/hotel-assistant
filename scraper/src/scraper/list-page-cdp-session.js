@@ -88,7 +88,16 @@ async function acquireListPageTarget(connection) {
   }
 
   if (!targetId) {
-    const createdTarget = await connection.send('Target.createTarget', { url: 'about:blank' });
+    let createdTarget = null;
+    try {
+      createdTarget = await connection.send('Target.createTarget', {
+        url: 'about:blank',
+        hidden: true,
+        background: true
+      });
+    } catch (_hiddenTargetError) {
+      createdTarget = await connection.send('Target.createTarget', { url: 'about:blank' });
+    }
     targetId = createdTarget && createdTarget.targetId;
     shouldCloseTarget = true;
   }

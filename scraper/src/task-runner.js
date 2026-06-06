@@ -259,7 +259,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           if (Number(listSummary.listInputCount || 0) > 0) {
             throw new Error(
               listErrors ||
-                '已识别携程酒店列表页，但没有解析到可进入详情页的候选酒店。请确认 Edge 携程登录态可用，或放宽列表页前筛条件后重试。'
+                '已识别携程酒店列表页，但没有解析到可进入详情页的候选酒店。请确认采集浏览器携程登录态可用，或放宽列表页前筛条件后重试。'
             );
           }
           throw new Error(skippedReason || '未从输入中解析到可采集的携程酒店详情页或列表页 URL。');

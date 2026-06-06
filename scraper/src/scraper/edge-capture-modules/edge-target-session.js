@@ -140,12 +140,22 @@ async function acquireEdgeTarget({ connection, url, captureMethod, perf, signal 
     }
 
     if (!targetId) {
-      const createdTarget = await connection.send(
-        'Target.createTarget',
-        { url: 'about:blank' },
-        '',
-        buildCdpSendOptions(signal, EDGE_CDP_COMMAND_TIMEOUT_MS)
-      );
+      let createdTarget = null;
+      try {
+        createdTarget = await connection.send(
+          'Target.createTarget',
+          { url: 'about:blank', hidden: true, background: true },
+          '',
+          buildCdpSendOptions(signal, EDGE_CDP_COMMAND_TIMEOUT_MS)
+        );
+      } catch (_hiddenTargetError) {
+        createdTarget = await connection.send(
+          'Target.createTarget',
+          { url: 'about:blank' },
+          '',
+          buildCdpSendOptions(signal, EDGE_CDP_COMMAND_TIMEOUT_MS)
+        );
+      }
       targetId = createdTarget && createdTarget.targetId;
       shouldCloseTarget = true;
     }

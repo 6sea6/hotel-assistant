@@ -7,7 +7,6 @@ const {
   getBrowserDisplayName,
   killBrowserProcessesByCommandLine,
   normalizeBrowserPreference,
-  scheduleProcessWindowHide,
   killProcessTree
 } = require('../scraper/process-utils');
 const {
@@ -116,24 +115,28 @@ async function launchAndWaitForEdge(options) {
     '--disable-features=CalculateNativeWinOcclusion',
     '--disable-renderer-backgrounding',
     '--no-first-run',
-    '--no-default-browser-check',
-    '--new-window',
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${userDataDir}`,
-    `--profile-directory=${profileDirectory}`,
-    url
+    '--no-default-browser-check'
   ];
 
   if (headless) {
-    launchArgs.splice(3, 0, '--disable-gpu', '--headless=new');
+    launchArgs.push('--disable-gpu', '--headless=new', '--no-startup-window');
   } else {
-    launchArgs.splice(
-      3,
-      0,
+    launchArgs.push(
+      '--new-window',
       '--window-position=-32000,-32000',
       '--window-size=1280,900',
       '--start-minimized'
     );
+  }
+
+  launchArgs.push(
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${userDataDir}`,
+    `--profile-directory=${profileDirectory}`
+  );
+
+  if (!headless) {
+    launchArgs.push(url);
   }
 
   const child = spawn(edgeExecutable, launchArgs, {
@@ -142,13 +145,23 @@ async function launchAndWaitForEdge(options) {
     windowsHide: true
   });
   child.unref();
-  scheduleProcessWindowHide(child.pid);
 
-  const wsUrl = await waitForDebuggerEndpoint(port, timeoutMs);
+  let wsUrl = '';
+  try {
+    wsUrl = await waitForDebuggerEndpoint(port, timeoutMs);
+  } catch (error) {
+    killProcessTree(child.pid);
+    killBrowserProcessesByCommandLine({
+      browserExecutable: edgeExecutable,
+      port,
+      userDataDir
+    });
+    throw error;
+  }
   console.error(
     `[auto-edge] 后台 ${browserName} 已启动 (PID: ${child.pid}, 端口: ${port}, headless: ${headless})`
   );
-  return {
+  const result = {
     pid: child.pid,
     port,
     wsUrl,
@@ -159,6 +172,7 @@ async function launchAndWaitForEdge(options) {
     profileDirectory,
     usingSeparate360Profile: runtime.usingSeparate360Profile
   };
+  return result;
 }
 
 function closeAutoEdge(target, details = {}) {

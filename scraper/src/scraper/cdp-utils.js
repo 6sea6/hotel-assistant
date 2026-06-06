@@ -6,7 +6,6 @@ const { spawn } = require('child_process');
 const { normalizeText, toNumber, ensureDir } = require('../utils');
 const {
   delay,
-  scheduleProcessWindowHide,
   killBrowserProcessesByCommandLine,
   killProcessTree,
   findEdgeExecutable,
@@ -74,32 +73,37 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
     ensureDir(userDataDir);
 
     const launchArgs = [
-      '--disable-gpu',
       '--no-first-run',
       '--no-default-browser-check',
-      '--new-window',
       '--disable-background-networking',
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-features=CalculateNativeWinOcclusion',
-      '--disable-renderer-backgrounding',
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${userDataDir}`
+      '--disable-renderer-backgrounding'
     ];
 
-    if (sessionOptions.profileDirectory) {
-      launchArgs.push(`--profile-directory=${sessionOptions.profileDirectory}`);
-    }
     if (sessionOptions.headless) {
-      launchArgs.push('--headless=new');
+      launchArgs.push('--disable-gpu', '--headless=new', '--no-startup-window');
     } else {
       launchArgs.push(
+        '--new-window',
         '--window-position=-32000,-32000',
         '--window-size=1280,900',
         '--start-minimized'
       );
     }
-    launchArgs.push('about:blank');
+
+    launchArgs.push(
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userDataDir}`
+    );
+
+    if (sessionOptions.profileDirectory) {
+      launchArgs.push(`--profile-directory=${sessionOptions.profileDirectory}`);
+    }
+    if (!sessionOptions.headless) {
+      launchArgs.push('about:blank');
+    }
 
     const browser = spawn(edgeExecutable, launchArgs, {
       stdio: 'ignore',
@@ -107,11 +111,10 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
       windowsHide: true
     });
     browser.unref();
-    scheduleProcessWindowHide(browser.pid);
 
     try {
       const debuggerUrl = await waitForDebuggerEndpoint(port, timeoutMs);
-      return {
+      const launched = {
         browser,
         debuggerUrl,
         browserExecutable: edgeExecutable,
@@ -119,6 +122,7 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
         userDataDir,
         shouldCleanupUserDataDir
       };
+      return launched;
     } catch (error) {
       killProcessTree(browser.pid);
       killBrowserProcessesByCommandLine({

@@ -7,6 +7,7 @@ const path = require('path');
 const { buildPageSnapshotSummary, buildRunSummary } = require('../src/cli/run-summary');
 const { classifyWriteCancelPolicy, shouldSkipHotelWrite } = require('../src/cli/write-policy');
 const {
+  hasCtripLoginCookieSignal,
   hasReusableEdgeProfile,
   resolveEdgeProfileDirectory,
   resolveEdgeUserDataDir,
@@ -384,7 +385,14 @@ test('edge runtime resolves profile paths and detects reusable profile markers',
 
   fs.mkdirSync(profileDir, { recursive: true });
   fs.writeFileSync(path.join(profileDir, 'Preferences'), '{"ok":true}', 'utf-8');
+  fs.mkdirSync(path.join(profileDir, 'Network'), { recursive: true });
+  fs.writeFileSync(path.join(profileDir, 'Network', 'Cookies'), 'GUID generic-cookie', 'utf-8');
 
+  assert.equal(hasCtripLoginCookieSignal(userDataDir, 'Profile 1'), false);
+  assert.equal(hasReusableEdgeProfile(userDataDir, 'Profile 1'), false);
+
+  fs.writeFileSync(path.join(profileDir, 'Network', 'Cookies'), 'GUID cticket login_uid', 'utf-8');
+  assert.equal(hasCtripLoginCookieSignal(userDataDir, 'Profile 1'), true);
   assert.equal(hasReusableEdgeProfile(userDataDir, 'Profile 1'), true);
 });
 

@@ -2645,6 +2645,16 @@ test('edge network wait count prefers room-related responses without dropping pa
   );
   assert.equal(typeof waitForEdgePageReadyAfterNavigate, 'function');
   assert.equal(detectCtripLoginPromptFromText('扫码登录 手机号登录 登录后查看低价').detected, true);
+  assert.equal(
+    detectCtripLoginPromptFromText('首页 立即登录 会员中心', { allowGenericLogin: false })
+      .detected,
+    false
+  );
+  assert.equal(
+    detectCtripLoginPromptFromText('房型 登录看低价 每晚 ¥288', { allowGenericLogin: false })
+      .detected,
+    true
+  );
   assert.equal(detectCtripLoginPromptFromText('武汉酒店 房型 每晚 ¥288').detected, false);
 
   const prioritizedEntries = getPrioritizedEdgeResponseEntries(requestMeta);
