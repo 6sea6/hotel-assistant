@@ -781,6 +781,14 @@ test('batch events include item index and total counts', async () => {
     const starts = events.filter((event) => event.type === 'batch:item-start');
     const dones = events.filter((event) => event.type === 'batch:item-done');
     const taskErrors = events.filter((event) => event.type === 'batch:item-error');
+    const listStart = events.find((event) => event.type === 'list:start');
+    const listDone = events.find((event) => event.type === 'list:done');
+    assert.ok(listStart);
+    assert.equal(listStart.message, '正在解析携程链接与列表页候选');
+    assert.ok(listDone);
+    assert.equal(listDone.message, '携程链接与列表页候选解析完成');
+    assert.equal(listDone.details.expandedHotelCount, 2);
+    assert.match(listDone.details.summary, /展开酒店=2/);
     assert.deepEqual(
       starts.map((event) => [event.details.index, event.details.total]),
       [

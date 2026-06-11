@@ -2,7 +2,11 @@ const path = require('path');
 const { requireSharedCompareAppModule } = require('./compare-app/shared-module');
 const { BASE_COMPARE_APP_SETTINGS } = requireSharedCompareAppModule('constants.js');
 const { findTemplateInStore, loadCompareAppStore } = require('./compare-app-bridge');
-const { expandCtripHotelInputs, normalizeListFiltersFromArgs } = require('./ctrip-list');
+const {
+  describeExpandedInput,
+  expandCtripHotelInputs,
+  normalizeListFiltersFromArgs
+} = require('./ctrip-list');
 const {
   closeAutoEdge,
   hasReusableEdgeProfile,
@@ -57,6 +61,75 @@ function writeFailureSummary(error, latestRunPath, startedAt) {
   const result = buildFailureResult(error, latestRunPath, startedAt);
   writeLatestRunFile(latestRunPath, buildRunSummary(result));
   return result;
+}
+
+function extractKeywordFromRejectReason(reason = '') {
+  const match = String(reason || '').match(/^[a-z_]+:(.+)$/i);
+  return match ? match[1] : '';
+}
+
+function summarizeListCandidateFilterText(candidate = {}) {
+  return [
+    candidate.hotelType,
+    ...(Array.isArray(candidate.badges) ? candidate.badges : []),
+    ...(Array.isArray(candidate.visibleTags) ? candidate.visibleTags : [])
+  ]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function logListCandidateFilterDiagnostics(perf, expandedInputs = {}) {
+  if (!perf || typeof perf.event !== 'function' || !Array.isArray(expandedInputs.listResults)) {
+    return;
+  }
+
+  const filters = expandedInputs.summary && expandedInputs.summary.filters;
+  const excludeHotelTypes =
+    filters && Array.isArray(filters.excludeHotelTypes) ? filters.excludeHotelTypes : [];
+  perf.event('list_filter_summary', {
+    phase: 'list_filter',
+    input_mode: expandedInputs.inputMode || '',
+    list_count: expandedInputs.listResults.length,
+    exclude_hotel_types: excludeHotelTypes.join('|')
+  });
+
+  let emitted = 0;
+  const maxEvents = 300;
+  expandedInputs.listResults.forEach((listResult, listIndex) => {
+    const candidates = [
+      ...(Array.isArray(listResult.selected)
+        ? listResult.selected.map((candidate) => ({ candidate, selected: true }))
+        : []),
+      ...(Array.isArray(listResult.rejected)
+        ? listResult.rejected.map((candidate) => ({ candidate, selected: false }))
+        : [])
+    ];
+    candidates.forEach(({ candidate, selected }, candidateIndex) => {
+      if (emitted >= maxEvents) {
+        return;
+      }
+      emitted += 1;
+      const rejectReason = candidate.rejectReason || '';
+      perf.event('list_candidate_filter', {
+        phase: 'list_filter',
+        list_index: listIndex + 1,
+        candidate_index: candidateIndex + 1,
+        selected,
+        reject_reason: rejectReason,
+        matched_keyword: extractKeywordFromRejectReason(rejectReason),
+        hotel_id: candidate.hotelId || '',
+        hotel_name: candidate.hotelName || candidate.name || '',
+        hotel_type: candidate.hotelType || '',
+        hotel_tags: [
+          ...(Array.isArray(candidate.badges) ? candidate.badges : []),
+          ...(Array.isArray(candidate.visibleTags) ? candidate.visibleTags : [])
+        ].join('|'),
+        filter_text: candidate.filterText || summarizeListCandidateFilterText(candidate),
+        source: candidate.source || ''
+      });
+    });
+  });
 }
 
 async function runHotelImportTask(rawArgs = {}, options = {}) {
@@ -238,12 +311,34 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         }
 
         assertNotCancelled(signal);
+        const listFilters = normalizeListFiltersFromArgs(args);
+        emit('list:start', '正在解析携程链接与列表页候选', {
+          desiredHotelCount: listFilters.desiredHotelCount,
+          targetCount: listFilters.targetCount,
+          maxCandidatesPerPage: listFilters.maxCandidatesPerPage
+        });
         const expandedInputs = await perf.runPhase('build_url', { taskId }, async () => {
-          const listFilters = normalizeListFiltersFromArgs(args);
           return expandCtripHotelInputs(args, effectiveTemplate, listFilters, {
             autoEdge,
             edgeSession: buildEdgeSessionOptions(effectiveTemplate)
           });
+        });
+        logListCandidateFilterDiagnostics(perf, expandedInputs);
+        emit('list:done', '携程链接与列表页候选解析完成', {
+          summary: describeExpandedInput(expandedInputs),
+          inputMode: expandedInputs.inputMode,
+          expandedHotelCount:
+            expandedInputs.summary && expandedInputs.summary.expandedHotelCount !== undefined
+              ? expandedInputs.summary.expandedHotelCount
+              : expandedInputs.hotelInputs.length,
+          listCandidateCount:
+            expandedInputs.summary && expandedInputs.summary.listCandidateCount !== undefined
+              ? expandedInputs.summary.listCandidateCount
+              : 0,
+          listRejectedCount:
+            expandedInputs.summary && expandedInputs.summary.listRejectedCount !== undefined
+              ? expandedInputs.summary.listRejectedCount
+              : 0
         });
 
         if (!expandedInputs.hotelInputs.length) {

@@ -227,6 +227,7 @@ function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
     'edge_settle_close_panels',
     'edge_settle_initial_expand',
     'edge_settle_main_scroll',
+    'edge_settle_main_scroll_followup',
     'edge_settle_scroll_containers'
   ]);
   if (!fastSettleGatePhases.has(stepPhase)) {
@@ -254,6 +255,161 @@ function buildRoomApiFastPathSkippedStats(aggregate, stepPhase) {
     bodyTextLength: aggregate.bodyTextLength || 0,
     roomKeywordCount: aggregate.roomKeywordCount || 0
   });
+}
+
+function shouldSkipMainScrollFollowupAfterStableProbe(aggregate, stepPhase) {
+  if (stepPhase !== 'edge_settle_main_scroll_followup') {
+    return false;
+  }
+  const probeStats = aggregate.steps.edge_settle_main_scroll;
+  return Boolean(probeStats && probeStats.earlyStopCount > 0);
+}
+
+function buildMainScrollStepBody({
+  startIndex = 0,
+  endIndex = 6,
+  steps = 6,
+  minStableIndex = 2
+} = {}) {
+  const safeSteps = Number.isFinite(Number(steps)) ? Math.max(1, Math.trunc(Number(steps))) : 6;
+  const safeStartIndex = Number.isFinite(Number(startIndex))
+    ? Math.max(0, Math.min(safeSteps, Math.trunc(Number(startIndex))))
+    : 0;
+  const safeEndIndex = Number.isFinite(Number(endIndex))
+    ? Math.max(safeStartIndex, Math.min(safeSteps, Math.trunc(Number(endIndex))))
+    : safeSteps;
+  const safeMinStableIndex = Number.isFinite(Number(minStableIndex))
+    ? Math.max(0, Math.min(safeSteps, Math.trunc(Number(minStableIndex))))
+    : 2;
+
+  return `
+        const before = collectStats();
+        const maxScroll = getDocumentHeight();
+        const steps = ${safeSteps};
+        const startIndex = ${safeStartIndex};
+        const endIndex = ${safeEndIndex};
+        const minStableIndex = ${safeMinStableIndex};
+        let previousHeight = maxScroll;
+        let stableHeightRounds = 0;
+        let clickedCount = 0;
+        let earlyStopCount = 0;
+        let skippedDuplicateClickCount = 0;
+        let genericClickCount = 0;
+        let scanCandidateCount = 0;
+        let explicitCandidateCount = 0;
+        let genericCandidateCount = 0;
+        let clickScanElapsedMs = 0;
+        let explicitScanCandidateCount = 0;
+        let fallbackScanCandidateCount = 0;
+        let genericFallbackScanCount = 0;
+        let genericFallbackSuppressedCount = 0;
+        let roomSectionDetectedCount = 0;
+        let roomSectionScanOnlyCount = 0;
+        let nonRoomSectionReachedCount = 0;
+        let roomSectionElementCount = 0;
+        let roomCardCount = 0;
+        let roomExpandButtonCount = 0;
+        let roomSectionStartY = 0;
+        let roomSectionEndY = 0;
+        let scrollCount = 0;
+        let previousRoomKeywordCount = before.roomKeywordCount;
+        let stableRoomSignalRounds = 0;
+        for (let index = startIndex; index <= endIndex; index += 1) {
+          const currentMaxScroll = getDocumentHeight();
+          const y = Math.round((currentMaxScroll * index) / steps);
+          window.scrollTo({ top: y, behavior: 'instant' });
+          scrollCount += 1;
+          await sleep(150);
+          const preClickStats = collectStats();
+          const roomSignalStableBeforeClick =
+            preClickStats.roomKeywordCount >= 4 &&
+            Math.abs(preClickStats.roomKeywordCount - previousRoomKeywordCount) <= 2;
+          const allowGenericFallback = index >= minStableIndex && roomSignalStableBeforeClick;
+          const clicked = clickExpandButtons({ allowGenericFallback });
+          clickedCount += clicked.clickedCount;
+          skippedDuplicateClickCount += clicked.skippedDuplicateClickCount;
+          genericClickCount += clicked.genericClickCount;
+          scanCandidateCount += clicked.scanCandidateCount;
+          explicitCandidateCount += clicked.explicitCandidateCount;
+          genericCandidateCount += clicked.genericCandidateCount;
+          clickScanElapsedMs += clicked.clickScanElapsedMs;
+          explicitScanCandidateCount += clicked.explicitScanCandidateCount;
+          fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
+          genericFallbackScanCount += clicked.genericFallbackScanCount;
+          genericFallbackSuppressedCount += clicked.genericFallbackSuppressedCount;
+          roomSectionDetectedCount += clicked.roomSectionDetectedCount;
+          roomSectionScanOnlyCount += clicked.roomSectionScanOnlyCount;
+          nonRoomSectionReachedCount += clicked.nonRoomSectionReachedCount;
+          roomSectionElementCount = Math.max(roomSectionElementCount, clicked.roomSectionElementCount);
+          roomCardCount = Math.max(roomCardCount, clicked.roomCardCount);
+          roomExpandButtonCount = Math.max(roomExpandButtonCount, clicked.roomExpandButtonCount);
+          roomSectionStartY = clicked.roomSectionStartY || roomSectionStartY;
+          roomSectionEndY = clicked.roomSectionEndY || roomSectionEndY;
+          if (clicked.clickedCount > 0) {
+            await waitForDomIdle(180, 750);
+          } else {
+            await sleep(45);
+          }
+          const currentStats = collectStats();
+          const currentHeight = currentStats.documentHeight;
+          if (Math.abs(currentHeight - previousHeight) <= 24) {
+            stableHeightRounds += 1;
+          } else {
+            stableHeightRounds = 0;
+          }
+          previousHeight = currentHeight;
+          if (
+            currentStats.roomKeywordCount >= 4 &&
+            Math.abs(currentStats.roomKeywordCount - previousRoomKeywordCount) <= 2
+          ) {
+            stableRoomSignalRounds += 1;
+          } else {
+            stableRoomSignalRounds = 0;
+          }
+          previousRoomKeywordCount = currentStats.roomKeywordCount;
+          const noNewExpansion = clicked.clickedCount === 0 && clicked.genericClickCount === 0;
+          if (
+            stableHeightRounds >= 1 &&
+            stableRoomSignalRounds >= 1 &&
+            noNewExpansion &&
+            index >= minStableIndex
+          ) {
+            earlyStopCount = 1;
+            break;
+          }
+          if (
+            stableHeightRounds >= 2 &&
+            noNewExpansion &&
+            index >= Math.max(minStableIndex, Math.floor(steps / 2))
+          ) {
+            earlyStopCount = 1;
+            break;
+          }
+        }
+        return JSON.stringify(finishStats(before, {
+          clickedCount,
+          earlyStopCount,
+          skippedDuplicateClickCount,
+          genericClickCount,
+          scanCandidateCount,
+          explicitCandidateCount,
+          genericCandidateCount,
+          clickScanElapsedMs,
+          explicitScanCandidateCount,
+          fallbackScanCandidateCount,
+          genericFallbackScanCount,
+          genericFallbackSuppressedCount,
+          roomSectionDetectedCount,
+          roomSectionScanOnlyCount,
+          nonRoomSectionReachedCount,
+          roomSectionElementCount,
+          roomCardCount,
+          roomExpandButtonCount,
+          roomSectionStartY,
+          roomSectionEndY,
+          scrollCount
+        }));
+      `;
 }
 
 function getTransientSettleRetryReason(error) {
@@ -384,6 +540,40 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
     steps: {}
   };
 
+  const mainScrollSteps =
+    options.splitMainScroll === true
+      ? [
+          {
+            phase: 'edge_settle_main_scroll',
+            body: buildMainScrollStepBody({
+              startIndex: 0,
+              endIndex: 2,
+              steps: 6,
+              minStableIndex: 2
+            })
+          },
+          {
+            phase: 'edge_settle_main_scroll_followup',
+            body: buildMainScrollStepBody({
+              startIndex: 3,
+              endIndex: 6,
+              steps: 6,
+              minStableIndex: 3
+            })
+          }
+        ]
+      : [
+          {
+            phase: 'edge_settle_main_scroll',
+            body: buildMainScrollStepBody({
+              startIndex: 0,
+              endIndex: 6,
+              steps: 6,
+              minStableIndex: 2
+            })
+          }
+        ];
+
   const steps = [
     {
       phase: 'edge_settle_close_panels',
@@ -419,130 +609,7 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
         return JSON.stringify(finishStats(before, { ...clickStats, initialExpandFastPathCount, scrollCount: 1 }));
       `
     },
-    {
-      phase: 'edge_settle_main_scroll',
-      body: `
-        const before = collectStats();
-        const maxScroll = getDocumentHeight();
-        const steps = 6;
-        let previousHeight = maxScroll;
-        let stableHeightRounds = 0;
-        let clickedCount = 0;
-        let earlyStopCount = 0;
-        let skippedDuplicateClickCount = 0;
-        let genericClickCount = 0;
-        let scanCandidateCount = 0;
-        let explicitCandidateCount = 0;
-        let genericCandidateCount = 0;
-        let clickScanElapsedMs = 0;
-        let explicitScanCandidateCount = 0;
-        let fallbackScanCandidateCount = 0;
-        let genericFallbackScanCount = 0;
-        let genericFallbackSuppressedCount = 0;
-        let roomSectionDetectedCount = 0;
-        let roomSectionScanOnlyCount = 0;
-        let nonRoomSectionReachedCount = 0;
-        let roomSectionElementCount = 0;
-        let roomCardCount = 0;
-        let roomExpandButtonCount = 0;
-        let roomSectionStartY = 0;
-        let roomSectionEndY = 0;
-        let scrollCount = 0;
-        let previousRoomKeywordCount = before.roomKeywordCount;
-        let stableRoomSignalRounds = 0;
-        for (let index = 0; index <= steps; index += 1) {
-          const currentMaxScroll = getDocumentHeight();
-          const y = Math.round((currentMaxScroll * index) / steps);
-          window.scrollTo({ top: y, behavior: 'instant' });
-          scrollCount += 1;
-          await sleep(150);
-          const preClickStats = collectStats();
-          const roomSignalStableBeforeClick =
-            preClickStats.roomKeywordCount >= 4 &&
-            Math.abs(preClickStats.roomKeywordCount - previousRoomKeywordCount) <= 2;
-          const allowGenericFallback = index >= 2 && roomSignalStableBeforeClick;
-          const clicked = clickExpandButtons({ allowGenericFallback });
-          clickedCount += clicked.clickedCount;
-          skippedDuplicateClickCount += clicked.skippedDuplicateClickCount;
-          genericClickCount += clicked.genericClickCount;
-          scanCandidateCount += clicked.scanCandidateCount;
-          explicitCandidateCount += clicked.explicitCandidateCount;
-          genericCandidateCount += clicked.genericCandidateCount;
-          clickScanElapsedMs += clicked.clickScanElapsedMs;
-          explicitScanCandidateCount += clicked.explicitScanCandidateCount;
-          fallbackScanCandidateCount += clicked.fallbackScanCandidateCount;
-          genericFallbackScanCount += clicked.genericFallbackScanCount;
-          genericFallbackSuppressedCount += clicked.genericFallbackSuppressedCount;
-          roomSectionDetectedCount += clicked.roomSectionDetectedCount;
-          roomSectionScanOnlyCount += clicked.roomSectionScanOnlyCount;
-          nonRoomSectionReachedCount += clicked.nonRoomSectionReachedCount;
-          roomSectionElementCount = Math.max(roomSectionElementCount, clicked.roomSectionElementCount);
-          roomCardCount = Math.max(roomCardCount, clicked.roomCardCount);
-          roomExpandButtonCount = Math.max(roomExpandButtonCount, clicked.roomExpandButtonCount);
-          roomSectionStartY = clicked.roomSectionStartY || roomSectionStartY;
-          roomSectionEndY = clicked.roomSectionEndY || roomSectionEndY;
-          if (clicked.clickedCount > 0) {
-            await waitForDomIdle(180, 750);
-          } else {
-            await sleep(45);
-          }
-          const currentStats = collectStats();
-          const currentHeight = currentStats.documentHeight;
-          if (Math.abs(currentHeight - previousHeight) <= 24) {
-            stableHeightRounds += 1;
-          } else {
-            stableHeightRounds = 0;
-          }
-          previousHeight = currentHeight;
-          if (
-            currentStats.roomKeywordCount >= 4 &&
-            Math.abs(currentStats.roomKeywordCount - previousRoomKeywordCount) <= 2
-          ) {
-            stableRoomSignalRounds += 1;
-          } else {
-            stableRoomSignalRounds = 0;
-          }
-          previousRoomKeywordCount = currentStats.roomKeywordCount;
-          const noNewExpansion = clicked.clickedCount === 0 && clicked.genericClickCount === 0;
-          if (
-            stableHeightRounds >= 1 &&
-            stableRoomSignalRounds >= 1 &&
-            noNewExpansion &&
-            index >= 2
-          ) {
-            earlyStopCount = 1;
-            break;
-          }
-          if (stableHeightRounds >= 2 && noNewExpansion && index >= Math.floor(steps / 2)) {
-            earlyStopCount = 1;
-            break;
-          }
-        }
-        return JSON.stringify(finishStats(before, {
-          clickedCount,
-          earlyStopCount,
-          skippedDuplicateClickCount,
-          genericClickCount,
-          scanCandidateCount,
-          explicitCandidateCount,
-          genericCandidateCount,
-          clickScanElapsedMs,
-          explicitScanCandidateCount,
-          fallbackScanCandidateCount,
-          genericFallbackScanCount,
-          genericFallbackSuppressedCount,
-          roomSectionDetectedCount,
-          roomSectionScanOnlyCount,
-          nonRoomSectionReachedCount,
-          roomSectionElementCount,
-          roomCardCount,
-          roomExpandButtonCount,
-          roomSectionStartY,
-          roomSectionEndY,
-          scrollCount
-        }));
-      `
-    },
+    ...mainScrollSteps,
     {
       phase: 'edge_settle_scroll_containers',
       body: `
@@ -621,6 +688,22 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
       phaseTimer.end('skipped', {
         ...toPerfFields(stats, trackedUrlCount, trackedUrlCount),
         skip_reason: 'stable_after_room_container_scroll'
+      });
+      continue;
+    }
+
+    if (shouldSkipMainScrollFollowupAfterStableProbe(aggregate, step.phase)) {
+      const trackedUrlCount = getTrackedUrlCount();
+      const phaseTimer = perf.phase(step.phase, {
+        ...baseFields,
+        tracked_url_count_before: trackedUrlCount
+      });
+      const stats = buildRoomApiFastPathSkippedStats(aggregate, step.phase);
+      aggregate.steps[step.phase] = stats;
+      mergeStepStats(aggregate, stats);
+      phaseTimer.end('skipped', {
+        ...toPerfFields(stats, trackedUrlCount, trackedUrlCount),
+        skip_reason: 'main_scroll_probe_stable'
       });
       continue;
     }

@@ -25,6 +25,34 @@ function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
 }
 
+function buildListApiReplayPageRecord(url, snapshot = {}, durationMs = 0, networkSnapshot = {}) {
+  return {
+    url,
+    html: [networkSnapshot.html, snapshot.html].filter(Boolean).join('\n'),
+    source: 'edge-list-api-replay',
+    durationMs,
+    scrollRound: 0,
+    scrollHeight: 0,
+    candidateDomCount: 0,
+    scrollContainerCount: 0,
+    scrollActions: 0,
+    documentHeightBefore: 0,
+    documentHeightAfter: 0,
+    bodyTextLength: 0,
+    scrollYBefore: 0,
+    scrollYAfter: 0,
+    bodyScrollTopBefore: 0,
+    bodyScrollTopAfter: 0,
+    documentScrollTopBefore: 0,
+    documentScrollTopAfter: 0,
+    networkResponseCount: Number(networkSnapshot.count) || 0,
+    listApiResponseCount: Number(snapshot.count) || 0,
+    listApiPageIndexes: Array.isArray(snapshot.pageIndexes) ? snapshot.pageIndexes : [],
+    listApiError: snapshot.error || '',
+    fullHtmlIncluded: false
+  };
+}
+
 async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = {}, options = {}) {
   if (process.platform !== 'win32' || typeof fetch !== 'function') {
     return {
@@ -127,6 +155,10 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     const stableRoundLimit = options.stableRoundLimit || 3;
 
     for (const url of pageUrls) {
+      if (typeof options.shouldStop === 'function' && options.shouldStop()) {
+        break;
+      }
+
       const loadEvent = new Promise((resolve) => {
         const stopListening = connection.addListener((message) => {
           if (message.sessionId === sessionId && message.method === 'Page.loadEventFired') {
@@ -155,13 +187,46 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       if (initialSettleMs > 0) {
         await delay(initialSettleMs);
       }
-      let pendingListApiSnapshot =
-        options.enableListApiReplay === false
-          ? { count: 0, html: '', pageIndexes: [], error: '' }
-          : await fetchListApiPagesInEdgeSession(connection, sessionId, {
-              desiredHotelCount: options.desiredHotelCount,
-              maxListApiReplayPages: options.maxListApiReplayPages
-            });
+      let listApiReplayDurationMs = 0;
+      let pendingListApiSnapshot = { count: 0, html: '', pageIndexes: [], error: '' };
+      if (options.enableListApiReplay !== false) {
+        const listApiReplayStartedAt = Date.now();
+        pendingListApiSnapshot = await fetchListApiPagesInEdgeSession(connection, sessionId, {
+          desiredHotelCount: options.desiredHotelCount,
+          maxListApiReplayPages: options.maxListApiReplayPages
+        });
+        listApiReplayDurationMs = durationSince(listApiReplayStartedAt);
+      }
+
+      if (
+        (pendingListApiSnapshot.html || listNetworkResponses.length > 0) &&
+        typeof options.onPage === 'function'
+      ) {
+        const fastSnapshotStartedAt = Date.now();
+        const networkSnapshot = await drainListNetworkResponses(
+          connection,
+          sessionId,
+          listNetworkResponses,
+          processedListNetworkResponses
+        );
+        const replayRecord = buildListApiReplayPageRecord(
+          url,
+          pendingListApiSnapshot,
+          listApiReplayDurationMs + durationSince(fastSnapshotStartedAt),
+          networkSnapshot
+        );
+        if (replayRecord.html) {
+          pendingListApiSnapshot = { count: 0, html: '', pageIndexes: [], error: '' };
+          pages.push(replayRecord);
+          const edgePageDecision = normalizeEdgePageDecision(await options.onPage(replayRecord));
+          if (
+            edgePageDecision.stop ||
+            (typeof options.shouldStop === 'function' && options.shouldStop())
+          ) {
+            continue;
+          }
+        }
+      }
 
       let previousHeight = 0;
       let previousCount = -1;

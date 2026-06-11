@@ -334,6 +334,143 @@ test('settleRoomListInEdgeSession skips late DOM settle steps after room API res
   }
 });
 
+test('settleRoomListInEdgeSession skips split main scroll followup after room API is readable', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isMainProbe =
+        expression.includes('const startIndex = 0;') &&
+        expression.includes('const endIndex = 2;');
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: isMainProbe ? 3 : 1,
+        containerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    let readableRoomResponseCount = 0;
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 4,
+      getRoomTrackedUrlCount: () => readableRoomResponseCount,
+      getReadableRoomResponseCount: () => readableRoomResponseCount,
+      splitMainScroll: true,
+      onSettleStepComplete(phase) {
+        if (phase === 'edge_settle_main_scroll') {
+          readableRoomResponseCount = 1;
+        }
+      }
+    });
+
+    assert.equal(
+      expressions.some(
+        (expression) =>
+          expression.includes('const startIndex = 0;') &&
+          expression.includes('const endIndex = 2;')
+      ),
+      true
+    );
+    assert.equal(
+      expressions.some(
+        (expression) =>
+          expression.includes('const startIndex = 3;') &&
+          expression.includes('const endIndex = 6;')
+      ),
+      false
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_main_scroll_followup').skip_reason,
+      'room_api_fast_path'
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_scroll_containers').skip_reason,
+      'room_api_fast_path'
+    );
+    assert.equal(stats.apiFastPathSkippedStepCount, 4);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
+test('settleRoomListInEdgeSession runs split main scroll followup while room API is unreadable', async () => {
+  const expressions = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      expressions.push(expression);
+      const isMainProbe =
+        expression.includes('const startIndex = 0;') &&
+        expression.includes('const endIndex = 2;');
+      const isMainFollowup =
+        expression.includes('const startIndex = 3;') &&
+        expression.includes('const endIndex = 6;');
+      return JSON.stringify({
+        clickedCount: 0,
+        scrollCount: isMainProbe ? 3 : isMainFollowup ? 4 : 1,
+        containerCount: 0,
+        documentHeightBefore: 30000,
+        documentHeightAfter: 30000,
+        bodyTextLength: 4000,
+        roomKeywordCount: 120
+      });
+    }
+  });
+  const settlePath = require.resolve('../src/scraper/edge-capture-modules/session-settle');
+  delete require.cache[settlePath];
+
+  try {
+    const records = [];
+    const {
+      settleRoomListInEdgeSession
+    } = require('../src/scraper/edge-capture-modules/session-settle');
+    const stats = await settleRoomListInEdgeSession({}, 'session-1', {
+      perf: createPerfRecorder(records),
+      fields: { url: 'https://example.test/hotel' },
+      getTrackedUrlCount: () => 4,
+      getRoomTrackedUrlCount: () => 1,
+      getReadableRoomResponseCount: () => 0,
+      splitMainScroll: true
+    });
+
+    assert.equal(
+      expressions.some(
+        (expression) =>
+          expression.includes('const startIndex = 0;') &&
+          expression.includes('const endIndex = 2;')
+      ),
+      true
+    );
+    assert.equal(
+      expressions.some(
+        (expression) =>
+          expression.includes('const startIndex = 3;') &&
+          expression.includes('const endIndex = 6;')
+      ),
+      true
+    );
+    assert.equal(
+      records.find((record) => record.phase === 'edge_settle_main_scroll_followup').status,
+      'success'
+    );
+    assert.equal(stats.apiFastPathSkippedStepCount, 0);
+  } finally {
+    clearModules([settlePath, cdpUtilsPath]);
+  }
+});
+
 test('settleRoomListInEdgeSession skips bottom settle steps after container scroll captures room API', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {

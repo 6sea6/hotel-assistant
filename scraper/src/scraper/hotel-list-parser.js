@@ -13,9 +13,15 @@ const DEFAULT_LIST_TARGET_COUNT = 10;
 const DEFAULT_LIST_MAX_PAGES = 3;
 const MAX_JSON_WALK_NODES = 12000;
 
-const HOTEL_NAME_PATTERN = /(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假|Hotel|Inn|Hostel|Apartment)/i;
+const ACCOMMODATION_KEYWORD_PATTERN =
+  /(酒店公寓|青年旅舍|青年旅社|青年旅馆|青旅|民宿|客栈|公寓|旅舍|旅社|宾馆|旅馆|农家乐|度假村|别墅|酒店|Hotel|Inn|Hostel|Apartment|Motel|Villa|Resort|Homestay|Guesthouse|Guest House|B&B)/i;
+const EXACT_ACCOMMODATION_TYPE_PATTERN =
+  /^(酒店公寓|青年旅舍|青年旅社|青年旅馆|青旅|民宿|客栈|公寓|旅舍|旅社|宾馆|旅馆|农家乐|度假村|别墅|酒店|Hotel|Inn|Hostel|Apartment|Motel|Villa|Resort|Homestay|Guesthouse|Guest House|B&B)$/i;
+const HOTEL_NAME_PATTERN =
+  /(?:酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假|Hotel|Inn|Hostel|Apartment)/i;
 const DETAIL_URL_PATTERN =
   /https?:\/\/[^\s"'<>]*(?:hotels\/\d+\.html|hoteldetail\/\d+\.html|hotels\/detail\/?[^\s"'<>]*hotelId=\d+)[^\s"'<>]*/gi;
+const GENERIC_TYPE_ENUM_PATTERN = /^[A-Z][A-Z0-9_:-]{2,}$/;
 
 function normalizeKeywordList(value) {
   if (Array.isArray(value)) {
@@ -68,6 +74,106 @@ function normalizeScore(value) {
     return Number((score / 2).toFixed(1));
   }
   return null;
+}
+
+function uniqueTextValues(values = []) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    const text = normalizeText(value);
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    result.push(text);
+  }
+  return result;
+}
+
+function isUsefulAccommodationText(value) {
+  const text = normalizeText(value);
+  if (!text || text.length > 40) {
+    return false;
+  }
+  if (/^https?:\/\//i.test(text) || /\.(?:png|jpe?g|webp|gif|svg)(?:$|\?)/i.test(text)) {
+    return false;
+  }
+  if (GENERIC_TYPE_ENUM_PATTERN.test(text)) {
+    return false;
+  }
+  if (EXACT_ACCOMMODATION_TYPE_PATTERN.test(text)) {
+    return true;
+  }
+  if (/酒店公寓|青年旅舍|青年旅社|青年旅馆|青旅|民宿|客栈|公寓|旅舍|旅社|农家乐|度假村|别墅/i.test(text)) {
+    return true;
+  }
+  return ACCOMMODATION_KEYWORD_PATTERN.test(text) && text.length <= 12;
+}
+
+function collectTextValues(value, output = [], depth = 0, maxDepth = 2) {
+  if (value === null || value === undefined || depth > maxDepth) {
+    return output;
+  }
+  if (typeof value !== 'object') {
+    const text = normalizeText(value);
+    if (isUsefulAccommodationText(text)) {
+      output.push(text);
+    }
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectTextValues(item, output, depth + 1, maxDepth));
+    return output;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (
+      /tag|label|badge|mark|type|category|theme|star|level|title|name|text|desc/i.test(key)
+    ) {
+      collectTextValues(child, output, depth + 1, maxDepth);
+    }
+  }
+  return output;
+}
+
+function collectAccommodationTagsFromObject(object, maxDepth = 3) {
+  if (!object || typeof object !== 'object' || maxDepth < 0) {
+    return [];
+  }
+
+  const output = [];
+  for (const [key, value] of Object.entries(object)) {
+    if (/tag|label|badge|mark|type|category|theme|star|level/i.test(key)) {
+      collectTextValues(value, output, 0, 2);
+    }
+  }
+
+  for (const value of Object.values(object)) {
+    if (value && typeof value === 'object') {
+      output.push(...collectAccommodationTagsFromObject(value, maxDepth - 1));
+    }
+  }
+
+  return uniqueTextValues(output);
+}
+
+function pickSpecificAccommodationType(values = []) {
+  const candidates = uniqueTextValues(values).filter(isUsefulAccommodationText);
+  if (!candidates.length) {
+    return '';
+  }
+  return candidates.sort((left, right) => {
+    const leftExact = EXACT_ACCOMMODATION_TYPE_PATTERN.test(left) ? 0 : 1;
+    const rightExact = EXACT_ACCOMMODATION_TYPE_PATTERN.test(right) ? 0 : 1;
+    if (leftExact !== rightExact) {
+      return leftExact - rightExact;
+    }
+    const leftGeneric = /^酒店$/i.test(left) ? 1 : 0;
+    const rightGeneric = /^酒店$/i.test(right) ? 1 : 0;
+    if (leftGeneric !== rightGeneric) {
+      return leftGeneric - rightGeneric;
+    }
+    return right.length - left.length;
+  })[0];
 }
 
 function normalizeDetailUrl(rawUrl, baseUrl, hotelId = '', template = {}) {
@@ -235,46 +341,74 @@ function readHotelIdFromObject(object, maxDepth = 3) {
   return '';
 }
 
+function hasNestedHotelCollection(object) {
+  if (!object || typeof object !== 'object' || Array.isArray(object)) {
+    return false;
+  }
+  return Object.entries(object).some(
+    ([key, value]) =>
+      /^(hotelList|hotelInfos|hotelItems|hotelInfoList)$/i.test(key) && Array.isArray(value)
+  );
+}
+
 function extractCandidateFromObject(object, baseUrl, template = {}) {
   if (!object || typeof object !== 'object' || Array.isArray(object)) {
     return null;
   }
 
-  const rawUrl = readDetailUrlFromObject(object, 2);
-  const hotelId = parseHotelIdFromUrl(rawUrl) || readHotelIdFromObject(object);
+  const candidateObject =
+    object.hotelInfo && typeof object.hotelInfo === 'object' ? object.hotelInfo : object;
+  const rawUrl =
+    readDetailUrlFromObject(candidateObject, 2) || readDetailUrlFromObject(object, 0);
+  const directSelfHotelId =
+    parseHotelIdFromUrl(rawUrl) ||
+    readHotelIdFromObject(candidateObject, 0) ||
+    readHotelIdFromObject(object, 0);
+  if (!directSelfHotelId && hasNestedHotelCollection(candidateObject)) {
+    return null;
+  }
+  const nestedCandidateHotelId =
+    object.hotelInfo && typeof object.hotelInfo === 'object'
+      ? readHotelIdFromObject(candidateObject, 2)
+      : '';
+  const hotelId = directSelfHotelId || nestedCandidateHotelId || readHotelIdFromObject(object, 1);
   const detailUrl = normalizeDetailUrl(rawUrl, baseUrl, hotelId, template);
   if (!detailUrl) {
     return null;
   }
 
-  const name = readStringByKey(
-    object,
-    [/hotel.*name/i, /name.*hotel/i, /^displayName$/i, /^name$/i, /^title$/i],
-    2
-  );
+  const name =
+    normalizeText(candidateObject.nameInfo && candidateObject.nameInfo.name) ||
+    readStringByKey(candidateObject, [/^hotelName$/i, /^displayName$/i, /^name$/i, /^title$/i], 2);
   const address = readStringByKey(
-    object,
+    candidateObject,
     [/address/i, /position.*name/i, /zone.*name/i, /business.*name/i, /location.*name/i],
     2
   );
   const score = readNumberByKey(
-    object,
+    candidateObject,
     [/comment.*score/i, /review.*score/i, /rating.*all/i, /^rating$/i, /^score$/i, /user.*rating/i],
     2
   );
-  const accommodationType = readStringByKey(
-    object,
-    [
-      /hotel.*type/i,
-      /accommodation.*type/i,
-      /property.*type/i,
-      /type.*name/i,
-      /star.*name/i,
-      /level.*name/i,
-      /^tagName$/i
-    ],
-    2
-  );
+  const typeTags = collectAccommodationTagsFromObject(candidateObject, 3);
+  const accommodationType = pickSpecificAccommodationType([
+    readStringByKey(
+      candidateObject,
+      [
+        /hotel.*type.*name/i,
+        /hotel.*type.*desc/i,
+        /accommodation.*type/i,
+        /property.*type.*name/i,
+        /type.*name/i,
+        /category.*name/i,
+        /star.*name/i,
+        /level.*name/i,
+        /^tagName$/i
+      ],
+      2
+    ),
+    ...typeTags
+  ]);
 
   if (!name && !address && score === null) {
     return null;
@@ -286,6 +420,7 @@ function extractCandidateFromObject(object, baseUrl, template = {}) {
     name: normalizeText(name),
     score,
     accommodationType: normalizeText(accommodationType),
+    badges: typeTags,
     address: normalizeText(address),
     source: 'embedded-json'
   };
@@ -563,12 +698,18 @@ function mergeHotelListCandidates(candidates = []) {
         name: normalizeText(candidate.name),
         score: normalizeScore(candidate.score),
         accommodationType: normalizeText(candidate.accommodationType),
+        badges: uniqueTextValues(candidate.badges || candidate.tags || candidate.tagNames || []),
+        visibleTags: uniqueTextValues(
+          candidate.visibleTags || candidate.displayTags || candidate.highlightTags || []
+        ),
         address: normalizeText(candidate.address),
         source: candidate.source || ''
       });
       continue;
     }
 
+    const nextType = normalizeText(candidate.accommodationType);
+    const mergedType = pickSpecificAccommodationType([existing.accommodationType, nextType]);
     byKey.set(key, {
       ...existing,
       name: existing.name || normalizeText(candidate.name),
@@ -576,7 +717,15 @@ function mergeHotelListCandidates(candidates = []) {
         existing.score !== null && existing.score !== undefined
           ? existing.score
           : normalizeScore(candidate.score),
-      accommodationType: existing.accommodationType || normalizeText(candidate.accommodationType),
+      accommodationType: mergedType || existing.accommodationType || nextType,
+      badges: uniqueTextValues([
+        ...(existing.badges || []),
+        ...(candidate.badges || candidate.tags || candidate.tagNames || [])
+      ]),
+      visibleTags: uniqueTextValues([
+        ...(existing.visibleTags || []),
+        ...(candidate.visibleTags || candidate.displayTags || candidate.highlightTags || [])
+      ]),
       address: existing.address || normalizeText(candidate.address),
       source: [...new Set([existing.source, candidate.source].filter(Boolean))].join('+')
     });

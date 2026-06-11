@@ -105,7 +105,14 @@ function normalizeListPageFilterOptions(options = {}) {
 
 function normalizeTagArray(value) {
   if (Array.isArray(value)) {
-    return value.map((item) => normalizeText(item)).filter(Boolean);
+    return value
+      .flatMap((item) => normalizeTagArray(item))
+      .map((item) => normalizeText(item))
+      .filter(Boolean);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.values(value).flatMap((item) => normalizeTagArray(item));
   }
 
   const text = normalizeText(value);
@@ -119,7 +126,9 @@ function normalizeListPageCandidate(candidate = {}, index = 0, options = {}) {
   const hotelType = normalizeText(
     candidate.hotelType || candidate.accommodationType || candidate.type || candidate.typeName
   );
-  const badges = normalizeTagArray(candidate.badges || candidate.tags || candidate.tagNames);
+  const badges = normalizeTagArray(
+    candidate.badges || candidate.tags || candidate.tagNames || candidate.accommodationTags
+  );
   const visibleTags = normalizeTagArray(
     candidate.visibleTags || candidate.displayTags || candidate.highlightTags
   );
@@ -200,15 +209,19 @@ function filterListPageCandidates(candidates = [], rawFilters = {}) {
   for (const candidate of mergedCandidates) {
     const typeText = [candidate.hotelType, ...candidate.badges, ...candidate.visibleTags].join(' ');
     const typeKeyword = containsAnyKeyword(typeText, filters.excludeHotelTypes);
+    const nameKeyword = containsAnyKeyword(candidate.hotelName, filters.excludeHotelTypes);
     let rejectReason = '';
 
     if (typeKeyword) {
       rejectReason = `hotel_type_keyword:${typeKeyword}`;
+    } else if (nameKeyword) {
+      rejectReason = `hotel_name_keyword:${nameKeyword}`;
     }
 
     if (rejectReason) {
       rejected.push({
         ...candidate,
+        filterText: typeText || candidate.hotelName,
         rejectReason
       });
       continue;

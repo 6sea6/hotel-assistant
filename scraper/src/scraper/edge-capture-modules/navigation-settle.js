@@ -276,6 +276,7 @@ async function settleRoomListWithEdgeRetry({
       getTrackedUrlCount,
       getRoomTrackedUrlCount,
       getReadableRoomResponseCount,
+      splitMainScroll: true,
       signal,
       evaluateTimeoutMs: EDGE_SETTLE_EVALUATE_TIMEOUT_MS
     });
