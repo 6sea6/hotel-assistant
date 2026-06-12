@@ -58,7 +58,12 @@ function pickCtripUrlFilterSettings(rawInput = {}) {
     'sortMode',
     'freeCancel',
     'reviewCountMin',
-    'ctripScoreMin'
+    'ctripScoreMin',
+    'accommodationTypeMode',
+    'accommodationTypes',
+    'roomTypes',
+    'roomFeatures',
+    'featureThemes'
   ].forEach((key) => {
     if (Object.prototype.hasOwnProperty.call(rawInput, key)) {
       topLevel[key] = rawInput[key];
@@ -198,16 +203,6 @@ function normalizeListFiltersFromArgs(args = {}) {
     args.listFilters && typeof args.listFilters === 'object' ? args.listFilters : {};
   return normalizeListPageFilterOptions({
     ...listFilters,
-    excludeHotelTypes:
-      args.excludeHotelTypes ??
-      args.excludeAccommodationKeywords ??
-      args.excludeAccommodationTypes ??
-      args.excludeTypeKeywords ??
-      args['exclude-hotel-types'] ??
-      args['exclude-accommodation-keywords'] ??
-      args['exclude-type-keywords'] ??
-      listFilters.excludeHotelTypes ??
-      listFilters.excludeAccommodationKeywords,
     desiredHotelCount:
       args.desiredHotelCount ??
       args.targetCount ??

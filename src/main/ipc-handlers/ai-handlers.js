@@ -46,7 +46,7 @@ function validateAiListFilters(filters) {
     min: 1
   });
   if (desiredCountError) return desiredCountError;
-  return assertOptionalStringArrayField(filters, 'excludeHotelTypes');
+  return null;
 }
 
 /**
@@ -63,6 +63,7 @@ function validateCtripUrlFilterSettings(filters, errorMessage) {
   }
   if (
     Object.prototype.hasOwnProperty.call(filters, 'priceMax') &&
+    filters.priceMax !== undefined &&
     filters.priceMax !== null &&
     filters.priceMax !== 'max' &&
     (typeof filters.priceMax !== 'number' || !Number.isFinite(filters.priceMax))
@@ -79,6 +80,7 @@ function validateCtripUrlFilterSettings(filters, errorMessage) {
   }
   if (
     Object.prototype.hasOwnProperty.call(filters, 'sortMode') &&
+    filters.sortMode !== undefined &&
     filters.sortMode !== null &&
     typeof filters.sortMode !== 'string'
   ) {
@@ -90,6 +92,18 @@ function validateCtripUrlFilterSettings(filters, errorMessage) {
     typeof filters.freeCancel !== 'boolean'
   ) {
     return validationError(errorMessage);
+  }
+  if (Object.prototype.hasOwnProperty.call(filters, 'accommodationTypeMode')) {
+    const modeError = assertAllowedValue(
+      filters.accommodationTypeMode,
+      ['include', 'exclude', null, undefined],
+      errorMessage
+    );
+    if (modeError) return modeError;
+  }
+  for (const field of ['accommodationTypes', 'roomTypes', 'roomFeatures', 'featureThemes']) {
+    const arrayError = assertOptionalStringArrayField(filters, field);
+    if (arrayError) return validationError(errorMessage);
   }
   return null;
 }
@@ -148,6 +162,7 @@ function validateAiTaskPayload(payload) {
   }
   if (
     Object.prototype.hasOwnProperty.call(taskPayload, 'priceMax') &&
+    taskPayload.priceMax !== undefined &&
     taskPayload.priceMax !== null &&
     taskPayload.priceMax !== 'max' &&
     (typeof taskPayload.priceMax !== 'number' || !Number.isFinite(taskPayload.priceMax))
@@ -161,8 +176,6 @@ function validateAiTaskPayload(payload) {
   ) {
     return validationError(AI_REQUEST_ERROR);
   }
-  const excludeHotelTypesError = assertOptionalStringArrayField(taskPayload, 'excludeHotelTypes');
-  if (excludeHotelTypesError) return excludeHotelTypesError;
   if (
     Object.prototype.hasOwnProperty.call(taskPayload, 'starLevels') &&
     taskPayload.starLevels != null &&
@@ -173,10 +186,23 @@ function validateAiTaskPayload(payload) {
   }
   if (
     Object.prototype.hasOwnProperty.call(taskPayload, 'sortMode') &&
+    taskPayload.sortMode !== undefined &&
     taskPayload.sortMode !== null &&
     typeof taskPayload.sortMode !== 'string'
   ) {
     return validationError(AI_REQUEST_ERROR);
+  }
+  if (Object.prototype.hasOwnProperty.call(taskPayload, 'accommodationTypeMode')) {
+    const modeError = assertAllowedValue(
+      taskPayload.accommodationTypeMode,
+      ['include', 'exclude', null, undefined],
+      AI_REQUEST_ERROR
+    );
+    if (modeError) return modeError;
+  }
+  for (const field of ['accommodationTypes', 'roomTypes', 'roomFeatures', 'featureThemes']) {
+    const arrayError = assertOptionalStringArrayField(taskPayload, field);
+    if (arrayError) return arrayError;
   }
   if (
     Object.prototype.hasOwnProperty.call(taskPayload, 'listFilters') &&

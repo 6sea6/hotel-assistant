@@ -1,6 +1,6 @@
 {
   "name": "ctrip-hotel-importer",
-  "version": "8.8.1",
+  "version": "8.8.8",
   "private": true,
   "description": "携程酒店信息采集并写入宾馆比较助手数据的独立工具",
   "main": "src/cli.js",

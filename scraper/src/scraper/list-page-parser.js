@@ -5,33 +5,8 @@ const {
 const { normalizeText, toNumber } = require('../utils');
 const { parseHotelIdFromUrl } = require('../ctrip-url');
 
-const DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS = Object.freeze(['民宿', '客栈', '青年旅舍', '公寓']);
 const DEFAULT_DESIRED_HOTEL_COUNT = 10;
 const DEFAULT_MAX_CANDIDATES_PER_PAGE = 80;
-
-function normalizeKeywordList(value) {
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => normalizeKeywordList(item)).filter(Boolean);
-  }
-
-  return String(value || '')
-    .split(/[,，;；\n\r|]+/)
-    .map((item) => normalizeText(item).toLowerCase())
-    .filter(Boolean);
-}
-
-function hasAnyOwnValue(object, keys) {
-  if (!object || typeof object !== 'object') {
-    return false;
-  }
-
-  return keys.some(
-    (key) =>
-      Object.prototype.hasOwnProperty.call(object, key) &&
-      object[key] !== undefined &&
-      object[key] !== null
-  );
-}
 
 function normalizePositiveInteger(value, fallback) {
   const numberValue = toNumber(value);
@@ -71,35 +46,11 @@ function normalizeListPageFilterOptions(options = {}) {
     options.maxCandidatesPerPage ?? options['max-candidates-per-page'],
     DEFAULT_MAX_CANDIDATES_PER_PAGE
   );
-  const hasExplicitHotelTypes = hasAnyOwnValue(options, [
-    'excludeHotelTypes',
-    'excludeAccommodationKeywords',
-    'excludeAccommodationTypes',
-    'excludeTypeKeywords',
-    'exclude_type_keywords',
-    'exclude-hotel-types',
-    'exclude-accommodation-keywords',
-    'exclude-type-keywords'
-  ]);
-  const excludeHotelTypes = hasExplicitHotelTypes
-    ? normalizeKeywordList(
-        options.excludeHotelTypes ??
-          options.excludeAccommodationKeywords ??
-          options.excludeAccommodationTypes ??
-          options.excludeTypeKeywords ??
-          options.exclude_type_keywords ??
-          options['exclude-hotel-types'] ??
-          options['exclude-accommodation-keywords'] ??
-          options['exclude-type-keywords']
-      )
-    : [...DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS].map((item) => item.toLowerCase());
 
   return {
-    excludeHotelTypes,
     desiredHotelCount,
     targetCount: desiredHotelCount,
-    maxCandidatesPerPage,
-    excludeAccommodationKeywords: excludeHotelTypes
+    maxCandidatesPerPage
   };
 }
 
@@ -169,11 +120,6 @@ function parseListPageCandidatesFromHtml(html, baseUrl, options = {}) {
   );
 }
 
-function containsAnyKeyword(value, keywords = []) {
-  const text = normalizeText(value).toLowerCase();
-  return keywords.find((keyword) => keyword && text.includes(keyword)) || '';
-}
-
 function mergeListPageCandidates(candidates = []) {
   const normalized = candidates.map((candidate, index) =>
     normalizeListPageCandidate(candidate, index)
@@ -207,26 +153,6 @@ function filterListPageCandidates(candidates = [], rawFilters = {}) {
   const rejected = [];
 
   for (const candidate of mergedCandidates) {
-    const typeText = [candidate.hotelType, ...candidate.badges, ...candidate.visibleTags].join(' ');
-    const typeKeyword = containsAnyKeyword(typeText, filters.excludeHotelTypes);
-    const nameKeyword = containsAnyKeyword(candidate.hotelName, filters.excludeHotelTypes);
-    let rejectReason = '';
-
-    if (typeKeyword) {
-      rejectReason = `hotel_type_keyword:${typeKeyword}`;
-    } else if (nameKeyword) {
-      rejectReason = `hotel_name_keyword:${nameKeyword}`;
-    }
-
-    if (rejectReason) {
-      rejected.push({
-        ...candidate,
-        filterText: typeText || candidate.hotelName,
-        rejectReason
-      });
-      continue;
-    }
-
     if (selected.length < filters.desiredHotelCount) {
       selected.push(candidate);
     } else {
@@ -247,7 +173,6 @@ function filterListPageCandidates(candidates = [], rawFilters = {}) {
 }
 
 module.exports = {
-  DEFAULT_EXCLUDE_HOTEL_TYPE_KEYWORDS,
   filterListPageCandidates,
   normalizeListPageCandidate,
   normalizeListPageFilterOptions,

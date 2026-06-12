@@ -1,11 +1,36 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { createBuilderConfig } = require('./create-builder-config');
-const { getSetupArtifactName } = require('./bundle-manifest');
+const { getSetupArtifactName, normalizeAmapKeyMode } = require('./bundle-manifest');
 const { prepareFullBundle } = require('./prepare-full-bundle');
 const { verifyPackageLayout } = require('./verify-package-layout');
 const { removeIfExists, resolveWindowsCommand, runCommand } = require('./utils');
+
+function parseBuildOptions(argv = process.argv.slice(2), env = process.env) {
+  let amapKeyMode = normalizeAmapKeyMode(env.HOTEL_PACKAGE_AMAP_KEY_MODE || 'embedded');
+
+  for (const arg of argv) {
+    const normalized = String(arg || '').trim();
+    if (normalized === '--no-amap-key' || normalized === '--without-amap-key') {
+      amapKeyMode = 'none';
+      continue;
+    }
+    if (normalized === '--with-amap-key') {
+      amapKeyMode = 'embedded';
+      continue;
+    }
+    const match = normalized.match(/^--amap-key(?:-mode)?=(.+)$/);
+    if (match) {
+      amapKeyMode = normalizeAmapKeyMode(match[1]);
+    }
+  }
+
+  return {
+    amapKeyMode
+  };
+}
 
 function runElectronBuilder({ projectRoot, configPath }) {
   const electronBuilderBin = path.join(
@@ -23,11 +48,11 @@ function runElectronBuilder({ projectRoot, configPath }) {
   );
 }
 
-function copyFinalInstaller({ projectRoot, tempBuildDir, version }) {
+function copyFinalInstaller({ projectRoot, tempBuildDir, version, amapKeyMode }) {
   const distDir = path.join(projectRoot, 'dist');
   fs.mkdirSync(distDir, { recursive: true });
 
-  const setupName = getSetupArtifactName(version);
+  const setupName = getSetupArtifactName(version, { amapKeyMode });
   const targetPath = path.join(distDir, setupName);
   const lastSetupFilePath = path.join(distDir, 'last-successful-setup.txt');
   const sourceEntry = fs
@@ -58,10 +83,24 @@ function copyFinalInstaller({ projectRoot, tempBuildDir, version }) {
   return targetPath;
 }
 
-function printHeader(version) {
+function useAsciiInstallerArtifactName({ builderConfig, version }) {
+  builderConfig.buildConfig.artifactName = `hotel-comparison-app-${version}-setup.\${ext}`;
+  fs.writeFileSync(
+    builderConfig.configPath,
+    `${JSON.stringify(builderConfig.buildConfig, null, 2)}\n`,
+    'utf-8'
+  );
+}
+
+function getAmapKeyModeLabel(amapKeyMode) {
+  return normalizeAmapKeyMode(amapKeyMode) === 'none' ? '不含默认高德 Key' : '包含默认高德 Key';
+}
+
+function printHeader(version, options = {}) {
   const divider = '='.repeat(48);
   console.log(divider);
   console.log(`  宾馆比较终极版打包工具 v${version}`);
+  console.log(`  高德 Key 模式：${getAmapKeyModeLabel(options.amapKeyMode)}`);
   console.log(divider);
   console.log('');
 }
@@ -115,7 +154,8 @@ function syncAppInfo(projectRoot) {
 async function main() {
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.resolve(projectRoot, 'scraper');
-  const tempBuildDir = path.join(projectRoot, `dist-verify-build-${process.pid}-${Date.now()}`);
+  const tempBuildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-verify-build-'));
+  const buildOptions = parseBuildOptions();
 
   let preparedBundle = null;
   let builderConfig = null;
@@ -125,7 +165,7 @@ async function main() {
     const { APP_INFO } = require('../../src/shared/app-info.generated');
     const version = APP_INFO.version;
 
-    printHeader(version);
+    printHeader(version, buildOptions);
     console.log('[1/1] 开始打包\n');
 
     console.log('正在检查依赖...');
@@ -137,7 +177,8 @@ async function main() {
     console.log('正在准备完整版采集模块资源...');
     preparedBundle = prepareFullBundle({
       projectRoot,
-      scraperDir
+      scraperDir,
+      amapKeyMode: buildOptions.amapKeyMode
     });
 
     console.log('正在生成打包配置...');
@@ -145,6 +186,10 @@ async function main() {
       projectRoot,
       outputDir: tempBuildDir,
       extraResources: preparedBundle.manifest.extraResources
+    });
+    useAsciiInstallerArtifactName({
+      builderConfig,
+      version
     });
 
     console.log('正在运行 electron-builder...');
@@ -161,7 +206,8 @@ async function main() {
     const finalInstaller = copyFinalInstaller({
       projectRoot,
       tempBuildDir,
-      version
+      version,
+      amapKeyMode: buildOptions.amapKeyMode
     });
 
     const refreshScript = path.join(projectRoot, 'scripts', 'refresh-shell-icons.ps1');
@@ -190,4 +236,11 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  getAmapKeyModeLabel,
+  parseBuildOptions
+};

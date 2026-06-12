@@ -23,17 +23,6 @@ const DETAIL_URL_PATTERN =
   /https?:\/\/[^\s"'<>]*(?:hotels\/\d+\.html|hoteldetail\/\d+\.html|hotels\/detail\/?[^\s"'<>]*hotelId=\d+)[^\s"'<>]*/gi;
 const GENERIC_TYPE_ENUM_PATTERN = /^[A-Z][A-Z0-9_:-]{2,}$/;
 
-function normalizeKeywordList(value) {
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => normalizeKeywordList(item)).filter(Boolean);
-  }
-
-  return String(value || '')
-    .split(/[,，;；\n\r|]+/)
-    .map((item) => normalizeText(item).toLowerCase())
-    .filter(Boolean);
-}
-
 function normalizeListFilterOptions(options = {}) {
   const targetCount = toNumber(
     options.targetCount ??
@@ -47,13 +36,6 @@ function normalizeListFilterOptions(options = {}) {
   );
 
   return {
-    excludeAccommodationKeywords: normalizeKeywordList(
-      options.excludeAccommodationKeywords ??
-        options.excludeAccommodationTypes ??
-        options.excludeTypeKeywords ??
-        options['exclude-accommodation-keywords'] ??
-        options['exclude-type-keywords']
-    ),
     targetCount:
       targetCount && targetCount > 0
         ? Math.max(1, Math.trunc(targetCount))
@@ -760,11 +742,6 @@ function parseHotelListCandidatesFromHtml(html, baseUrl, options = {}) {
   ]);
 }
 
-function containsAnyKeyword(value, keywords = []) {
-  const text = normalizeText(value).toLowerCase();
-  return keywords.find((keyword) => keyword && text.includes(keyword)) || '';
-}
-
 function applyListPrefilter(candidates = [], rawFilters = {}) {
   const filters = normalizeListFilterOptions(rawFilters);
   const mergedCandidates = mergeHotelListCandidates(candidates);
@@ -773,28 +750,10 @@ function applyListPrefilter(candidates = [], rawFilters = {}) {
 
   for (const candidate of mergedCandidates) {
     const score = normalizeScore(candidate.score);
-    const typeKeyword = containsAnyKeyword(
-      candidate.accommodationType,
-      filters.excludeAccommodationKeywords
-    );
-    let rejectReason = '';
-
-    if (typeKeyword) {
-      rejectReason = `accommodation_keyword:${typeKeyword}`;
-    }
-
     const normalizedCandidate = {
       ...candidate,
       score
     };
-
-    if (rejectReason) {
-      rejected.push({
-        ...normalizedCandidate,
-        rejectReason
-      });
-      continue;
-    }
 
     if (selected.length < filters.targetCount) {
       selected.push(normalizedCandidate);

@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { copyDirSync, copyFileSync } = require('./utils');
-const { getBundleManifest } = require('./bundle-manifest');
+const { getBundleManifest, normalizeAmapKeyMode } = require('./bundle-manifest');
 
 function findPromptGuideFile(scraperDir) {
   const entries = fs.readdirSync(scraperDir, { withFileTypes: true });
@@ -61,6 +61,9 @@ function copyProductionDependencyTree({
 
 const VENDOR_PRUNE_DIR_NAMES = new Set([
   '.github',
+  '.idea',
+  '.nyc_output',
+  'bench',
   'benchmark',
   'benchmarks',
   'coverage',
@@ -89,16 +92,21 @@ const VENDOR_PRUNE_FILE_NAMES = new Set([
   '.prettierignore',
   '.prettierrc',
   '.prettierrc.json',
+  '.nycrc',
+  'bench.js',
+  'benchmark.js',
   'changelog',
   'changelog.md',
   'history',
   'history.md',
+  'makefile',
   'news',
   'news.md',
   'package-lock.json',
   'readme',
   'readme.md',
   'readme.txt',
+  'tests.js',
   'tsconfig.json'
 ]);
 
@@ -213,7 +221,43 @@ function pruneCopiedVendorDevelopmentAssets(vendorDir) {
   findPackageDirs(vendorDir).forEach(pruneVendorPackageDevelopmentAssets);
 }
 
-function prepareFullBundle({ projectRoot, scraperDir }) {
+function removeDefaultAmapKeyFromBundle(scraperRoot) {
+  const constantsPath = path.join(scraperRoot, 'src', 'constants.js');
+  const constantsSource = fs.readFileSync(constantsPath, 'utf-8');
+  const nextConstantsSource = constantsSource.replace(
+    /const DEFAULT_AMAP_KEY = ['"][^'"]*['"];/,
+    "const DEFAULT_AMAP_KEY = '';"
+  );
+  if (nextConstantsSource === constantsSource) {
+    throw new Error('未能从临时采集器资源中移除默认高德 Key');
+  }
+  fs.writeFileSync(constantsPath, nextConstantsSource, 'utf-8');
+}
+
+function adjustPromptForNoAmapKeyBundle(scraperRoot, promptGuideFile) {
+  const promptPath = path.join(scraperRoot, path.basename(promptGuideFile));
+  const promptSource = fs.readFileSync(promptPath, 'utf-8');
+  const nextPromptSource = promptSource
+    .replace(
+      /未传时使用采集器内置默认 Key/g,
+      '未传时不使用内置默认 Key；需要高德计算时请在应用设置中填写高德 API Key'
+    )
+    .replace(/未传时使用内置默认 Key/g, '未传时不使用内置默认 Key');
+  if (nextPromptSource !== promptSource) {
+    fs.writeFileSync(promptPath, nextPromptSource, 'utf-8');
+  }
+}
+
+function applyAmapKeyModeToBundle({ scraperRoot, promptGuideFile, amapKeyMode }) {
+  if (normalizeAmapKeyMode(amapKeyMode) !== 'none') {
+    return;
+  }
+
+  removeDefaultAmapKeyFromBundle(scraperRoot);
+  adjustPromptForNoAmapKeyBundle(scraperRoot, promptGuideFile);
+}
+
+function prepareFullBundle({ projectRoot, scraperDir, amapKeyMode = 'embedded' }) {
   const promptGuideFile = findPromptGuideFile(scraperDir);
   if (!fs.existsSync(path.join(scraperDir, 'src', 'cli.js'))) {
     throw new Error(`未找到采集器入口: ${path.join(scraperDir, 'src', 'cli.js')}`);
@@ -234,6 +278,11 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
     promptGuideFile,
     path.join(manifest.directories.scraperRoot, path.basename(promptGuideFile))
   );
+  applyAmapKeyModeToBundle({
+    scraperRoot: manifest.directories.scraperRoot,
+    promptGuideFile,
+    amapKeyMode
+  });
 
   const scraperPackageJson = readPackageJson(scraperDir);
   copyProductionDependencyTree({
@@ -250,5 +299,6 @@ function prepareFullBundle({ projectRoot, scraperDir }) {
 }
 
 module.exports = {
+  applyAmapKeyModeToBundle,
   prepareFullBundle
 };

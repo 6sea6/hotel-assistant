@@ -81,6 +81,8 @@ import {
   saveAiListPrefilterSettings,
   resetAiListPrefilterSettings,
   toggleAiCtripStarLevel,
+  setAiCtripAccommodationTypeMode,
+  toggleAiCtripListOption,
   showDataInFolder,
   changeDataPath,
   chooseAppIcon,
@@ -237,6 +239,21 @@ const ACTION_HANDLERS = {
   },
   'toggle-ai-ctrip-star': async (_event, element) => {
     const saved = await toggleAiCtripStarLevel(element.dataset.starLevel);
+    if (saved) {
+      await callAiAssistant('syncAiCtripListUrlFromSettings');
+    }
+  },
+  'set-ai-ctrip-accommodation-type-mode': async (_event, element) => {
+    const saved = await setAiCtripAccommodationTypeMode(element.dataset.accommodationTypeMode);
+    if (saved) {
+      await callAiAssistant('syncAiCtripListUrlFromSettings');
+    }
+  },
+  'toggle-ai-ctrip-list-option': async (_event, element) => {
+    const saved = await toggleAiCtripListOption(
+      element.dataset.settingKey,
+      element.dataset.optionValue
+    );
     if (saved) {
       await callAiAssistant('syncAiCtripListUrlFromSettings');
     }

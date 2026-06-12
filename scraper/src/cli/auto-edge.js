@@ -233,13 +233,22 @@ async function runInteractiveEdgeLoginPrep(options = {}) {
     child.on('exit', () => resolve());
   });
 
-  if (hasReusableEdgeProfile(userDataDir, profileDirectory)) {
+  const loginConfirmed = hasReusableEdgeProfile(userDataDir, profileDirectory);
+  if (loginConfirmed) {
     console.error('[auto-edge] 首次登录准备已完成，继续后台采集。');
   } else {
     console.error(
       `[auto-edge] 可见 ${browserName} 窗口已关闭，但尚未检测到明确的可复用资料；若后续仍提示登录，请重新完成一次登录。`
     );
   }
+
+  return {
+    success: true,
+    loginConfirmed,
+    browserName,
+    userDataDir,
+    profileDirectory
+  };
 }
 
 module.exports = {

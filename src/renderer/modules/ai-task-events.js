@@ -130,7 +130,12 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
     return '';
   }
   if (toolName === 'list_templates' || toolName === 'get_settings') return 'template';
-  if (type === 'edge:login-required' || type === 'edge:login-window' || type === 'edge:login-done')
+  if (
+    type === 'edge:login-required' ||
+    type === 'edge:login-window' ||
+    type === 'edge:login-done' ||
+    type === 'edge:login-unconfirmed'
+  )
     return 'login';
   if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
   if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return 'received';
@@ -171,6 +176,8 @@ export function getReadableEventTitle(event = {}, taskKind = 'collect') {
   if (type === 'edge:login-window') return event.message || '已打开浏览器登录窗口，等待你完成登录';
   if (type === 'edge:login-done')
     return isRefresh ? '浏览器登录态已准备完成' : event.message || '携程登录窗口已关闭，继续采集';
+  if (type === 'edge:login-unconfirmed')
+    return event.message || '携程登录窗口已关闭，但尚未确认登录态';
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
   if (type.startsWith('batch:') || type.startsWith('list:'))
     return event.message || '正在处理批量采集任务';

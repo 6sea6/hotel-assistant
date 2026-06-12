@@ -3,7 +3,6 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   language: 'zh-CN',
   includeFourPersonRoomsForThreePersonTemplate: false,
   aiListDesiredHotelCount: 10,
-  aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓',
   aiCtripPriceMin: '',
   aiCtripPriceMax: '',
   aiCtripStarLevels: [],
@@ -11,6 +10,11 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   aiCtripFreeCancel: false,
   aiCtripReviewCountMin: '',
   aiCtripScoreMin: '',
+  aiCtripAccommodationTypeMode: 'include',
+  aiCtripAccommodationTypes: [],
+  aiCtripRoomTypes: [],
+  aiCtripRoomFeatures: [],
+  aiCtripFeatureThemes: [],
   amapApiKey: '',
   enableCollectPerfLog: false,
   collectBrowser: 'edge',
@@ -37,7 +41,11 @@ const DEPRECATED_COMPARE_APP_SETTING_KEYS = Object.freeze([
   'weight_price',
   'weight_score',
   'weight_distance',
-  'weight_transport'
+  'weight_transport',
+  'aiListMinScore',
+  'aiListExcludeKeywords',
+  'aiListExcludeHotelTypes',
+  'aiListMaxPages'
 ]);
 
 const DEFAULT_COMPARE_APP_FILES = Object.freeze({

@@ -5,7 +5,11 @@ const os = require('os');
 const path = require('path');
 
 const { PROMPT_CONTRACT } = require('../shared/compare-app/prompt-contract');
-const { getBundleManifest, getSetupArtifactName } = require('../scripts/package/bundle-manifest');
+const {
+  getBundleManifest,
+  getSetupArtifactName,
+  normalizeAmapKeyMode
+} = require('../scripts/package/bundle-manifest');
 const { createBuilderConfig } = require('../scripts/package/create-builder-config');
 const { prepareFullBundle } = require('../scripts/package/prepare-full-bundle');
 const { verifyPackageLayout } = require('../scripts/package/verify-package-layout');
@@ -46,6 +50,11 @@ test('package manifest keeps full bundle resource contracts stable', () => {
   const manifest = getBundleManifest('E:/temp/bundle-root');
 
   assert.equal(getSetupArtifactName('7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
+  assert.equal(
+    getSetupArtifactName('7.8.0', { amapKeyMode: 'none' }),
+    '宾馆比较终极版-完整版-不含高德Key-7.8.0.exe'
+  );
+  assert.equal(normalizeAmapKeyMode('without-amap-key'), 'none');
   assert.equal('baseOnlyAbsentResources' in manifest.expectations, false);
   assert.deepEqual(manifest.expectations.fullOnlyResources, [
     path.join('scraper', 'src', 'cli.js'),
@@ -150,6 +159,9 @@ test('app version metadata is generated from package.json and reused by docs and
   assert.match(syncAppInfoScript, /packageJson\.version/);
   assert.match(syncBuildAssetsScript, /app-info\.generated/);
   assert.match(runBuildScript, /sync-app-info\.js/);
+  assert.match(runBuildScript, /parseBuildOptions/);
+  assert.match(runBuildScript, /--no-amap-key/);
+  assert.match(runBuildScript, /HOTEL_PACKAGE_AMAP_KEY_MODE/);
 });
 
 test('project documentation avoids stale local-only instructions', () => {
@@ -454,6 +466,58 @@ test('prepareFullBundle preserves scraper prompt assets', (t) => {
   );
 });
 
+test('prepareFullBundle can remove the default AMap key from temporary bundle only', (t) => {
+  const tempRoot = makeTempRoot();
+  const scraperDir = path.join(tempRoot, 'scraper');
+  const nodeModulesDir = path.join(tempRoot, 'node_modules');
+  const sourceConstantsPath = path.join(scraperDir, 'src', 'constants.js');
+
+  fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    sourceConstantsPath,
+    "const DEFAULT_AMAP_KEY = 'fixture-default-key';\nmodule.exports = { DEFAULT_AMAP_KEY };\n",
+    'utf-8'
+  );
+  fs.writeFileSync(
+    path.join(scraperDir, 'package.json'),
+    JSON.stringify({ name: 'fixture-scraper', dependencies: { axios: '^1.0.0' } }, null, 2),
+    'utf-8'
+  );
+  fs.writeFileSync(
+    path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName),
+    '未传时使用采集器内置默认 Key。\n',
+    'utf-8'
+  );
+  writePackageFixture(nodeModulesDir, 'axios');
+
+  const prepared = prepareFullBundle({
+    projectRoot: tempRoot,
+    scraperDir,
+    amapKeyMode: 'none'
+  });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(prepared.bundleRoot, { recursive: true, force: true });
+  });
+
+  const bundledConstants = fs.readFileSync(
+    path.join(prepared.manifest.directories.scraperRoot, 'src', 'constants.js'),
+    'utf-8'
+  );
+  const sourceConstants = fs.readFileSync(sourceConstantsPath, 'utf-8');
+  const bundledPrompt = fs.readFileSync(
+    path.join(prepared.manifest.directories.scraperRoot, PROMPT_CONTRACT.unifiedPromptFileName),
+    'utf-8'
+  );
+
+  assert.match(bundledConstants, /DEFAULT_AMAP_KEY = ''/);
+  assert.doesNotMatch(bundledConstants, /fixture-default-key/);
+  assert.match(sourceConstants, /fixture-default-key/);
+  assert.match(bundledPrompt, /不使用内置默认 Key/);
+});
+
 test('prepareFullBundle prunes copied vendor development assets', (t) => {
   const tempRoot = makeTempRoot();
   const scraperDir = path.join(tempRoot, 'scraper');
@@ -479,6 +543,9 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
   });
   fs.mkdirSync(path.join(packageDir, 'dist'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, '.idea'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, '.nyc_output'), { recursive: true });
+  fs.mkdirSync(path.join(packageDir, 'bench'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'benchmark'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'benchmarks'), { recursive: true });
   fs.mkdirSync(path.join(packageDir, 'docs'), { recursive: true });
@@ -489,6 +556,9 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
   fs.writeFileSync(path.join(packageDir, 'dist', 'index.js.map'), '{}', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'dist', 'index.d.ts'), 'export {};', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'src', 'index.ts'), 'export {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, '.idea', 'workspace.xml'), '<xml />', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, '.nyc_output', 'coverage.json'), '{}', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'bench', 'speed.js'), 'module.exports = {};', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'benchmark', 'speed.js'), 'module.exports = {};', 'utf-8');
   fs.writeFileSync(
     path.join(packageDir, 'benchmarks', 'speed.js'),
@@ -503,8 +573,13 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
     'utf-8'
   );
   fs.writeFileSync(path.join(packageDir, 'tests', 'fixture.test.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, '.nycrc'), '{}\n', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'bench.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'benchmark.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'Makefile'), 'test:\n', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'package-lock.json'), '{"lockfileVersion":3}\n', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'README.md'), '# package readme\n', 'utf-8');
+  fs.writeFileSync(path.join(packageDir, 'tests.js'), 'module.exports = {};', 'utf-8');
 
   const prepared = prepareFullBundle({
     projectRoot: tempRoot,
@@ -528,14 +603,22 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
     path.join('dist', 'index.js.map'),
     path.join('dist', 'index.d.ts'),
     path.join('src'),
+    path.join('.idea'),
+    path.join('.nyc_output'),
+    path.join('bench'),
     path.join('benchmark'),
     path.join('benchmarks'),
     path.join('docs'),
     path.join('spec'),
     path.join('specs'),
     path.join('tests'),
+    '.nycrc',
+    'bench.js',
+    'benchmark.js',
+    'Makefile',
     'package-lock.json',
-    'README.md'
+    'README.md',
+    'tests.js'
   ].forEach((relativePath) => {
     assert.equal(
       fs.existsSync(path.join(bundledPackageDir, relativePath)),
@@ -688,6 +771,14 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
   assert.equal(typeof packageJson.scripts.lint, 'string');
   assert.equal(typeof packageJson.scripts.coverage, 'string');
   assert.equal(packageJson.scripts.build, 'node scripts/package/run-build.js');
+  assert.equal(
+    packageJson.scripts['build:with-key'],
+    'node scripts/package/run-build.js --with-amap-key'
+  );
+  assert.equal(
+    packageJson.scripts['build:no-key'],
+    'node scripts/package/run-build.js --no-amap-key'
+  );
   assert.equal(packageJson.scripts['build:win'], 'node scripts/package/run-build.js');
   assert.equal(packageJson.scripts['build:nsis'], 'node scripts/package/run-build.js');
   assert.equal(typeof packageJson.scripts['package:smoke'], 'string');
@@ -848,6 +939,7 @@ test('run-build script uses Chinese UI text and does not contain English menu st
     path.resolve(__dirname, '..', 'scripts', 'package', 'run-build.js'),
     'utf-8'
   );
+  const { parseBuildOptions } = require('../scripts/package/run-build');
 
   assert.doesNotMatch(runBuildScript, /选择打包模式/);
   assert.doesNotMatch(runBuildScript, /基础版安装包/);
@@ -857,6 +949,7 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.match(runBuildScript, /宾馆比较终极版打包工具/);
   assert.match(runBuildScript, /正在同步构建资源/);
   assert.match(runBuildScript, /正在准备完整版采集模块资源/);
+  assert.match(runBuildScript, /高德 Key 模式/);
   assert.match(runBuildScript, /正在运行 electron-builder/);
   assert.match(runBuildScript, /正在校验安装包资源/);
   assert.match(runBuildScript, /打包完成/);
@@ -867,6 +960,26 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.doesNotMatch(runBuildScript, /Full package with scraper resources/);
   assert.doesNotMatch(runBuildScript, /Select mode/);
   assert.doesNotMatch(runBuildScript, /Hotel Comparison Packager/);
+  assert.equal(parseBuildOptions(['--no-amap-key']).amapKeyMode, 'none');
+  assert.equal(parseBuildOptions(['--with-amap-key']).amapKeyMode, 'embedded');
+  assert.equal(
+    parseBuildOptions([], { HOTEL_PACKAGE_AMAP_KEY_MODE: 'without-amap-key' }).amapKeyMode,
+    'none'
+  );
+});
+
+test('run-build uses ASCII temporary NSIS output paths', () => {
+  const runBuildScript = fs.readFileSync(
+    path.resolve(__dirname, '..', 'scripts', 'package', 'run-build.js'),
+    'utf-8'
+  );
+
+  assert.match(runBuildScript, /require\('os'\)/);
+  assert.match(runBuildScript, /os\.tmpdir\(\)/);
+  assert.match(runBuildScript, /hotel-verify-build-/);
+  assert.match(runBuildScript, /useAsciiInstallerArtifactName/);
+  assert.match(runBuildScript, /hotel-comparison-app-\$\{version\}-setup\.\\\$\{ext\}/);
+  assert.match(runBuildScript, /getSetupArtifactName\(version,\s*\{\s*amapKeyMode\s*\}\)/);
 });
 
 test('build-nsis.bat uses Chinese UI with GBK codepage and CRLF line endings', () => {

@@ -5,8 +5,18 @@ const {
   PROMPT_CONTRACT
 } = require('../../shared/compare-app/prompt-contract');
 
-function getSetupArtifactName(version) {
-  return `宾馆比较终极版-完整版-${version}.exe`;
+function normalizeAmapKeyMode(mode) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (['none', 'no-key', 'without-key', 'without-amap-key'].includes(normalized)) {
+    return 'none';
+  }
+  return 'embedded';
+}
+
+function getSetupArtifactName(version, options = {}) {
+  const amapKeyMode = normalizeAmapKeyMode(options.amapKeyMode);
+  const suffix = amapKeyMode === 'none' ? '-不含高德Key' : '';
+  return `宾馆比较终极版-完整版${suffix}-${version}.exe`;
 }
 
 function getBundleManifest(bundleRoot) {
@@ -95,5 +105,6 @@ function getBundleManifest(bundleRoot) {
 
 module.exports = {
   getBundleManifest,
-  getSetupArtifactName
+  getSetupArtifactName,
+  normalizeAmapKeyMode
 };

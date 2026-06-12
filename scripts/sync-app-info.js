@@ -25,7 +25,7 @@ function buildAppInfo(packageJson) {
   return {
     name: '宾馆比较助手',
     version: packageJson.version,
-    releaseDate: '2026-05-27',
+    releaseDate: '2026-06-12',
     author: packageJson.author || 'Sea'
   };
 }

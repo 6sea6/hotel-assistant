@@ -42,7 +42,6 @@ function printHelp() {
   --urls <文本/链接列表>    从多 URL 或混合粘贴文本中提取多个携程酒店链接
   --ctrip_url <携程链接>   兼容旧调用写法，等价于 --url
   --ctrip-url <携程链接>   兼容 kebab-case 写法，等价于 --url
-  --exclude-accommodation-keywords <关键词>  列表页前筛排除住宿类型关键词，逗号分隔
   --targetCount <数量>     列表页目标采集酒店数量，默认 10
   --out <路径>              指定输出 JSON 文件路径
   --latestRun <路径>        指定最终运行凭证 JSON 路径，默认 output/latest-run.json

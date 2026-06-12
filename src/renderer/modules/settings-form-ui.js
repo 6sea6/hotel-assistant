@@ -190,7 +190,7 @@ export async function saveAmapApiKeySetting() {
     await window.electronAPI.setSetting('amapApiKey', nextValue);
     state.settings.amapApiKey = nextValue;
     setValue('amapApiKeyInput', nextValue);
-    showNotification(nextValue ? '高德 API Key 已保存' : '已恢复使用默认高德 Key', 'success');
+    showNotification(nextValue ? '高德 API Key 已保存' : '高德 API Key 已清空', 'success');
   } catch (error) {
     console.error('保存高德 API Key 失败:', error);
     state.settings.amapApiKey = previousValue;

@@ -110,12 +110,6 @@ function buildScraperArgs(input, workDir) {
   ) {
     args.desiredHotelCount = input.desiredHotelCount;
   }
-  if (input.excludeHotelTypes) {
-    args.excludeHotelTypes = input.excludeHotelTypes;
-  }
-  if (input.excludeAccommodationKeywords) {
-    args.excludeAccommodationKeywords = input.excludeAccommodationKeywords;
-  }
   if (
     input.amapKey !== null &&
     input.amapKey !== undefined &&
@@ -134,7 +128,12 @@ function buildScraperArgs(input, workDir) {
     'sortMode',
     'freeCancel',
     'reviewCountMin',
-    'ctripScoreMin'
+    'ctripScoreMin',
+    'accommodationTypeMode',
+    'accommodationTypes',
+    'roomTypes',
+    'roomFeatures',
+    'featureThemes'
   ].forEach((key) => {
     if (input[key] !== undefined) {
       args[key] = input[key];

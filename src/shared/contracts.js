@@ -37,6 +37,11 @@
  * @property {boolean} [freeCancel]
  * @property {100|200|500|number|null} [reviewCountMin]
  * @property {4|4.5|4.7|number|null} [ctripScoreMin]
+ * @property {'include'|'exclude'|string} [accommodationTypeMode]
+ * @property {string[]} [accommodationTypes]
+ * @property {string[]} [roomTypes]
+ * @property {string[]} [roomFeatures]
+ * @property {string[]} [featureThemes]
  */
 
 /**
@@ -45,7 +50,6 @@
  *
  * @typedef {object} AiListFilters
  * @property {number} [desiredHotelCount]
- * @property {string[]} [excludeHotelTypes]
  */
 
 /**
@@ -100,7 +104,6 @@
  *   listFilters?: AiListFilters,
  *   listUrlFilters?: AiListUrlFilters,
  *   desiredHotelCount?: number,
- *   excludeHotelTypes?: string[],
  *   amapKey?: string,
  *   priceMin?: number|null,
  *   priceMax?: number|'max'|null,
@@ -109,6 +112,11 @@
  *   freeCancel?: boolean,
  *   reviewCountMin?: number|null,
  *   ctripScoreMin?: number|null,
+ *   accommodationTypeMode?: string,
+ *   accommodationTypes?: string[],
+ *   roomTypes?: string[],
+ *   roomFeatures?: string[],
+ *   featureThemes?: string[],
  *   enableCollectPerfLog?: boolean,
  *   batchConcurrency?: number
  * }} AiTaskPayload
@@ -281,7 +289,6 @@
  *   language?: string,
  *   includeFourPersonRoomsForThreePersonTemplate?: boolean,
  *   aiListDesiredHotelCount?: number|string,
- *   aiListExcludeHotelTypes?: string,
  *   aiCtripPriceMin?: number|string,
  *   aiCtripPriceMax?: number|string,
  *   aiCtripStarLevels?: Array<number|string>,
@@ -289,6 +296,11 @@
  *   aiCtripFreeCancel?: boolean,
  *   aiCtripReviewCountMin?: number|string,
  *   aiCtripScoreMin?: number|string,
+ *   aiCtripAccommodationTypeMode?: 'include'|'exclude'|string,
+ *   aiCtripAccommodationTypes?: string[],
+ *   aiCtripRoomTypes?: string[],
+ *   aiCtripRoomFeatures?: string[],
+ *   aiCtripFeatureThemes?: string[],
  *   amapApiKey?: string,
  *   enableCollectPerfLog?: boolean,
  *   collectBrowser?: 'edge'|'360'|string,
@@ -366,6 +378,7 @@
  * @property {AiTaskConsoleState} [console]
  * @property {AiTaskBackendResult|null} [result]
  * @property {boolean} [cancelNoticeShown]
+ * @property {boolean} [loginNoticeShown]
  * @property {string} [selectedId]
  */
 

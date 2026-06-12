@@ -732,16 +732,8 @@
             </header>
 
             <div class="list-prefilter-body">
-              <section class="list-prefilter-card">
-                <div class="list-prefilter-section-header">
-                  <span class="list-prefilter-section-index">1</span>
-                  <div>
-                    <h3>携程前筛</h3>
-                    <p>设置在携程列表页生效的筛选条件</p>
-                  </div>
-                </div>
-
-                <div class="list-prefilter-grid list-prefilter-grid-three">
+              <section class="list-prefilter-section">
+                <div class="list-prefilter-grid list-prefilter-grid-primary">
                   <div class="prefilter-field">
                     <label for="aiCtripPriceMin">携程价格下限</label>
                     <div class="prefilter-input-with-unit">
@@ -772,6 +764,19 @@
                     </div>
                   </div>
                   <div class="prefilter-field">
+                    <label for="aiListDesiredHotelCount">目标宾馆数</label>
+                    <input
+                      id="aiListDesiredHotelCount"
+                      class="input prefilter-input"
+                      type="number"
+                      min="1"
+                      max="50"
+                      step="1"
+                      data-setting-key="aiListDesiredHotelCount"
+                      placeholder="10"
+                    />
+                  </div>
+                  <div class="prefilter-field">
                     <span class="prefilter-label">携程星级</span>
                     <div
                       id="aiCtripStarLevelPills"
@@ -787,9 +792,6 @@
                         aria-pressed="false"
                       >
                         <span>两星及以下</span>
-                        <span class="prefilter-star-check" aria-hidden="true"
-                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
-                        ></span>
                       </button>
                       <button
                         class="prefilter-star-pill"
@@ -799,9 +801,6 @@
                         aria-pressed="false"
                       >
                         <span>三星</span>
-                        <span class="prefilter-star-check" aria-hidden="true"
-                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
-                        ></span>
                       </button>
                       <button
                         class="prefilter-star-pill"
@@ -811,9 +810,6 @@
                         aria-pressed="false"
                       >
                         <span>四星</span>
-                        <span class="prefilter-star-check" aria-hidden="true"
-                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
-                        ></span>
                       </button>
                       <button
                         class="prefilter-star-pill"
@@ -823,9 +819,6 @@
                         aria-pressed="false"
                       >
                         <span>五星</span>
-                        <span class="prefilter-star-check" aria-hidden="true"
-                          ><svg viewBox="0 0 16 16"><path d="M4 8.2 6.8 11 12 5"></path></svg
-                        ></span>
                       </button>
                     </div>
                   </div>
@@ -876,54 +869,156 @@
                   </div>
                   <div class="prefilter-field">
                     <span class="prefilter-label">携程免费取消</span>
-                    <label class="prefilter-toggle-row">
+                    <div class="prefilter-toggle-row">
                       <span>仅显示可免费取消的酒店</span>
-                      <span class="switch-label">
+                      <label class="switch-label" for="aiCtripFreeCancel">
                         <input
                           id="aiCtripFreeCancel"
                           type="checkbox"
                           data-setting-key="aiCtripFreeCancel"
                         />
                         <span class="switch-slider"></span>
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </section>
-
-              <section class="list-prefilter-card">
-                <div class="list-prefilter-section-header">
-                  <span class="list-prefilter-section-index">2</span>
-                  <div>
-                    <h3>本地过滤</h3>
-                    <p>设置在本地生效的过滤条件，进一步提升数据质量</p>
+                      </label>
+                    </div>
                   </div>
                 </div>
 
-                <div class="list-prefilter-grid list-prefilter-grid-three">
-                  <div class="prefilter-field">
-                    <label for="aiListDesiredHotelCount">本地目标宾馆数</label>
-                    <input
-                      id="aiListDesiredHotelCount"
-                      class="input prefilter-input"
-                      type="number"
-                      min="1"
-                      max="50"
-                      step="1"
-                      data-setting-key="aiListDesiredHotelCount"
-                      placeholder="10"
-                    />
+                <div class="list-prefilter-native-groups">
+                  <div class="prefilter-condition-toolbar">
+                    <h4>筛选条件</h4>
                   </div>
-                  <div class="prefilter-field">
-                    <label for="aiListExcludeHotelTypes">本地排除住宿类型</label>
-                    <input
-                      id="aiListExcludeHotelTypes"
-                      class="input prefilter-input"
-                      type="text"
-                      maxlength="200"
-                      data-setting-key="aiListExcludeHotelTypes"
-                      placeholder="如：民宿, 客栈, 青年旅舍, 公寓"
-                    />
+
+                  <div class="prefilter-filter-groups">
+                    <details class="prefilter-filter-group">
+                      <summary class="prefilter-filter-summary">
+                        <span class="prefilter-filter-heading">
+                          <span class="prefilter-filter-title">
+                            <span class="prefilter-filter-icon" aria-hidden="true">
+                              <svg viewBox="0 0 24 24">
+                                <path d="M5 21V7l7-4 7 4v14" />
+                                <path d="M9 21v-7h6v7" />
+                                <path d="M8 10h.01M16 10h.01" />
+                              </svg>
+                            </span>
+                            住宿类型
+                          </span>
+                          <span class="prefilter-mode-row">
+                            <span
+                              id="aiCtripAccommodationTypeModeControl"
+                              class="prefilter-segmented"
+                              role="group"
+                              aria-label="住宿类型筛选模式"
+                            >
+                              <button
+                                class="prefilter-segment"
+                                type="button"
+                                data-action="set-ai-ctrip-accommodation-type-mode"
+                                data-accommodation-type-mode="include"
+                                aria-pressed="true"
+                              >
+                                包含所选
+                              </button>
+                              <button
+                                class="prefilter-segment"
+                                type="button"
+                                data-action="set-ai-ctrip-accommodation-type-mode"
+                                data-accommodation-type-mode="exclude"
+                                aria-pressed="false"
+                              >
+                                排除所选
+                              </button>
+                            </span>
+                          </span>
+                        </span>
+                        <svg class="prefilter-group-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </summary>
+                      <div class="prefilter-group-body">
+                        <div
+                          id="aiCtripAccommodationTypeOptions"
+                          class="prefilter-option-grid"
+                          aria-label="住宿类型多选"
+                        ></div>
+                      </div>
+                    </details>
+
+                    <details class="prefilter-filter-group">
+                      <summary class="prefilter-filter-summary">
+                        <span class="prefilter-filter-title">
+                          <span class="prefilter-filter-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                              <path d="M4 18V9a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v9" />
+                              <path d="M4 14h16" />
+                              <path d="M7 14v-2a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v2" />
+                              <path d="M12 14v-2a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </span>
+                          房型
+                        </span>
+                        <svg class="prefilter-group-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </summary>
+                      <div class="prefilter-group-body">
+                        <div
+                          id="aiCtripRoomTypeOptions"
+                          class="prefilter-option-grid prefilter-option-grid-compact"
+                          aria-label="房型多选"
+                        ></div>
+                      </div>
+                    </details>
+
+                    <details class="prefilter-filter-group">
+                      <summary class="prefilter-filter-summary">
+                        <span class="prefilter-filter-title">
+                          <span class="prefilter-filter-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                              <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" />
+                              <path d="M19 15v4M17 17h4" />
+                            </svg>
+                          </span>
+                          客房特色
+                        </span>
+                        <svg class="prefilter-group-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </summary>
+                      <div class="prefilter-group-body">
+                        <div
+                          id="aiCtripRoomFeatureOptions"
+                          class="prefilter-option-grid"
+                          aria-label="客房特色多选"
+                        ></div>
+                      </div>
+                    </details>
+
+                    <details class="prefilter-filter-group">
+                      <summary class="prefilter-filter-summary">
+                        <span class="prefilter-filter-title">
+                          <span class="prefilter-filter-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                              <path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7" />
+                              <path d="M2 7h20v5H2z" />
+                              <path d="M12 21V7" />
+                              <path d="M12 7H8.5a2.5 2.5 0 1 1 2.2-3.7L12 7Z" />
+                              <path d="M12 7h3.5a2.5 2.5 0 1 0-2.2-3.7L12 7Z" />
+                            </svg>
+                          </span>
+                          特色主题
+                        </span>
+                        <svg class="prefilter-group-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </summary>
+                      <div class="prefilter-group-body">
+                        <div
+                          id="aiCtripFeatureThemeOptions"
+                          class="prefilter-option-grid"
+                          aria-label="特色主题多选"
+                        ></div>
+                      </div>
+                    </details>
                   </div>
                 </div>
               </section>
@@ -1001,7 +1096,7 @@
                   type="password"
                   id="amapApiKeyInput"
                   class="input"
-                  placeholder="留空使用程序默认高德 Key"
+                  placeholder="可填写自己的高德 Key"
                   autocomplete="off"
                 />
                 <div class="data-path-actions">
@@ -1012,7 +1107,7 @@
               </div>
               <small class="help-text"
                 >用于采集时计算公共交通、地铁距离和路线。保存后新任务会使用这里填写的
-                Key；留空则继续使用内置默认 Key。</small
+                Key；留空时是否使用内置默认 Key 取决于当前安装包版本。</small
               >
             </div>
             <div class="form-group">
@@ -1421,11 +1516,11 @@
                   <h3>版本信息</h3>
                   <div class="version-item">
                     <span>版本号：</span>
-                    <span id="aboutVersionText">v8.8.1</span>
+                    <span id="aboutVersionText">v8.8.8</span>
                   </div>
                   <div class="version-item">
                     <span>更新日期：</span>
-                    <span id="aboutUpdateDateText">2026-05-27</span>
+                    <span id="aboutUpdateDateText">2026-06-12</span>
                   </div>
                 </div>
               </div>

@@ -212,13 +212,12 @@ test('parseListPageCandidatesFromHtml reads embedded JSON and emits normalized c
   assert.equal(candidates.find((candidate) => candidate.hotelId === '1001').sourceOrder, 1);
 
   const prefilter = filterListPageCandidates(candidates, {
-    excludeHotelTypes: ['青年旅舍'],
     desiredHotelCount: 2
   });
 
   assert.equal(prefilter.selected.length, 2);
   assert.equal(prefilter.selected[0].hotelId, '1001');
-  assert.equal(prefilter.selected[1].hotelId, '1003');
+  assert.equal(prefilter.selected[1].hotelId, '1002');
   assert.ok(
     !prefilter.rejected.some((candidate) => candidate.rejectReason === 'score_below_minimum')
   );
@@ -227,8 +226,9 @@ test('parseListPageCandidatesFromHtml reads embedded JSON and emits normalized c
       String(candidate.rejectReason).startsWith('name_keyword:')
     )
   );
-  assert.ok(
-    prefilter.rejected.some((candidate) => candidate.rejectReason === 'hotel_type_keyword:青年旅舍')
+  assert.equal(
+    prefilter.rejected.some((candidate) => String(candidate.rejectReason).includes('_keyword:')),
+    false
   );
   assert.deepEqual(
     prefilter.detailUrls,
@@ -304,14 +304,13 @@ test('parseListPageCandidatesFromHtml reads Ctrip fetchHotelList JSON payloads',
   assert.match(candidates[0].detailUrl, /adult=3/);
 
   const prefilter = filterListPageCandidates(candidates, {
-    excludeHotelTypes: ['公寓'],
     desiredHotelCount: 1
   });
-  assert.equal(prefilter.selected.length, 0);
-  assert.equal(prefilter.rejected[0].rejectReason, 'hotel_type_keyword:公寓');
+  assert.equal(prefilter.selected.length, 1);
+  assert.equal(prefilter.selected[0].hotelId, '9001');
 });
 
-test('list page filter falls back to hotel name when Ctrip omits accommodation tags', () => {
+test('list page filter keeps accommodation names in list candidates', () => {
   const prefilter = filterListPageCandidates(
     [
       {
@@ -331,15 +330,40 @@ test('list page filter falls back to hotel name when Ctrip omits accommodation t
         visibleTags: []
       }
     ],
-    {
-      excludeHotelTypes: ['公寓'],
-      desiredHotelCount: 2
-    }
+    { desiredHotelCount: 2 }
   );
 
-  assert.equal(prefilter.selected.length, 1);
-  assert.equal(prefilter.selected[0].hotelId, '9102');
-  assert.equal(prefilter.rejected[0].rejectReason, 'hotel_name_keyword:公寓');
+  assert.equal(prefilter.selected.length, 2);
+  assert.deepEqual(
+    prefilter.selected.map((candidate) => candidate.hotelId),
+    ['9101', '9102']
+  );
+});
+
+test('list page filter does not exclude accommodation types by default', () => {
+  const candidates = Array.from({ length: 6 }, (_, index) => ({
+    hotelId: String(9200 + index),
+    detailUrl: `https://hotels.ctrip.com/hotels/detail/?hotelId=${9200 + index}`,
+    hotelName: `江汉路民宿 ${index + 1}`,
+    hotelType: '民宿',
+    badges: ['民宿'],
+    visibleTags: ['民宿']
+  }));
+  const prefilter = filterListPageCandidates(candidates, {
+    desiredHotelCount: 5
+  });
+
+  assert.equal(prefilter.selected.length, 5);
+  assert.equal(
+    prefilter.rejected.some((candidate) =>
+      String(candidate.rejectReason || '').includes('_keyword:')
+    ),
+    false
+  );
+  assert.deepEqual(
+    prefilter.selected.map((candidate) => candidate.hotelId),
+    ['9200', '9201', '9202', '9203', '9204']
+  );
 });
 
 test('list page filters support defaults, desired count and max candidates per page', () => {
@@ -354,20 +378,14 @@ test('list page filters support defaults, desired count and max candidates per p
   assert.equal(filters.targetCount, 2);
   assert.equal(filters.maxPages, undefined);
   assert.equal(filters.maxCandidatesPerPage, 5);
-  assert.ok(filters.excludeHotelTypes.includes('民宿'));
-  assert.ok(filters.excludeHotelTypes.includes('客栈'));
-  assert.ok(filters.excludeHotelTypes.includes('青年旅舍'));
-  assert.ok(filters.excludeHotelTypes.includes('公寓'));
 });
 
-test('normalizeListFiltersFromArgs supports CLI aliases', () => {
+test('normalizeListFiltersFromArgs supports target count aliases', () => {
   const filters = normalizeListFiltersFromArgs({
-    'exclude-accommodation-keywords': '民宿,公寓',
     'target-count': '3'
   });
 
   assert.equal(filters.minScore, undefined);
-  assert.deepEqual(filters.excludeAccommodationKeywords, ['民宿', '公寓']);
   assert.equal(filters.excludeNameKeywords, undefined);
   assert.equal(filters.desiredHotelCount, 3);
   assert.equal(filters.targetCount, 3);

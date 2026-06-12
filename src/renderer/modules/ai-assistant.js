@@ -13,7 +13,7 @@ import {
   resetAiTaskQueueState
 } from './state.js';
 import { $, setValue } from './dom-helpers.js';
-import { showNotification } from './notification.js';
+import { dismissNotification, showNotification } from './notification.js';
 import { actions } from './actions.js';
 import {
   formatAiTemplateLabel,
@@ -72,6 +72,9 @@ let backendIdleRetryTimer = 0;
 let queueStartCheckInProgress = false;
 /** @type {null|(() => void)} */
 let disposeAiTaskEventListener = null;
+const activeLoginNotifications = new Map();
+const CTRIP_LOGIN_NOTIFICATION_MESSAGE =
+  '需要登录携程，请在弹出的采集浏览器中完成登录后关闭窗口';
 
 function setPageVisible(id, visible) {
   const el = $(id);
@@ -196,6 +199,7 @@ function startTaskConsole(template, url, queueTask = null) {
     queueTask.errorMessage = '';
     queueTask.resultSummary = '';
     queueTask.cancelNoticeShown = false;
+    queueTask.loginNoticeShown = false;
     queueTask.events = events;
     queueTask.console = consoleState;
     if (shouldAutoDisplayStartedTask(queueTask)) {
@@ -233,6 +237,10 @@ function finishTaskConsole(result, reply, queueTask = null) {
     reply
   };
   if (queueTask) {
+    closeCtripLoginNotification(
+      { taskId: consoleState.taskId || queueTask.backendTaskId || '' },
+      queueTask
+    );
     queueTask.backendTaskId = consoleState.taskId || queueTask.backendTaskId || '';
     queueTask.finishedAt = consoleState.endedAt;
     queueTask.status = 'completed';
@@ -243,6 +251,7 @@ function finishTaskConsole(result, reply, queueTask = null) {
       setAiTaskEvents(queueTask.events || []);
     }
   } else {
+    closeCtripLoginNotification({ taskId: consoleState.taskId || '' });
     setAiTaskConsole(consoleState);
   }
 }
@@ -266,6 +275,10 @@ function failTaskConsole(error, queueTask = null) {
     error: errorMessage
   };
   if (queueTask) {
+    closeCtripLoginNotification(
+      { taskId: baseConsole.taskId || queueTask.backendTaskId || '' },
+      queueTask
+    );
     queueTask.status = 'failed';
     queueTask.finishedAt = consoleState.endedAt;
     queueTask.errorMessage = errorMessage;
@@ -276,6 +289,7 @@ function failTaskConsole(error, queueTask = null) {
       setAiTaskEvents(queueTask.events || []);
     }
   } else {
+    closeCtripLoginNotification({ taskId: baseConsole.taskId || '' });
     setAiTaskConsole(consoleState);
   }
 }
@@ -327,6 +341,76 @@ function showTaskCancellationNotificationOnce(queueTask = null) {
 }
 
 /**
+ * @param {AiTaskEvent} event
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @returns {void}
+ */
+export function showCtripLoginNotificationOnce(event, queueTask = null) {
+  if (!isActionableCtripLoginRequiredEvent(event)) return;
+  const key = getCtripLoginNotificationKey(event, queueTask);
+  if (activeLoginNotifications.has(key)) return;
+  if (queueTask) {
+    queueTask.loginNoticeShown = true;
+  }
+  const notification = showNotification(CTRIP_LOGIN_NOTIFICATION_MESSAGE, 'warning', {
+    persistent: true
+  });
+  activeLoginNotifications.set(key, notification);
+}
+
+function isActionableCtripLoginRequiredEvent(event = {}) {
+  if (!event || event.type !== 'edge:login-required') return false;
+  const details = event.details && typeof event.details === 'object' ? event.details : {};
+  const detailText = [details.reason, details.instruction, event.message].filter(Boolean).join(' ');
+  return (
+    Boolean(details.instruction) ||
+    /需要.*登录|首次采集需要登录|重新登录|登录携程后继续|登录弹窗/.test(detailText)
+  );
+}
+
+function getCtripLoginNotificationKey(event = {}, queueTask = null) {
+  if (queueTask && queueTask.id) return `queue:${queueTask.id}`;
+  if (event.taskId) return `backend:${event.taskId}`;
+  return `event:${event.at || event.message || 'ctrip-login-required'}`;
+}
+
+/**
+ * @param {AiTaskEvent|Partial<AiTaskEvent>} event
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @returns {void}
+ */
+export function closeCtripLoginNotification(event = {}, queueTask = null) {
+  const key = getCtripLoginNotificationKey(event, queueTask);
+  const notification = activeLoginNotifications.get(key);
+  if (notification) {
+    dismissNotification(notification);
+    activeLoginNotifications.delete(key);
+  }
+  if (queueTask) {
+    queueTask.loginNoticeShown = false;
+  }
+}
+
+/**
+ * @param {AiTaskEvent} event
+ * @param {AiTaskQueueItem|null} [queueTask]
+ * @returns {void}
+ */
+export function handleCtripLoginNotificationEvent(event, queueTask = null) {
+  if (!event) return;
+  if (
+    event.type === 'edge:login-done' ||
+    event.type === 'task:done' ||
+    event.type === 'task:error' ||
+    event.type === 'task:cancel'
+  ) {
+    closeCtripLoginNotification(event, queueTask);
+    return;
+  }
+  showCtripLoginNotificationOnce(event, queueTask);
+}
+
+/**
  * @param {AiTaskQueueItem|null} [queueTask]
  * @param {string} [message]
  * @returns {void}
@@ -351,6 +435,7 @@ function cancelTaskConsole(queueTask = null, message = '任务已取消') {
   };
 
   if (queueTask) {
+    closeCtripLoginNotification(cancelEvent, queueTask);
     queueTask.status = 'cancelled';
     queueTask.finishedAt = endedAt;
     queueTask.errorMessage = message;
@@ -365,6 +450,7 @@ function cancelTaskConsole(queueTask = null, message = '任务已取消') {
       setAiTaskEvents(queueTask.events || []);
     }
   } else {
+    closeCtripLoginNotification(cancelEvent);
     setAiTaskConsole(consoleState);
     setAiTaskEvents(state.aiTaskEvents || []);
     if (!state.aiTaskEvents.some((event) => event.type === 'task:cancel')) {
@@ -550,8 +636,10 @@ async function initializeAiAssistant() {
             setAiTaskEvents(task.events);
             setAiTaskConsole(task.console || createEmptyTaskConsole());
           }
+          handleCtripLoginNotificationEvent(event, task);
         } else {
           pushAiTaskEvent(event);
+          handleCtripLoginNotificationEvent(event);
         }
         scheduleTaskConsoleRender();
       });

@@ -214,7 +214,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
           scraperPath,
           'cli/auto-edge.js'
         );
-        await runInteractiveEdgeLoginPrep({
+        const loginPrepResult = await runInteractiveEdgeLoginPrep({
           userDataDir: path.join(workDir, 'state', 'edge-profile'),
           profileDirectory: 'Default',
           browserPreference: input.collectBrowser,
@@ -223,9 +223,16 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         });
         assertNotCancelled(context.signal);
 
-        emitScraperEvent(context, 'edge:login-done', '携程登录窗口已关闭，正在重新采集价格', {
-          reason: retryNeed.reason
-        });
+        if (loginPrepResult && loginPrepResult.loginConfirmed) {
+          emitScraperEvent(context, 'edge:login-done', '携程登录窗口已关闭，正在重新采集价格', {
+            reason: retryNeed.reason
+          });
+        } else {
+          emitScraperEvent(context, 'edge:login-unconfirmed', '携程登录窗口已关闭，但尚未确认登录态', {
+            reason: retryNeed.reason,
+            instruction: '请重新执行采集，并在弹出的浏览器窗口中完成携程登录后再关闭窗口。'
+          });
+        }
         emitScraperEvent(context, 'scrape:retry', '正在使用新的携程登录态重新采集酒店页面');
 
         const previousCollectResult = collectResult;
@@ -307,7 +314,7 @@ async function openVisibleEdgeLogin(input, context = {}) {
       scraperPath,
       'cli/auto-edge.js'
     );
-    await runInteractiveEdgeLoginPrep({
+    const loginPrepResult = await runInteractiveEdgeLoginPrep({
       userDataDir: path.join(workDir, 'state', 'edge-profile'),
       profileDirectory: 'Default',
       browserPreference: input.collectBrowser,
@@ -316,8 +323,11 @@ async function openVisibleEdgeLogin(input, context = {}) {
     });
 
     return {
-      success: true,
-      message: '浏览器登录态准备完成。'
+      success: Boolean(loginPrepResult && loginPrepResult.loginConfirmed),
+      message:
+        loginPrepResult && loginPrepResult.loginConfirmed
+          ? '浏览器登录态准备完成。'
+          : '浏览器窗口已关闭，但尚未确认携程登录态。'
     };
   });
 }

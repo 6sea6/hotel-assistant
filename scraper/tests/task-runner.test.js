@@ -742,6 +742,47 @@ test('auto-edge 360 runtime uses separate browser profile before login checks an
   }
 });
 
+test('auto-edge login prep emits done only after Ctrip login is confirmed', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-login-unconfirmed-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    autoEdgeMock: {
+      hasReusableEdgeProfile: () => false,
+      runInteractiveEdgeLoginPrep: async () => ({
+        success: true,
+        loginConfirmed: false
+      })
+    }
+  });
+
+  try {
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=login-unconfirmed',
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent: (event) => events.push(event)
+      }
+    );
+
+    assert.ok(events.some((event) => event.type === 'edge:login-required'));
+    assert.ok(events.some((event) => event.type === 'edge:login-unconfirmed'));
+    assert.equal(events.some((event) => event.type === 'edge:login-done'), false);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('batch events include item index and total counts', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];

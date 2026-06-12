@@ -791,8 +791,7 @@ test('Ctrip list URL reverse sync does not clear saved filters for unknown nativ
     aiCtripFreeCancel: false,
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
-    aiListDesiredHotelCount: 10,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
+    aiListDesiredHotelCount: 10
   };
 
   await module.syncCtripListUrlSettingsFromInput();
@@ -817,8 +816,7 @@ test('Ctrip list URL reverse sync does not overwrite saved filters with pasted U
     aiCtripFreeCancel: false,
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
-    aiListDesiredHotelCount: 20,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
+    aiListDesiredHotelCount: 20
   };
 
   await module.syncCtripListUrlSettingsFromInput();
@@ -844,8 +842,7 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
     aiCtripFreeCancel: false,
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
-    aiListDesiredHotelCount: 10,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
+    aiListDesiredHotelCount: 10
   };
 
   const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true });
@@ -862,6 +859,47 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
   assert.ok(parsed.listFilterParts.includes('16~4*16*4'));
 });
 
+test('active Ctrip list URL filters include accommodation, room and theme selections', async () => {
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMin: '',
+    aiCtripPriceMax: '',
+    aiCtripStarLevels: [],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiCtripAccommodationTypeMode: 'exclude',
+    aiCtripAccommodationTypes: ['民宿', '公寓'],
+    aiCtripRoomTypes: ['双床房'],
+    aiCtripRoomFeatures: ['家庭房'],
+    aiCtripFeatureThemes: ['电竞酒店'],
+    aiListDesiredHotelCount: 10
+  };
+
+  const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true });
+  await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
+  const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
+
+  assert.deepEqual(activeFilters, {
+    accommodationTypeMode: 'exclude',
+    accommodationTypes: ['民宿', '公寓'],
+    roomTypes: ['双床房'],
+    roomFeatures: ['家庭房'],
+    featureThemes: ['电竞酒店']
+  });
+  assert.ok(parsed.listFilterParts.includes('29~1*29*1~3*2'));
+  assert.equal(parsed.listFilterParts.includes('75~TAG_510*75*510'), false);
+  assert.equal(parsed.listFilterParts.includes('75~TAG_513*75*513'), false);
+  assert.ok(parsed.listFilterParts.includes('75~TAG_495*75*495'));
+  assert.ok(parsed.listFilterParts.includes('4~2*4*2'));
+  assert.ok(parsed.listFilterParts.includes('81~1188*81*1188'));
+  assert.ok(parsed.listFilterParts.includes('1~771*1*771'));
+});
+
 test('active-only Ctrip URL sync preserves pasted known filters when app settings are empty', async () => {
   const inputUrl =
     'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,17~6*17*6&locale=zh-CN';
@@ -875,8 +913,7 @@ test('active-only Ctrip URL sync preserves pasted known filters when app setting
     aiCtripFreeCancel: false,
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
-    aiListDesiredHotelCount: 10,
-    aiListExcludeHotelTypes: '民宿,客栈,青年旅舍,公寓'
+    aiListDesiredHotelCount: 10
   };
 
   await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
@@ -932,6 +969,87 @@ test('cancelled collection only shows one cancellation notification', async () =
   );
   assert.equal(cancelNotifications.length, 1);
   assert.equal(state.aiTaskQueue[0].status, 'cancelled');
+});
+
+test('Ctrip login-required event keeps one notification until login is confirmed', async () => {
+  const { notifications } = installAiAssistantDom(
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01'
+  );
+  const { module } = await loadAiAssistantModules();
+  const queueTask = { id: 'queue-task-1' };
+
+  module.handleCtripLoginNotificationEvent(
+    {
+      type: 'edge:login-required',
+      message: '需要重新登录携程后继续采集',
+      details: {
+        instruction: '请在窗口中登录携程，完成后关闭窗口。'
+      },
+      taskId: 'backend-task-1',
+      at: '2026-06-12T00:00:00.000Z'
+    },
+    queueTask
+  );
+  module.handleCtripLoginNotificationEvent(
+    {
+      type: 'edge:login-required',
+      message: '需要重新登录携程后继续采集',
+      details: {
+        instruction: '请在窗口中登录携程，完成后关闭窗口。'
+      },
+      taskId: 'backend-task-1',
+      at: '2026-06-12T00:00:01.000Z'
+    },
+    queueTask
+  );
+  module.handleCtripLoginNotificationEvent(
+    {
+      type: 'edge:login-window',
+      message: '已打开浏览器登录窗口，等待你完成登录',
+      taskId: 'backend-task-1'
+    },
+    queueTask
+  );
+
+  const messages = notifications.map(
+    (item) => item.querySelector?.('.notification-message')?.textContent || item.textContent
+  );
+  const loginNotifications = messages.filter((message) => /需要登录携程/.test(message));
+
+  assert.equal(loginNotifications.length, 1);
+  assert.equal(
+    loginNotifications[0],
+    '需要登录携程，请在弹出的采集浏览器中完成登录后关闭窗口'
+  );
+  assert.equal(notifications[0].dataset.dismissed, undefined);
+  assert.equal(queueTask.loginNoticeShown, true);
+
+  module.handleCtripLoginNotificationEvent(
+    {
+      type: 'edge:login-done',
+      message: '携程登录窗口已关闭，继续后台采集',
+      taskId: 'backend-task-1'
+    },
+    queueTask
+  );
+
+  assert.equal(notifications[0].dataset.dismissed, 'true');
+  assert.equal(queueTask.loginNoticeShown, false);
+});
+
+test('Ctrip browser preparation event without login instruction does not show login notification', async () => {
+  const { notifications } = installAiAssistantDom(
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01'
+  );
+  const { module } = await loadAiAssistantModules();
+
+  module.handleCtripLoginNotificationEvent({
+    type: 'edge:login-required',
+    message: '正在准备浏览器登录态',
+    taskId: 'backend-task-prepare'
+  });
+
+  assert.equal(notifications.length, 0);
 });
 
 test('clearing records after cancellation leaves the console idle without restarting task', async () => {
@@ -1340,8 +1458,12 @@ test('AI collect enqueue uses saved list prefilter settings instead of stale lis
     aiCtripFreeCancel: false,
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
-    aiListDesiredHotelCount: 5,
-    aiListExcludeHotelTypes: ''
+    aiCtripAccommodationTypeMode: 'include',
+    aiCtripAccommodationTypes: ['酒店'],
+    aiCtripRoomTypes: ['双床房'],
+    aiCtripRoomFeatures: ['家庭房'],
+    aiCtripFeatureThemes: ['电竞酒店'],
+    aiListDesiredHotelCount: 5
   };
   state.aiTaskQueue = [];
   state.aiTaskQueueCounter = 0;
@@ -1380,9 +1502,31 @@ test('AI collect enqueue uses saved list prefilter settings instead of stale lis
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(capturedPayload.listUrlFilters.starLevels, [3]);
+  assert.deepEqual(capturedPayload.listUrlFilters.accommodationTypes, ['酒店']);
+  assert.deepEqual(capturedPayload.listUrlFilters.roomTypes, ['双床房']);
+  assert.deepEqual(capturedPayload.listUrlFilters.roomFeatures, ['家庭房']);
+  assert.deepEqual(capturedPayload.listUrlFilters.featureThemes, ['电竞酒店']);
   assert.equal(capturedPayload.desiredHotelCount, 5);
+  for (const optionalField of [
+    'priceMin',
+    'priceMax',
+    'sortMode',
+    'freeCancel',
+    'reviewCountMin',
+    'ctripScoreMin'
+  ]) {
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(capturedPayload, optionalField),
+      false,
+      `${optionalField} should be omitted when inactive`
+    );
+  }
   const parsedUrl = parseCtripListUrl(capturedPayload.url);
   assert.ok(parsedUrl.listFilterParts.includes('16~3*16*3'));
+  assert.ok(parsedUrl.listFilterParts.includes('75~TAG_495*75*495'));
+  assert.ok(parsedUrl.listFilterParts.includes('4~2*4*2'));
+  assert.ok(parsedUrl.listFilterParts.includes('81~1188*81*1188'));
+  assert.ok(parsedUrl.listFilterParts.includes('1~771*1*771'));
   assert.equal(parsedUrl.listFilterParts.includes('16~5*16*5'), false);
 });
 
@@ -1414,8 +1558,9 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
   assert.match(currentTaskHeaderHtml, /前筛设置/);
   assert.match(prefilterHtml, /列表页前筛/);
-  assert.match(prefilterHtml, /携程前筛/);
-  assert.match(prefilterHtml, /本地过滤/);
+  assert.doesNotMatch(prefilterHtml, /携程前筛/);
+  assert.doesNotMatch(prefilterHtml, /list-prefilter-card/);
+  assert.doesNotMatch(prefilterHtml, /list-prefilter-section-header/);
   assert.match(prefilterHtml, /aiCtripPriceMin/);
   assert.match(prefilterHtml, /aiCtripPriceMax/);
   assert.doesNotMatch(prefilterHtml, /<select id="aiCtripStarLevels"/);
@@ -1428,14 +1573,25 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.match(prefilterHtml, /aiCtripSortMode/);
   assert.match(prefilterHtml, /欢迎度排序/);
   assert.match(prefilterHtml, /aiCtripFreeCancel/);
+  assert.doesNotMatch(prefilterHtml, /data-action="toggle-ai-ctrip-free-cancel"/);
   assert.match(prefilterHtml, /aiCtripReviewCountMin/);
   assert.match(prefilterHtml, /aiCtripScoreMin/);
+  assert.match(prefilterHtml, /aiCtripAccommodationTypeModeControl/);
+  assert.match(prefilterHtml, /包含所选/);
+  assert.match(prefilterHtml, /排除所选/);
+  assert.match(prefilterHtml, /aiCtripAccommodationTypeOptions/);
+  assert.match(prefilterHtml, /aiCtripRoomTypeOptions/);
+  assert.match(prefilterHtml, /aiCtripRoomFeatureOptions/);
+  assert.match(prefilterHtml, /aiCtripFeatureThemeOptions/);
+  assert.match(prefilterHtml, /客房特色/);
+  assert.match(prefilterHtml, /特色主题/);
   assert.match(prefilterHtml, /aiListDesiredHotelCount/);
+  assert.match(prefilterHtml, /目标宾馆数/);
+  assert.doesNotMatch(prefilterHtml, /本地目标宾馆数/);
   assert.doesNotMatch(prefilterHtml, /aiListMinScore/);
   assert.doesNotMatch(prefilterHtml, /aiListExcludeKeywords/);
   assert.doesNotMatch(prefilterHtml, /本地最低评分/);
   assert.doesNotMatch(prefilterHtml, /本地排除关键词/);
-  assert.match(prefilterHtml, /aiListExcludeHotelTypes/);
   assert.doesNotMatch(prefilterHtml, /aiListMaxPages/);
   assert.doesNotMatch(prefilterHtml, /URL 预览/);
   assert.doesNotMatch(prefilterHtml, /复制 URL/);

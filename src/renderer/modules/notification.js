@@ -1,5 +1,5 @@
 /**
- * 通知系统 —— 右下角弹出消息提示。
+ * 通知系统 —— 右上角弹出消息提示。
  */
 
 const NOTIFICATION_META = Object.freeze({
@@ -20,14 +20,24 @@ function getWindowTimer() {
   return setTimeout;
 }
 
-function dismissNotification(notification) {
+/**
+ * @param {HTMLElement|null|undefined} notification
+ * @returns {void}
+ */
+export function dismissNotification(notification) {
   if (!notification || notification.dataset.dismissed === 'true') return;
   notification.dataset.dismissed = 'true';
   notification.classList.add('notification-leave');
   getWindowTimer()(() => notification.remove(), 220);
 }
 
-export function showNotification(message, type = 'info') {
+/**
+ * @param {string} message
+ * @param {'info'|'success'|'warning'|'error'} [type]
+ * @param {{persistent?: boolean, duration?: number}} [options]
+ * @returns {HTMLElement}
+ */
+export function showNotification(message, type = 'info', options = {}) {
   const normalizedType = normalizeNotificationType(type);
   const meta = NOTIFICATION_META[normalizedType];
   const notification = document.createElement('div');
@@ -60,6 +70,12 @@ export function showNotification(message, type = 'info') {
 
   const duration = Math.max(2600, Math.min(5200, String(message || '').length * 45));
 
-  getWindowTimer()(() => dismissNotification(notification), duration);
+  if (!options.persistent) {
+    const configuredDuration = Number(options.duration);
+    const autoCloseDuration = Number.isFinite(configuredDuration) ? configuredDuration : duration;
+    if (autoCloseDuration > 0) {
+      getWindowTimer()(() => dismissNotification(notification), autoCloseDuration);
+    }
+  }
   return notification;
 }

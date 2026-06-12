@@ -65,6 +65,18 @@ function parseKeywordInput(value) {
 
 /**
  * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseSelectionSetting(value) {
+  const values = Array.isArray(value) ? value : parseKeywordInput(value);
+  const seen = new Set();
+  return values
+    .map((item) => String(item || '').trim())
+    .filter((item) => item && !seen.has(item) && seen.add(item));
+}
+
+/**
+ * @param {unknown} value
  * @param {{min?: number, allowed?: number[]}} [options]
  * @returns {number|null}
  */
@@ -120,8 +132,30 @@ function compactActiveCtripUrlFilters(filters = {}) {
     active.reviewCountMin = filters.reviewCountMin;
   if (filters.ctripScoreMin !== null && filters.ctripScoreMin !== undefined)
     active.ctripScoreMin = filters.ctripScoreMin;
+  if (Array.isArray(filters.accommodationTypes) && filters.accommodationTypes.length) {
+    active.accommodationTypeMode =
+      filters.accommodationTypeMode === 'exclude' ? 'exclude' : 'include';
+    active.accommodationTypes = filters.accommodationTypes;
+  }
+  if (Array.isArray(filters.roomTypes) && filters.roomTypes.length)
+    active.roomTypes = filters.roomTypes;
+  if (Array.isArray(filters.roomFeatures) && filters.roomFeatures.length)
+    active.roomFeatures = filters.roomFeatures;
+  if (Array.isArray(filters.featureThemes) && filters.featureThemes.length)
+    active.featureThemes = filters.featureThemes;
 
   return active;
+}
+
+/**
+ * @template {Record<string, unknown>} T
+ * @param {T} payload
+ * @returns {Partial<T>}
+ */
+function omitUndefinedFields(payload) {
+  return /** @type {Partial<T>} */ (
+    Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined))
+  );
 }
 
 function hasActiveCtripUrlFilterSettings() {
@@ -151,10 +185,38 @@ export function readCtripUrlFilterSettings(options = {}) {
     reviewCountMin: parseIntegerSetting(settings.aiCtripReviewCountMin, {
       allowed: [100, 200, 500]
     }),
-    ctripScoreMin: parseScoreSetting(settings.aiCtripScoreMin)
+    ctripScoreMin: parseScoreSetting(settings.aiCtripScoreMin),
+    accommodationTypeMode:
+      String(settings.aiCtripAccommodationTypeMode || '').trim() === 'exclude'
+        ? 'exclude'
+        : 'include',
+    accommodationTypes: parseSelectionSetting(settings.aiCtripAccommodationTypes),
+    roomTypes: parseSelectionSetting(settings.aiCtripRoomTypes),
+    roomFeatures: parseSelectionSetting(settings.aiCtripRoomFeatures),
+    featureThemes: parseSelectionSetting(settings.aiCtripFeatureThemes)
   };
 
   return options.activeOnly ? compactActiveCtripUrlFilters(filters) : filters;
+}
+
+function applyChoiceButtonsToDom(settingKey, values = []) {
+  const selected = new Set((Array.isArray(values) ? values : []).map((item) => String(item)));
+  document.querySelectorAll(`[data-setting-key="${settingKey}"][data-option-value]`).forEach((button) => {
+    const optionButton = /** @type {HTMLElement} */ (button);
+    const isSelected = selected.has(String(optionButton.dataset.optionValue || ''));
+    optionButton.classList.toggle('is-selected', isSelected);
+    optionButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+  });
+}
+
+function applyAccommodationModeToDom(mode) {
+  const normalizedMode = mode === 'exclude' ? 'exclude' : 'include';
+  document.querySelectorAll('[data-accommodation-type-mode]').forEach((button) => {
+    const modeButton = /** @type {HTMLElement} */ (button);
+    const isSelected = modeButton.dataset.accommodationTypeMode === normalizedMode;
+    modeButton.classList.toggle('is-selected', isSelected);
+    modeButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+  });
 }
 
 function applyCtripUrlFilterSettingsToDom() {
@@ -177,6 +239,11 @@ function applyCtripUrlFilterSettingsToDom() {
     starButton.classList.toggle('is-selected', isSelected);
     starButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
   });
+  applyAccommodationModeToDom(settings.aiCtripAccommodationTypeMode);
+  applyChoiceButtonsToDom('aiCtripAccommodationTypes', settings.aiCtripAccommodationTypes);
+  applyChoiceButtonsToDom('aiCtripRoomTypes', settings.aiCtripRoomTypes);
+  applyChoiceButtonsToDom('aiCtripRoomFeatures', settings.aiCtripRoomFeatures);
+  applyChoiceButtonsToDom('aiCtripFeatureThemes', settings.aiCtripFeatureThemes);
 }
 
 async function persistCtripUrlFilterSettingsFromParsed(parsed) {
@@ -202,6 +269,25 @@ async function persistCtripUrlFilterSettingsFromParsed(parsed) {
   if (detected.has('freeCancel')) updates.aiCtripFreeCancel = Boolean(known.freeCancel);
   if (detected.has('reviewCountMin')) updates.aiCtripReviewCountMin = known.reviewCountMin ?? '';
   if (detected.has('ctripScoreMin')) updates.aiCtripScoreMin = known.ctripScoreMin ?? '';
+  if (detected.has('accommodationTypeMode')) {
+    updates.aiCtripAccommodationTypeMode = known.accommodationTypeMode || 'include';
+  }
+  if (detected.has('accommodationTypes')) {
+    updates.aiCtripAccommodationTypes = Array.isArray(known.accommodationTypes)
+      ? known.accommodationTypes
+      : [];
+  }
+  if (detected.has('roomTypes')) {
+    updates.aiCtripRoomTypes = Array.isArray(known.roomTypes) ? known.roomTypes : [];
+  }
+  if (detected.has('roomFeatures')) {
+    updates.aiCtripRoomFeatures = Array.isArray(known.roomFeatures) ? known.roomFeatures : [];
+  }
+  if (detected.has('featureThemes')) {
+    updates.aiCtripFeatureThemes = Array.isArray(known.featureThemes)
+      ? known.featureThemes
+      : [];
+  }
 
   const entries = Object.entries(updates);
   const changed = entries.filter(
@@ -296,12 +382,10 @@ export function readListFilterForm() {
     integer: true,
     min: 1
   });
-  const excludeHotelTypes = parseKeywordInput(settings.aiListExcludeHotelTypes);
   /** @type {AiListFilters} */
   const listFilters = {};
 
   if (desiredHotelCount !== null) listFilters.desiredHotelCount = desiredHotelCount;
-  if (excludeHotelTypes.length) listFilters.excludeHotelTypes = excludeHotelTypes;
 
   return listFilters;
 }
@@ -328,14 +412,13 @@ export function readCollectBrowser() {
 export function buildTaskPayload(task) {
   const listFilters =
     task.listFilters && typeof task.listFilters === 'object' ? task.listFilters : {};
-  return {
+  return omitUndefinedFields({
     templateId: task.templateId,
     templateName: task.templateName || '',
     url: task.url,
     listFilters,
     listUrlFilters: task.listUrlFilters || readCtripUrlFilterSettings({ activeOnly: true }),
     desiredHotelCount: listFilters.desiredHotelCount,
-    excludeHotelTypes: listFilters.excludeHotelTypes,
     amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
     priceMin: task.listUrlFilters ? task.listUrlFilters.priceMin : undefined,
     priceMax: task.listUrlFilters ? task.listUrlFilters.priceMax : undefined,
@@ -344,10 +427,17 @@ export function buildTaskPayload(task) {
     freeCancel: task.listUrlFilters ? task.listUrlFilters.freeCancel : undefined,
     reviewCountMin: task.listUrlFilters ? task.listUrlFilters.reviewCountMin : undefined,
     ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined,
+    accommodationTypeMode: task.listUrlFilters
+      ? task.listUrlFilters.accommodationTypeMode
+      : undefined,
+    accommodationTypes: task.listUrlFilters ? task.listUrlFilters.accommodationTypes : undefined,
+    roomTypes: task.listUrlFilters ? task.listUrlFilters.roomTypes : undefined,
+    roomFeatures: task.listUrlFilters ? task.listUrlFilters.roomFeatures : undefined,
+    featureThemes: task.listUrlFilters ? task.listUrlFilters.featureThemes : undefined,
     enableCollectPerfLog: Boolean(state.settings.enableCollectPerfLog),
     collectBrowser: readCollectBrowser(),
     batchConcurrency: readCollectBatchConcurrency()
-  };
+  });
 }
 
 export function updateAiInputCount() {

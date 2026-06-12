@@ -191,7 +191,11 @@ test('settings normalization still fills defaults and removes deprecated fields'
       amapApiKey: '  custom-amap-key  ',
       autoMatchTemplate: true,
       weight_price: 0.9,
-      weight_score: 0.1
+      weight_score: 0.1,
+      aiListMinScore: 4.1,
+      aiListExcludeKeywords: '广告',
+      aiListExcludeHotelTypes: '民宿,公寓',
+      aiListMaxPages: 99
     }
   });
   const handlers = registerHandler(registerSettingsHandlers, store, {
@@ -209,6 +213,10 @@ test('settings normalization still fills defaults and removes deprecated fields'
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'autoMatchTemplate'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'weight_price'), false);
   assert.equal(Object.prototype.hasOwnProperty.call(settings, 'weight_score'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'aiListMinScore'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'aiListExcludeKeywords'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'aiListExcludeHotelTypes'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(settings, 'aiListMaxPages'), false);
   assert.ok(store.setCalls.some((call) => call.key === 'settings'));
 });
 

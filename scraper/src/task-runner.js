@@ -63,35 +63,15 @@ function writeFailureSummary(error, latestRunPath, startedAt) {
   return result;
 }
 
-function extractKeywordFromRejectReason(reason = '') {
-  const match = String(reason || '').match(/^[a-z_]+:(.+)$/i);
-  return match ? match[1] : '';
-}
-
-function summarizeListCandidateFilterText(candidate = {}) {
-  return [
-    candidate.hotelType,
-    ...(Array.isArray(candidate.badges) ? candidate.badges : []),
-    ...(Array.isArray(candidate.visibleTags) ? candidate.visibleTags : [])
-  ]
-    .map((item) => String(item || '').trim())
-    .filter(Boolean)
-    .join(' | ');
-}
-
 function logListCandidateFilterDiagnostics(perf, expandedInputs = {}) {
   if (!perf || typeof perf.event !== 'function' || !Array.isArray(expandedInputs.listResults)) {
     return;
   }
 
-  const filters = expandedInputs.summary && expandedInputs.summary.filters;
-  const excludeHotelTypes =
-    filters && Array.isArray(filters.excludeHotelTypes) ? filters.excludeHotelTypes : [];
   perf.event('list_filter_summary', {
     phase: 'list_filter',
     input_mode: expandedInputs.inputMode || '',
-    list_count: expandedInputs.listResults.length,
-    exclude_hotel_types: excludeHotelTypes.join('|')
+    list_count: expandedInputs.listResults.length
   });
 
   let emitted = 0;
@@ -117,7 +97,6 @@ function logListCandidateFilterDiagnostics(perf, expandedInputs = {}) {
         candidate_index: candidateIndex + 1,
         selected,
         reject_reason: rejectReason,
-        matched_keyword: extractKeywordFromRejectReason(rejectReason),
         hotel_id: candidate.hotelId || '',
         hotel_name: candidate.hotelName || candidate.name || '',
         hotel_type: candidate.hotelType || '',
@@ -125,7 +104,6 @@ function logListCandidateFilterDiagnostics(perf, expandedInputs = {}) {
           ...(Array.isArray(candidate.badges) ? candidate.badges : []),
           ...(Array.isArray(candidate.visibleTags) ? candidate.visibleTags : [])
         ].join('|'),
-        filter_text: candidate.filterText || summarizeListCandidateFilterText(candidate),
         source: candidate.source || ''
       });
     });
@@ -274,14 +252,20 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
                 instruction:
                   '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，当前采集任务会自动继续。'
               });
-              await runInteractiveEdgeLoginPrep({
+              const loginPrepResult = await runInteractiveEdgeLoginPrep({
                 userDataDir: effectiveTemplate.edge_user_data_dir,
                 profileDirectory: effectiveTemplate.edge_profile_directory,
                 browserPreference: effectiveTemplate.browser_preference,
                 port: effectiveTemplate.edge_debugging_port || 9222,
                 url: effectiveTemplate.ctrip_url || 'https://hotels.ctrip.com/'
               });
-              emit('edge:login-done', '携程登录窗口已关闭，继续后台采集');
+              if (loginPrepResult && loginPrepResult.loginConfirmed) {
+                emit('edge:login-done', '携程登录窗口已关闭，继续后台采集');
+              } else {
+                emit('edge:login-unconfirmed', '携程登录窗口已关闭，但尚未确认登录态', {
+                  instruction: '请重新执行采集，并在弹出的浏览器窗口中完成携程登录后再关闭窗口。'
+                });
+              }
             }
           });
 

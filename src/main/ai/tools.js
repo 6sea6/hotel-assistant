@@ -62,19 +62,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           listFilters: {
             type: 'object',
             description:
-              '本地列表页前筛条件。详情页输入会忽略这些条件；这些条件不会写入携程 listFilters。',
+              '列表页采集数量控制。详情页输入会忽略这些条件；这些条件不会写入携程 listFilters。',
             properties: {
-              excludeAccommodationKeywords: {
-                type: 'array',
-                items: { type: 'string' },
-                description: '排除住宿类型关键词，例如 民宿、公寓、青旅。'
-              },
-              excludeHotelTypes: {
-                type: 'array',
-                items: { type: 'string' },
-                description:
-                  '排除住宿类型关键词，excludeAccommodationKeywords 的别名。默认前筛会排除民宿、客栈、青年旅舍、公寓。'
-              },
               targetCount: {
                 type: 'integer',
                 description: '目标采集酒店数量。'
@@ -130,6 +119,31 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
                 type: ['number', 'null'],
                 enum: [4.0, 4.5, 4.7, null],
                 description: '携程 URL 评分筛选档位。'
+              },
+              accommodationTypeMode: {
+                type: ['string', 'null'],
+                enum: ['include', 'exclude', null],
+                description: '携程 URL 住宿类型模式：include 包含所选，exclude 排除所选。'
+              },
+              accommodationTypes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '携程 URL 住宿类型，例如 酒店、民宿、酒店公寓、客栈。'
+              },
+              roomTypes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '携程 URL 房型，例如 大床房、双床房、三床房。'
+              },
+              roomFeatures: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '携程 URL 客房特色，例如 家庭房、影音房、套房。'
+              },
+              featureThemes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '携程 URL 特色主题，例如 电竞酒店、亲子酒店、无烟酒店。'
               }
             },
             additionalProperties: false
@@ -137,11 +151,6 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
           desiredHotelCount: {
             type: 'integer',
             description: '可选，列表页目标采集酒店数量；详情页输入会忽略。'
-          },
-          excludeHotelTypes: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '可选，列表页排除住宿类型关键词；详情页输入会忽略。'
           }
         },
         additionalProperties: false

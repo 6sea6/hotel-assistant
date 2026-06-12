@@ -338,7 +338,6 @@ test('AI collect tool schema documents list and detail URL inputs', () => {
   assert.ok(properties.desiredHotelCount);
   assert.equal(properties.minScore, undefined);
   assert.equal(properties.excludeKeywords, undefined);
-  assert.ok(properties.excludeHotelTypes);
   assert.equal(properties.maxPages, undefined);
 });
 
@@ -507,12 +506,16 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
   assert.deepEqual(
     await handlers.get('ai:task:start')(event, {
       url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-      excludeHotelTypes: [123]
+      priceMax: undefined,
+      sortMode: undefined,
+      listUrlFilters: {
+        priceMax: undefined,
+        sortMode: undefined,
+        accommodationTypeMode: 'include',
+        accommodationTypes: ['民宿']
+      }
     }),
-    {
-      success: false,
-      error: '无效的 AI 请求参数'
-    }
+    { success: true }
   );
   assert.deepEqual(
     await handlers.get('ai:task:start')(event, {
@@ -533,6 +536,20 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
   assert.deepEqual(received, [
     { channel: 'save', config: {} },
     { channel: 'test', config: {} },
+    {
+      channel: 'start',
+      payload: {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+        priceMax: undefined,
+        sortMode: undefined,
+        listUrlFilters: {
+          priceMax: undefined,
+          sortMode: undefined,
+          accommodationTypeMode: 'include',
+          accommodationTypes: ['民宿']
+        }
+      }
+    },
     {
       channel: 'start',
       payload: {
@@ -808,10 +825,14 @@ test('direct AI task start runs the hotel task runner without provider config', 
     templateId: '100',
     templateName: '武汉',
     desiredHotelCount: 5,
-    excludeHotelTypes: ['民宿'],
     amapKey: 'custom-amap-key',
     collectBrowser: '360',
     batchConcurrency: 3,
+    accommodationTypeMode: 'exclude',
+    accommodationTypes: ['民宿', '公寓'],
+    roomTypes: ['双床房'],
+    roomFeatures: ['家庭房'],
+    featureThemes: ['电竞酒店'],
     listUrlFilters: {
       priceMin: 50,
       priceMax: 200,
@@ -826,10 +847,14 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].input.templateName, '武汉');
   assert.equal(calls[0].input.desiredHotelCount, 5);
-  assert.deepEqual(calls[0].input.excludeHotelTypes, ['民宿']);
   assert.equal(calls[0].input.amapKey, 'custom-amap-key');
   assert.equal(calls[0].input.collectBrowser, '360');
   assert.equal(calls[0].input.batchConcurrency, 3);
+  assert.equal(calls[0].input.accommodationTypeMode, 'exclude');
+  assert.deepEqual(calls[0].input.accommodationTypes, ['民宿', '公寓']);
+  assert.deepEqual(calls[0].input.roomTypes, ['双床房']);
+  assert.deepEqual(calls[0].input.roomFeatures, ['家庭房']);
+  assert.deepEqual(calls[0].input.featureThemes, ['电竞酒店']);
   assert.deepEqual(calls[0].input.listUrlFilters, {
     priceMin: 50,
     priceMax: 200,

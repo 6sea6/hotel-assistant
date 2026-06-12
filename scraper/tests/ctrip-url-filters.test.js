@@ -76,6 +76,26 @@ test('parseCtripListUrl parses Ctrip score filter', () => {
   assert.equal(parsed.knownSettings.ctripScoreMin, 4.0);
 });
 
+test('parseCtripListUrl parses Ctrip accommodation and room filters', () => {
+  const parsed = parseFromFilters(
+    '75~TAG_510*75*510,4~2*4*2,81~1188*81*1188,1~771*1*771'
+  );
+
+  assert.deepEqual(parsed.knownSettings.accommodationTypes, ['民宿']);
+  assert.equal(parsed.knownSettings.accommodationTypeMode, 'include');
+  assert.deepEqual(parsed.knownSettings.roomTypes, ['双床房']);
+  assert.deepEqual(parsed.knownSettings.roomFeatures, ['家庭房']);
+  assert.deepEqual(parsed.knownSettings.featureThemes, ['电竞酒店']);
+  assert.deepEqual(parsed.unknownFilters, []);
+  assert.deepEqual(parsed.detectedKnownFilterKeys, [
+    'accommodationTypes',
+    'accommodationTypeMode',
+    'roomTypes',
+    'roomFeatures',
+    'featureThemes'
+  ]);
+});
+
 test('buildCtripListUrl generates combined known filters and keeps query params', () => {
   const originalUrl =
     'https://hotels.ctrip.com/hotels/list?flexType=1&fixedDate=0&cityId=2&provinceId=0&districtId=0&countryId=1&destName=%E4%B8%8A%E6%B5%B7&searchType=CT&optionId=2&checkin=2026-06-01&checkout=2026-06-02&crn=1&listFilters=29~1*29*1~3*2&curr=CNY&locale=zh-CN&old=1&v2_mod=79&v2_version=E';
@@ -106,6 +126,38 @@ test('buildCtripListUrl generates combined known filters and keeps query params'
   assert.equal(parsed.queryParams.locale, 'zh-CN');
   assert.equal(parsed.queryParams.v2_mod, '79');
   assert.equal(parsed.queryParams.v2_version, 'E');
+});
+
+test('buildCtripListUrl writes Ctrip accommodation and room filters', () => {
+  const generated = buildCtripListUrl('https://hotels.ctrip.com/hotels/list?cityId=2', {
+    accommodationTypeMode: 'include',
+    accommodationTypes: ['酒店', '酒店公寓'],
+    roomTypes: ['双床房'],
+    roomFeatures: ['家庭房', '影音房'],
+    featureThemes: ['电竞酒店']
+  });
+  const parsed = parseCtripListUrl(generated);
+
+  assert.ok(parsed.listFilterParts.includes('75~TAG_495*75*495'));
+  assert.ok(parsed.listFilterParts.includes('75~TAG_505*75*505'));
+  assert.ok(parsed.listFilterParts.includes('4~2*4*2'));
+  assert.ok(parsed.listFilterParts.includes('81~1188*81*1188'));
+  assert.ok(parsed.listFilterParts.includes('81~1192*81*1192'));
+  assert.ok(parsed.listFilterParts.includes('1~771*1*771'));
+});
+
+test('buildCtripListUrl excludes selected accommodation types by including the rest', () => {
+  const generated = buildCtripListUrl('https://hotels.ctrip.com/hotels/list?cityId=2', {
+    accommodationTypeMode: 'exclude',
+    accommodationTypes: ['民宿', '公寓', '客栈']
+  });
+  const parsed = parseCtripListUrl(generated);
+
+  assert.equal(parsed.listFilterParts.includes('75~TAG_510*75*510'), false);
+  assert.equal(parsed.listFilterParts.includes('75~TAG_513*75*513'), false);
+  assert.equal(parsed.listFilterParts.includes('75~TAG_506*75*506'), false);
+  assert.ok(parsed.listFilterParts.includes('75~TAG_495*75*495'));
+  assert.ok(parsed.listFilterParts.includes('75~TAG_505*75*505'));
 });
 
 test('mergeCtripFilters replaces existing sort mode', () => {
