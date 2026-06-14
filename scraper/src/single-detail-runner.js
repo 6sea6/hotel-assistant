@@ -44,6 +44,7 @@ class SingleDetailRunner {
       perf = null,
       pageIndex = null,
       reportLevel = 'normal',
+      isBatchItem = false,
       captureStrategy: contextCaptureStrategy = null,
       edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null,
       scrapeEventForwarder = emit
@@ -100,7 +101,12 @@ class SingleDetailRunner {
     performance.scrape = scraped.performance || null;
 
     assertNotCancelled(signal);
-    const skipTransit = Boolean(args.skipTransit || args['skip-transit']);
+    const hasEligibleScrapedRooms =
+      Array.isArray(scraped.eligible_rooms) && scraped.eligible_rooms.length > 0;
+    const skipTransitBecauseNoEligibleRooms = Boolean(isBatchItem && !hasEligibleScrapedRooms);
+    const skipTransit = Boolean(
+      args.skipTransit || args['skip-transit'] || skipTransitBecauseNoEligibleRooms
+    );
     let transit = null;
     if (!skipTransit) {
       emit('transit:start', '正在计算交通与地铁信息');
@@ -117,6 +123,14 @@ class SingleDetailRunner {
       performance.transitMs = durationSince(transitStartedAt);
     } else {
       performance.transitMs = 0;
+      if (skipTransitBecauseNoEligibleRooms) {
+        performance.transitSkippedReason = 'no_eligible_rooms';
+        itemPerf.event('transit_skipped', {
+          reason: 'no_eligible_rooms',
+          eligible_count: 0,
+          url: itemTemplate.ctrip_url
+        });
+      }
     }
 
     const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries } = await itemPerf.runPhase(

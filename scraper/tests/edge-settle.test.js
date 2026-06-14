@@ -536,7 +536,7 @@ test('settleRoomListInEdgeSession skips bottom settle steps after container scro
   }
 });
 
-test('settleRoomListInEdgeSession skips main scroll when room API is already captured', async () => {
+test('settleRoomListInEdgeSession skips main scroll after initial expand when multiple room APIs are captured', async () => {
   const expressions = [];
   const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
     evaluateInSession: async (_connection, _sessionId, expression) => {
@@ -564,7 +564,8 @@ test('settleRoomListInEdgeSession skips main scroll when room API is already cap
       perf: createPerfRecorder(records),
       fields: { url: 'https://example.test/hotel' },
       getTrackedUrlCount: () => 3,
-      getRoomTrackedUrlCount: () => 1
+      getRoomTrackedUrlCount: () => 2,
+      getReadableRoomResponseCount: () => 0
     });
 
     assert.equal(
@@ -581,17 +582,17 @@ test('settleRoomListInEdgeSession skips main scroll when room API is already cap
     );
     assert.equal(
       records.find((record) => record.phase === 'edge_settle_initial_expand').status,
-      'skipped'
+      'success'
     );
     assert.equal(
       records.find((record) => record.phase === 'edge_settle_main_scroll').status,
       'skipped'
     );
     assert.equal(
-      records.find((record) => record.phase === 'edge_settle_initial_expand').skip_reason,
+      records.find((record) => record.phase === 'edge_settle_main_scroll').skip_reason,
       'room_api_fast_path'
     );
-    assert.equal(stats.apiFastPathSkippedStepCount, 5);
+    assert.equal(stats.apiFastPathSkippedStepCount, 4);
   } finally {
     clearModules([settlePath, cdpUtilsPath]);
   }
@@ -1236,7 +1237,7 @@ test('settle initial expand records fast path when no expand button was clicked'
         initialExpandFastPathCount:
           isInitialExpand &&
           expression.includes('initialExpandFastPathCount') &&
-          expression.includes('await sleep(55)')
+          expression.includes('await sleep(30)')
             ? 1
             : 0,
         scrollCount: 1,

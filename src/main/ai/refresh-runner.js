@@ -23,7 +23,7 @@ const {
   mapRefreshPreparedResult
 } = require('./refresh-item-context');
 
-const MAX_REFRESH_BATCH_CONCURRENCY = 2;
+const MAX_REFRESH_BATCH_CONCURRENCY = 3;
 
 function loadEmbeddedBoundedWorkerRunner() {
   const modulePath = path.join(resolveEmbeddedScraperPath(), 'src', 'bounded-worker-runner.js');

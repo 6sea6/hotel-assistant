@@ -674,6 +674,189 @@ test('reportLevel off batch skips item reports and can still write app data', as
   }
 });
 
+test('batch skips transit for items that have no eligible rooms to write', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-skip-transit-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=with-room',
+      hotelId: 'with-room',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=without-room',
+      hotelId: 'without-room',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      const hasEligibleRoom = hotelInput.hotelId === 'with-room';
+      const room = {
+        title: hasEligibleRoom ? '大床房' : '特价房',
+        price: hasEligibleRoom ? 188 : 322,
+        prices: [hasEligibleRoom ? 188 : 322],
+        occupancy: hasEligibleRoom ? 2 : 1
+      };
+      return {
+        hotel_name: hasEligibleRoom ? '可写入酒店' : '无合格房型酒店',
+        address: hasEligibleRoom ? '可写入地址' : '无合格地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room,
+        room_candidates: [{ title: room.title, price: room.price }],
+        raw_room_candidates: [{ title: room.title, price: room.price, raw: true }],
+        eligible_rooms: hasEligibleRoom ? [{ ...room }] : [],
+        room_selection_diagnostics: {
+          evaluations: [{ action: hasEligibleRoom ? 'selected' : 'rejected' }],
+          eligibleRooms: []
+        },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          raw_room_candidates_count: 1,
+          eligible_room_count: hasEligibleRoom ? 1 : 0,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: hasEligibleRoom ? '' : 'no_eligible_rooms'
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    }
+  });
+
+  try {
+    const records = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'edge-user-data-dir': path.join(tempDir, 'edge-profile'),
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(calls.scrape, 2);
+    assert.equal(calls.transit, 1);
+    assert.equal(result.success, true);
+    assert.equal(result.batchMode, true);
+    assert.equal(result.eligibleCount, 1);
+    assert.deepEqual(
+      result.items.map((item) => item.eligibleCount),
+      [1, 0]
+    );
+
+    const skippedTransit = records.find((record) => record.event === 'transit_skipped');
+    assert.ok(skippedTransit);
+    assert.equal(skippedTransit.reason, 'no_eligible_rooms');
+    assert.equal(skippedTransit.url, hotelInputs[1].url);
+    assert.equal(
+      records.some((record) => record.event === 'batch_item_uncollected_retry'),
+      false
+    );
+
+    const uncollected = records.find((record) => record.event === 'uncollected_hotel');
+    assert.ok(uncollected);
+    assert.equal(uncollected.url, hotelInputs[1].url);
+    assert.equal(uncollected.uncollected_reason, 'no_eligible_rooms');
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runHotelImportTask fails when list expansion stays below desired target', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-list-shortfall-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [1, 2, 3].map((index) => ({
+    url: `https://hotels.ctrip.com/hotels/detail/?hotelId=short${index}`,
+    hotelId: `short${index}`,
+    source: 'list-prefilter'
+  }));
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+  const ctripListPath = installMock('../src/ctrip-list', {
+    buildListResultsSummary: () => [],
+    describeExpandedInput: () => '模式=list，输入URL=1，展开酒店=3，列表页=1，前筛候选=3，前筛排除=0',
+    expandCtripHotelInputs: async () => ({
+      inputMode: 'list',
+      requestedUrls: ['https://hotels.ctrip.com/hotels/list?city=477'],
+      hotelInputs,
+      listResults: [
+        {
+          selected: hotelInputs.map((item) => ({
+            hotelId: item.hotelId,
+            hotelName: item.hotelId,
+            detailUrl: item.url
+          })),
+          rejected: [],
+          totalCandidates: 3,
+          errors: []
+        }
+      ],
+      skippedUrls: [],
+      performance: { totalMs: 10, listCollectMs: 10, lists: [] },
+      summary: {
+        inputMode: 'list',
+        requestedUrlCount: 1,
+        detailInputCount: 0,
+        listInputCount: 1,
+        expandedHotelCount: 3,
+        listSelectedCount: 3,
+        skippedUrlCount: 0,
+        listCandidateCount: 3,
+        listRejectedCount: 0,
+        filters: { desiredHotelCount: 5, targetCount: 5 },
+        performance: { totalMs: 10, listCollectMs: 10, lists: [] }
+      }
+    }),
+    normalizeListFiltersFromArgs: () => ({ desiredHotelCount: 5, targetCount: 5 })
+  });
+  mockedPaths.push(ctripListPath);
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    await assert.rejects(
+      () =>
+        runHotelImportTask(
+          {
+            url: 'https://hotels.ctrip.com/hotels/list?city=477',
+            latestRun: latestRunPath,
+            targetCount: 5,
+            'report-level': 'off'
+          },
+          {
+            workingDirectory: tempDir
+          }
+        ),
+      /只展开 3\/5 家目标宾馆/
+    );
+    assert.equal(calls.scrape, 0);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('auto-edge 360 runtime uses separate browser profile before login checks and scraping', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
@@ -736,6 +919,135 @@ test('auto-edge 360 runtime uses separate browser profile before login checks an
     assert.deepEqual(observed.launchProfileDirs, [browser360ProfileDir]);
     assert.deepEqual(observed.scrapeProfileDirs, [browser360ProfileDir]);
     assert.ok(calls.order.includes('close-edge:9360'));
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('auto-edge single detail does not prepare unused batch browser profiles', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-no-unused-profiles-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir);
+  const preparedCalls = [];
+  mockedPaths.push(
+    installMock('../src/batch-edge-worker-pool', {
+      cleanupBatchEdgeWorkerProfileClones: () => undefined,
+      prepareBatchEdgeWorkerProfileClones: (params) => {
+        preparedCalls.push(params);
+        return ['unused-profile'];
+      },
+      createBatchEdgeWorkerPool: async () => {
+        throw new Error('single detail should not create a batch Edge worker pool');
+      }
+    })
+  );
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=910001',
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'batch-concurrency': 3,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(preparedCalls.length, 0);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('auto-edge profile preparation is capped to effective worker limit', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-profile-cap-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [1, 2, 3, 4].map((index) => ({
+    url: `https://hotels.ctrip.com/hotels/detail/?hotelId=${920000 + index}`,
+    hotelId: `profile-cap-${index}`,
+    source: 'detail-input'
+  }));
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+  const preparedCalls = [];
+  const poolCalls = [];
+  mockedPaths.push(
+    installMock('../src/batch-edge-worker-pool', {
+      cleanupBatchEdgeWorkerProfileClones: () => undefined,
+      prepareBatchEdgeWorkerProfileClones: (params) => {
+        preparedCalls.push(params);
+        return ['profile-worker-2', 'profile-worker-3'];
+      },
+      createBatchEdgeWorkerPool: async ({
+        effectiveTemplate,
+        concurrency,
+        existingWorker,
+        preparedUserDataDirs
+      }) => {
+        poolCalls.push({ concurrency, existingWorker, preparedUserDataDirs });
+        const workers = [];
+        if (existingWorker && existingWorker.port) {
+          workers.push({
+            effectiveTemplate: {
+              ...effectiveTemplate,
+              edge_debugging_port: existingWorker.port,
+              edge_user_data_dir: existingWorker.userDataDir,
+              edge_profile_directory: existingWorker.profileDirectory
+            }
+          });
+        }
+        for (let index = workers.length; index < concurrency; index += 1) {
+          workers.push({
+            effectiveTemplate: {
+              ...effectiveTemplate,
+              edge_debugging_port: 9300 + index,
+              edge_user_data_dir: preparedUserDataDirs[index - 1] || `profile-worker-${index + 1}`
+            }
+          });
+        }
+        return {
+          workers,
+          close: async () => undefined
+        };
+      }
+    })
+  );
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'batch-concurrency': 4,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.performance.concurrency, 4);
+    assert.equal(result.performance.effectiveConcurrency, 3);
+    assert.equal(preparedCalls.length, 1);
+    assert.equal(preparedCalls[0].concurrency, 3);
+    assert.equal(poolCalls.length, 1);
+    assert.equal(poolCalls[0].concurrency, 3);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, ['profile-worker-2', 'profile-worker-3']);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1979,10 +2291,10 @@ test('runHotelImportTask reuses prepared context for batch detail items', async 
           ctrip_score: 4.8,
           geo: { location: `114.${hotelId.slice(-1)},30.${hotelId.slice(-1)}` },
           room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
-          room_candidates: [],
-          raw_room_candidates: [],
-          eligible_rooms: [],
-          room_selection_diagnostics: { evaluations: [], eligibleRooms: [] },
+          room_candidates: [{ title: '大床房', price: 188 }],
+          raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+          eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+          room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
           page_snapshot: {
             source_url: url,
             saved_html_files: [],

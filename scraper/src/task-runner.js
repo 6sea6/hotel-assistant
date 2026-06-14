@@ -7,6 +7,7 @@ const {
   expandCtripHotelInputs,
   normalizeListFiltersFromArgs
 } = require('./ctrip-list');
+const { classifyCtripHotelUrl, extractCtripUrlsFromInput } = require('./ctrip-url');
 const {
   closeAutoEdge,
   hasReusableEdgeProfile,
@@ -44,6 +45,8 @@ const {
   prepareBatchEdgeWorkerProfileClones
 } = require('./batch-edge-worker-pool');
 const { buildBatchOutputPayload } = require('./batch-result-builder');
+
+const MAX_AUTO_EDGE_PREPARED_WORKERS = 3;
 
 function buildFailureResult(error, latestRunPath, startedAt) {
   const failedAt = new Date().toISOString();
@@ -108,6 +111,101 @@ function logListCandidateFilterDiagnostics(perf, expandedInputs = {}) {
       });
     });
   });
+}
+
+function normalizePositiveInteger(value, fallback = null) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.trunc(numberValue));
+}
+
+function summarizeKnownCtripInputUrls(args = {}, template = {}) {
+  const inputUrls = extractCtripUrlsFromInput({
+    ...args,
+    url: args.url || args.ctrip_url || args['ctrip-url'] || template.ctrip_url
+  });
+  const urls = inputUrls.length ? inputUrls : template.ctrip_url ? [template.ctrip_url] : [];
+  const summary = {
+    urlCount: urls.length,
+    detailCount: 0,
+    listCount: 0
+  };
+
+  for (const url of urls) {
+    const classification = classifyCtripHotelUrl(url);
+    if (classification.type === 'detail') {
+      summary.detailCount += 1;
+    } else if (classification.type === 'list') {
+      summary.listCount += 1;
+    }
+  }
+
+  return summary;
+}
+
+function resolvePreparedEdgeWorkerConcurrency(args = {}, options = {}, template = {}, listFilters = {}) {
+  const requestedConcurrency = normalizeBatchConcurrency(args, options);
+  if (requestedConcurrency <= 1) {
+    return 1;
+  }
+
+  const optionMaxConcurrency = normalizePositiveInteger(options.maxConcurrency);
+  const maxPreparedWorkers = optionMaxConcurrency
+    ? Math.min(optionMaxConcurrency, MAX_AUTO_EDGE_PREPARED_WORKERS)
+    : MAX_AUTO_EDGE_PREPARED_WORKERS;
+  let preparedConcurrency = Math.min(requestedConcurrency, maxPreparedWorkers);
+  const inputSummary = summarizeKnownCtripInputUrls(args, template);
+
+  if (inputSummary.urlCount > 0 && inputSummary.listCount <= 0) {
+    preparedConcurrency = Math.min(preparedConcurrency, inputSummary.detailCount);
+  } else if (inputSummary.listCount > 0) {
+    const targetCount = normalizePositiveInteger(
+      listFilters.desiredHotelCount || listFilters.targetCount,
+      0
+    );
+    const estimatedExpandedCount = inputSummary.detailCount + targetCount;
+    if (estimatedExpandedCount > 0) {
+      preparedConcurrency = Math.min(preparedConcurrency, estimatedExpandedCount);
+    }
+  }
+
+  return Math.max(1, preparedConcurrency);
+}
+
+function buildListTargetShortfallError(expandedInputs = {}) {
+  const summary = expandedInputs.summary || {};
+  const filters = summary.filters || {};
+  const listInputCount = normalizePositiveInteger(summary.listInputCount, 0);
+  const desiredCount = normalizePositiveInteger(
+    filters.desiredHotelCount || filters.targetCount,
+    0
+  );
+  if (!listInputCount || !desiredCount) {
+    return null;
+  }
+
+  const expandedCount = normalizePositiveInteger(
+    summary.expandedHotelCount ??
+      (Array.isArray(expandedInputs.hotelInputs) ? expandedInputs.hotelInputs.length : 0),
+    0
+  );
+  if (expandedCount >= desiredCount) {
+    return null;
+  }
+
+  const listErrors = Array.isArray(expandedInputs.listResults)
+    ? expandedInputs.listResults
+        .flatMap((item) => (Array.isArray(item.errors) ? item.errors : []))
+        .map((item) => item.error)
+        .filter(Boolean)
+    : [];
+  const errorSuffix = listErrors.length ? `；列表采集错误：${listErrors.join('; ')}` : '';
+  return new Error(
+    `携程列表页只展开 ${expandedCount}/${desiredCount} 家目标宾馆，未达到目标数量。为避免漏采，本次任务已停止；请稍后重试或放宽列表页前筛条件${errorSuffix}`
+  );
 }
 
 async function runHotelImportTask(rawArgs = {}, options = {}) {
@@ -220,6 +318,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       const outputDir = path.resolve('output');
       ensureDir(outputDir);
 
+      const listFilters = normalizeListFiltersFromArgs(args);
       let autoEdgeProcess = null;
       let autoEdgePid = null;
       let preparedEdgeWorkerProfileDirs = [];
@@ -270,11 +369,16 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           });
 
           const edgeResult = await perf.runPhase('browser_launch', { taskId }, async () => {
-            const batchConcurrency = normalizeBatchConcurrency(args, options);
-            if (batchConcurrency > 1) {
+            const preparedWorkerConcurrency = resolvePreparedEdgeWorkerConcurrency(
+              args,
+              options,
+              effectiveTemplate,
+              listFilters
+            );
+            if (preparedWorkerConcurrency > 1) {
               preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
                 effectiveTemplate,
-                concurrency: batchConcurrency,
+                concurrency: preparedWorkerConcurrency,
                 existingWorkerCount: 1
               });
             }
@@ -295,7 +399,6 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         }
 
         assertNotCancelled(signal);
-        const listFilters = normalizeListFiltersFromArgs(args);
         emit('list:start', '正在解析携程链接与列表页候选', {
           desiredHotelCount: listFilters.desiredHotelCount,
           targetCount: listFilters.targetCount,
@@ -342,6 +445,10 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             );
           }
           throw new Error(skippedReason || '未从输入中解析到可采集的携程酒店详情页或列表页 URL。');
+        }
+        const listShortfallError = buildListTargetShortfallError(expandedInputs);
+        if (listShortfallError) {
+          throw listShortfallError;
         }
 
         if (expandedInputs.inputMode !== 'detail' || expandedInputs.hotelInputs.length !== 1) {

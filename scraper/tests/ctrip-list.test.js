@@ -798,6 +798,202 @@ test('captureListHtmlPagesWithEdge keeps scrolling while unique list candidates 
   }
 });
 
+test('captureListHtmlPagesWithEdge stops after stable empty list snapshots', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Edge CDP list fallback is Windows-only');
+    return;
+  }
+
+  let evaluateCalls = 0;
+  const listeners = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    connectToDebugger: async () => ({
+      async send(method) {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.createTarget') {
+          return { targetId: 'target-1' };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'session-1' };
+        }
+        if (method === 'Page.navigate') {
+          setImmediate(() => {
+            listeners.forEach((listener) =>
+              listener({ sessionId: 'session-1', method: 'Page.loadEventFired' })
+            );
+          });
+        }
+        return {};
+      },
+      addListener(listener) {
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      async close() {}
+    }),
+    evaluateInSession: async () => {
+      evaluateCalls += 1;
+      return JSON.stringify({
+        scrollHeight: 1200,
+        candidateCount: 0,
+        scrollContainerCount: 0,
+        scrollActions: evaluateCalls,
+        html: ''
+      });
+    },
+    launchManagedEdgeSession: async () => ({
+      browser: { pid: 123 },
+      userDataDir: '',
+      shouldCleanupUserDataDir: false,
+      debuggerUrl: 'ws://edge.test/devtools/browser'
+    }),
+    normalizeEdgeSessionOptions: () => ({}),
+    waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+    waitForSessionCondition: async () => true
+  });
+  const processUtilsPath = installMock('../src/scraper/process-utils', {
+    findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killBrowserProcessesByCommandLine: () => false,
+    killProcessTree: () => undefined
+  });
+  const collectorModulePaths = getListCollectorModulePaths();
+  clearModules(collectorModulePaths);
+
+  try {
+    const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
+    const result = await captureListHtmlPagesWithEdge(
+      ['https://hotels.ctrip.com/hotels/list?city=2'],
+      {},
+      {
+        enableListApiReplay: false,
+        maxScrollRounds: 10,
+        stableRoundLimit: 2,
+        initialSettleMs: 0,
+        onPage: () => ({
+          continue: true,
+          uniqueCandidateCount: 0
+        })
+      }
+    );
+
+    assert.equal(result.error, '');
+    assert.equal(result.pages.length, 3);
+    assert.equal(evaluateCalls, 3);
+  } finally {
+    clearModules([...collectorModulePaths, cdpUtilsPath, processUtilsPath]);
+  }
+});
+
+test('captureListHtmlPagesWithEdge uses lighter defaults for small target counts', async (t) => {
+  if (process.platform !== 'win32') {
+    t.skip('Edge CDP list fallback is Windows-only');
+    return;
+  }
+
+  let scrollEvaluateCalls = 0;
+  const scrollEvaluateTimeouts = [];
+  const listeners = [];
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    connectToDebugger: async () => ({
+      async send(method) {
+        if (method === 'Target.getTargets') {
+          return { targetInfos: [] };
+        }
+        if (method === 'Target.createTarget') {
+          return { targetId: 'target-1' };
+        }
+        if (method === 'Target.attachToTarget') {
+          return { sessionId: 'session-1' };
+        }
+        if (method === 'Page.navigate') {
+          setImmediate(() => {
+            listeners.forEach((listener) =>
+              listener({ sessionId: 'session-1', method: 'Page.loadEventFired' })
+            );
+          });
+        }
+        return {};
+      },
+      addListener(listener) {
+        listeners.push(listener);
+        return () => {
+          const index = listeners.indexOf(listener);
+          if (index >= 0) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      async close() {}
+    }),
+    evaluateInSession: async (_connection, _sessionId, expression, options = {}) => {
+      if (String(expression).includes('fetchHotelList')) {
+        return JSON.stringify({ responses: [], pageIndexes: [], error: '' });
+      }
+      scrollEvaluateCalls += 1;
+      scrollEvaluateTimeouts.push(options.timeoutMs);
+      return JSON.stringify({
+        scrollHeight: 1200,
+        candidateCount: 12,
+        scrollContainerCount: 1,
+        scrollActions: scrollEvaluateCalls,
+        html: buildListHtml([{ id: '7101', name: '稳定候选酒店' }])
+      });
+    },
+    launchManagedEdgeSession: async () => ({
+      browser: { pid: 123 },
+      userDataDir: '',
+      shouldCleanupUserDataDir: false,
+      debuggerUrl: 'ws://edge.test/devtools/browser'
+    }),
+    normalizeEdgeSessionOptions: () => ({}),
+    waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+    waitForSessionCondition: async () => true
+  });
+  const processUtilsPath = installMock('../src/scraper/process-utils', {
+    findEdgeExecutable: () => 'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    killBrowserProcessesByCommandLine: () => false,
+    killProcessTree: () => undefined
+  });
+  const collectorModulePaths = getListCollectorModulePaths();
+  clearModules(collectorModulePaths);
+
+  try {
+    const { captureListHtmlPagesWithEdge } = require('../src/scraper/list-page-collector');
+    const result = await captureListHtmlPagesWithEdge(
+      ['https://hotels.ctrip.com/hotels/list?city=2'],
+      {},
+      {
+        desiredHotelCount: 3,
+        initialSettleMs: 0,
+        onPage: (page) => {
+          const candidates = parseListPageCandidatesFromHtml(
+            page.html,
+            'https://hotels.ctrip.com/hotels/list?city=2'
+          );
+          return {
+            continue: true,
+            uniqueCandidateCount: candidates.length
+          };
+        }
+      }
+    );
+
+    assert.equal(result.error, '');
+    assert.equal(scrollEvaluateCalls, 2);
+    assert.deepEqual(scrollEvaluateTimeouts, [3000, 3000]);
+    assert.equal(result.pages.length, 2);
+  } finally {
+    clearModules([...collectorModulePaths, cdpUtilsPath, processUtilsPath]);
+  }
+});
+
 test('captureListHtmlPagesWithEdge returns candidate HTML without full document by default', async (t) => {
   if (process.platform !== 'win32') {
     t.skip('Edge CDP list fallback is Windows-only');

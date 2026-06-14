@@ -218,6 +218,14 @@ function getRoomApiFastSettleThreshold(options = {}) {
   return 1;
 }
 
+function getRoomApiFastTrackedThreshold(options = {}) {
+  const value = Number(options.roomApiFastTrackedThreshold);
+  if (Number.isFinite(value) && value > 0) {
+    return Math.max(1, Math.trunc(value));
+  }
+  return Math.max(2, getRoomApiFastSettleThreshold(options));
+}
+
 function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
   if (options.roomApiFastSettle === false) {
     return false;
@@ -234,16 +242,23 @@ function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
     return false;
   }
 
-  const getFastSettleCount =
+  const readableRoomResponseCount =
     typeof options.getReadableRoomResponseCount === 'function'
-      ? options.getReadableRoomResponseCount
-      : options.getRoomTrackedUrlCount;
+      ? Number(options.getReadableRoomResponseCount() || 0)
+      : 0;
+  if (readableRoomResponseCount >= getRoomApiFastSettleThreshold(options)) {
+    return true;
+  }
 
-  if (typeof getFastSettleCount !== 'function') {
+  if (typeof options.getRoomTrackedUrlCount !== 'function') {
     return false;
   }
 
-  return Number(getFastSettleCount() || 0) >= getRoomApiFastSettleThreshold(options);
+  if (stepPhase === 'edge_settle_close_panels') {
+    return false;
+  }
+
+  return Number(options.getRoomTrackedUrlCount() || 0) >= getRoomApiFastTrackedThreshold(options);
 }
 
 function buildRoomApiFastPathSkippedStats(aggregate, stepPhase) {
@@ -319,7 +334,7 @@ function buildMainScrollStepBody({
           const y = Math.round((currentMaxScroll * index) / steps);
           window.scrollTo({ top: y, behavior: 'instant' });
           scrollCount += 1;
-          await sleep(150);
+          await sleep(115);
           const preClickStats = collectStats();
           const roomSignalStableBeforeClick =
             preClickStats.roomKeywordCount >= 4 &&
@@ -348,7 +363,7 @@ function buildMainScrollStepBody({
           if (clicked.clickedCount > 0) {
             await waitForDomIdle(180, 750);
           } else {
-            await sleep(45);
+            await sleep(25);
           }
           const currentStats = collectStats();
           const currentHeight = currentStats.documentHeight;
@@ -585,10 +600,10 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
           await waitForDomIdle(180, 700);
         } else {
           emptyCloseFastPathCount = 1;
-          await sleep(35);
+          await sleep(20);
         }
         window.scrollTo({ top: 0, behavior: 'instant' });
-        await sleep(clickedCount > 0 ? 120 : 35);
+        await sleep(clickedCount > 0 ? 120 : 20);
         return JSON.stringify(finishStats(before, { clickedCount, emptyCloseFastPathCount, scrollCount: 1 }));
       `
     },
@@ -597,14 +612,14 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
       body: `
         const before = collectStats();
         window.scrollTo({ top: 0, behavior: 'instant' });
-        await sleep(90);
+        await sleep(65);
         const clickStats = clickExpandButtons({ allowGenericFallback: false });
         let initialExpandFastPathCount = 0;
         if (clickStats.clickedCount > 0) {
           await waitForDomIdle(200, 800);
         } else {
           initialExpandFastPathCount = 1;
-          await sleep(55);
+          await sleep(30);
         }
         return JSON.stringify(finishStats(before, { ...clickStats, initialExpandFastPathCount, scrollCount: 1 }));
       `

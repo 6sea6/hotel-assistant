@@ -1025,6 +1025,44 @@ test('refresh hotel batch runner honors bounded concurrency and writes once afte
   assert.equal(events.find((event) => event.type === 'refresh:write').details.scope, 'final');
 });
 
+test('refresh hotel batch runner allows concurrency three like normal collection', async () => {
+  let activeRefreshes = 0;
+  let maxActiveRefreshes = 0;
+
+  const result = await runRefreshHotelBatch({
+    hotelUrls: [
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=3',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=4'
+    ],
+    requestedConcurrency: 3,
+    emit() {},
+    processHotel: async ({ url, index }) => {
+      activeRefreshes += 1;
+      maxActiveRefreshes = Math.max(maxActiveRefreshes, activeRefreshes);
+      await new Promise((resolve) => setTimeout(resolve, index === 1 ? 30 : 10));
+      activeRefreshes -= 1;
+      return {
+        hotelName: `酒店${index}`,
+        url,
+        status: 'updated',
+        updatedHotels: [{ name: `酒店${index}`, room_type: '大床房' }],
+        updatedRoomTypeCount: 1,
+        deletedRoomTypeCount: 0,
+        skipReason: '',
+        error: ''
+      };
+    },
+    writeHotels: async () => ({ batchMode: true, appliedCount: 4 })
+  });
+
+  assert.equal(maxActiveRefreshes, 3);
+  assert.equal(result.requestedConcurrency, 3);
+  assert.equal(result.effectiveConcurrency, 3);
+  assert.equal(result.updatedHotelCount, 4);
+});
+
 test('refresh hotel batch runner stays serial when requested concurrency is one', async () => {
   let activeRefreshes = 0;
   let maxActiveRefreshes = 0;

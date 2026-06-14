@@ -25,6 +25,23 @@ function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
 }
 
+function normalizePositiveNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function getListEdgeCaptureDefaults(options = {}) {
+  const desiredHotelCount = normalizePositiveNumber(options.desiredHotelCount, 0);
+  const smallTarget = desiredHotelCount > 0 && desiredHotelCount <= 3;
+
+  return {
+    maxScrollRounds: smallTarget ? 6 : 20,
+    stableRoundLimit: smallTarget ? 1 : 3,
+    initialSettleMs: smallTarget ? 900 : 2500,
+    scrollEvaluateTimeoutMs: smallTarget ? 3000 : 5000
+  };
+}
+
 function buildListApiReplayPageRecord(url, snapshot = {}, durationMs = 0, networkSnapshot = {}) {
   return {
     url,
@@ -151,8 +168,11 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       )
       .catch(() => undefined);
     const pages = [];
-    const maxScrollRounds = options.maxScrollRounds || 20;
-    const stableRoundLimit = options.stableRoundLimit || 3;
+    const captureDefaults = getListEdgeCaptureDefaults(options);
+    const maxScrollRounds = options.maxScrollRounds || captureDefaults.maxScrollRounds;
+    const stableRoundLimit = options.stableRoundLimit || captureDefaults.stableRoundLimit;
+    const scrollEvaluateTimeoutMs =
+      options.scrollEvaluateTimeoutMs || captureDefaults.scrollEvaluateTimeoutMs;
 
     for (const url of pageUrls) {
       if (typeof options.shouldStop === 'function' && options.shouldStop()) {
@@ -182,7 +202,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       );
       const initialSettleMs =
         options.initialSettleMs === undefined
-          ? 2500
+          ? captureDefaults.initialSettleMs
           : Math.max(0, Number(options.initialSettleMs) || 0);
       if (initialSettleMs > 0) {
         await delay(initialSettleMs);
@@ -240,7 +260,10 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
           sessionId,
           buildListPageScrollExpression({
             includeFullEdgeHtml: options.includeFullEdgeHtml === true
-          })
+          }),
+          {
+            timeoutMs: scrollEvaluateTimeoutMs
+          }
         );
         const parsed = parseListPageScrollResult(scrollResult);
         await dispatchCdpWheelScroll(connection, sessionId);
@@ -308,7 +331,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
           !progressChanged &&
           Math.abs(currentHeight - previousHeight) <= 24 &&
           currentCount === previousCount &&
-          currentCount > 0
+          previousCount >= 0
         ) {
           stableRounds += 1;
         } else {
