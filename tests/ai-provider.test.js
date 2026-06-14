@@ -464,7 +464,7 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     success: false,
     error: '无效的 AI 请求参数'
   });
-  assert.deepEqual(await handlers.get('ai:task:refresh-data')(event, { batchConcurrency: 4 }), {
+  assert.deepEqual(await handlers.get('ai:task:refresh-data')(event, { batchConcurrency: 7 }), {
     success: false,
     error: '无效的 AI 请求参数'
   });
@@ -1025,7 +1025,7 @@ test('refresh hotel batch runner honors bounded concurrency and writes once afte
   assert.equal(events.find((event) => event.type === 'refresh:write').details.scope, 'final');
 });
 
-test('refresh hotel batch runner allows concurrency three like normal collection', async () => {
+test('refresh hotel batch runner caps concurrency at three like normal collection', async () => {
   let activeRefreshes = 0;
   let maxActiveRefreshes = 0;
 
@@ -1034,9 +1034,11 @@ test('refresh hotel batch runner allows concurrency three like normal collection
       'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
       'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
       'https://hotels.ctrip.com/hotels/detail/?hotelId=3',
-      'https://hotels.ctrip.com/hotels/detail/?hotelId=4'
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=4',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=5',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=6'
     ],
-    requestedConcurrency: 3,
+    requestedConcurrency: 6,
     emit() {},
     processHotel: async ({ url, index }) => {
       activeRefreshes += 1;
@@ -1054,13 +1056,13 @@ test('refresh hotel batch runner allows concurrency three like normal collection
         error: ''
       };
     },
-    writeHotels: async () => ({ batchMode: true, appliedCount: 4 })
+    writeHotels: async () => ({ batchMode: true, appliedCount: 6 })
   });
 
   assert.equal(maxActiveRefreshes, 3);
   assert.equal(result.requestedConcurrency, 3);
   assert.equal(result.effectiveConcurrency, 3);
-  assert.equal(result.updatedHotelCount, 4);
+  assert.equal(result.updatedHotelCount, 6);
 });
 
 test('refresh hotel batch runner stays serial when requested concurrency is one', async () => {

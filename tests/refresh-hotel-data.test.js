@@ -374,7 +374,7 @@ test('single-detail-runner.js: skipTransit skips getTransitInfo call', () => {
   );
   // Verify that transit is conditional
   assert.ok(
-    code.includes('if (!skipTransit)'),
+    code.includes('if (!prepared.skipTransit)'),
     'Transit call should be guarded by skipTransit check'
   );
 });
@@ -385,7 +385,7 @@ test('single-detail-runner.js: skipTransit does not emit transit:start', () => {
     'utf8'
   );
   assert.ok(
-    code.includes('if (!skipTransit)') && code.includes("emit('transit:start'"),
+    code.includes('if (!prepared.skipTransit)') && code.includes("emit('transit:start'"),
     'transit:start should only be emitted when skipTransit is false'
   );
 });

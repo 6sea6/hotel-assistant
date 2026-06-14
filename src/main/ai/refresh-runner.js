@@ -11,8 +11,7 @@ const {
   assertNotCancelled,
   isCtripHotelUrl,
   isTaskCancelled,
-  normalizeCollectBrowser,
-  normalizeBatchConcurrency
+  normalizeCollectBrowser
 } = require('./scraper-task-input');
 const {
   createWriteRollbackSnapshot,
@@ -24,6 +23,14 @@ const {
 } = require('./refresh-item-context');
 
 const MAX_REFRESH_BATCH_CONCURRENCY = 3;
+
+function normalizeRefreshBatchConcurrency(value) {
+  const concurrency = Number(value);
+  if (!Number.isInteger(concurrency) || concurrency <= 0) {
+    return 1;
+  }
+  return Math.min(concurrency, MAX_REFRESH_BATCH_CONCURRENCY);
+}
 
 function loadEmbeddedBoundedWorkerRunner() {
   const modulePath = path.join(resolveEmbeddedScraperPath(), 'src', 'bounded-worker-runner.js');
@@ -38,7 +45,7 @@ function getEffectiveRefreshConcurrency(
 ) {
   if (typeof getEffectiveBoundedConcurrency === 'function') {
     return getEffectiveBoundedConcurrency({
-      requestedConcurrency: normalizeBatchConcurrency(requestedConcurrency),
+      requestedConcurrency: normalizeRefreshBatchConcurrency(requestedConcurrency),
       total: totalHotelCount,
       workerContexts,
       maxConcurrency: MAX_REFRESH_BATCH_CONCURRENCY
@@ -52,7 +59,7 @@ function getEffectiveRefreshConcurrency(
   return Math.max(
     1,
     Math.min(
-      normalizeBatchConcurrency(requestedConcurrency),
+      normalizeRefreshBatchConcurrency(requestedConcurrency),
       Math.max(1, Number(totalHotelCount || 0)),
       workerLimit,
       MAX_REFRESH_BATCH_CONCURRENCY
@@ -128,7 +135,7 @@ async function runRefreshHotelBatch({
 } = {}) {
   const urls = Array.isArray(hotelUrls) ? hotelUrls : [];
   const totalHotelCount = urls.length;
-  const normalizedRequestedConcurrency = normalizeBatchConcurrency(requestedConcurrency);
+  const normalizedRequestedConcurrency = normalizeRefreshBatchConcurrency(requestedConcurrency);
   const runBoundedWorkers =
     typeof runWorkers === 'function'
       ? runWorkers
@@ -445,46 +452,12 @@ async function refreshExistingCtripHotels(input, context = {}) {
       // 3. Prepare Edge sessions
       assertNotCancelled(context.signal);
       emit('edge:login-required', '正在准备浏览器登录态');
-      const requestedConcurrency = normalizeBatchConcurrency(input.batchConcurrency);
+      const requestedConcurrency = normalizeRefreshBatchConcurrency(input.batchConcurrency);
       const collectBrowser = normalizeCollectBrowser(input.collectBrowser);
       const { getEffectiveBoundedConcurrency, runBoundedWorkers } = await loadScraperModule(
         scraperPath,
         'bounded-worker-runner.js'
       );
-      const plannedEffectiveConcurrency = getEffectiveRefreshConcurrency(
-        requestedConcurrency,
-        totalHotelCount,
-        [],
-        getEffectiveBoundedConcurrency
-      );
-      const baseEdgeUserDataDir = path.join(workDir, 'state', 'edge-profile');
-      const baseEdgeProfileDirectory = 'Default';
-      const baseEdgeDebuggingPort = 9222;
-      const baseEdgeTemplate = {
-        edge_user_data_dir: baseEdgeUserDataDir,
-        edge_profile_directory: baseEdgeProfileDirectory,
-        edge_debugging_port: baseEdgeDebuggingPort,
-        edge_headless: true,
-        browser_preference: collectBrowser
-      };
-      const { closeAutoEdge, launchAndWaitForEdge, resolveAutoEdgeRuntime } = await loadScraperModule(
-        scraperPath,
-        'cli/auto-edge.js'
-      );
-      const autoEdgeRuntime = resolveAutoEdgeRuntime({
-        userDataDir: baseEdgeTemplate.edge_user_data_dir,
-        profileDirectory: baseEdgeTemplate.edge_profile_directory,
-        browserPreference: collectBrowser
-      });
-      if (autoEdgeRuntime && autoEdgeRuntime.userDataDir) {
-        baseEdgeTemplate.edge_user_data_dir = autoEdgeRuntime.userDataDir;
-        baseEdgeTemplate.edge_profile_directory = autoEdgeRuntime.profileDirectory;
-      }
-      const {
-        createBatchEdgeWorkerPool,
-        cleanupBatchEdgeWorkerProfileClones,
-        prepareBatchEdgeWorkerProfileClones
-      } = await loadScraperModule(scraperPath, 'batch-edge-worker-pool.js');
       const { runPreparedDetailBatch } = await loadScraperModule(
         scraperPath,
         'prepared-detail-batch-collector.js'
@@ -493,80 +466,28 @@ async function refreshExistingCtripHotels(input, context = {}) {
       const { applyMatchedTemplate, mergeTemplateWithArgs, validateTemplate } =
         await loadScraperModule(scraperPath, 'template-loader.js');
       const { normalizePlaceName } = await loadScraperModule(scraperPath, 'utils.js');
-      let primaryEdgePid = null;
-      let primaryEdgeProcess = null;
-      let edgeWorkerPool = null;
-      let workerContexts = [];
-      let preparedEdgeWorkerProfileDirs = [];
+      let edgeSession = null;
 
       try {
-        if (plannedEffectiveConcurrency > 1) {
-          preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
-            effectiveTemplate: baseEdgeTemplate,
-            concurrency: plannedEffectiveConcurrency,
-            existingWorkerCount: 1
-          });
-        }
-
-        const primaryEdge = await launchAndWaitForEdge({
-          userDataDir: baseEdgeTemplate.edge_user_data_dir,
-          profileDirectory: baseEdgeTemplate.edge_profile_directory,
-          browserPreference: collectBrowser,
-          port: baseEdgeDebuggingPort,
-          url: hotelUrls[0] || 'https://hotels.ctrip.com/'
+        edgeSession = await createManagedRefreshEdgeWorkerSession({
+          scraperPath,
+          workDir,
+          collectBrowser,
+          requestedConcurrency,
+          totalHotelCount,
+          firstHotelUrl: hotelUrls[0] || 'https://hotels.ctrip.com/',
+          emit,
+          getEffectiveBoundedConcurrency
         });
-        primaryEdgeProcess = primaryEdge;
-        primaryEdgePid = primaryEdge.pid || null;
-        const primaryWorker = {
-          id: 1,
-          pid: primaryEdge.pid || null,
-          port: Number(primaryEdge.port || baseEdgeDebuggingPort),
-          userDataDir: baseEdgeTemplate.edge_user_data_dir,
-          profileDirectory: baseEdgeTemplate.edge_profile_directory,
-          browserExecutable: primaryEdge.browserExecutable || '',
-          browserName: primaryEdge.browserName || '',
-          cleanupUserDataDir: false,
-          shouldClose: false,
-          effectiveTemplate: {
-            ...baseEdgeTemplate,
-            edge_debugging_port: Number(primaryEdge.port || baseEdgeDebuggingPort)
-          }
-        };
-
-        workerContexts = [primaryWorker];
-        if (plannedEffectiveConcurrency > 1) {
-          try {
-            edgeWorkerPool = await createBatchEdgeWorkerPool({
-              args: { 'auto-edge': true },
-              effectiveTemplate: {
-                ...baseEdgeTemplate,
-                edge_debugging_port: Number(primaryEdge.port || baseEdgeDebuggingPort)
-              },
-              concurrency: plannedEffectiveConcurrency,
-              existingWorker: primaryWorker,
-              preparedUserDataDirs: preparedEdgeWorkerProfileDirs
-            });
-            workerContexts =
-              edgeWorkerPool && Array.isArray(edgeWorkerPool.workers)
-                ? edgeWorkerPool.workers
-                : workerContexts;
-          } catch (error) {
-            emit('edge:parallel-disabled', '并发 Edge 会话准备失败，已回退为串行更新', {
-              reason: error && error.message ? error.message : String(error || ''),
-              requestedConcurrency,
-              effectiveConcurrency: 1
-            });
-          }
-        }
+        const {
+          baseEdgeTemplate,
+          workerContexts,
+          effectiveConcurrency: edgeEffectiveConcurrency
+        } = edgeSession;
 
         emit('edge:login-done', '浏览器登录态已准备完成', {
           requestedConcurrency,
-          effectiveConcurrency: getEffectiveRefreshConcurrency(
-            requestedConcurrency,
-            totalHotelCount,
-            workerContexts,
-            getEffectiveBoundedConcurrency
-          )
+          effectiveConcurrency: edgeEffectiveConcurrency
         });
 
         assertNotCancelled(context.signal);
@@ -666,13 +587,9 @@ async function refreshExistingCtripHotels(input, context = {}) {
           }
         };
       } finally {
-        if (edgeWorkerPool) {
-          await edgeWorkerPool.close();
+        if (edgeSession) {
+          await edgeSession.close();
         }
-        if (primaryEdgePid) {
-          closeAutoEdge(primaryEdgePid, primaryEdgeProcess);
-        }
-        cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
       }
     } catch (error) {
       if (isTaskCancelled(error, context.signal)) {
@@ -682,6 +599,157 @@ async function refreshExistingCtripHotels(input, context = {}) {
     }
   });
 }
+
+async function createManagedRefreshEdgeWorkerSession({
+  scraperPath,
+  workDir,
+  collectBrowser,
+  requestedConcurrency,
+  totalHotelCount,
+  firstHotelUrl,
+  emit = () => {},
+  getEffectiveBoundedConcurrency
+} = {}) {
+  const baseEdgeDebuggingPort = 9222;
+  const baseEdgeTemplate = {
+    edge_user_data_dir: path.join(workDir, 'state', 'edge-profile'),
+    edge_profile_directory: 'Default',
+    edge_debugging_port: baseEdgeDebuggingPort,
+    edge_headless: true,
+    browser_preference: collectBrowser
+  };
+  const { closeAutoEdge, launchAndWaitForEdge, resolveAutoEdgeRuntime } = await loadScraperModule(
+    scraperPath,
+    'cli/auto-edge.js'
+  );
+  const {
+    createBatchEdgeWorkerPool,
+    cleanupBatchEdgeWorkerProfileClones,
+    prepareBatchEdgeWorkerProfileClones
+  } = await loadScraperModule(scraperPath, 'batch-edge-worker-pool.js');
+  const autoEdgeRuntime = resolveAutoEdgeRuntime({
+    userDataDir: baseEdgeTemplate.edge_user_data_dir,
+    profileDirectory: baseEdgeTemplate.edge_profile_directory,
+    browserPreference: collectBrowser
+  });
+  if (autoEdgeRuntime && autoEdgeRuntime.userDataDir) {
+    baseEdgeTemplate.edge_user_data_dir = autoEdgeRuntime.userDataDir;
+    baseEdgeTemplate.edge_profile_directory = autoEdgeRuntime.profileDirectory;
+  }
+
+  const plannedEffectiveConcurrency = getEffectiveRefreshConcurrency(
+    requestedConcurrency,
+    totalHotelCount,
+    [],
+    getEffectiveBoundedConcurrency
+  );
+  let primaryEdgePid = null;
+  let primaryEdgeProcess = null;
+  let edgeWorkerPool = null;
+  let workerContexts = [];
+  let preparedEdgeWorkerProfileDirs = [];
+  let closed = false;
+
+  const close = async () => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    try {
+      if (edgeWorkerPool) {
+        await edgeWorkerPool.close();
+      }
+    } finally {
+      if (primaryEdgePid) {
+        closeAutoEdge(primaryEdgePid, primaryEdgeProcess);
+      }
+      cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
+    }
+  };
+
+  try {
+    if (plannedEffectiveConcurrency > 1) {
+      preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
+        effectiveTemplate: baseEdgeTemplate,
+        concurrency: plannedEffectiveConcurrency,
+        existingWorkerCount: 1
+      });
+    }
+
+    const primaryEdge = await launchAndWaitForEdge({
+      userDataDir: baseEdgeTemplate.edge_user_data_dir,
+      profileDirectory: baseEdgeTemplate.edge_profile_directory,
+      browserPreference: collectBrowser,
+      port: baseEdgeDebuggingPort,
+      url: firstHotelUrl || 'https://hotels.ctrip.com/',
+      headless: baseEdgeTemplate.edge_headless
+    });
+    primaryEdgeProcess = primaryEdge;
+    primaryEdgePid = primaryEdge.pid || null;
+    const primaryEdgePort = Number(primaryEdge.port || baseEdgeDebuggingPort);
+    const primaryWorker = {
+      id: 1,
+      pid: primaryEdge.pid || null,
+      port: primaryEdgePort,
+      userDataDir: baseEdgeTemplate.edge_user_data_dir,
+      profileDirectory: baseEdgeTemplate.edge_profile_directory,
+      browserExecutable: primaryEdge.browserExecutable || '',
+      browserName: primaryEdge.browserName || '',
+      cleanupUserDataDir: false,
+      shouldClose: false,
+      effectiveTemplate: {
+        ...baseEdgeTemplate,
+        edge_debugging_port: primaryEdgePort
+      }
+    };
+
+    workerContexts = [primaryWorker];
+    if (plannedEffectiveConcurrency > 1) {
+      try {
+        edgeWorkerPool = await createBatchEdgeWorkerPool({
+          args: { 'auto-edge': true },
+          effectiveTemplate: {
+            ...baseEdgeTemplate,
+            edge_debugging_port: primaryEdgePort
+          },
+          concurrency: plannedEffectiveConcurrency,
+          existingWorker: primaryWorker,
+          preparedUserDataDirs: preparedEdgeWorkerProfileDirs
+        });
+        workerContexts =
+          edgeWorkerPool && Array.isArray(edgeWorkerPool.workers)
+            ? edgeWorkerPool.workers
+            : workerContexts;
+      } catch (error) {
+        emit('edge:parallel-disabled', '并发 Edge 会话准备失败，已回退为串行更新', {
+          reason: error && error.message ? error.message : String(error || ''),
+          requestedConcurrency,
+          effectiveConcurrency: 1
+        });
+      }
+    }
+
+    return {
+      baseEdgeTemplate,
+      workerContexts,
+      effectiveConcurrency: getEffectiveRefreshConcurrency(
+        requestedConcurrency,
+        totalHotelCount,
+        workerContexts,
+        getEffectiveBoundedConcurrency
+      ),
+      close
+    };
+  } catch (error) {
+    try {
+      await close();
+    } catch (_cleanupError) {
+      // Preserve the launch/setup failure; cleanup failures are already best-effort.
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   refreshExistingCtripHotels,
   runRefreshHotelBatch

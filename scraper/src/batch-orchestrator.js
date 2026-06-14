@@ -26,11 +26,38 @@ const {
   writeBatchReportArtifact
 } = require('./batch-artifact-writer');
 const { createBatchEdgeWorkerPool } = require('./batch-edge-worker-pool');
-const { getEffectiveBoundedConcurrency } = require('./bounded-worker-runner');
+const { getEffectiveBoundedConcurrency, runBoundedWorkers } = require('./bounded-worker-runner');
 const { runPreparedDetailBatch } = require('./prepared-detail-batch-collector');
 
 const MAX_BATCH_CONCURRENCY = 3;
+const MAX_TRANSIT_CONCURRENCY = 3;
 const DEFAULT_UNCOLLECTED_RETRY_COUNT = 2;
+
+function createAsyncLimiter(maxConcurrency) {
+  const concurrency = Math.max(1, Math.floor(Number(maxConcurrency) || 1));
+  const queue = [];
+  let active = 0;
+
+  const runNext = () => {
+    while (active < concurrency && queue.length > 0) {
+      const entry = queue.shift();
+      active += 1;
+      Promise.resolve()
+        .then(entry.task)
+        .then(entry.resolve, entry.reject)
+        .finally(() => {
+          active -= 1;
+          runNext();
+        });
+    }
+  };
+
+  return (task) =>
+    new Promise((resolve, reject) => {
+      queue.push({ task, resolve, reject });
+      runNext();
+    });
+}
 
 function resolveMaxBatchConcurrency(_args = {}, batchOptions = {}) {
   if (batchOptions.maxConcurrency) {
@@ -335,16 +362,17 @@ class BatchOrchestrator {
     }
   }
 
-  async runPreparedBatchItems({
-    concurrency,
-    effectiveConcurrency,
+  createPreparedBatchDetailContext({
+    hotelInput,
+    index,
+    total,
+    worker,
     batchItemsDir,
     batchOptions,
     batchPerf,
-    batchStats,
     reportDisabled,
-    signal,
-    edgeWorkers = []
+    transitCache,
+    signal
   }) {
     const {
       args,
@@ -357,11 +385,344 @@ class BatchOrchestrator {
       effectiveTemplate,
       compareAppSettings,
       effectiveDestination,
-      expandedInputs,
       reportLevel = 'normal',
       scrapeEventForwarder = null
     } = this.context;
+
+    assertNotCancelled(signal);
+    const itemEffectiveTemplate =
+      worker && worker.effectiveTemplate ? worker.effectiveTemplate : effectiveTemplate;
+    emitBatchItemStart(emit, { index, total, taskId, hotelInput });
+
+    const childOutputPath = reportDisabled
+      ? ''
+      : path.join(
+          batchItemsDir,
+          `batch-item-${String(index).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
+        );
+
+    return {
+      context: {
+        args,
+        startedAt,
+        taskId: `${taskId}-${index}`,
+        emit,
+        signal,
+        outputDir,
+        template,
+        matchedTemplate,
+        effectiveTemplate: itemEffectiveTemplate,
+        compareAppSettings,
+        effectiveDestination,
+        hotelInput,
+        outputPath: childOutputPath,
+        autoEdge: Boolean(args['auto-edge']),
+        transitCache,
+        writeAppData: false,
+        perf: batchPerf,
+        pageIndex: index,
+        reportLevel,
+        isBatchItem: true,
+        captureStrategy: resolveBatchCaptureStrategy(
+          args,
+          batchOptions,
+          Boolean(args['auto-edge'])
+        ),
+        edgeParallelCancelPolicy: batchOptions.edgeParallelCancelPolicy,
+        scrapeEventForwarder
+      },
+      meta: {
+        itemStartedAt: Date.now(),
+        hotelInput
+      }
+    };
+  }
+
+  async mapPreparedBatchResult({
+    preparedResult,
+    detailContext,
+    index,
+    total,
+    meta,
+    batchOptions,
+    batchPerf,
+    batchStats,
+    signal
+  }) {
+    const { taskId, emit } = this.context;
+    const hotelInput = meta.hotelInput;
+    preparedResult = await this.retryUncollectedPreparedResult({
+      preparedResult,
+      detailContext,
+      hotelInput,
+      index,
+      total,
+      batchOptions,
+      batchPerf,
+      signal
+    });
+    const childResult = preparedResult.result;
+    childResult.inputIndex = index;
+    childResult.inputSource = hotelInput.source;
+    childResult.hotelId = hotelInput.hotelId;
+    childResult.listCandidate = hotelInput.listCandidate || null;
+
+    const durationMs = durationSince(meta.itemStartedAt);
+    const performanceItem = {
+      index,
+      hotelId: hotelInput.hotelId,
+      hotelName: childResult.hotelName,
+      durationMs,
+      detail: childResult.performance || null
+    };
+    batchStats.recordTask({
+      taskId: `${taskId}-${index}`,
+      status: 'success',
+      elapsedMs: durationMs,
+      index,
+      hotelId: hotelInput.hotelId,
+      hotelName: childResult.hotelName,
+      url: hotelInput.url,
+      waitDataMs:
+        (childResult.performance &&
+          childResult.performance.scrape &&
+          childResult.performance.scrape.waitDataMs) ||
+        0,
+      edgeMs:
+        (childResult.performance &&
+          childResult.performance.scrape &&
+          childResult.performance.scrape.edgeCaptureMs) ||
+        0,
+      apiReplayMs:
+        (childResult.performance &&
+          childResult.performance.scrape &&
+          childResult.performance.scrape.directReplayMs) ||
+        0,
+      htmlMs:
+        (childResult.performance &&
+          childResult.performance.scrape &&
+          childResult.performance.scrape.htmlMs) ||
+        0,
+      transitMs: (childResult.performance && childResult.performance.transitMs) || 0,
+      saveMs:
+        ((childResult.performance && childResult.performance.outputWriteMs) || 0) +
+        ((childResult.performance && childResult.performance.appWriteMs) || 0),
+      captureMethod:
+        (childResult.pageSnapshot && childResult.pageSnapshot.capture_method) || '',
+      waitReason: (childResult.pageSnapshot && childResult.pageSnapshot.wait_reason) || ''
+    });
+
+    const uncollectedItem = buildUncollectedHotelPerfRecord({
+      index,
+      hotelInput,
+      childResult,
+      durationMs
+    });
+    if (uncollectedItem) {
+      batchPerf.event('uncollected_hotel', {
+        phase: 'batch_total',
+        status: 'skipped',
+        pageIndex: index,
+        hotelCount: total,
+        ...uncollectedItem
+      });
+    }
+
+    emitBatchItemDone(emit, { index, total, taskId, hotelInput, childResult });
+
+    return {
+      index,
+      hotelInput,
+      childResult,
+      childPayload: preparedResult.outputPayload || null,
+      savedHtmlFiles: Array.isArray(preparedResult.savedHtmlFiles)
+        ? preparedResult.savedHtmlFiles
+        : [],
+      failedItem: null,
+      durationMs,
+      performanceItem,
+      uncollectedItem
+    };
+  }
+
+  async mapPreparedBatchError({ error, index, total, meta, batchStats }) {
+    const { taskId, emit, expandedInputs } = this.context;
+    const hotelInput =
+      (meta && meta.hotelInput) || expandedInputs.hotelInputs[index - 1] || {};
+    const failedItem = {
+      index,
+      url: hotelInput.url,
+      source: hotelInput.source,
+      hotelId: hotelInput.hotelId,
+      error: error && error.message ? error.message : String(error)
+    };
+    batchStats.recordTask({
+      taskId: `${taskId}-${index}`,
+      status: 'failed',
+      elapsedMs: 0,
+      index,
+      hotelId: hotelInput.hotelId,
+      url: hotelInput.url
+    });
+    emitBatchItemError(emit, { index, total, taskId, hotelInput, failedItem });
+
+    return {
+      index,
+      hotelInput,
+      childResult: null,
+      childPayload: null,
+      savedHtmlFiles: [],
+      failedItem,
+      durationMs: 0,
+      performanceItem: null,
+      uncollectedItem: null
+    };
+  }
+
+  async runPipelinedBatchItems({
+    concurrency,
+    effectiveConcurrency,
+    batchItemsDir,
+    batchOptions,
+    batchPerf,
+    batchStats,
+    reportDisabled,
+    signal,
+    edgeWorkers = [],
+    transitCache
+  }) {
+    const { expandedInputs } = this.context;
+    const transitConcurrency = Math.min(MAX_TRANSIT_CONCURRENCY, effectiveConcurrency);
+    const limitTransit = createAsyncLimiter(transitConcurrency);
+    const resultSettlements = [];
+    const trackResultPromise = (resultPromise) => {
+      resultSettlements.push(
+        Promise.resolve(resultPromise).then(
+          (value) => ({ status: 'fulfilled', value }),
+          (reason) => ({ status: 'rejected', reason })
+        )
+      );
+      return resultPromise;
+    };
+
+    const scrapeRun = await runBoundedWorkers({
+      items: expandedInputs.hotelInputs,
+      requestedConcurrency: concurrency,
+      workerContexts: edgeWorkers,
+      maxConcurrency: effectiveConcurrency,
+      signal,
+      runItem: async ({ item: hotelInput, index, total, worker }) => {
+        let detailContext = null;
+        let meta = null;
+
+        try {
+          const preparedContext = this.createPreparedBatchDetailContext({
+            hotelInput,
+            index,
+            total,
+            worker,
+            batchItemsDir,
+            batchOptions,
+            batchPerf,
+            reportDisabled,
+            transitCache,
+            signal
+          });
+          detailContext = preparedContext.context;
+          meta = preparedContext.meta;
+          const preparedScrape = await this.singleDetailRunner.collectPreparedScrape(
+            detailContext
+          );
+          const resultPromise = limitTransit(async () => {
+            try {
+              assertNotCancelled(signal);
+              const preparedResult = await this.singleDetailRunner.completePreparedScrape(
+                preparedScrape
+              );
+              return this.mapPreparedBatchResult({
+                preparedResult,
+                detailContext,
+                index,
+                total,
+                meta,
+                batchOptions,
+                batchPerf,
+                batchStats,
+                signal
+              });
+            } catch (error) {
+              if (isCancellationError(error, signal)) {
+                throw error;
+              }
+              return this.mapPreparedBatchError({ error, index, total, meta, batchStats });
+            }
+          });
+          trackResultPromise(resultPromise);
+          return { index, resultPromise };
+        } catch (error) {
+          if (isCancellationError(error, signal)) {
+            throw error;
+          }
+          const resultPromise = Promise.resolve(
+            this.mapPreparedBatchError({ error, index, total, meta, batchStats })
+          );
+          trackResultPromise(resultPromise);
+          return { index, resultPromise };
+        }
+      }
+    });
+
+    const settledResults = await Promise.all(resultSettlements);
+    const rejected = settledResults.find((result) => result.status === 'rejected');
+    if (rejected) {
+      throw rejected.reason;
+    }
+
+    const results = settledResults
+      .map((result) => (result.status === 'fulfilled' ? result.value : null))
+      .filter(Boolean)
+      .sort((left, right) => left.index - right.index);
+
+    return {
+      ...scrapeRun,
+      results
+    };
+  }
+
+  async runPreparedBatchItems({
+    concurrency,
+    effectiveConcurrency,
+    batchItemsDir,
+    batchOptions,
+    batchPerf,
+    batchStats,
+    reportDisabled,
+    signal,
+    edgeWorkers = []
+  }) {
+    const { expandedInputs } = this.context;
     const transitCache = createTransitCache();
+
+    const supportsPipeline =
+      effectiveConcurrency > 1 &&
+      this.singleDetailRunner &&
+      typeof this.singleDetailRunner.collectPreparedScrape === 'function' &&
+      typeof this.singleDetailRunner.completePreparedScrape === 'function';
+
+    if (supportsPipeline) {
+      return this.runPipelinedBatchItems({
+        concurrency,
+        effectiveConcurrency,
+        batchItemsDir,
+        batchOptions,
+        batchPerf,
+        batchStats,
+        reportDisabled,
+        signal,
+        edgeWorkers,
+        transitCache
+      });
+    }
 
     return runPreparedDetailBatch({
       items: expandedInputs.hotelInputs,
@@ -371,180 +732,34 @@ class BatchOrchestrator {
       signal,
       singleDetailRunner: this.singleDetailRunner,
       createDetailContext: async ({ item: hotelInput, index, total, worker }) => {
-        assertNotCancelled(signal);
-        const itemEffectiveTemplate =
-          worker && worker.effectiveTemplate ? worker.effectiveTemplate : effectiveTemplate;
-        emitBatchItemStart(emit, { index, total, taskId, hotelInput });
-
-        const childOutputPath = reportDisabled
-          ? ''
-          : path.join(
-              batchItemsDir,
-              `batch-item-${String(index).padStart(3, '0')}-${hotelInput.hotelId || 'hotel'}.json`
-            );
-
-        return {
-          context: {
-            args,
-            startedAt,
-            taskId: `${taskId}-${index}`,
-            emit,
-            signal,
-            outputDir,
-            template,
-            matchedTemplate,
-            effectiveTemplate: itemEffectiveTemplate,
-            compareAppSettings,
-            effectiveDestination,
-            hotelInput,
-            outputPath: childOutputPath,
-            autoEdge: Boolean(args['auto-edge']),
-            transitCache,
-            writeAppData: false,
-            perf: batchPerf,
-            pageIndex: index,
-            reportLevel,
-            isBatchItem: true,
-            captureStrategy: resolveBatchCaptureStrategy(
-              args,
-              batchOptions,
-              Boolean(args['auto-edge'])
-            ),
-            edgeParallelCancelPolicy: batchOptions.edgeParallelCancelPolicy,
-            scrapeEventForwarder
-          },
-          meta: {
-            itemStartedAt: Date.now(),
-            hotelInput
-          }
-        };
-      },
-      mapPreparedResult: async ({ preparedResult, detailContext, index, total, meta }) => {
-        const hotelInput = meta.hotelInput;
-        preparedResult = await this.retryUncollectedPreparedResult({
-          preparedResult,
-          detailContext,
+        return this.createPreparedBatchDetailContext({
           hotelInput,
           index,
           total,
+          worker,
+          batchItemsDir,
           batchOptions,
           batchPerf,
+          reportDisabled,
+          transitCache,
           signal
         });
-        const childResult = preparedResult.result;
-        childResult.inputIndex = index;
-        childResult.inputSource = hotelInput.source;
-        childResult.hotelId = hotelInput.hotelId;
-        childResult.listCandidate = hotelInput.listCandidate || null;
-
-        const durationMs = durationSince(meta.itemStartedAt);
-        const performanceItem = {
+      },
+      mapPreparedResult: async ({ preparedResult, detailContext, index, total, meta }) => {
+        return this.mapPreparedBatchResult({
+          preparedResult,
+          detailContext,
           index,
-          hotelId: hotelInput.hotelId,
-          hotelName: childResult.hotelName,
-          durationMs,
-          detail: childResult.performance || null
-        };
-        batchStats.recordTask({
-          taskId: `${taskId}-${index}`,
-          status: 'success',
-          elapsedMs: durationMs,
-          index,
-          hotelId: hotelInput.hotelId,
-          hotelName: childResult.hotelName,
-          url: hotelInput.url,
-          waitDataMs:
-            (childResult.performance &&
-              childResult.performance.scrape &&
-              childResult.performance.scrape.waitDataMs) ||
-            0,
-          edgeMs:
-            (childResult.performance &&
-              childResult.performance.scrape &&
-              childResult.performance.scrape.edgeCaptureMs) ||
-            0,
-          apiReplayMs:
-            (childResult.performance &&
-              childResult.performance.scrape &&
-              childResult.performance.scrape.directReplayMs) ||
-            0,
-          htmlMs:
-            (childResult.performance &&
-              childResult.performance.scrape &&
-              childResult.performance.scrape.htmlMs) ||
-            0,
-          transitMs: (childResult.performance && childResult.performance.transitMs) || 0,
-          saveMs:
-            ((childResult.performance && childResult.performance.outputWriteMs) || 0) +
-            ((childResult.performance && childResult.performance.appWriteMs) || 0),
-          captureMethod:
-            (childResult.pageSnapshot && childResult.pageSnapshot.capture_method) || '',
-          waitReason: (childResult.pageSnapshot && childResult.pageSnapshot.wait_reason) || ''
+          total,
+          meta,
+          batchOptions,
+          batchPerf,
+          batchStats,
+          signal
         });
-
-        const uncollectedItem = buildUncollectedHotelPerfRecord({
-          index,
-          hotelInput,
-          childResult,
-          durationMs
-        });
-        if (uncollectedItem) {
-          batchPerf.event('uncollected_hotel', {
-            phase: 'batch_total',
-            status: 'skipped',
-            pageIndex: index,
-            hotelCount: total,
-            ...uncollectedItem
-          });
-        }
-
-        emitBatchItemDone(emit, { index, total, taskId, hotelInput, childResult });
-
-        return {
-          index,
-          hotelInput,
-          childResult,
-          childPayload: preparedResult.outputPayload || null,
-          savedHtmlFiles: Array.isArray(preparedResult.savedHtmlFiles)
-            ? preparedResult.savedHtmlFiles
-            : [],
-          failedItem: null,
-          durationMs,
-          performanceItem,
-          uncollectedItem
-        };
       },
       mapDetailError: async ({ error, index, total, meta }) => {
-        const hotelInput =
-          (meta && meta.hotelInput) || expandedInputs.hotelInputs[index - 1] || {};
-        const failedItem = {
-          index,
-          url: hotelInput.url,
-          source: hotelInput.source,
-          hotelId: hotelInput.hotelId,
-          error: error && error.message ? error.message : String(error)
-        };
-        batchStats.recordTask({
-          taskId: `${taskId}-${index}`,
-          status: 'failed',
-          elapsedMs: 0,
-          index,
-          hotelId: hotelInput.hotelId,
-          url: hotelInput.url
-        });
-        emitBatchItemError(emit, { index, total, taskId, hotelInput, failedItem });
-
-        return {
-          index,
-          hotelInput,
-          childResult: null,
-          childPayload: null,
-          savedHtmlFiles: [],
-          failedItem,
-          durationMs: 0,
-          performanceItem: null,
-          uncollectedItem: null
-        };
+        return this.mapPreparedBatchError({ error, index, total, meta, batchStats });
       }
     });
   }

@@ -385,8 +385,7 @@ test('normalizeTaskState keeps batch result display compatible with old fields',
           batchMode: true,
           appliedCount: 2,
           skippedCount: 1
-        },
-        reviewInputAvailable: true
+        }
       }
     },
     events: [],
@@ -631,7 +630,7 @@ test('renderSummaryCards replaces write status row with skipped hotel reasons on
   }
 });
 
-test('normalizeTaskState does not expose AI review for collection results', async () => {
+test('normalizeTaskState does not expose AI review controls for collection results', async () => {
   const { normalizeTaskState } = await loadTaskConsoleModule();
 
   const singleTaskState = normalizeTaskState({
@@ -641,7 +640,6 @@ test('normalizeTaskState does not expose AI review for collection results', asyn
       collectResult: {
         success: true,
         batchMode: false,
-        reviewInputAvailable: true,
         hotelName: '测试酒店',
         eligibleCount: 1,
         eligibleRoomTypes: [
@@ -667,7 +665,6 @@ test('normalizeTaskState does not expose AI review for collection results', asyn
       collectResult: {
         success: true,
         batchMode: true,
-        reviewInputAvailable: true,
         batchStats: {
           expandedHotelCount: 2
         },
@@ -1383,6 +1380,55 @@ test('AI collect task payload includes saved batch concurrency setting', async (
   assert.equal(capturedPayload.batchConcurrency, 3);
 });
 
+test('AI collect task does not promote unsupported saved batch concurrency to three', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
+  state.settings = {
+    collectBatchConcurrency: 6
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.batchConcurrency, 1);
+});
+
 test('AI refresh task payload includes saved batch concurrency setting', async () => {
   installAiAssistantDom('');
   const { module, state, actions } = await loadAiAssistantModules();
@@ -1555,6 +1601,7 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.match(settingsHtml, /collectBatchConcurrency/);
   assert.match(settingsHtml, /并发采集数/);
   assert.match(settingsHtml, /<option value="3">3 - 并发采集<\/option>/);
+  assert.doesNotMatch(settingsHtml, /<option value="6">6 - 并发采集<\/option>/);
   assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
   assert.match(currentTaskHeaderHtml, /前筛设置/);
   assert.match(prefilterHtml, /列表页前筛/);

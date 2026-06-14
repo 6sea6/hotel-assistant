@@ -54,8 +54,6 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
   const calls = {
     appendHotelsToStore: 0,
     appendedHotels: [],
-    buildReviewInput: 0,
-    buildReviewInputSummary: 0,
     order: [],
     scrape: 0,
     scrapeOptions: [],
@@ -186,9 +184,12 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
   );
   mockedPaths.push(
     installMock('../src/amap', {
-      getTransitInfo: async () => {
+      getTransitInfo: async (...transitArgs) => {
         calls.transit += 1;
         calls.order.push('transit');
+        if (typeof options.getTransitInfo === 'function') {
+          return options.getTransitInfo(...transitArgs);
+        }
         return {
           route: { durationMinutes: 20 },
           nearestSubway: { name: '测试站', distanceKm: 0.6 }
@@ -225,24 +226,6 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
           transport_time: '20',
           bus_route: '测试路线'
         }));
-      }
-    })
-  );
-  mockedPaths.push(
-    installMock('../src/review-input', {
-      buildReviewInput: () => {
-        calls.buildReviewInput += 1;
-        if (options.throwOnReviewInput) {
-          throw new Error('buildReviewInput should not run');
-        }
-        return { taskMeta: {}, rawRoomCandidates: [] };
-      },
-      buildReviewInputSummary: () => {
-        calls.buildReviewInputSummary += 1;
-        if (options.throwOnReviewInputSummary) {
-          throw new Error('buildReviewInputSummary should not run');
-        }
-        return { finalHotelCount: 1, rawCandidateCount: 1 };
       }
     })
   );
@@ -518,10 +501,7 @@ test('reportLevel off skips review/report output for single hotel', async () => 
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-fast-single-'));
   const latestRunPath = path.join(tempDir, 'latest-run.json');
-  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
-    throwOnReviewInput: true,
-    throwOnReviewInputSummary: true
-  });
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir);
 
   try {
     const records = [];
@@ -544,8 +524,6 @@ test('reportLevel off skips review/report output for single hotel', async () => 
       }
     );
 
-    assert.equal(calls.buildReviewInput, 0);
-    assert.equal(calls.buildReviewInputSummary, 0);
     assert.equal(result.success, true);
     assert.equal(result.hotelName, '极速酒店fast1');
     assert.equal(result.eligibleCount, 1);
@@ -562,9 +540,7 @@ test('reportLevel off skips review/report output for single hotel', async () => 
     assert.deepEqual(outputJsonFiles, []);
     assert.equal(
       records.some((record) =>
-        ['build_review_input', 'build_review_summary', 'build_report', 'write_report'].includes(
-          record.phase
-        )
+        ['build_report', 'write_report'].includes(record.phase)
       ),
       false
     );
@@ -592,8 +568,6 @@ test('reportLevel off batch skips item reports and can still write app data', as
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-fast-batch-'));
   const latestRunPath = path.join(tempDir, 'latest-run.json');
   const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
-    throwOnReviewInput: true,
-    throwOnReviewInputSummary: true,
     hotelInputs: [
       {
         url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=fast1',
@@ -634,8 +608,6 @@ test('reportLevel off batch skips item reports and can still write app data', as
       }
     );
 
-    assert.equal(calls.buildReviewInput, 0);
-    assert.equal(calls.buildReviewInputSummary, 0);
     assert.equal(calls.appendHotelsToStore, 1);
     assert.equal(calls.appendedHotels[0].length, 2);
     assert.equal(result.success, true);
@@ -653,9 +625,7 @@ test('reportLevel off batch skips item reports and can still write app data', as
     assert.deepEqual(outputJsonFiles, []);
     assert.equal(
       records.some((record) =>
-        ['build_review_input', 'build_review_summary', 'build_report', 'write_report'].includes(
-          record.phase
-        )
+        ['build_report', 'write_report'].includes(record.phase)
       ),
       false
     );
@@ -1047,7 +1017,89 @@ test('auto-edge profile preparation is capped to effective worker limit', async 
     assert.equal(preparedCalls[0].concurrency, 3);
     assert.equal(poolCalls.length, 1);
     assert.equal(poolCalls[0].concurrency, 3);
-    assert.deepEqual(poolCalls[0].preparedUserDataDirs, ['profile-worker-2', 'profile-worker-3']);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, [
+      'profile-worker-2',
+      'profile-worker-3'
+    ]);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('list input over max concurrency prepares capped batch Edge workers immediately', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-list-cap-three-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [1, 2, 3, 4, 5, 6].map((index) => ({
+    url: `https://hotels.ctrip.com/hotels/detail/?hotelId=list-cap-${index}`,
+    hotelId: `list-cap-${index}`,
+    source: 'list-prefilter'
+  }));
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+  const preparedCalls = [];
+  const poolCalls = [];
+  mockedPaths.push(
+    installMock('../src/batch-edge-worker-pool', {
+      cleanupBatchEdgeWorkerProfileClones: () => undefined,
+      prepareBatchEdgeWorkerProfileClones: (params) => {
+        preparedCalls.push(params);
+        return ['profile-worker-2', 'profile-worker-3'];
+      },
+      createBatchEdgeWorkerPool: async ({
+        effectiveTemplate,
+        concurrency,
+        existingWorker,
+        preparedUserDataDirs
+      }) => {
+        calls.order.push('create-pool');
+        poolCalls.push({ concurrency, existingWorker, preparedUserDataDirs });
+        return {
+          workers: Array.from({ length: concurrency }, (_item, index) => ({
+            effectiveTemplate: {
+              ...effectiveTemplate,
+              edge_debugging_port: 9400 + index,
+              edge_user_data_dir: `capped-worker-${index + 1}`
+            }
+          })),
+          close: async () => {
+            calls.order.push('close-pool');
+          }
+        };
+      }
+    })
+  );
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/list?cityId=477&cityName=%E6%AD%A6%E6%B1%89',
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'batch-concurrency': 6,
+        desiredHotelCount: 6,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.performance.concurrency, 6);
+    assert.equal(result.performance.effectiveConcurrency, 3);
+    assert.equal(preparedCalls.length, 1);
+    assert.equal(preparedCalls[0].concurrency, 3);
+    assert.equal(poolCalls.length, 1);
+    assert.equal(poolCalls[0].concurrency, 3);
+    assert.notEqual(poolCalls[0].existingWorker, null);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, [
+      'profile-worker-2',
+      'profile-worker-3'
+    ]);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1749,9 +1801,9 @@ test('batch concurrency caps requested auto-edge workers at three', async () => 
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-concurrency-four-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-concurrency-cap-three-'));
   const latestRunPath = path.join(tempDir, 'latest-run.json');
-  const hotelInputs = [1, 2, 3, 4].map((index) => ({
+  const hotelInputs = [1, 2, 3, 4, 5, 6].map((index) => ({
     url: `https://hotels.ctrip.com/hotels/detail/?hotelId=concurrency-cap-${index}`,
     hotelId: `concurrency-cap-${index}`,
     source: 'detail-input'
@@ -1796,19 +1848,19 @@ test('batch concurrency caps requested auto-edge workers at three', async () => 
         latestRun: latestRunPath,
         'report-level': 'off',
         'auto-edge': true,
-        'batch-concurrency': 4
+        'batch-concurrency': 6
       },
       {
         workingDirectory: tempDir
       }
     );
 
-    assert.equal(result.performance.concurrency, 4);
+    assert.equal(result.performance.concurrency, 6);
     assert.equal(result.performance.effectiveConcurrency, 3);
     assert.equal(maxActiveScrapes, 3);
     assert.deepEqual(
       result.items.map((item) => item.index),
-      [1, 2, 3, 4]
+      [1, 2, 3, 4, 5, 6]
     );
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
@@ -1816,13 +1868,13 @@ test('batch concurrency caps requested auto-edge workers at three', async () => 
   }
 });
 
-test('batch concurrency keeps shared Edge sessions capped at three', async () => {
+test('batch concurrency caps shared Edge sessions at three', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-shared-edge-cap-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-shared-edge-cap-three-'));
   const latestRunPath = path.join(tempDir, 'latest-run.json');
-  const hotelInputs = [1, 2, 3, 4].map((index) => ({
+  const hotelInputs = [1, 2, 3, 4, 5, 6].map((index) => ({
     url: `https://hotels.ctrip.com/hotels/detail/?hotelId=shared-edge-cap-${index}`,
     hotelId: `shared-edge-cap-${index}`,
     source: 'detail-input'
@@ -1866,16 +1918,113 @@ test('batch concurrency keeps shared Edge sessions capped at three', async () =>
         url: hotelInputs.map((item) => item.url),
         latestRun: latestRunPath,
         'report-level': 'off',
-        'batch-concurrency': 4
+        'batch-concurrency': 6
       },
       {
         workingDirectory: tempDir
       }
     );
 
-    assert.equal(result.performance.concurrency, 4);
+    assert.equal(result.performance.concurrency, 6);
     assert.equal(result.performance.effectiveConcurrency, 3);
     assert.equal(maxActiveScrapes, 3);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch pipeline caps Ctrip scrapes and AMap transit at three', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-pipeline-cap-three-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = Array.from({ length: 8 }, (_item, index) => ({
+    url: `https://hotels.ctrip.com/hotels/detail/?hotelId=pipeline-${index + 1}`,
+    hotelId: `pipeline-${index + 1}`,
+    source: 'detail-input'
+  }));
+  let activeScrapes = 0;
+  let maxActiveScrapes = 0;
+  let activeTransits = 0;
+  let maxActiveTransits = 0;
+  const order = [];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: async (hotelInput) => {
+      activeScrapes += 1;
+      maxActiveScrapes = Math.max(maxActiveScrapes, activeScrapes);
+      order.push(`scrape-start:${hotelInput.hotelId}`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      order.push(`scrape-end:${hotelInput.hotelId}`);
+      activeScrapes -= 1;
+      return {
+        hotel_name: `流水线酒店${hotelInput.hotelId}`,
+        address: `流水线地址${hotelInput.hotelId}`,
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 188, prices: [188], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 188 }],
+        raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 188, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_only',
+          wait_reason: ''
+        },
+        performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
+      };
+    },
+    getTransitInfo: async (address) => {
+      activeTransits += 1;
+      maxActiveTransits = Math.max(maxActiveTransits, activeTransits);
+      order.push(`transit-start:${address}`);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      order.push(`transit-end:${address}`);
+      activeTransits -= 1;
+      return {
+        route: { durationMinutes: 20 },
+        nearestSubway: { name: '测试站', distanceKm: 0.6 }
+      };
+    }
+  });
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'batch-concurrency': 6
+      },
+      {
+        workingDirectory: tempDir
+      }
+    );
+
+    assert.equal(result.performance.concurrency, 6);
+    assert.equal(result.performance.effectiveConcurrency, 3);
+    assert.equal(calls.scrape, 8);
+    assert.equal(calls.transit, 8);
+    assert.equal(maxActiveScrapes, 3);
+    assert.equal(maxActiveTransits, 3);
+    assert.deepEqual(
+      result.items.map((item) => item.index),
+      [1, 2, 3, 4, 5, 6, 7, 8]
+    );
+    const lastScrapeEndIndex = Math.max(
+      ...order
+        .map((entry, index) => (entry.startsWith('scrape-end:') ? index : -1))
+        .filter((index) => index >= 0)
+    );
+    const firstTransitEndIndex = order.findIndex((entry) => entry.startsWith('transit-end:'));
+    assert.ok(firstTransitEndIndex > lastScrapeEndIndex);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -2346,21 +2495,6 @@ test('runHotelImportTask reuses prepared context for batch detail items', async 
     })
   );
   mockedPaths.push(
-    installMock('../src/review-input', {
-      buildReviewInput: () => ({
-        selectionLogs: [],
-        rejectedRoomTypes: [],
-        normalizeLogs: []
-      }),
-      buildReviewInputSummary: () => ({
-        finalHotelCount: 1,
-        rawCandidateCount: 0,
-        eligibleCount: 1,
-        rejectedCount: 0
-      })
-    })
-  );
-  mockedPaths.push(
     installMock('../src/template-loader', {
       applyMatchedTemplate: (template, matchedTemplate) => ({
         ...template,
@@ -2538,21 +2672,6 @@ test('runHotelImportTask completes a single detail URL without batch writeResult
     })
   );
   mockedPaths.push(
-    installMock('../src/review-input', {
-      buildReviewInput: () => ({
-        selectionLogs: [],
-        rejectedRoomTypes: [],
-        normalizeLogs: []
-      }),
-      buildReviewInputSummary: () => ({
-        finalHotelCount: 1,
-        rawCandidateCount: 0,
-        eligibleCount: 1,
-        rejectedCount: 0
-      })
-    })
-  );
-  mockedPaths.push(
     installMock('../src/template-loader', {
       applyMatchedTemplate: (template, matchedTemplate) => ({
         ...template,
@@ -2724,21 +2843,6 @@ test('write_report perf phase includes report_bytes and timing fields for single
           bus_route: '测试路线'
         }
       ]
-    })
-  );
-  mockedPaths.push(
-    installMock('../src/review-input', {
-      buildReviewInput: () => ({
-        selectionLogs: [],
-        rejectedRoomTypes: [],
-        normalizeLogs: []
-      }),
-      buildReviewInputSummary: () => ({
-        finalHotelCount: 1,
-        rawCandidateCount: 0,
-        eligibleCount: 1,
-        rejectedCount: 0
-      })
     })
   );
   mockedPaths.push(

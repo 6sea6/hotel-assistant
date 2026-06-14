@@ -18,7 +18,6 @@ const {
   buildTemplateSnapshot,
   runHotelImportTask
 } = require('../src/task-runner');
-const { buildReviewInput } = require('../src/review-input');
 const { resolveSharedCompareAppModule } = require('../src/compare-app/shared-module');
 const { cleanupOutputArtifacts, parseArgs, sanitizeSensitiveData } = require('../src/utils');
 const {
@@ -180,115 +179,6 @@ test('sanitizeSensitiveData redacts API keys and token-shaped fields recursively
   assert.equal(sanitized.scrape_debug.layerInfo.token, '[REDACTED]');
   assert.equal(sanitized.scrape_debug.roomToken, '[REDACTED]');
   assert.equal(sanitized.scrape_debug.normal, 'kept');
-});
-
-test('buildReviewInput keeps final, eligible, rejected, raw and diagnostic evidence', () => {
-  const reviewInput = buildReviewInput({
-    taskMeta: {
-      taskId: 'task-1',
-      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-      templateId: 100,
-      templateName: '武汉',
-      checkInDate: '2026-06-01',
-      checkOutDate: '2026-06-02',
-      roomCount: 3,
-      guestCount: 3,
-      destination: '江汉路'
-    },
-    finalHotels: [
-      {
-        name: '测试酒店',
-        website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
-        room_type: '家庭房',
-        total_price: 600,
-        room_area: '40',
-        notes: '早餐：无早餐'
-      }
-    ],
-    template: {
-      room_count: 3,
-      room_type: '家庭房'
-    },
-    roomCandidates: [
-      {
-        title: '家庭房',
-        original_title: '家庭房',
-        standard_title: '家庭房',
-        price: 600,
-        occupancy: 3,
-        cancelPolicy: '免费取消',
-        source: 'edge-cdp',
-        raw: {
-          physicalRoom: {
-            area: 40
-          },
-          saleRoom: {
-            mealInfo: {
-              title: '无早餐'
-            }
-          }
-        }
-      },
-      {
-        title: '双床房',
-        original_title: '双床房',
-        standard_title: '双床房',
-        price: null,
-        occupancy: 3,
-        cancelPolicy: '免费取消',
-        source: 'desktop',
-        raw: '双床房 登录看低价 token:"secret-token"'
-      }
-    ],
-    evaluations: [
-      {
-        action: 'selected',
-        score: 30,
-        reason: '符合规则',
-        reasonCode: 'selected',
-        evidenceFields: ['price']
-      },
-      {
-        action: 'rejected',
-        score: 20,
-        reason: '价格缺失',
-        reasonCode: 'price_missing_or_locked',
-        evidenceFields: ['price']
-      }
-    ],
-    pageSnapshot: {
-      room_price_visible: true,
-      sources: [
-        {
-          source: 'desktop',
-          room_candidates_count: 2,
-          room_price_visible: false,
-          locked_price_detected: true
-        }
-      ]
-    }
-  });
-
-  assert.equal(reviewInput.taskMeta.outputFingerprint.length, 64);
-  assert.equal(reviewInput.finalHotels.length, 1);
-  assert.equal(reviewInput.eligibleRoomTypes.length, 1);
-  assert.equal(reviewInput.rejectedRoomTypes.length, 1);
-  assert.equal(reviewInput.rejectedRoomTypes[0].rejectReasonCode, 'price_missing_or_locked');
-  assert.equal(reviewInput.rawRoomCandidates.length, 2);
-  assert.doesNotMatch(reviewInput.rawRoomCandidates[1].compactRawText, /secret-token/);
-  assert.ok(reviewInput.normalizeLogs.some((item) => item.field === 'price'));
-  assert.equal(reviewInput.selectionLogs[1].candidateId, 'room-candidate-002');
-  assert.ok(
-    reviewInput.finalHotelFieldLogs.some(
-      (item) => item.field === 'room_area' && item.source === '房型详情面积解析'
-    )
-  );
-  assert.ok(
-    reviewInput.finalHotelFieldLogs.some(
-      (item) => item.field === 'notes' && item.source === '房型详情中的早餐信息'
-    )
-  );
-  assert.equal(reviewInput.pageSnapshotSummary.rejectedCount, 1);
 });
 
 test('task runner exposes reusable helpers for Electron integration', () => {

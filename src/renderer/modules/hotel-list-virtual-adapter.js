@@ -178,6 +178,7 @@ function renderVirtualHotelCollection({
   let lastRenderedRangeKey = '';
   let scrollbarUpdateRafId = 0;
   let saveScrollRafId = 0;
+  let handleVirtualListScroll = null;
 
   const scheduleScrollbarUpdate = () => {
     if (scrollbarUpdateRafId) return;
@@ -289,6 +290,10 @@ function renderVirtualHotelCollection({
     }
     customScrollbar?.cleanup();
     scrollContainer.removeEventListener('wheel', wheelController.handleWheel, true);
+    if (handleVirtualListScroll) {
+      scrollContainer.removeEventListener('scroll', handleVirtualListScroll);
+      handleVirtualListScroll = null;
+    }
     wheelController.cleanup();
   };
 
@@ -311,14 +316,11 @@ function renderVirtualHotelCollection({
     });
   };
 
-  scrollContainer.addEventListener(
-    'scroll',
-    () => {
-      scheduleVirtualUpdate();
-      scheduleSaveScrollMemory();
-    },
-    { passive: true }
-  );
+  handleVirtualListScroll = () => {
+    scheduleVirtualUpdate();
+    scheduleSaveScrollMemory();
+  };
+  scrollContainer.addEventListener('scroll', handleVirtualListScroll, { passive: true });
 
   const scrollBehavior = getScrollBehaviorForReason(reason, currentFiltersKey);
   let initialScrollTop = 0;

@@ -349,35 +349,6 @@ test('writeJsonFile with measure returns bytes/stringifyMs/writeMs', () => {
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-test('buildReviewInputSummary returns lightweight summary without full logs', () => {
-  const { buildReviewInputSummary } = require('../src/review-input');
-
-  const summary = buildReviewInputSummary({
-    taskMeta: { taskId: 'test-1', url: 'https://example.com' },
-    finalHotels: [{ name: 'Hotel 1' }],
-    roomCandidates: [{ id: 1 }, { id: 2 }, { id: 3 }],
-    evaluations: [
-      { action: 'selected', reason: 'good' },
-      { action: 'rejected', reason: 'bad' },
-      { action: 'selected', reason: 'good' }
-    ],
-    pageSnapshot: { capture_method: 'edge-cdp', wait_reason: '' },
-    template: {}
-  });
-
-  assert.equal(summary.taskMeta.taskId, 'test-1');
-  assert.equal(summary.finalHotelCount, 1);
-  assert.equal(summary.rawCandidateCount, 3);
-  assert.equal(summary.eligibleCount, 2);
-  assert.equal(summary.rejectedCount, 1);
-  assert.equal(summary.captureMethod, 'edge-cdp');
-  assert.ok(summary.lightweightFingerprint);
-  assert.equal(summary.normalizeLogs, undefined);
-  assert.equal(summary.selectionLogs, undefined);
-  assert.equal(summary.rawRoomCandidates, undefined);
-  assert.equal(summary.finalHotelFieldLogs, undefined);
-});
-
 test('buildListResultsSummary extracts only summary fields', () => {
   const { buildListResultsSummary } = require('../src/ctrip-list');
 
@@ -470,29 +441,6 @@ test('parseArgs supports reportLevel off aliases', () => {
   assert.equal(parseArgs(['node', 'cli.js', '--report-level', 'off'])['report-level'], 'off');
   assert.equal(parseArgs(['node', 'cli.js', '--skip-report'])['skip-report'], true);
   assert.equal(parseArgs(['node', 'cli.js', '--no-output-report'])['no-output-report'], true);
-});
-
-test('buildReviewInput includes summary counts', () => {
-  const { buildReviewInput } = require('../src/review-input');
-
-  const reviewInput = buildReviewInput({
-    taskMeta: { taskId: 'test-1', url: 'https://example.com' },
-    finalHotels: [{ name: 'Hotel 1' }],
-    roomCandidates: [{ id: 1 }, { id: 2 }, { id: 3 }],
-    evaluations: [
-      { action: 'selected', reason: 'good' },
-      { action: 'rejected', reason: 'bad' },
-      { action: 'selected', reason: 'good' }
-    ],
-    pageSnapshot: {},
-    template: {}
-  });
-
-  assert.ok(reviewInput._summaryCounts);
-  assert.equal(reviewInput._summaryCounts.raw_candidate_count, 3);
-  assert.ok(reviewInput._summaryCounts.normalize_log_count > 0);
-  assert.ok(reviewInput._summaryCounts.selection_log_count > 0);
-  assert.ok(reviewInput._summaryCounts.final_field_log_count >= 0);
 });
 
 test('single hotel normal report does not include review_input', () => {

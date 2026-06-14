@@ -220,6 +220,26 @@ test('settings normalization still fills defaults and removes deprecated fields'
   assert.ok(store.setCalls.some((call) => call.key === 'settings'));
 });
 
+test('settings normalization treats unsupported batch concurrency as default serial', () => {
+  const store = createStore({
+    settings: {
+      ...APP_CONFIG.STORE_DEFAULTS.settings,
+      collectBatchConcurrency: 6
+    }
+  });
+  const handlers = registerHandler(registerSettingsHandlers, store, {
+    windowService: {
+      getIconState: () => ({})
+    }
+  });
+
+  const settings = handlers['settings:getAll'](createTrustedIpcEvent());
+
+  assert.equal(settings.collectBatchConcurrency, 1);
+  assert.equal(store.setCalls.at(-1).key, 'settings');
+  assert.equal(store.setCalls.at(-1).value.collectBatchConcurrency, 1);
+});
+
 test('settings:set rejects empty setting keys before mutating settings', () => {
   const store = createStore({
     settings: { ...APP_CONFIG.STORE_DEFAULTS.settings }

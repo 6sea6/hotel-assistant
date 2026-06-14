@@ -23,33 +23,14 @@ const {
 const { writeSingleHotelRecords } = require('./task-writeback');
 
 class SingleDetailRunner {
-  async run(context) {
+  createPreparedScrapeState(context) {
     const {
-      args,
-      startedAt,
       taskId,
-      emit,
-      signal,
-      outputDir,
-      template,
-      matchedTemplate,
       effectiveTemplate,
-      compareAppSettings,
-      effectiveDestination,
       hotelInput,
-      outputPath: preferredOutputPath,
-      autoEdge,
-      transitCache,
-      writeAppData = false,
       perf = null,
-      pageIndex = null,
-      reportLevel = 'normal',
-      isBatchItem = false,
-      captureStrategy: contextCaptureStrategy = null,
-      edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null,
-      scrapeEventForwarder = emit
+      pageIndex = null
     } = context;
-    const reportDisabled = isReportDisabled(reportLevel);
     const itemPerf = perf
       ? perf.child({
           taskId,
@@ -58,20 +39,44 @@ class SingleDetailRunner {
         })
       : new PerfTimer(setup_perf_logger(), { taskId, url: hotelInput.url, pageIndex });
 
-    const totalStartedAt = Date.now();
-    const performance = {
-      totalMs: 0,
-      scrapeMs: 0,
-      transitMs: 0,
-      outputWriteMs: 0,
-      cleanupMs: 0,
-      appWriteMs: 0,
-      scrape: null
+    return {
+      context,
+      itemPerf,
+      totalStartedAt: Date.now(),
+      performance: {
+        totalMs: 0,
+        scrapeMs: 0,
+        transitMs: 0,
+        outputWriteMs: 0,
+        cleanupMs: 0,
+        appWriteMs: 0,
+        scrape: null
+      },
+      itemTemplate: {
+        ...effectiveTemplate,
+        ctrip_url: hotelInput.url
+      },
+      scraped: null,
+      skipTransit: false,
+      skipTransitBecauseNoEligibleRooms: false
     };
-    const itemTemplate = {
-      ...effectiveTemplate,
-      ctrip_url: hotelInput.url
-    };
+  }
+
+  async collectPreparedScrape(context) {
+    const prepared = this.createPreparedScrapeState(context);
+    const {
+      args,
+      emit,
+      signal,
+      outputDir,
+      compareAppSettings,
+      autoEdge,
+      isBatchItem = false,
+      captureStrategy: contextCaptureStrategy = null,
+      edgeParallelCancelPolicy: contextEdgeParallelCancelPolicy = null,
+      scrapeEventForwarder = emit
+    } = context;
+    const { itemTemplate, itemPerf, performance } = prepared;
 
     assertNotCancelled(signal);
     emit('scrape:start', '正在采集携程酒店页面');
@@ -99,6 +104,7 @@ class SingleDetailRunner {
     });
     performance.scrapeMs = durationSince(scrapeStartedAt);
     performance.scrape = scraped.performance || null;
+    prepared.scraped = scraped;
 
     assertNotCancelled(signal);
     const hasEligibleScrapedRooms =
@@ -107,8 +113,18 @@ class SingleDetailRunner {
     const skipTransit = Boolean(
       args.skipTransit || args['skip-transit'] || skipTransitBecauseNoEligibleRooms
     );
+    prepared.skipTransit = skipTransit;
+    prepared.skipTransitBecauseNoEligibleRooms = skipTransitBecauseNoEligibleRooms;
+
+    return prepared;
+  }
+
+  async resolveTransit(prepared) {
+    const { context, itemPerf, itemTemplate, performance, scraped } = prepared;
+    const { args, emit, signal, effectiveDestination, transitCache } = context;
     let transit = null;
-    if (!skipTransit) {
+    if (!prepared.skipTransit) {
+      assertNotCancelled(signal);
       emit('transit:start', '正在计算交通与地铁信息');
       const transitStartedAt = Date.now();
       transit = await getTransitInfo(
@@ -123,7 +139,7 @@ class SingleDetailRunner {
       performance.transitMs = durationSince(transitStartedAt);
     } else {
       performance.transitMs = 0;
-      if (skipTransitBecauseNoEligibleRooms) {
+      if (prepared.skipTransitBecauseNoEligibleRooms) {
         performance.transitSkippedReason = 'no_eligible_rooms';
         itemPerf.event('transit_skipped', {
           reason: 'no_eligible_rooms',
@@ -133,6 +149,28 @@ class SingleDetailRunner {
       }
     }
 
+    return transit;
+  }
+
+  async buildPreparedResult(prepared, transit) {
+    const { context, itemPerf, itemTemplate, performance, scraped, totalStartedAt } = prepared;
+    const {
+      args,
+      startedAt,
+      emit,
+      signal,
+      outputDir,
+      template,
+      matchedTemplate,
+      compareAppSettings,
+      hotelInput,
+      outputPath: preferredOutputPath,
+      writeAppData = false,
+      reportLevel = 'normal'
+    } = context;
+    const reportDisabled = isReportDisabled(reportLevel);
+
+    assertNotCancelled(signal);
     const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries } = await itemPerf.runPhase(
       'parse_data',
       { url: itemTemplate.ctrip_url },
@@ -305,6 +343,16 @@ class SingleDetailRunner {
       outputPayload,
       savedHtmlFiles
     };
+  }
+
+  async completePreparedScrape(prepared) {
+    const transit = await this.resolveTransit(prepared);
+    return this.buildPreparedResult(prepared, transit);
+  }
+
+  async run(context) {
+    const prepared = await this.collectPreparedScrape(context);
+    return this.completePreparedScrape(prepared);
   }
 }
 

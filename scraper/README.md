@@ -274,7 +274,7 @@ node src/cli.js --url "携程链接" --templateName "模板名" \
 
 - 开启性能日志：在运行采集前设置 `HOTEL_COLLECTOR_ENV=dev` 和 `ENABLE_PERF_LOG=1`
 - 关闭性能日志：不设置上述环境变量，或把 `ENABLE_PERF_LOG` 设为 `0`
-- 不生成采集报告、复核输入和大 JSON 输出：追加 `--report-level off`，这和性能日志是两套独立开关
+- 不生成采集报告和大 JSON 输出：追加 `--report-level off`，这和性能日志是两套独立开关
 - 分析瓶颈：运行 `python ../scripts/analyze_perf.py ../logs/perf`，重点看 `task_kind`、`wait_reason`、`capture_method`、`wait_data`、`edge_*`、`api_replay_*`、`list_expand_ms`
 - 列表页数量不足：看 `listApiResponseCount/listApiPageIndexes/listApiError`；详情页价格慢或缺价：看 `edge_settle_*`、`edge_response_parse`、`room_price_visible`、`spider_error_codes`
 
