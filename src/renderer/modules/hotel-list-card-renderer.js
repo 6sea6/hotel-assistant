@@ -9,7 +9,8 @@ import {
   hasDisplayValue,
   formatDateChinese,
   getRoomCountText,
-  getSelectionKey
+  getSelectionKey,
+  iconHtml
 } from './dom-helpers.js';
 import { isHotelInputPriorityActive, queueHotelRenderResume } from './render-scheduler.js';
 import { formatSubwayInfo } from './hotel-filters.js';
@@ -150,9 +151,9 @@ export function createHotelCard(hotel, index) {
     ${notesHtml}
 
     <div class="hotel-actions">
-      <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${hotelIdAttr}">✏️ 编辑</button>
+      <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${hotelIdAttr}">${iconHtml('edit')} 编辑</button>
       <button class="btn btn-danger btn-sm" data-action="delete" data-id="${hotelIdAttr}" data-confirming="false">
-        🗑️ 删除
+        ${iconHtml('trash')} 删除
       </button>
       ${actionItems.join('')}
     </div>

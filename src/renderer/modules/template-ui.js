@@ -18,7 +18,8 @@ import {
   setText,
   setStyle,
   normalizeIdValue,
-  getRoomCountText
+  getRoomCountText,
+  iconHtml
 } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from './ui-utils.js';
@@ -222,13 +223,13 @@ export function renderTemplateList() {
 
   const getTemplateDateMeta = (template) => {
     if (template.check_in_date && template.check_out_date) {
-      return `<span>📅 ${template.check_in_date} → ${template.check_out_date}</span>`;
+      return `<span>${iconHtml('calendar')} ${template.check_in_date} → ${template.check_out_date}</span>`;
     }
     if (template.check_in_date) {
-      return `<span>📅 入住 ${template.check_in_date}</span>`;
+      return `<span>${iconHtml('calendar')} 入住 ${template.check_in_date}</span>`;
     }
     if (template.check_out_date) {
-      return `<span>🏁 离店 ${template.check_out_date}</span>`;
+      return `<span>${iconHtml('flag')} 离店 ${template.check_out_date}</span>`;
     }
     return '';
   };
@@ -246,15 +247,15 @@ export function renderTemplateList() {
       <div class="template-info">
         <h4>${escapeHtml(template.name)}</h4>
         <div class="template-meta">
-          ${template.destination ? `<span>📍 ${escapeHtml(template.destination)}</span>` : ''}
+          ${template.destination ? `<span>${iconHtml('map-pin')} ${escapeHtml(template.destination)}</span>` : ''}
           ${getTemplateDateMeta(template)}
-          ${template.room_count ? `<span>👤 ${getRoomCountText(template.room_count)}</span>` : ''}
+          ${template.room_count ? `<span>${iconHtml('user')} ${getRoomCountText(template.room_count)}</span>` : ''}
         </div>
       </div>
       <div class="template-actions">
         ${buildTemplateActionButton('应用', 'apply-template', template.id)}
         ${buildTemplateActionButton('编辑', 'edit-template', template.id)}
-        ${buildTemplateActionButton('<span>🗑️</span> 删除', 'delete-template', template.id, 'btn-danger')}
+        ${buildTemplateActionButton(`${iconHtml('trash')} 删除`, 'delete-template', template.id, 'btn-danger')}
       </div>
     </div>
   `

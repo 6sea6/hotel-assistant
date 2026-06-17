@@ -2,11 +2,7 @@
  * 宾馆卡片字段定义 —— 定义卡片视图中可展示的字段及其渲染逻辑。
  */
 
-import {
-  escapeHtml,
-  escapeHtmlWithLineBreaks,
-  hasDisplayValue
-} from './dom-helpers.js';
+import { escapeHtml, escapeHtmlWithLineBreaks, hasDisplayValue, iconHtml } from './dom-helpers.js';
 
 /**
  * @typedef {import('../../shared/contracts').NormalizedHotelRecord} NormalizedHotelRecord
@@ -44,29 +40,31 @@ export function setFieldRenderHelpers(helpers) {
   _helpers = helpers;
 }
 
-export const SUPPORTED_HOTEL_CARD_FIELD_KEYS = Object.freeze(new Set([
-  'original_room_type',
-  'address',
-  'website',
-  'total_price',
-  'daily_price',
-  'ctrip_score',
-  'destination',
-  'distance',
-  'subway',
-  'transport_time',
-  'bus_route',
-  'room_type',
-  'room_count',
-  'room_area',
-  'days',
-  'check_in_date',
-  'check_out_date',
-  'notes',
-  'template',
-  'cancel_policy',
-  'window_status'
-]));
+export const SUPPORTED_HOTEL_CARD_FIELD_KEYS = Object.freeze(
+  new Set([
+    'original_room_type',
+    'address',
+    'website',
+    'total_price',
+    'daily_price',
+    'ctrip_score',
+    'destination',
+    'distance',
+    'subway',
+    'transport_time',
+    'bus_route',
+    'room_type',
+    'room_count',
+    'room_area',
+    'days',
+    'check_in_date',
+    'check_out_date',
+    'notes',
+    'template',
+    'cancel_policy',
+    'window_status'
+  ])
+);
 
 export const DEFAULT_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
   'original_room_type',
@@ -103,7 +101,8 @@ export const HOTEL_CARD_FIELDS = [
     label: '原始房型',
     group: 'header',
     getValue: (hotel) => hotel.original_room_type || null,
-    render: (value) => `<div class="hotel-original-room hotel-card-original-room">原始房型：${escapeHtml(value)}</div>`
+    render: (value) =>
+      `<div class="hotel-original-room hotel-card-original-room">原始房型：${escapeHtml(value)}</div>`
   },
   {
     key: 'address',
@@ -111,7 +110,7 @@ export const HOTEL_CARD_FIELDS = [
     group: 'header',
     getValue: (hotel) => hotel.address || null,
     render: (value) =>
-      `<div class="hotel-address hotel-card-address"><span class="hotel-card-meta-icon" aria-hidden="true">📍</span><span class="hotel-card-address-text">${escapeHtml(value)}</span></div>`
+      `<div class="hotel-address hotel-card-address">${iconHtml('map-pin', 'hotel-card-meta-icon')}<span class="hotel-card-address-text">${escapeHtml(value)}</span></div>`
   },
   {
     key: 'website',
@@ -119,7 +118,7 @@ export const HOTEL_CARD_FIELDS = [
     group: 'header',
     getValue: (hotel) => hotel.website || null,
     render: (value) =>
-      `<div class="hotel-website hotel-card-website"><span class="hotel-website-icon">🌐</span><a href="#" data-url="${escapeHtml(value)}" title="${escapeHtml(value)}">${escapeHtml(value)}</a></div>`
+      `<div class="hotel-website hotel-card-website">${iconHtml('globe', 'hotel-website-icon')}<a href="#" data-url="${escapeHtml(value)}" title="${escapeHtml(value)}">${escapeHtml(value)}</a></div>`
   },
   {
     key: 'total_price',
@@ -265,7 +264,8 @@ export const HOTEL_CARD_FIELDS = [
     label: '备注',
     group: 'footer',
     getValue: (hotel) => (hotel.notes ? hotel.notes : null),
-    render: (value) => `<div class="hotel-notes">📝 ${escapeHtml(value)}</div>`
+    render: (value) =>
+      `<div class="hotel-notes">${iconHtml('note', 'hotel-note-icon')} ${escapeHtml(value)}</div>`
   },
   {
     key: 'template',

@@ -3,7 +3,7 @@
  */
 
 import { state } from './state.js';
-import { $, setValue } from './dom-helpers.js';
+import { $, setValue, iconHtml } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
   setModalActive,
@@ -148,7 +148,10 @@ export async function saveCollectBatchConcurrencySetting() {
     state.settings.collectBatchConcurrency = nextValue;
     setValue('collectBatchConcurrency', String(nextValue));
     refreshCustomSelects();
-    showNotification(nextValue > 1 ? `已开启 ${nextValue} 并发采集` : '已切换为串行采集', 'success');
+    showNotification(
+      nextValue > 1 ? `已开启 ${nextValue} 并发采集` : '已切换为串行采集',
+      'success'
+    );
   } catch (error) {
     console.error('保存并发采集设置失败:', error);
     state.settings.collectBatchConcurrency = previousValue;
@@ -203,7 +206,7 @@ export async function resetSettings(eventLike) {
   const triggerButton = getEventButton(eventLike);
   if (triggerButton && triggerButton.dataset.confirming !== 'true') {
     startActionButtonConfirmation(triggerButton, {
-      confirmHtml: '⚠️ 确认恢复默认',
+      confirmHtml: `${iconHtml('warning')} 确认恢复默认`,
       variantClass: 'btn-secondary'
     });
     return;

@@ -71,6 +71,7 @@ async function loadHotelListModule() {
     export const formatDateChinese = (value) => String(value || '');
     export const getRoomCountText = (value) => String(value || '');
     export const normalizeFilterOptionKey = (value) => String(value || '').trim();
+    export const iconHtml = (name, extraClass = '') => '<span class="app-icon app-icon-' + name + (extraClass ? ' ' + extraClass : '') + '" aria-hidden="true"></span>';
     `
   );
 

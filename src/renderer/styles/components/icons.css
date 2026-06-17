@@ -1,0 +1,201 @@
+.app-icon {
+  --icon-size: 1em;
+  --icon-url: none;
+  display: inline-block;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  flex: 0 0 var(--icon-size);
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask-image: var(--icon-url);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  mask-image: var(--icon-url);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+}
+
+.app-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-title .app-icon {
+  --icon-size: 28px;
+}
+
+.btn .app-icon {
+  --icon-size: 1.1em;
+}
+
+.btn-sm .app-icon,
+.btn-xs .app-icon {
+  --icon-size: 1em;
+}
+
+.view-mode-option-icon.app-icon {
+  --icon-size: 15px;
+}
+
+.empty-state-icon.app-icon {
+  --icon-size: 1em;
+}
+
+.transfer-icon.app-icon {
+  --icon-size: 48px;
+}
+
+.manual-section h3 .app-icon,
+.modal-header h2 .app-icon {
+  --icon-size: 1em;
+}
+
+.template-meta .app-icon,
+.hotel-card-meta-icon.app-icon,
+.hotel-website-icon.app-icon,
+.hotel-note-icon.app-icon,
+.hotel-table-inline-icon.app-icon {
+  --icon-size: 1em;
+}
+
+.app-icon-hotel {
+  --icon-url: none;
+  background-color: transparent;
+  background-image: url('../../assets/icons/hotel-emoji.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.app-icon-hotel.empty-state-icon {
+  opacity: 1;
+}
+
+.app-icon-bot {
+  --icon-url: url('../../assets/icons/bot.svg');
+}
+
+.app-icon-clipboard {
+  --icon-url: url('../../assets/icons/clipboard.svg');
+}
+
+.app-icon-database {
+  --icon-url: url('../../assets/icons/database.svg');
+}
+
+.app-icon-palette {
+  --icon-url: url('../../assets/icons/palette.svg');
+}
+
+.app-icon-settings {
+  --icon-url: url('../../assets/icons/settings.svg');
+}
+
+.app-icon-info {
+  --icon-url: url('../../assets/icons/info.svg');
+}
+
+.app-icon-plus {
+  --icon-url: url('../../assets/icons/plus.svg');
+}
+
+.app-icon-camera {
+  --icon-url: url('../../assets/icons/camera.svg');
+}
+
+.app-icon-trash {
+  --icon-url: url('../../assets/icons/trash.svg');
+}
+
+.app-icon-cards {
+  --icon-url: url('../../assets/icons/cards.svg');
+}
+
+.app-icon-table {
+  --icon-url: url('../../assets/icons/table.svg');
+}
+
+.app-icon-folder {
+  --icon-url: url('../../assets/icons/folder.svg');
+}
+
+.app-icon-folder-open {
+  --icon-url: url('../../assets/icons/folder-open.svg');
+}
+
+.app-icon-globe {
+  --icon-url: url('../../assets/icons/globe.svg');
+}
+
+.app-icon-book-open {
+  --icon-url: url('../../assets/icons/book-open.svg');
+}
+
+.app-icon-image {
+  --icon-url: url('../../assets/icons/image.svg');
+}
+
+.app-icon-reset {
+  --icon-url: url('../../assets/icons/reset.svg');
+}
+
+.app-icon-upload {
+  --icon-url: url('../../assets/icons/upload.svg');
+}
+
+.app-icon-download {
+  --icon-url: url('../../assets/icons/download.svg');
+}
+
+.app-icon-search {
+  --icon-url: url('../../assets/icons/search.svg');
+}
+
+.app-icon-chart {
+  --icon-url: url('../../assets/icons/chart.svg');
+}
+
+.app-icon-lightbulb {
+  --icon-url: url('../../assets/icons/lightbulb.svg');
+}
+
+.app-icon-calendar {
+  --icon-url: url('../../assets/icons/calendar.svg');
+}
+
+.app-icon-flag {
+  --icon-url: url('../../assets/icons/flag.svg');
+}
+
+.app-icon-map-pin {
+  --icon-url: url('../../assets/icons/map-pin.svg');
+}
+
+.app-icon-user {
+  --icon-url: url('../../assets/icons/user.svg');
+}
+
+.app-icon-warning {
+  --icon-url: url('../../assets/icons/warning.svg');
+}
+
+.app-icon-loader {
+  --icon-url: url('../../assets/icons/loader.svg');
+}
+
+.app-icon-edit {
+  --icon-url: url('../../assets/icons/edit.svg');
+}
+
+.app-icon-subway {
+  --icon-url: url('../../assets/icons/subway.svg');
+}
+
+.app-icon-note {
+  --icon-url: url('../../assets/icons/note.svg');
+}

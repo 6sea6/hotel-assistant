@@ -81,6 +81,7 @@ async function loadCrudModule() {
       export function getSelectionKey(id) { return String(id); }
       export function hasDisplayValue(v) { return v !== null && v !== undefined && String(v).trim() !== ''; }
       export function escapeHtml(t) { return String(t); }
+      export function iconHtml(name, extraClass = '') { return '<span class="app-icon app-icon-' + name + (extraClass ? ' ' + extraClass : '') + '" aria-hidden="true"></span>'; }
       `
     );
 
@@ -119,10 +120,7 @@ async function loadCrudModule() {
     );
 
     // Stub: custom-select.js
-    writeStub(
-      path.join(tempRoot, 'custom-select.js'),
-      `export function refreshCustomSelects() {}`
-    );
+    writeStub(path.join(tempRoot, 'custom-select.js'), `export function refreshCustomSelects() {}`);
 
     moduleUrl = pathToFileURL(path.join(tempRoot, 'hotel-crud.js')).href;
     process.on('exit', () => {
@@ -247,10 +245,16 @@ test('saveHotel add success does not call getAllHotels', async () => {
   let getAllCallCount = 0;
 
   window.electronAPI = {
-    addHotel: async () => { addCallCount++; return addedHotel; },
+    addHotel: async () => {
+      addCallCount++;
+      return addedHotel;
+    },
     updateHotel: async () => null,
     deleteHotel: async () => ({ success: true }),
-    getAllHotels: async () => { getAllCallCount++; return []; }
+    getAllHotels: async () => {
+      getAllCallCount++;
+      return [];
+    }
   };
 
   await saveHotel();
@@ -296,9 +300,15 @@ test('saveHotel update success does not call getAllHotels', async () => {
 
   window.electronAPI = {
     addHotel: async () => null,
-    updateHotel: async () => { updateCallCount++; return updatedHotel; },
+    updateHotel: async () => {
+      updateCallCount++;
+      return updatedHotel;
+    },
     deleteHotel: async () => ({ success: true }),
-    getAllHotels: async () => { getAllCallCount++; return []; }
+    getAllHotels: async () => {
+      getAllCallCount++;
+      return [];
+    }
   };
 
   await saveHotel();
@@ -369,9 +379,15 @@ test('toggleFavorite success does not call getAllHotels', async () => {
 
   window.electronAPI = {
     addHotel: async () => null,
-    updateHotel: async () => { updateCallCount++; return savedHotel; },
+    updateHotel: async () => {
+      updateCallCount++;
+      return savedHotel;
+    },
     deleteHotel: async () => ({ success: true }),
-    getAllHotels: async () => { getAllCallCount++; return []; }
+    getAllHotels: async () => {
+      getAllCallCount++;
+      return [];
+    }
   };
 
   await toggleFavorite(1, 0);
@@ -418,8 +434,14 @@ test('deleteHotel success does not call getAllHotels', async () => {
   window.electronAPI = {
     addHotel: async () => null,
     updateHotel: async () => null,
-    deleteHotel: async () => { deleteCallCount++; return { success: true, deletedCount: 1 }; },
-    getAllHotels: async () => { getAllCallCount++; return []; }
+    deleteHotel: async () => {
+      deleteCallCount++;
+      return { success: true, deletedCount: 1 };
+    },
+    getAllHotels: async () => {
+      getAllCallCount++;
+      return [];
+    }
   };
 
   await deleteHotel(1);

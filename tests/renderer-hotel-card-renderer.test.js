@@ -41,6 +41,7 @@ export const hasDisplayValue = (value) => value !== null && value !== undefined 
 export const formatDateChinese = (value) => String(value || '');
 export const getRoomCountText = (value) => String(value || '');
 export const getSelectionKey = (id) => String(id);
+export const iconHtml = (name, extraClass = '') => '<span class="app-icon app-icon-' + name + (extraClass ? ' ' + extraClass : '') + '" aria-hidden="true"></span>';
 `
     );
     fs.writeFileSync(
@@ -178,7 +179,8 @@ test('hotel card meta row lets a single address use the full row', async () => {
     const { createHotelCard } = await loadCardRendererModule();
     const card = createHotelCard(makeHotel(), 0);
     const html = card.innerHTML;
-    const metaRow = html.match(/<div class="hotel-card-meta-pair[^"]*">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || '';
+    const metaRow =
+      html.match(/<div class="hotel-card-meta-pair[^"]*">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || '';
 
     assert.match(metaRow, /hotel-card-meta-pair[^"]*\bis-single-meta\b/);
     assert.match(metaRow, /hotel-card-meta-pair[^"]*\bhas-address\b/);
@@ -196,7 +198,8 @@ test('hotel card metadata css lets address consume available row space before tr
     'utf-8'
   );
   const metaPairRule = css.match(/\.hotel-card-meta-pair\s*{([\s\S]*?)}/)?.[1] || '';
-  const singleMetaRule = css.match(/\.hotel-card-meta-pair\.is-single-meta\s*{([\s\S]*?)}/)?.[1] || '';
+  const singleMetaRule =
+    css.match(/\.hotel-card-meta-pair\.is-single-meta\s*{([\s\S]*?)}/)?.[1] || '';
   const addressRuleStart = css.lastIndexOf('\n.hotel-card-address {');
   assert.notEqual(addressRuleStart, -1, 'missing standalone hotel-card-address rule');
   const addressRuleBlockStart = css.indexOf('{', addressRuleStart);

@@ -71,6 +71,7 @@ async function loadTemplateUiModules() {
         return /^-?\\d+$/.test(String(value)) ? Number(value) : String(value);
       }
       export function getRoomCountText(value) { return String(value) + '人'; }
+      export function iconHtml(name, extraClass = '') { return '<span class="app-icon app-icon-' + name + (extraClass ? ' ' + extraClass : '') + '" aria-hidden="true"></span>'; }
       `
     );
 

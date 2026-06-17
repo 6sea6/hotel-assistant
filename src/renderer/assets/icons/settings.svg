@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <defs>
+    <mask id="settings-cutout">
+      <rect width="24" height="24" fill="#fff"/>
+      <circle cx="12" cy="12" r="2.75" fill="#000"/>
+    </mask>
+  </defs>
+  <g fill="#000" mask="url(#settings-cutout)">
+    <circle cx="12" cy="12" r="6.25"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(45 12 12)"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(90 12 12)"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(135 12 12)"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(180 12 12)"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(225 12 12)"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(270 12 12)"/>
+    <rect x="10.35" y="2.25" width="3.3" height="4.45" rx="0.8" transform="rotate(315 12 12)"/>
+  </g>
+</svg>

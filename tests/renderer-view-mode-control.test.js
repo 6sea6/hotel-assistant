@@ -23,8 +23,8 @@ test('main toolbar exposes an explicit whole-frame card/table view toggle', () =
   assert.match(html, /data-action="toggle-view-mode"/);
   assert.match(html, /id="viewModeCardOption"[\s\S]*data-view-mode="card"/);
   assert.match(html, /id="viewModeListOption"[\s\S]*data-view-mode="list"/);
-  assert.match(html, /🗂️/);
-  assert.match(html, /📝/);
+  assert.match(html, /app-icon-cards/);
+  assert.match(html, /app-icon-table/);
   assert.doesNotMatch(html, /data-action="set-view-mode"/);
 });
 
@@ -61,6 +61,7 @@ async function loadControllerModule() {
     export const escapeHtmlWithLineBreaks = escapeHtml;
     export const idsEqual = (a, b) => String(a) === String(b);
     export const getRoomCountText = (value) => String(value || '');
+    export const iconHtml = (name, extraClass = '') => '<span class="app-icon app-icon-' + name + (extraClass ? ' ' + extraClass : '') + '" aria-hidden="true"></span>';
     `
   );
   writeFile(

@@ -3,7 +3,7 @@
  */
 
 import { state, HOTEL_RENDER_BATCH_SIZE, LARGE_HOTEL_RENDER_THRESHOLD } from './state.js';
-import { escapeHtml, getSelectionKey, hasDisplayValue } from './dom-helpers.js';
+import { escapeHtml, getSelectionKey, hasDisplayValue, iconHtml } from './dom-helpers.js';
 import { isHotelInputPriorityActive, queueHotelRenderResume } from './render-scheduler.js';
 import { formatSubwayInfo } from './hotel-filters.js';
 
@@ -45,7 +45,7 @@ export function createHotelListRow(hotel, index) {
       <div class="hotel-name ${hotel.is_favorite ? 'favorite-name' : ''}">${escapeHtml(hotel.name)}</div>
       ${roomTypeLine}
       ${originalRoomTypeLine}
-      ${subwayInfo !== '-' ? `<small>🚇 ${escapeHtml(subwayInfo)}</small>` : ''}
+      ${subwayInfo !== '-' ? `<small>${iconHtml('subway', 'hotel-table-inline-icon')} ${escapeHtml(subwayInfo)}</small>` : ''}
     </div>
     <div class="table-col price-col">
       <div class="price-value">${dailyPrice}</div>

@@ -132,6 +132,14 @@ export function escapeHtmlWithLineBreaks(text) {
   return escapeHtml(text).replace(/\r?\n/g, '<br>');
 }
 
+export function iconHtml(name, extraClass = '') {
+  const normalizedName = String(name || '').replace(/[^a-z0-9-]/gi, '');
+  const className = ['app-icon', `app-icon-${normalizedName}`, extraClass]
+    .filter(Boolean)
+    .join(' ');
+  return `<span class="${className}" aria-hidden="true"></span>`;
+}
+
 export function idsEqual(left, right) {
   return String(left) === String(right);
 }

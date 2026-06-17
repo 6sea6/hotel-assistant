@@ -3,7 +3,7 @@
  */
 
 import { state, setHotels, markVisibleHotelsCacheDirty } from './state.js';
-import { $, getValue, getSelectionKey } from './dom-helpers.js';
+import { $, getValue, getSelectionKey, iconHtml } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
   setModalActive,
@@ -30,7 +30,7 @@ function resetRuleDeleteConfirmation() {
   const confirmBtn = $('ruleDeleteConfirmBtn');
   if (!confirmBtn) return;
   if (!confirmBtn.dataset.originalHtml) {
-    confirmBtn.dataset.originalHtml = '<span>🗑️</span> 删除命中项';
+    confirmBtn.dataset.originalHtml = `${iconHtml('trash')} 删除命中项`;
   }
   confirmBtn.dataset.variantClass = 'btn-danger';
   resetActionButtonConfirmation(confirmBtn);
@@ -177,7 +177,7 @@ export async function confirmRuleDelete() {
   if (confirmBtn && confirmBtn.dataset.confirming !== 'true') {
     startActionButtonConfirmation(confirmBtn, {
       variantClass: 'btn-danger',
-      confirmHtml: `<span>⚠️</span> 确认删除 (${candidates.length})`,
+      confirmHtml: `${iconHtml('warning')} 确认删除 (${candidates.length})`,
       timeout: 2600
     });
     return;
@@ -190,7 +190,7 @@ export async function confirmRuleDelete() {
     ruleDeleteInProgress = true;
     if (confirmBtn) {
       confirmBtn.disabled = true;
-      confirmBtn.innerHTML = '<span>⏳</span> 正在删除...';
+      confirmBtn.innerHTML = `${iconHtml('loader')} 正在删除...`;
     }
 
     const hotelIds = candidates.map((hotel) => getSelectionKey(hotel.id));
@@ -219,7 +219,7 @@ export async function confirmRuleDelete() {
     ruleDeleteInProgress = false;
     if (confirmBtn) {
       confirmBtn.disabled = false;
-      confirmBtn.innerHTML = originalHtml || '<span>🗑️</span> 删除命中项';
+      confirmBtn.innerHTML = originalHtml || `${iconHtml('trash')} 删除命中项`;
       resetRuleDeleteConfirmation();
     }
     updateRuleDeletePreview();

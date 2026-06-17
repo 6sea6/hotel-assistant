@@ -32,6 +32,7 @@ import {
 } from './hotel-list-virtual-adapter.js';
 import { configureHotelListSelection, syncSelectAllCheckboxState } from './hotel-list-selection.js';
 import { actions } from './actions.js';
+import { iconHtml } from './dom-helpers.js';
 
 configureHotelListSelection({ getSortedVisibleHotels });
 
@@ -112,7 +113,7 @@ export function renderHotelList(options = {}) {
       const emptyActionText = isFilterEmptyState ? '清除筛选' : '打开采集助手';
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-icon">🏨</div>
+          ${iconHtml('hotel', 'empty-state-icon')}
           <div class="empty-state-text">${isFilterEmptyState ? '当前筛选条件下没有匹配结果' : '暂无宾馆数据'}</div>
           <button class="btn ${isFilterEmptyState ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="${emptyAction}">${emptyActionText}</button>
         </div>

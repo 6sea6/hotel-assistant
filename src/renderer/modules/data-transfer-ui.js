@@ -2,7 +2,7 @@
  * 数据迁移和外部网站 UI —— 数据路径、导入导出和官网入口。
  */
 
-import { $, setValue } from './dom-helpers.js';
+import { $, setValue, iconHtml } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
   setModalActive,
@@ -40,7 +40,7 @@ export async function changeDataPath(eventLike) {
   const triggerButton = getEventButton(eventLike);
   if (triggerButton && triggerButton.dataset.confirming !== 'true') {
     startActionButtonConfirmation(triggerButton, {
-      confirmHtml: '<span>⚠️</span> 确认更改',
+      confirmHtml: `${iconHtml('warning')} 确认更改`,
       variantClass: 'btn-secondary'
     });
     return;

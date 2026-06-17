@@ -26,7 +26,8 @@ import {
   setValue,
   idsEqual,
   normalizeIdValue,
-  getSelectionKey
+  getSelectionKey,
+  iconHtml
 } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { perfStart, perfEnd } from './perf.js';
@@ -39,7 +40,11 @@ import {
 } from './ui-utils.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
-import { attachDerivedFields, attachDerivedFieldsToHotel, stripDerivedFieldsFromHotel } from './hotel-derived.js';
+import {
+  attachDerivedFields,
+  attachDerivedFieldsToHotel,
+  stripDerivedFieldsFromHotel
+} from './hotel-derived.js';
 import { logRendererDebug } from './debug-log.js';
 
 /**
@@ -164,7 +169,12 @@ export async function loadSettings() {
  * @returns {Promise<{hotelsCount: number, templatesCount: number, settingsLoaded: boolean}>}
  */
 export async function reloadAllData(options = {}) {
-  const { includeSettings = false, invalidateCache = false, verbose = true, forceHotels = false } = options;
+  const {
+    includeSettings = false,
+    invalidateCache = false,
+    verbose = true,
+    forceHotels = false
+  } = options;
 
   if (invalidateCache && window.electronAPI.invalidateRendererCache) {
     window.electronAPI.invalidateRendererCache();
@@ -486,10 +496,9 @@ export async function saveHotel() {
     previousHotels = state.hotels.slice();
     if (id) {
       hotel.id = normalizeIdValue(id);
-      const savedHotel = attachDerivedFieldsToHotel(assertSavedHotelResult(
-        await window.electronAPI.updateHotel(hotel),
-        '更新宾馆失败'
-      ));
+      const savedHotel = attachDerivedFieldsToHotel(
+        assertSavedHotelResult(await window.electronAPI.updateHotel(hotel), '更新宾馆失败')
+      );
       setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
       markVisibleHotelsCacheDirty();
       markLocalHotelsRevisionUnknown();
@@ -498,10 +507,9 @@ export async function saveHotel() {
         changedIds: [savedHotel.id || id]
       });
     } else {
-      const savedHotel = attachDerivedFieldsToHotel(assertSavedHotelResult(
-        await window.electronAPI.addHotel(hotel),
-        '新增宾馆失败'
-      ));
+      const savedHotel = attachDerivedFieldsToHotel(
+        assertSavedHotelResult(await window.electronAPI.addHotel(hotel), '新增宾馆失败')
+      );
       setHotels(appendHotelToList(state.hotels, savedHotel));
       markVisibleHotelsCacheDirty();
       markLocalHotelsRevisionUnknown();
@@ -585,10 +593,12 @@ export async function toggleFavorite(id, currentStatus) {
 
     (async () => {
       try {
-        const savedHotel = attachDerivedFieldsToHotel(assertSavedHotelResult(
-          await window.electronAPI.updateHotel(stripDerivedFieldsFromHotel(updatedLocalHotel)),
-          '更新收藏状态失败'
-        ));
+        const savedHotel = attachDerivedFieldsToHotel(
+          assertSavedHotelResult(
+            await window.electronAPI.updateHotel(stripDerivedFieldsFromHotel(updatedLocalHotel)),
+            '更新收藏状态失败'
+          )
+        );
         setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
         markVisibleHotelsCacheDirty();
         markLocalHotelsRevisionUnknown();
@@ -641,7 +651,7 @@ export async function confirmBatchDelete() {
     state.batchDeleteInProgress = true;
 
     batchDeleteBtn.disabled = true;
-    batchDeleteBtn.innerHTML = '<span>⏳</span> 正在删除...';
+    batchDeleteBtn.innerHTML = `${iconHtml('loader')} 正在删除...`;
 
     const result = await window.electronAPI.deleteMultipleHotels(hotelIds);
     if (!result || !result.success) {

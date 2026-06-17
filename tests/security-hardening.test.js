@@ -108,7 +108,7 @@ test('in-app manual content is extracted into a separate renderer resource', () 
 
   assert.match(indexHtml, /id="manualContent"/);
   assert.doesNotMatch(indexHtml, /<h3>🏨 宾馆管理<\/h3>/);
-  assert.match(manualHtml, /<h3>🏨 宾馆管理<\/h3>/);
+  assert.match(manualHtml, /app-icon-hotel[\s\S]*宾馆管理/);
   assert.match(
     preload,
     /getManualContent:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('manual:getContent'\)/
@@ -118,10 +118,7 @@ test('in-app manual content is extracted into a separate renderer resource', () 
 
 test('manual content is sanitized and excluded from global data-action delegation', () => {
   const appModule = fs.readFileSync(path.join(rendererDir, 'app.module.js'), 'utf8');
-  const aboutManual = fs.readFileSync(
-    path.join(rendererDir, 'modules', 'about-manual.js'),
-    'utf8'
-  );
+  const aboutManual = fs.readFileSync(path.join(rendererDir, 'modules', 'about-manual.js'), 'utf8');
 
   assert.match(appModule, /closest\('#manualContent'\)/);
   assert.match(aboutManual, /function sanitizeManualContent/);

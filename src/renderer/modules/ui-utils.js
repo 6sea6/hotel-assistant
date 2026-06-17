@@ -2,7 +2,7 @@
  * 模态框 & 按钮确认 —— 弹窗显隐控制和二次确认交互。
  */
 
-import { $ } from './dom-helpers.js';
+import { $, iconHtml } from './dom-helpers.js';
 import { state } from './state.js';
 import { resumeDeferredHotelRender } from './render-scheduler.js';
 import { ensureModalTemplateMounted } from './modal-templates.js';
@@ -208,7 +208,7 @@ export function resetDeleteConfirmation(btn) {
   }
   btn.dataset.confirming = 'false';
   btn.dataset.confirmTimer = '';
-  btn.innerHTML = '<span>🗑️</span> 删除';
+  btn.innerHTML = `${iconHtml('trash')} 删除`;
   btn.classList.remove('btn-confirm');
   btn.classList.add('btn-danger');
 }
@@ -217,7 +217,7 @@ export function startDeleteConfirmation(btn) {
   if (!btn) return;
   resetDeleteConfirmation(btn);
   btn.dataset.confirming = 'true';
-  btn.innerHTML = '<span>⚠️</span> 确认吗';
+  btn.innerHTML = `${iconHtml('warning')} 确认吗`;
   btn.classList.remove('btn-danger');
   btn.classList.add('btn-confirm');
   const timerId = window.setTimeout(() => resetDeleteConfirmation(btn), 2200);
@@ -254,7 +254,7 @@ export function startActionButtonConfirmation(button, options = {}) {
   button.dataset.variantClass = options.variantClass || 'btn-secondary';
   resetActionButtonConfirmation(button);
   button.dataset.confirming = 'true';
-  button.innerHTML = options.confirmHtml || '<span>⚠️</span> 确认吗';
+  button.innerHTML = options.confirmHtml || `${iconHtml('warning')} 确认吗`;
   button.classList.remove(button.dataset.variantClass);
   button.classList.add('btn-confirm');
 
@@ -275,17 +275,17 @@ export function syncBatchDeleteButton(options = {}) {
   batchDeleteBtn.disabled = Boolean(options.disabled);
 
   if (options.loading) {
-    batchDeleteBtn.innerHTML = '<span>⏳</span> 正在删除...';
+    batchDeleteBtn.innerHTML = `${iconHtml('loader')} 正在删除...`;
     return;
   }
 
   if (options.warning) {
-    batchDeleteBtn.innerHTML = '<span>⚠️</span> 请先选择宾馆';
+    batchDeleteBtn.innerHTML = `${iconHtml('warning')} 请先选择宾馆`;
     return;
   }
 
   batchDeleteBtn.innerHTML =
-    count > 0 ? `<span>🗑️</span> 删除选中 (${count})` : '<span>🗑️</span> 删除选中';
+    count > 0 ? `${iconHtml('trash')} 删除选中 (${count})` : `${iconHtml('trash')} 删除选中`;
 }
 
 export function resetBatchDeleteConfirmation(options = {}) {
@@ -311,7 +311,7 @@ export function startBatchDeleteConfirmation() {
   batchDeleteBtn.dataset.confirming = 'true';
   batchDeleteBtn.classList.remove('btn-danger');
   batchDeleteBtn.classList.add('btn-confirm');
-  batchDeleteBtn.innerHTML = `<span>⚠️</span> 确认删除 (${state.selectedHotels.size})`;
+  batchDeleteBtn.innerHTML = `${iconHtml('warning')} 确认删除 (${state.selectedHotels.size})`;
 
   const timerId = window.setTimeout(() => {
     resetBatchDeleteConfirmation({ count: state.selectedHotels.size });

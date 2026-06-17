@@ -3,7 +3,7 @@
  */
 
 import { state } from './state.js';
-import { $ } from './dom-helpers.js';
+import { $, iconHtml } from './dom-helpers.js';
 
 export function renderHotelListPreparingState() {
   const container = $('hotelList');
@@ -12,7 +12,7 @@ export function renderHotelListPreparingState() {
   container.className = state.viewMode === 'list' ? 'hotel-list list-view' : 'hotel-list';
   container.innerHTML = `
     <div class="empty-state empty-state-loading">
-      <div class="empty-state-icon">⏳</div>
+      ${iconHtml('loader', 'empty-state-icon')}
       <div class="empty-state-text">数据已导入，正在后台整理列表</div>
       <div class="empty-state-subtext">现在可以先继续添加或编辑宾馆，列表会在你空闲时继续恢复。</div>
     </div>
