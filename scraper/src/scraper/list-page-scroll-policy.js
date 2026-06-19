@@ -30,7 +30,8 @@ async function dispatchCdpWheelScroll(connection, sessionId) {
           deltaY: 1200,
           deltaX: 0
         },
-        sessionId
+        sessionId,
+        { timeoutMs: 400 }
       )
       .catch(() => undefined);
     await delay(250);
@@ -59,9 +60,7 @@ function buildListPageScrollExpression(options = {}) {
                 '[data-hotelid]',
                 '[data-hotel-id]',
                 '[data-offline-hotelid]',
-                '[data-offline-hotelId]',
-                '[class*="hotel"]',
-                '[class*="Hotel"]'
+                '[data-offline-hotelId]'
               ].join(',')).length;
             } catch (_error) {
               return 0;
@@ -70,39 +69,71 @@ function buildListPageScrollExpression(options = {}) {
           const collectCandidateHtml = () => {
             const selector = [
               'a[href*="/hotels/"]',
+              'a[href*="/hotel"]',
               'a[href*="hotelId="]',
               '[data-hotelid]',
               '[data-hotel-id]',
+              '[data-masterhotelid]',
+              '[data-master-hotel-id]',
               '[data-offline-hotelid]',
               '[data-offline-hotelId]',
-              '[class*="hotel"]',
-              '[class*="Hotel"]'
+              '[data-exposure*="hotel"]',
+              '[data-exposure*="Hotel"]',
+              '[data-ubt-key*="hotel"]',
+              '[data-ubt-key*="Hotel"]'
             ].join(',');
             const fragments = [];
             const seen = new Set();
             let totalBytes = 0;
+            const startedAt = Date.now();
+            const isOverBudget = () => Date.now() - startedAt > 850;
             const addFragment = (element) => {
-              if (!element || seen.has(element)) return;
+              if (!element || seen.has(element) || isOverBudget()) return;
               seen.add(element);
               const html = String(element.outerHTML || '').trim();
               if (!html) return;
               fragments.push(html.slice(0, 12000));
               totalBytes += html.length;
             };
-            for (const element of Array.from(document.querySelectorAll(selector))) {
+            const hotelLike = (element) => {
+              if (!element) return false;
+              const attrText = [
+                element.id,
+                element.className,
+                element.getAttribute && element.getAttribute('href'),
+                element.getAttribute && element.getAttribute('data-hotelid'),
+                element.getAttribute && element.getAttribute('data-hotel-id'),
+                element.getAttribute && element.getAttribute('data-masterhotelid'),
+                element.getAttribute && element.getAttribute('data-master-hotel-id'),
+                element.getAttribute && element.getAttribute('data-offline-hotelid'),
+                element.getAttribute && element.getAttribute('data-offline-hotelId'),
+                element.getAttribute && element.getAttribute('data-exposure'),
+                element.getAttribute && element.getAttribute('data-ubt-key')
+              ].filter(Boolean).join(' ');
+              const text = String(element.innerText || element.textContent || '').slice(0, 1200);
+              return /hotelId|hotelid|masterHotelId|masterhotelid|offline-hotel|\\/hotels\\/|酒店|宾馆|评分|点评|¥|￥/i.test(attrText + ' ' + text);
+            };
+            for (const element of Array.from(document.querySelectorAll(selector)).slice(0, 500)) {
+              if (isOverBudget()) break;
               let candidate = element;
-              for (let depth = 0; depth < 3; depth += 1) {
+              let best = hotelLike(candidate) ? candidate : null;
+              for (let depth = 0; depth < 7; depth += 1) {
+                if (isOverBudget()) break;
                 const parent = candidate && candidate.parentElement;
                 if (!parent || parent === document.body || parent === document.documentElement) {
                   break;
                 }
                 const text = parent.innerText || '';
-                if (text.length > 30 && text.length <= 1800) {
+                if (text.length > 20 && text.length <= 2200 && hotelLike(parent)) {
                   candidate = parent;
+                  best = parent;
+                  continue;
                 }
+                if (text.length > 2200) break;
+                candidate = parent;
               }
-              addFragment(candidate);
-              if (fragments.length >= 120 || totalBytes >= 240000) {
+              addFragment(best || element);
+              if (fragments.length >= 120 || totalBytes >= 240000 || isOverBudget()) {
                 break;
               }
             }
@@ -202,7 +233,7 @@ function buildListPageScrollExpression(options = {}) {
           const nextHeight = getHeight();
           const nextCount = getCandidateCount();
           const candidateHtml = collectCandidateHtml();
-          const html = ${edgeHtmlExpression};
+          const html = ${options.includeFullEdgeHtml === true ? edgeHtmlExpression : 'candidateHtml'};
           return JSON.stringify({
             scrollHeight: nextHeight,
             candidateCount: nextCount,

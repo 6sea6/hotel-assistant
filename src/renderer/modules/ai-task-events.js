@@ -97,6 +97,17 @@ export function getToolName(event = {}) {
 
 /**
  * @param {AiTaskEvent} [event]
+ * @returns {boolean}
+ */
+export function isSoftCtripLoginPromptEvent(event = {}) {
+  if (!event || event.type !== 'edge:login-required') return false;
+  const details = event.details && typeof event.details === 'object' ? event.details : {};
+  const detailText = [details.reason, details.instruction, event.message].filter(Boolean).join(' ');
+  return details.actionRequired === false || /采集仍会继续尝试/.test(detailText);
+}
+
+/**
+ * @param {AiTaskEvent} [event]
  * @param {AiTaskKind} [taskKind]
  * @returns {string}
  */
@@ -109,6 +120,7 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
   if (type === 'task:done') return 'done';
   if (type === 'task:error') return 'error';
   if (type === 'task:cancel') return 'cancel';
+  if (isSoftCtripLoginPromptEvent(event)) return '';
   if (isRefresh) {
     if (type === 'refresh:load-data') return 'load-data';
     if (type === 'refresh:scan-done') return 'load-data';

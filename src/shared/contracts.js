@@ -100,6 +100,8 @@
  * @typedef {Record<string, unknown> & {
  *   templateId?: string,
  *   templateName?: string,
+ *   inputMode?: 'url'|'address'|string,
+ *   addressQuery?: string,
  *   url?: string,
  *   listFilters?: AiListFilters,
  *   listUrlFilters?: AiListUrlFilters,
@@ -358,6 +360,8 @@
  * @property {string} [id]
  * @property {string} [displayIndex]
  * @property {string} [url]
+ * @property {'url'|'address'|string} [inputMode]
+ * @property {string} [addressQuery]
  * @property {string} [templateId]
  * @property {string} [templateName]
  * @property {string} [templateLabel]

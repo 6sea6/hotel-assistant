@@ -23,6 +23,7 @@ import {
 } from './ai-task-console.js';
 import {
   buildTaskPayload,
+  detectSubmittedTaskInput,
   getSubmittedUrl,
   handleAiTaskInputChange,
   readCollectBrowser,
@@ -45,7 +46,7 @@ import {
   renderAiTemplateOptions,
   setupAiTemplatePicker
 } from './ai-template-picker.js';
-import { createRafRenderScheduler } from './ai-task-events.js';
+import { createRafRenderScheduler, isSoftCtripLoginPromptEvent } from './ai-task-events.js';
 
 export {
   handleAiTaskInputChange,
@@ -73,8 +74,7 @@ let queueStartCheckInProgress = false;
 /** @type {null|(() => void)} */
 let disposeAiTaskEventListener = null;
 const activeLoginNotifications = new Map();
-const CTRIP_LOGIN_NOTIFICATION_MESSAGE =
-  '需要登录携程，请在弹出的采集浏览器中完成登录后关闭窗口';
+const CTRIP_LOGIN_NOTIFICATION_MESSAGE = '需要登录携程，请在弹出的采集浏览器中完成登录后关闭窗口';
 
 function setPageVisible(id, visible) {
   const el = $(id);
@@ -360,6 +360,7 @@ export function showCtripLoginNotificationOnce(event, queueTask = null) {
 
 function isActionableCtripLoginRequiredEvent(event = {}) {
   if (!event || event.type !== 'edge:login-required') return false;
+  if (isSoftCtripLoginPromptEvent(event)) return false;
   const details = event.details && typeof event.details === 'object' ? event.details : {};
   const detailText = [details.reason, details.instruction, event.message].filter(Boolean).join(' ');
   return (
@@ -472,11 +473,20 @@ function getQueueResultWrote(result) {
   );
 }
 
-function isDuplicateActiveUrl(url) {
-  const normalized = String(url || '').trim();
+function getQueueTaskInputKey(task = {}) {
+  if (task.inputMode === 'address') {
+    return `address:${String(task.addressQuery || '').trim()}`;
+  }
+  return `url:${String(task.url || '').trim()}`;
+}
+
+function isDuplicateActiveTaskInput(inputMode, inputValue) {
+  const normalizedMode = inputMode === 'address' ? 'address' : 'url';
+  const normalized = String(inputValue || '').trim();
+  const inputKey = `${normalizedMode}:${normalized}`;
   return (state.aiTaskQueue || []).some(
     (task) =>
-      ['waiting', 'running'].includes(task.status) && String(task.url || '').trim() === normalized
+      ['waiting', 'running'].includes(task.status) && getQueueTaskInputKey(task) === inputKey
   );
 }
 
@@ -485,14 +495,23 @@ function isDuplicateActiveUrl(url) {
  * @param {string} url
  * @param {AiListFilters} [listFilters]
  * @param {AiListUrlFilters} [listUrlFilters]
+ * @param {{inputMode?: 'url'|'address'|string, addressQuery?: string}} [options]
  * @returns {AiTaskQueueItem|null}
  */
-function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
-  if (isDuplicateActiveUrl(url)) {
-    showNotification('该链接已在任务队列中', 'warning');
+function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}, options = {}) {
+  const inputMode = options.inputMode === 'address' ? 'address' : 'url';
+  const inputValue = inputMode === 'address' ? options.addressQuery : url;
+  if (isDuplicateActiveTaskInput(inputMode, inputValue)) {
+    showNotification(
+      inputMode === 'address' ? '该地址已在任务队列中' : '该链接已在任务队列中',
+      'warning'
+    );
     return null;
   }
-  const task = createQueueTask(template, url, listFilters, listUrlFilters);
+  const task = createQueueTask(template, url, listFilters, listUrlFilters, 'collect', {
+    inputMode,
+    addressQuery: options.addressQuery
+  });
   pushAiTaskQueueItem(task);
   if (!state.aiSelectedQueueTaskId) {
     setAiSelectedQueueTaskId(task.id || '');
@@ -508,7 +527,11 @@ function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}) {
  */
 async function executeCollectTask(task) {
   markAiTaskInProgress(task);
-  startTaskConsole(task.template, task.url, task);
+  startTaskConsole(
+    task.template,
+    task.inputMode === 'address' ? task.addressQuery || '' : task.url,
+    task
+  );
   let shouldRunNextImmediately = true;
   const isRefresh = task.taskKind === 'refresh-data';
 
@@ -591,6 +614,26 @@ export function updateAiInputCount() {
   updatePayloadInputCount();
 }
 
+function applyAiSearchModeToDom() {
+  const label = $('aiTaskInputLabel');
+  const input = /** @type {HTMLTextAreaElement|null} */ ($('aiHotelUrlInput'));
+  const icon = $('aiTaskInputIcon');
+  if (label) {
+    label.textContent = '链接或宾馆地址';
+  }
+  if (input) {
+    input.placeholder = '粘贴携程链接或输入宾馆地址';
+  }
+  if (icon) {
+    icon.textContent = '↗';
+  }
+  document.querySelectorAll('[data-ai-search-mode]').forEach((button) => {
+    const modeButton = /** @type {HTMLElement} */ (button);
+    modeButton.classList.remove('is-selected');
+    modeButton.setAttribute('aria-pressed', 'false');
+  });
+}
+
 export async function openAiAssistant() {
   setPageVisible('hotelMain', false);
   setPageVisible('aiAssistantPage', true);
@@ -659,6 +702,7 @@ async function initializeAiAssistant() {
     }
   }
   renderAiTemplateOptions();
+  applyAiSearchModeToDom();
   renderTaskConsole();
 }
 
@@ -671,16 +715,29 @@ export async function enqueueAiCollectTask() {
     showNotification('请先选择模板', 'warning');
     return;
   }
-  await syncAiCtripListUrlFromSettings({ activeOnly: true });
-  const url = getSubmittedUrl();
-  if (!url) {
-    showNotification('请粘贴携程酒店详情页或列表页链接', 'warning');
-    return;
-  }
 
   const listFilters = readListFilterForm();
   const listUrlFilters = readCtripUrlFilterSettings({ activeOnly: true });
-  const task = addQueueTask(template, url, listFilters, listUrlFilters);
+  const submittedInput = detectSubmittedTaskInput();
+  let task = null;
+  if (submittedInput.inputMode === 'empty') {
+    showNotification('请输入携程链接或宾馆地址', 'warning');
+    return;
+  }
+  if (submittedInput.inputMode === 'address') {
+    task = addQueueTask(template, '', listFilters, listUrlFilters, {
+      inputMode: 'address',
+      addressQuery: submittedInput.addressQuery
+    });
+  } else {
+    await syncAiCtripListUrlFromSettings({ activeOnly: true });
+    const url = getSubmittedUrl();
+    if (!url) {
+      showNotification('请粘贴携程酒店详情页或列表页链接', 'warning');
+      return;
+    }
+    task = addQueueTask(template, url, listFilters, listUrlFilters);
+  }
   if (!task) return;
   setValue('aiHotelUrlInput', '');
   updateAiInputCount();
@@ -811,7 +868,12 @@ export function retryAiQueueTask(taskId) {
     sourceTask.template,
     sourceTask.url,
     sourceTask.listFilters || {},
-    sourceTask.listUrlFilters || {}
+    sourceTask.listUrlFilters || {},
+    sourceTask.taskKind || 'collect',
+    {
+      inputMode: sourceTask.inputMode,
+      addressQuery: sourceTask.addressQuery
+    }
   );
   pushAiTaskQueueItem(task);
   setAiSelectedQueueTaskId(task.id || '');
@@ -821,9 +883,17 @@ export function retryAiQueueTask(taskId) {
   runNextQueueTask();
 }
 
+function canRetryQueueTask(task = null) {
+  if (!task || !task.template) return false;
+  if (task.inputMode === 'address') {
+    return Boolean(String(task.addressQuery || '').trim());
+  }
+  return Boolean(String(task.url || '').trim());
+}
+
 export function rerunCurrentAiTask() {
   const selectedTask = getSelectedQueueTask();
-  if (selectedTask && selectedTask.template && selectedTask.url) {
+  if (canRetryQueueTask(selectedTask)) {
     retryAiQueueTask(selectedTask.id);
     return;
   }

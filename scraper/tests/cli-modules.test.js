@@ -31,7 +31,11 @@ const {
   getBrowserDisplayName,
   normalizeBrowserPreference
 } = require('../src/scraper/process-utils');
-const { resolveAutoEdgeRuntime } = require('../src/cli/auto-edge');
+const {
+  buildBackgroundBrowserWindowArgs,
+  buildVisibleBrowserWindowArgs,
+  resolveAutoEdgeRuntime
+} = require('../src/cli/auto-edge');
 
 test('buildPageSnapshotSummary keeps only compact fields needed for latest-run', () => {
   const summary = buildPageSnapshotSummary({
@@ -378,6 +382,57 @@ test('auto edge runtime keeps 360 browser away from Edge user data dir', (t) => 
   assert.equal(runtime.userDataDir, path.join(tempRoot, 'state', '360-profile'));
   assert.equal(runtime.profileDirectory, 'Default');
   assert.equal(runtime.usingSeparate360Profile, true);
+});
+
+test('visible auto edge windows open inside the screen instead of minimized offscreen', () => {
+  const args = buildVisibleBrowserWindowArgs();
+
+  assert.ok(args.includes('--new-window'));
+  assert.ok(args.includes('--window-size=1280,900'));
+  assert.ok(args.includes('--window-position=80,80'));
+  assert.equal(args.includes('--window-position=-32000,-32000'), false);
+  assert.equal(args.includes('--start-minimized'), false);
+});
+
+test('360 auto edge background collection starts minimized and offscreen as a fallback', () => {
+  const edgeArgs = buildBackgroundBrowserWindowArgs({
+    browserName: 'Edge',
+    browserPreference: 'edge',
+    browserExecutable: 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'
+  });
+  const browser360Args = buildBackgroundBrowserWindowArgs({
+    browserName: '360 Browser',
+    browserPreference: '360',
+    browserExecutable: 'C:/Program Files/360/360se6/Application/360se.exe'
+  });
+
+  assert.ok(edgeArgs.includes('--headless=new'));
+  assert.equal(edgeArgs.includes('--start-minimized'), false);
+  assert.equal(edgeArgs.includes('--window-position=-32000,-32000'), false);
+  assert.ok(browser360Args.includes('--headless=new'));
+  assert.ok(browser360Args.includes('--no-startup-window'));
+  assert.ok(browser360Args.includes('--disable-extensions'));
+  assert.ok(browser360Args.includes('--disable-component-extensions-with-background-pages'));
+  assert.ok(browser360Args.includes('--disable-component-update'));
+  assert.ok(browser360Args.includes('--disable-sync'));
+  assert.ok(browser360Args.includes('--start-minimized'));
+  assert.ok(browser360Args.includes('--window-size=1280,900'));
+  assert.ok(browser360Args.includes('--window-position=-32000,-32000'));
+});
+
+test('edge-session headless 360 windows use minimized offscreen fallback', () => {
+  const { buildBackgroundBrowserWindowArgs: buildSessionArgs } = require('../src/edge-session');
+  const args = buildSessionArgs('360 Browser', '360');
+
+  assert.ok(args.includes('--headless=new'));
+  assert.ok(args.includes('--disable-gpu'));
+  assert.ok(args.includes('--no-startup-window'));
+  assert.ok(args.includes('--disable-extensions'));
+  assert.ok(args.includes('--disable-component-extensions-with-background-pages'));
+  assert.ok(args.includes('--disable-component-update'));
+  assert.ok(args.includes('--disable-sync'));
+  assert.ok(args.includes('--start-minimized'));
+  assert.ok(args.includes('--window-position=-32000,-32000'));
 });
 
 test('parseArgs preserves underscore and kebab-case url flags for downstream compatibility', () => {

@@ -15,6 +15,7 @@ import { isRecord } from './ai-task-events.js';
  * @property {string} type
  * @property {number} index
  * @property {number} total
+ * @property {number} effectiveConcurrency
  *
  * @typedef {object} AiProgressStats
  * @property {number} total
@@ -182,7 +183,10 @@ export function parseBatchProgressEvent(event = {}) {
   const parsed = {
     type,
     index: Number(detail.index || detail.itemIndex || detail.currentIndex || 0),
-    total: Number(detail.total || detail.totalCount || detail.itemCount || detail.hotelCount || 0)
+    total: Number(detail.total || detail.totalCount || detail.itemCount || detail.hotelCount || 0),
+    effectiveConcurrency: Number(
+      detail.effectiveConcurrency || detail.effective_concurrency || detail.concurrency || 0
+    )
   };
 
   const startMatch = message.match(/第\s*(\d+)\s*\/\s*(\d+)/);
@@ -191,9 +195,12 @@ export function parseBatchProgressEvent(event = {}) {
     parsed.total = Number(startMatch[2]);
   }
 
-  const doneMatch = message.match(/第\s*(\d+)\s*家酒店采集(?:完成|失败)/);
+  const doneMatch = message.match(/第\s*(\d+)(?:\s*\/\s*(\d+))?\s*家酒店采集(?:完成|失败)/);
   if (!parsed.index && doneMatch) {
     parsed.index = Number(doneMatch[1]);
+  }
+  if (!parsed.total && doneMatch && doneMatch[2]) {
+    parsed.total = Number(doneMatch[2]);
   }
 
   if (!parsed.total) {
@@ -218,6 +225,7 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
 
   const itemStatus = new Map();
   let total = 0;
+  let effectiveConcurrency = 0;
 
   for (const event of events || []) {
     const parsed = parseBatchProgressEvent(event);
@@ -226,6 +234,13 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
     }
     if (Number.isFinite(parsed.total) && parsed.total > total) {
       total = parsed.total;
+    }
+    if (
+      parsed.type === 'batch:start' &&
+      Number.isFinite(parsed.effectiveConcurrency) &&
+      parsed.effectiveConcurrency > 0
+    ) {
+      effectiveConcurrency = Math.max(effectiveConcurrency, parsed.effectiveConcurrency);
     }
     if (!Number.isFinite(parsed.index) || parsed.index <= 0) {
       continue;
@@ -242,7 +257,9 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
   }
 
   const completed = [...itemStatus.values()].filter((status) => status === 'completed').length;
-  const running = [...itemStatus.values()].filter((status) => status === 'running').length;
+  const rawRunning = [...itemStatus.values()].filter((status) => status === 'running').length;
+  const running =
+    effectiveConcurrency > 0 ? Math.min(rawRunning, effectiveConcurrency) : rawRunning;
   const pending = Math.max(0, total - completed - running);
 
   return {

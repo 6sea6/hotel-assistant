@@ -117,10 +117,27 @@ function validateAiTaskPayload(payload) {
   if (payloadError) return payloadError;
   const taskPayload = /** @type {Record<string, unknown>} */ (payload);
 
-  const stringFields = ['url', 'text', 'inputText', 'templateId', 'templateName', 'amapKey'];
+  const stringFields = [
+    'url',
+    'text',
+    'inputText',
+    'templateId',
+    'templateName',
+    'amapKey',
+    'inputMode',
+    'addressQuery'
+  ];
   for (const field of stringFields) {
     const fieldError = assertOptionalStringField(taskPayload, field, AI_REQUEST_ERROR);
     if (fieldError) return fieldError;
+  }
+  if (Object.prototype.hasOwnProperty.call(taskPayload, 'inputMode')) {
+    const modeError = assertAllowedValue(
+      taskPayload.inputMode,
+      ['url', 'address', null, undefined],
+      AI_REQUEST_ERROR
+    );
+    if (modeError) return modeError;
   }
   if (Object.prototype.hasOwnProperty.call(taskPayload, 'collectBrowser')) {
     const browserError = assertAllowedValue(

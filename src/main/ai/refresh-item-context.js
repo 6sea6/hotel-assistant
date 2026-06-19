@@ -1,5 +1,6 @@
 const path = require('path');
 const { assertNotCancelled, buildScraperArgs } = require('./scraper-task-input');
+const { getVisibleLoginRetryNeed } = require('./ctrip-login-retry');
 
 const PRESERVED_FIELDS_ON_REFRESH = [
   'distance',
@@ -16,6 +17,19 @@ const PRESERVED_FIELDS_ON_REFRESH = [
   'is_favorite',
   'notes'
 ];
+
+const STALE_REFRESH_NOTE_PATTERNS = [
+  /更新时未获取到有效房价/,
+  /已清空旧的可疑统一低价/,
+  /页面未提取到明确房价/,
+  /可能需要登录、验证码/,
+  /携程房型接口触发反爬限制/
+];
+
+function isStaleRefreshFailureNote(value) {
+  const text = String(value || '').trim();
+  return Boolean(text) && STALE_REFRESH_NOTE_PATTERNS.some((pattern) => pattern.test(text));
+}
 
 function createRefreshItemEventEmitter({ emit, index, total, hotelName }) {
   return (eventType, message, details = {}) => {
@@ -60,7 +74,7 @@ function buildRefreshCollectArgs({
   collectArgs.skipTransit = true;
   collectArgs['skip-report'] = true;
   collectArgs['no-output-report'] = true;
-  collectArgs.captureStrategy = 'parallel_edge';
+  collectArgs.captureStrategy = 'edge_full';
   if (worker && worker.port) {
     collectArgs['auto-edge'] = false;
     collectArgs['edge-user-data-dir'] = worker.userDataDir || baseEdgeUserDataDir;
@@ -160,6 +174,9 @@ function getRefreshItemMeta(meta = {}) {
 function preserveRefreshFields(newHotel, oldHotel = {}) {
   const preserved = {};
   for (const field of PRESERVED_FIELDS_ON_REFRESH) {
+    if (field === 'notes') {
+      continue;
+    }
     if (oldHotel[field] !== undefined && oldHotel[field] !== null && oldHotel[field] !== '') {
       preserved[field] = oldHotel[field];
     }
@@ -167,7 +184,7 @@ function preserveRefreshFields(newHotel, oldHotel = {}) {
   if (oldHotel.is_favorite !== undefined) {
     preserved.is_favorite = oldHotel.is_favorite;
   }
-  if (oldHotel.notes !== undefined) {
+  if (oldHotel.notes !== undefined && !isStaleRefreshFailureNote(oldHotel.notes)) {
     preserved.notes = oldHotel.notes;
   }
   return {
@@ -188,8 +205,13 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
     !Number.isFinite(Number(collectResult.eligibleCount)) ||
     Number(collectResult.eligibleCount) <= 0
   ) {
+    const retryNeed = getVisibleLoginRetryNeed(collectResult);
     const skipReason =
-      collectResult && collectResult.error ? collectResult.error : '采集未返回有效房型数据';
+      retryNeed.needed && retryNeed.reason
+        ? retryNeed.reason
+        : collectResult && collectResult.error
+          ? collectResult.error
+          : '采集未返回有效房型数据';
     return {
       hotelName,
       url,
@@ -198,7 +220,8 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
       updatedRoomTypeCount: 0,
       deletedRoomTypeCount: 0,
       skipReason,
-      error: skipReason
+      error: skipReason,
+      retryAfterLogin: Boolean(retryNeed.needed)
     };
   }
 
@@ -214,7 +237,8 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
       updatedRoomTypeCount: 0,
       deletedRoomTypeCount: 0,
       skipReason: '采集成功但没有有效房型',
-      error: ''
+      error: '',
+      retryAfterLogin: false
     };
   }
 
@@ -250,7 +274,8 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
     updatedRoomTypeCount: refreshedHotels.length,
     deletedRoomTypeCount: deletedForThisHotel,
     skipReason: '',
-    error: ''
+    error: '',
+    retryAfterLogin: false
   };
 }
 
@@ -259,6 +284,7 @@ module.exports = {
   buildRefreshCollectArgs,
   createRefreshDetailContextFactory,
   createRefreshItemEventEmitter,
+  isStaleRefreshFailureNote,
   mapRefreshPreparedResult,
   preserveRefreshFields
 };

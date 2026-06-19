@@ -6,7 +6,9 @@ const {
 } = require('../../shared/compare-app/prompt-contract');
 
 function normalizeAmapKeyMode(mode) {
-  const normalized = String(mode || '').trim().toLowerCase();
+  const normalized = String(mode || '')
+    .trim()
+    .toLowerCase();
   if (['none', 'no-key', 'without-key', 'without-amap-key'].includes(normalized)) {
     return 'none';
   }
@@ -61,6 +63,14 @@ function getBundleManifest(bundleRoot) {
       ],
       fullOnlyResources: [
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'task-runner.js'),
+        path.join(
+          BUNDLE_RESOURCE_MAP.scraperDirName,
+          'src',
+          'scraper',
+          'list-page-address-search.js'
+        ),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'scraper', 'list-page-collector.js'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'perf.js'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'file-perf.js'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'noop-perf.js'),
@@ -98,6 +108,27 @@ function getBundleManifest(bundleRoot) {
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'state'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'output'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'scraper-data')
+      ],
+      appAsarResources: [
+        path.join('src', 'main', 'main.js'),
+        path.join('src', 'main', 'preload.js'),
+        path.join('src', 'main', 'ai', 'ctrip-login-retry.js'),
+        path.join('src', 'renderer', 'index.html'),
+        path.join('src', 'renderer', 'manual.html'),
+        path.join('src', 'shared', 'app-info.generated.js'),
+        'package.json'
+      ],
+      neverAppAsarResources: [
+        'README.md',
+        'README_DEV.md',
+        'scripts',
+        'tests',
+        'scraper',
+        'shared',
+        'output',
+        'state',
+        DEFAULT_COMPARE_APP_FILES.appFolderName,
+        'hotel-data.json'
       ]
     }
   };

@@ -30,3 +30,17 @@ test('validateTemplate still accepts 3-person templates', () => {
 
   assert.doesNotThrow(() => validateTemplate(template));
 });
+
+test('validateTemplate can skip ctrip_url only for address search preparation', () => {
+  const template = mergeTemplateWithArgs(
+    {},
+    {
+      checkIn: '2026-04-30',
+      checkOut: '2026-05-04',
+      roomCount: 2
+    }
+  );
+
+  assert.throws(() => validateTemplate(template), /ctrip_url/);
+  assert.doesNotThrow(() => validateTemplate(template, { requireCtripUrl: false }));
+});

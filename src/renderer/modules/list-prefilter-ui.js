@@ -283,6 +283,18 @@ function applyCtripAccommodationTypeMode() {
   });
 }
 
+function readCtripAccommodationTypeModeFromDom() {
+  const selectedButton = document.querySelector(
+    '[data-accommodation-type-mode].is-selected, [data-accommodation-type-mode][aria-pressed="true"]'
+  );
+  const domMode =
+    selectedButton && selectedButton.dataset ? selectedButton.dataset.accommodationTypeMode : '';
+  return normalizeListPrefilterSettingValue(
+    'aiCtripAccommodationTypeMode',
+    domMode || state.settings.aiCtripAccommodationTypeMode
+  );
+}
+
 export function applyListPrefilterSettings() {
   renderCtripChoiceGroups();
   LIST_PREFILTER_SETTING_KEYS.forEach((key) => {
@@ -341,10 +353,7 @@ function readListPrefilterFormValues() {
       'aiCtripScoreMin',
       getFormValueElement('aiCtripScoreMin')?.value
     ),
-    aiCtripAccommodationTypeMode: normalizeListPrefilterSettingValue(
-      'aiCtripAccommodationTypeMode',
-      state.settings.aiCtripAccommodationTypeMode
-    ),
+    aiCtripAccommodationTypeMode: readCtripAccommodationTypeModeFromDom(),
     aiCtripAccommodationTypes: normalizeListPrefilterSettingValue(
       'aiCtripAccommodationTypes',
       Array.from(

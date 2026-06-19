@@ -164,11 +164,11 @@
   flex: 1;
   min-height: 0;
   margin: 0 auto;
-  padding: 16px 0;
+  padding: 12px 0;
   overflow: hidden;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 14px;
+  gap: 10px;
 }
 
 .task-workspace-grid {
@@ -1129,23 +1129,32 @@
   overflow: visible;
 }
 
+.task-start-title {
+  gap: 10px;
+  padding: 6px 16px;
+}
+
+.task-start-title h2 {
+  font-size: 16px;
+}
+
 .task-start-hint {
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .task-start-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr) 148px;
-  gap: 12px;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr) 136px;
+  gap: 10px;
   align-items: end;
-  padding: 12px 18px 14px;
+  padding: 8px 16px 10px;
 }
 
 .task-field {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  gap: 3px;
   color: var(--text-primary);
   font-weight: 700;
 }
@@ -1155,11 +1164,25 @@
 }
 
 .task-url-input {
-  height: 40px;
-  min-height: 40px;
-  max-height: 40px;
-  border-radius: 12px;
+  height: 38px;
+  min-height: 38px;
+  max-height: 38px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
+}
+
+.task-start-card .task-url-input-wrap {
+  height: 38px;
+}
+
+.task-start-card .ai-template-picker-button,
+.task-start-card .task-start-button {
+  min-height: 38px;
+  border-radius: 10px;
+}
+
+.task-start-card .ai-template-picker-button {
+  padding: 6px 12px 6px 14px;
 }
 
 @media (max-width: 1200px) {

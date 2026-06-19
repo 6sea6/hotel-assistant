@@ -10,6 +10,8 @@ let taskConsoleModuleUrl = '';
 let aiAssistantModuleUrl = '';
 let aiAssistantStateModuleUrl = '';
 let aiAssistantActionsModuleUrl = '';
+let listPrefilterModuleUrl = '';
+let listPrefilterStateModuleUrl = '';
 
 function readRendererStyles() {
   const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
@@ -98,8 +100,43 @@ async function loadAiAssistantModules() {
   };
 }
 
+async function loadListPrefilterModule() {
+  if (!listPrefilterModuleUrl) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-list-prefilter-'));
+    const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
+    fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
+    [
+      'custom-select.js',
+      'dom-helpers.js',
+      'list-prefilter-ui.js',
+      'modal-templates.js',
+      'notification.js',
+      'render-scheduler.js',
+      'state.js',
+      'ui-utils.js'
+    ].forEach((fileName) => {
+      fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+    });
+    listPrefilterModuleUrl = pathToFileURL(path.join(tempRoot, 'list-prefilter-ui.js')).href;
+    listPrefilterStateModuleUrl = pathToFileURL(path.join(tempRoot, 'state.js')).href;
+    process.on('exit', () => {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    });
+  }
+
+  const [module, stateModule] = await Promise.all([
+    import(listPrefilterModuleUrl),
+    import(listPrefilterStateModuleUrl)
+  ]);
+  return {
+    module,
+    state: stateModule.state
+  };
+}
+
 function createFakeElement(value = '', tagName = 'div') {
   let textContentValue = '';
+  const classNames = new Set();
   const element = {
     tagName: tagName.toUpperCase(),
     value,
@@ -131,9 +168,28 @@ function createFakeElement(value = '', tagName = 'div') {
     options: [],
     selectedOptions: [],
     classList: {
-      add() {},
-      remove() {},
-      toggle() {}
+      add(...names) {
+        names.forEach((name) => classNames.add(String(name)));
+        element.className = [...classNames].join(' ');
+      },
+      remove(...names) {
+        names.forEach((name) => classNames.delete(String(name)));
+        element.className = [...classNames].join(' ');
+      },
+      toggle(name, force) {
+        const normalizedName = String(name);
+        const shouldAdd = force === undefined ? !classNames.has(normalizedName) : Boolean(force);
+        if (shouldAdd) {
+          classNames.add(normalizedName);
+        } else {
+          classNames.delete(normalizedName);
+        }
+        element.className = [...classNames].join(' ');
+        return shouldAdd;
+      },
+      contains(name) {
+        return classNames.has(String(name));
+      }
     },
     setAttribute(name, v) {
       element.attributes.set(name, String(v));
@@ -183,7 +239,9 @@ function installAiAssistantDom(inputUrl = '') {
     'aiCtripFreeCancel',
     'aiCurrentTaskPanel',
     'aiTaskQueuePanel',
-    'aiStartTaskBtn'
+    'aiStartTaskBtn',
+    'aiTaskInputLabel',
+    'aiTaskInputIcon'
   ].forEach((id) => {
     elements.set(id, createFakeElement(id === 'aiHotelUrlInput' ? inputUrl : ''));
   });
@@ -203,7 +261,8 @@ function installAiAssistantDom(inputUrl = '') {
       return elements.get(id) || null;
     },
     querySelectorAll(selector) {
-      return selector === '[data-star-level]' ? starButtons : [];
+      if (selector === '[data-star-level]') return starButtons;
+      return [];
     },
     createElement(tagName) {
       return createFakeElement('', tagName);
@@ -403,6 +462,43 @@ test('normalizeTaskState keeps batch result display compatible with old fields',
   assert.equal(taskState.result.writeBackStatus, '已写入数据');
 });
 
+test('normalizeTaskState renders empty list prefilter as a completed empty result', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const taskState = normalizeTaskState({
+    task: {
+      submitted: true,
+      taskId: 'empty-list-task',
+      templateLabel: 'cj · 外滩 · 2026-07-30 至 2026-08-02 · 3人',
+      result: {
+        success: true
+      },
+      collectResult: {
+        success: true,
+        batchMode: true,
+        emptyListResult: true,
+        emptyReason: '未筛选到宾馆，请放宽列表页前筛条件后重试。',
+        hotelName: '未筛选到宾馆',
+        eligibleCount: 0,
+        writeSkipped: true,
+        writeSkipReason: '未筛选到宾馆，请放宽列表页前筛条件后重试。',
+        batchSummary: {
+          inputMode: 'list',
+          expandedHotelCount: 0,
+          emptyReason: '未筛选到宾馆，请放宽列表页前筛条件后重试。'
+        }
+      }
+    },
+    events: [],
+    inProgress: false
+  });
+
+  assert.equal(taskState.status, 'success');
+  assert.equal(taskState.result.hotelName, '未筛选到宾馆');
+  assert.equal(taskState.result.actualResultText, '未筛选到宾馆');
+  assert.equal(taskState.result.summary, '未筛选到宾馆，请放宽列表页前筛条件后重试。');
+  assert.equal(taskState.result.writeBackStatus, '未写入数据');
+});
+
 test('normalizeTaskState counts full batch item room types before apply-output summaries', async () => {
   const { normalizeTaskState } = await loadTaskConsoleModule();
   const taskState = normalizeTaskState({
@@ -530,7 +626,7 @@ test('normalizeTaskState exposes skipped batch hotel reasons', async () => {
                 hotelName: '酒店B'
               },
               skipped: true,
-              reason: '所有候选房型都不可取消'
+              reason: '所有候选房型都不可取消。'
             }
           ]
         }
@@ -541,6 +637,61 @@ test('normalizeTaskState exposes skipped batch hotel reasons', async () => {
   });
 
   assert.equal(taskState.result.skipReasonText, '酒店B：所有候选房型都不可取消');
+});
+
+test('normalizeTaskState hides soft Ctrip login prompts after successful collection', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const taskState = normalizeTaskState({
+    task: {
+      submitted: true,
+      taskId: 'soft-login-warning-success',
+      templateLabel: '实验 · 上海 · 2026-08-01 至 2026-08-02 · 2人',
+      startedAt: '2026-06-17T11:16:33.000Z',
+      endedAt: '2026-06-17T11:17:10.000Z',
+      result: { success: true },
+      collectResult: {
+        success: true,
+        batchMode: true,
+        batchStats: { expandedHotelCount: 5 },
+        eligibleCount: 30,
+        writeResult: {
+          batchMode: true,
+          appliedCount: 4,
+          skippedCount: 1
+        }
+      }
+    },
+    events: [
+      { type: 'task:start', at: '2026-06-17T11:16:33.000Z' },
+      { type: 'template:start', at: '2026-06-17T11:16:33.000Z' },
+      { type: 'edge:start', at: '2026-06-17T11:16:33.000Z' },
+      {
+        type: 'edge:login-required',
+        message: '检测到携程登录提示，采集仍会继续尝试',
+        details: {
+          actionRequired: false,
+          reason: '页面出现登录提示',
+          instruction: '当前采集浏览器登录态可能无效；请在采集浏览器中登录携程后重新采集。'
+        },
+        at: '2026-06-17T11:16:49.000Z'
+      },
+      { type: 'batch:item-done', at: '2026-06-17T11:17:04.000Z' },
+      { type: 'transit:done', at: '2026-06-17T11:16:53.000Z' },
+      { type: 'write:done', at: '2026-06-17T11:17:10.000Z' },
+      { type: 'task:done', at: '2026-06-17T11:17:10.000Z' }
+    ],
+    inProgress: false
+  });
+
+  assert.equal(taskState.status, 'success');
+  assert.equal(
+    taskState.steps.some((step) => step.key === 'login'),
+    false
+  );
+  assert.equal(
+    taskState.steps.some((step) => /登录态可能无效|重新采集/.test(step.detail || '')),
+    false
+  );
 });
 
 test('renderSummaryCards replaces write status row with skipped hotel reasons only when needed', async () => {
@@ -611,8 +762,8 @@ test('renderSummaryCards replaces write status row with skipped hotel reasons on
                   hotelName: '酒店B'
                 },
                 skipped: true,
-                reason: '不符合模板规则'
-              },
+                reason: '不符合模板规则。'
+              }
             ]
           }
         }
@@ -625,6 +776,7 @@ test('renderSummaryCards replaces write status row with skipped hotel reasons on
     assert.doesNotMatch(skippedHtml, /写入状态/);
     assert.match(skippedHtml, /跳过原因/);
     assert.match(skippedHtml, /酒店B：不符合模板规则/);
+    assert.doesNotMatch(skippedHtml, /不符合模板规则。/);
   } finally {
     global.document = originalDocument;
   }
@@ -897,6 +1049,89 @@ test('active Ctrip list URL filters include accommodation, room and theme select
   assert.ok(parsed.listFilterParts.includes('1~771*1*771'));
 });
 
+test('list prefilter save reads accommodation mode from selected DOM control', async () => {
+  const { module, state } = await loadListPrefilterModule();
+  const elements = new Map();
+  [
+    'aiCtripPriceMin',
+    'aiCtripPriceMax',
+    'aiCtripSortMode',
+    'aiCtripReviewCountMin',
+    'aiCtripScoreMin',
+    'aiCtripFreeCancel',
+    'aiListDesiredHotelCount'
+  ].forEach((id) => {
+    elements.set(id, createFakeElement(''));
+  });
+  elements.get('aiListDesiredHotelCount').value = '20';
+  const includeButton = createFakeElement('', 'button');
+  includeButton.dataset.accommodationTypeMode = 'include';
+  includeButton.setAttribute('aria-pressed', 'false');
+  const excludeButton = createFakeElement('', 'button');
+  excludeButton.dataset.accommodationTypeMode = 'exclude';
+  excludeButton.classList.add('is-selected');
+  excludeButton.setAttribute('aria-pressed', 'true');
+  const hotelOption = createFakeElement('', 'button');
+  hotelOption.dataset.settingKey = 'aiCtripAccommodationTypes';
+  hotelOption.dataset.optionValue = '酒店';
+  hotelOption.classList.add('is-selected');
+  const setCalls = [];
+
+  state.settings = {
+    aiCtripAccommodationTypeMode: 'include',
+    aiCtripAccommodationTypes: ['酒店'],
+    aiListDesiredHotelCount: 20
+  };
+  global.document = {
+    getElementById(id) {
+      return elements.get(id) || null;
+    },
+    querySelector(selector) {
+      if (selector.includes('[data-accommodation-type-mode]')) {
+        return excludeButton;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === '[data-accommodation-type-mode]') {
+        return [includeButton, excludeButton];
+      }
+      if (selector === '[data-star-level].is-selected' || selector === '[data-star-level]') {
+        return [];
+      }
+      if (
+        selector === '[data-setting-key="aiCtripAccommodationTypes"][data-option-value].is-selected'
+      ) {
+        return [hotelOption];
+      }
+      if (selector.includes('[data-setting-key=')) {
+        return [];
+      }
+      return [];
+    },
+    createElement(tagName) {
+      return createFakeElement('', tagName);
+    },
+    body: { appendChild() {} }
+  };
+  global.window = {
+    electronAPI: {
+      setSetting: async (key, value) => {
+        setCalls.push([key, value]);
+        return { success: true };
+      }
+    }
+  };
+
+  await module.saveAiListPrefilterSettings();
+
+  assert.deepEqual(
+    setCalls.find(([key]) => key === 'aiCtripAccommodationTypeMode'),
+    ['aiCtripAccommodationTypeMode', 'exclude']
+  );
+  assert.equal(state.settings.aiCtripAccommodationTypeMode, 'exclude');
+});
+
 test('active-only Ctrip URL sync preserves pasted known filters when app settings are empty', async () => {
   const inputUrl =
     'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,17~6*17*6&locale=zh-CN';
@@ -1014,10 +1249,7 @@ test('Ctrip login-required event keeps one notification until login is confirmed
   const loginNotifications = messages.filter((message) => /需要登录携程/.test(message));
 
   assert.equal(loginNotifications.length, 1);
-  assert.equal(
-    loginNotifications[0],
-    '需要登录携程，请在弹出的采集浏览器中完成登录后关闭窗口'
-  );
+  assert.equal(loginNotifications[0], '需要登录携程，请在弹出的采集浏览器中完成登录后关闭窗口');
   assert.equal(notifications[0].dataset.dismissed, undefined);
   assert.equal(queueTask.loginNoticeShown, true);
 
@@ -1044,6 +1276,43 @@ test('Ctrip browser preparation event without login instruction does not show lo
     type: 'edge:login-required',
     message: '正在准备浏览器登录态',
     taskId: 'backend-task-prepare'
+  });
+
+  assert.equal(notifications.length, 0);
+});
+
+test('soft Ctrip login prompt does not show manual login notification', async () => {
+  const { notifications } = installAiAssistantDom(
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01'
+  );
+  const { module } = await loadAiAssistantModules();
+
+  module.handleCtripLoginNotificationEvent({
+    type: 'edge:login-required',
+    message: '检测到携程登录提示，采集仍会继续尝试',
+    details: {
+      actionRequired: false,
+      instruction: '当前采集浏览器登录态可能无效；请在采集浏览器中登录携程后重新采集。'
+    },
+    taskId: 'backend-task-soft-login'
+  });
+
+  assert.equal(notifications.length, 0);
+});
+
+test('legacy soft Ctrip login prompt text does not show manual login notification', async () => {
+  const { notifications } = installAiAssistantDom(
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01'
+  );
+  const { module } = await loadAiAssistantModules();
+
+  module.handleCtripLoginNotificationEvent({
+    type: 'edge:login-required',
+    message: '检测到携程登录提示，采集仍会继续尝试',
+    details: {
+      instruction: '当前采集浏览器登录态可能无效；请在采集浏览器中登录携程后重新采集。'
+    },
+    taskId: 'backend-task-legacy-soft-login'
   });
 
   assert.equal(notifications.length, 0);
@@ -1378,6 +1647,296 @@ test('AI collect task payload includes saved batch concurrency setting', async (
 
   assert.equal(capturedPayload.collectBrowser, '360');
   assert.equal(capturedPayload.batchConcurrency, 3);
+});
+
+test('AI collect task auto-detects plain text as address query with active prefilters', async () => {
+  const { elements } = installAiAssistantDom('国家会展中心');
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [{ id: 'tpl-1', name: '上海模板' }];
+  state.settings = {
+    aiListDesiredHotelCount: '5',
+    aiCtripPriceMin: 200,
+    aiCtripStarLevels: [4, 5],
+    collectBatchConcurrency: 2
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.inputMode, 'address');
+  assert.equal(capturedPayload.addressQuery, '国家会展中心');
+  assert.equal(capturedPayload.url, undefined);
+  assert.equal(capturedPayload.desiredHotelCount, 5);
+  assert.deepEqual(capturedPayload.listUrlFilters, {
+    priceMin: 200,
+    starLevels: [4, 5]
+  });
+  assert.equal(capturedPayload.batchConcurrency, 2);
+  assert.equal(state.aiTaskQueue[0].inputMode, 'address');
+  assert.equal(state.aiTaskQueue[0].addressQuery, '国家会展中心');
+  assert.match(state.aiTaskQueue[0].title, /国家会展中心/);
+  assert.equal(elements.get('aiHotelUrlInput').value, '');
+});
+
+test('AI collect task auto-detects Ctrip URL inside mixed text as URL input', async () => {
+  const inputUrl =
+    '请采集 https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01 外滩';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [{ id: 'tpl-1', name: '上海模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.inputMode, undefined);
+  assert.equal(capturedPayload.addressQuery, undefined);
+  assert.equal(
+    capturedPayload.url,
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01'
+  );
+  assert.equal(state.aiTaskQueue[0].inputMode, 'url');
+  assert.equal(state.aiTaskQueue[0].url, capturedPayload.url);
+});
+
+test('AI collect task rejects non-Ctrip URL instead of treating it as address', async () => {
+  const { elements, notifications } = installAiAssistantDom('https://example.com/hotels/1001');
+  const { module, state } = await loadAiAssistantModules();
+  let startTaskCallCount = 0;
+
+  state.templates = [{ id: 'tpl-1', name: '上海模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async () => {
+    startTaskCallCount += 1;
+    return {};
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(startTaskCallCount, 0);
+  assert.equal(state.aiTaskQueue.length, 0);
+  assert.equal(
+    notifications.some((item) => /请粘贴携程酒店详情页或列表页链接/.test(item.textContent || '')),
+    true
+  );
+});
+
+test('AI collect task prompts for Ctrip URL or address when input is empty', async () => {
+  const { elements, notifications } = installAiAssistantDom('   ');
+  const { module, state } = await loadAiAssistantModules();
+  let startTaskCallCount = 0;
+
+  state.templates = [{ id: 'tpl-1', name: '上海模板' }];
+  state.settings = {};
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async () => {
+    startTaskCallCount += 1;
+    return {};
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(startTaskCallCount, 0);
+  assert.equal(state.aiTaskQueue.length, 0);
+  assert.equal(
+    notifications.some((item) => /请输入携程链接或宾馆地址/.test(item.textContent || '')),
+    true
+  );
+});
+
+test('AI collect task rerun reuses address query instead of requiring the input field', async () => {
+  const { notifications } = installAiAssistantDom('');
+  const { module, state } = await loadAiAssistantModules();
+  const template = { id: 'tpl-1', name: '上海模板' };
+  let capturedPayload = null;
+
+  state.templates = [template];
+  state.settings = {
+    collectBatchConcurrency: 2
+  };
+  state.aiTaskQueueCounter = 1;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: true,
+    template,
+    templateLabel: '上海模板',
+    hotelUrl: '外滩',
+    startedAt: '2026-06-19T10:00:00.000+08:00',
+    endedAt: '2026-06-19T10:01:00.000+08:00',
+    result: { success: true },
+    collectResult: { success: true, eligibleCount: 0, writeResult: null },
+    error: null,
+    reply: ''
+  };
+  state.aiTaskQueue = [
+    {
+      id: 'queue-address-done',
+      displayIndex: '01',
+      url: '',
+      templateId: 'tpl-1',
+      templateName: '上海模板',
+      templateLabel: '上海模板',
+      title: '上海模板 · 外滩',
+      template,
+      inputMode: 'address',
+      addressQuery: '外滩',
+      listFilters: { desiredHotelCount: 4 },
+      listUrlFilters: { priceMax: 800 },
+      taskKind: 'collect',
+      status: 'completed',
+      currentStep: '',
+      createdAt: '2026-06-19T10:00:00.000+08:00',
+      startedAt: '2026-06-19T10:00:00.000+08:00',
+      finishedAt: '2026-06-19T10:01:00.000+08:00',
+      backendTaskId: 'backend-1',
+      errorMessage: '',
+      resultSummary: '采集任务完成',
+      events: [],
+      console: state.aiTaskConsole,
+      cancelNoticeShown: false
+    }
+  ];
+  state.aiSelectedQueueTaskId = 'queue-address-done';
+  state.aiQueueSelectionPinned = true;
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  module.rerunCurrentAiTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(capturedPayload.inputMode, 'address');
+  assert.equal(capturedPayload.addressQuery, '外滩');
+  assert.equal(capturedPayload.url, undefined);
+  assert.deepEqual(capturedPayload.listFilters, { desiredHotelCount: 4 });
+  assert.deepEqual(capturedPayload.listUrlFilters, { priceMax: 800 });
+  assert.equal(capturedPayload.batchConcurrency, 2);
+  assert.equal(state.aiTaskQueue.length, 2);
+  assert.equal(state.aiTaskQueue[1].inputMode, 'address');
+  assert.equal(state.aiTaskQueue[1].addressQuery, '外滩');
+  assert.equal(
+    notifications.some((item) => /请输入携程链接或宾馆地址/.test(item.textContent || '')),
+    false
+  );
 });
 
 test('AI collect task does not promote unsupported saved batch concurrency to three', async () => {

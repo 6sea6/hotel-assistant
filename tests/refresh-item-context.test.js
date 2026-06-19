@@ -91,7 +91,7 @@ test('refresh item context factory builds a no-write prepared detail context', a
   assert.equal(prepared.context.args.skipTransit, true);
   assert.equal(prepared.context.args['skip-report'], true);
   assert.equal(prepared.context.args['no-output-report'], true);
-  assert.equal(prepared.context.args.captureStrategy, 'parallel_edge');
+  assert.equal(prepared.context.args.captureStrategy, 'edge_full');
   assert.equal(prepared.context.args['auto-edge'], false);
   assert.equal(prepared.context.args['edge-debugging-port'], 9555);
   assert.equal(prepared.context.writeAppData, false);
@@ -166,4 +166,133 @@ test('refresh prepared result mapper preserves old room fields and counts delete
   assert.equal(result.updatedHotels[0].transport_time, '25');
   assert.equal(result.updatedHotels[0].is_favorite, 1);
   assert.equal(result.updatedHotels[0].notes, '');
+});
+
+test('refresh prepared result mapper drops stale no-price refresh notes after prices return', async () => {
+  const existingHotels = [
+    {
+      name: '旧酒店',
+      room_type: '大床房',
+      notes: '更新时未获取到有效房价，已清空旧的可疑统一低价。'
+    }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 1,
+        eligibleHotels: [
+          {
+            name: '新酒店',
+            room_type: '大床房',
+            daily_price: 1847.12,
+            notes: '床型：1张1.8米大床 | 早餐：2份早餐'
+          }
+        ]
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=425174',
+    hotelName: '上海外滩东方美仑美奂酒店',
+    meta: {
+      refreshItem: {
+        existingHotels,
+        firstHotel: existingHotels[0]
+      }
+    }
+  });
+
+  assert.equal(result.status, 'updated');
+  assert.equal(result.updatedHotels[0].notes, '床型：1张1.8米大床 | 早餐：2份早餐');
+});
+
+test('refresh prepared result mapper skips instead of clearing existing prices when current scrape has no prices', async () => {
+  const existingHotels = [
+    {
+      name: '旧酒店',
+      room_type: '大床房',
+      original_room_type: '悦上海高级大床房',
+      daily_price: 158,
+      total_price: 158,
+      notes: ''
+    },
+    {
+      name: '旧酒店',
+      room_type: '双床房',
+      original_room_type: '靓外滩江景双床房',
+      daily_price: 158,
+      total_price: 158,
+      notes: '保留备注'
+    },
+    {
+      name: '旧酒店',
+      room_type: '大床房',
+      original_room_type: '忆上海大床房',
+      daily_price: 158,
+      total_price: 158
+    }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        eligibleHotels: [],
+        pageSnapshot: {
+          room_candidates_count: 11,
+          raw_room_candidates_count: 16,
+          room_price_visible: false,
+          spider_error_codes: [203]
+        }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=425174',
+    hotelName: '上海外滩东方美仑美奂酒店',
+    meta: {
+      refreshItem: {
+        existingHotels,
+        firstHotel: existingHotels[0]
+      }
+    }
+  });
+
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.updatedRoomTypeCount, 0);
+  assert.equal(result.updatedHotels.length, 0);
+  assert.match(result.skipReason, /重新登录|登录态|登录看低价/);
+  assert.equal(result.retryAfterLogin, true);
+});
+
+test('refresh prepared result mapper keeps normal existing prices when current scrape has no prices', async () => {
+  const existingHotels = [
+    { name: '旧酒店', original_room_type: '大床房', daily_price: 580, total_price: 580 },
+    { name: '旧酒店', original_room_type: '双床房', daily_price: 620, total_price: 620 },
+    { name: '旧酒店', original_room_type: '家庭房', daily_price: 760, total_price: 760 }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        pageSnapshot: {
+          room_candidates_count: 3,
+          room_price_visible: false
+        }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+    hotelName: '旧酒店',
+    meta: {
+      refreshItem: {
+        existingHotels,
+        firstHotel: existingHotels[0]
+      }
+    }
+  });
+
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.updatedHotels.length, 0);
+  assert.equal(result.retryAfterLogin, true);
 });

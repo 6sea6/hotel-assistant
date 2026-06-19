@@ -186,15 +186,28 @@ function getSkippedHotelName(item = {}) {
 }
 
 function getSkippedHotelReason(item = {}) {
-  return String(
-    item.reason ||
-      item.skipReason ||
-      item.skip_reason ||
-      item.writeSkipReason ||
-      item.write_skip_reason ||
-      item.error ||
-      '未写入'
-  ).trim();
+  return stripTrailingSentencePeriod(
+    String(
+      item.reason ||
+        item.skipReason ||
+        item.skip_reason ||
+        item.writeSkipReason ||
+        item.write_skip_reason ||
+        item.error ||
+        '未写入'
+    )
+  );
+}
+
+function stripTrailingSentencePeriod(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[。．.]+$/u, '')
+    .trim();
+}
+
+function formatResultReasons(reasons = []) {
+  return reasons.map((reason) => stripTrailingSentencePeriod(reason)).filter(Boolean);
 }
 
 export function formatSkippedHotelReasons(collectResult = {}) {
@@ -277,6 +290,13 @@ export function buildTaskResult(task = {}) {
   const reasons = [collectResult.writeSkipReason, collectResult.error].filter(Boolean);
   const wroteResult = hasWriteResult(collectResult.writeResult);
   const batchSummary = collectResult.batchStats || collectResult.batchSummary || null;
+  if (isRecord(batchSummary)) {
+    if (Array.isArray(batchSummary.warnings)) {
+      reasons.push(...batchSummary.warnings.filter(Boolean));
+    } else if (isRecord(batchSummary.listTargetShortfall)) {
+      reasons.push(batchSummary.listTargetShortfall.message);
+    }
+  }
   const batchCount = Number(
     isRecord(batchSummary) && batchSummary.expandedHotelCount
       ? batchSummary.expandedHotelCount
@@ -291,6 +311,28 @@ export function buildTaskResult(task = {}) {
   const batchResultText =
     batchCount > 0 ? `批量 ${batchCount} 家，${batchWriteText}` : `批量采集完成，${batchWriteText}`;
   const singleResultText = `${collectResult.hotelName || '暂无'}，可用房型 ${Number.isFinite(eligibleCount) ? eligibleCount : 0} 个`;
+  const emptyListReason =
+    collectResult.emptyReason ||
+    (isRecord(batchSummary) && batchSummary.emptyReason) ||
+    collectResult.writeSkipReason ||
+    '未筛选到宾馆';
+
+  if (collectResult.emptyListResult) {
+    return {
+      hasMatchedRoom: false,
+      hotelName: '未筛选到宾馆',
+      actualResultText: '未筛选到宾馆',
+      isBatchResult: true,
+      eligibleCount: 0,
+      priceText: '暂无',
+      matchedRooms: [],
+      reasons: formatResultReasons([emptyListReason]),
+      writeBackStatus: '未写入数据',
+      skipReasonText: '',
+      summary: emptyListReason,
+      raw: collectResult
+    };
+  }
 
   if (reasons.length === 0 && eligibleCount <= 0) {
     reasons.push('暂无详细原因，请查看采集详情。');
@@ -320,7 +362,7 @@ export function buildTaskResult(task = {}) {
           cancelPolicy: hotel.cancel_policy || '',
           windowStatus: hotel.window_status || ''
         })),
-    reasons,
+    reasons: formatResultReasons(reasons),
     writeBackStatus: wroteResult ? '已写入数据' : '未写入数据',
     skipReasonText,
     summary: collectResult.writeSkipped

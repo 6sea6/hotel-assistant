@@ -21,13 +21,20 @@ const {
   buildRunSummary,
   writeLatestRunFile
 } = require('./cli/run-summary');
+const { resolveCtripListUrlFromAddress } = require('./scraper/list-page-address-search');
 const {
   applyMatchedTemplate,
   loadTemplate,
   mergeTemplateWithArgs,
   validateTemplate
 } = require('./template-loader');
-const { ensureDir, normalizePlaceName, normalizeReportLevel, readJsonFile } = require('./utils');
+const {
+  ensureDir,
+  normalizePlaceName,
+  normalizeReportLevel,
+  normalizeText,
+  readJsonFile
+} = require('./utils');
 const { setup_perf_logger, PerfTimer } = require('./runtime/perf');
 const {
   assertNotCancelled,
@@ -74,7 +81,45 @@ function logListCandidateFilterDiagnostics(perf, expandedInputs = {}) {
   perf.event('list_filter_summary', {
     phase: 'list_filter',
     input_mode: expandedInputs.inputMode || '',
-    list_count: expandedInputs.listResults.length
+    list_count: expandedInputs.listResults.length,
+    ctrip_url_filter_settings:
+      expandedInputs.summary && expandedInputs.summary.ctripUrlFilterSettings
+        ? expandedInputs.summary.ctripUrlFilterSettings
+        : null,
+    list_performance:
+      expandedInputs.summary &&
+      expandedInputs.summary.performance &&
+      Array.isArray(expandedInputs.summary.performance.lists)
+        ? expandedInputs.summary.performance.lists.map((item) => ({
+            selectedCount: item.selectedCount,
+            totalCandidates: item.totalCandidates,
+            edgeFallbackUsed: item.edgeFallbackUsed,
+            effectiveListFilters: item.effectiveListFilters || '',
+            htmlPages:
+              item.collector && Array.isArray(item.collector.htmlPages)
+                ? item.collector.htmlPages.map((page) => page.candidateCount)
+                : [],
+            staticApiPages:
+              item.collector && Array.isArray(item.collector.staticApiPages)
+                ? item.collector.staticApiPages.map((page) => ({
+                    candidateCount: page.candidateCount,
+                    listApiResponseCount: page.listApiResponseCount,
+                    listApiPageIndexes: page.listApiPageIndexes,
+                    listApiError: page.listApiError || ''
+                  }))
+                : [],
+            edgePages:
+              item.collector && Array.isArray(item.collector.edgePages)
+                ? item.collector.edgePages.map((page) => ({
+                    candidateCount: page.candidateCount,
+                    candidateDomCount: page.candidateDomCount,
+                    networkResponseCount: page.networkResponseCount,
+                    listApiResponseCount: page.listApiResponseCount,
+                    listApiError: page.listApiError || ''
+                  }))
+                : []
+          }))
+        : []
   });
 
   let emitted = 0;
@@ -123,6 +168,13 @@ function normalizePositiveInteger(value, fallback = null) {
 }
 
 function summarizeKnownCtripInputUrls(args = {}, template = {}) {
+  if (normalizeText(args.addressQuery || args['address-query'])) {
+    return {
+      urlCount: 0,
+      detailCount: 0,
+      listCount: 0
+    };
+  }
   const inputUrls = extractCtripUrlsFromInput({
     ...args,
     url: args.url || args.ctrip_url || args['ctrip-url'] || template.ctrip_url
@@ -146,7 +198,16 @@ function summarizeKnownCtripInputUrls(args = {}, template = {}) {
   return summary;
 }
 
-function resolvePreparedEdgeWorkerConcurrency(args = {}, options = {}, template = {}, listFilters = {}) {
+function getAddressQueryFromArgs(args = {}) {
+  return normalizeText(args.addressQuery || args['address-query']);
+}
+
+function resolvePreparedEdgeWorkerConcurrency(
+  args = {},
+  options = {},
+  template = {},
+  listFilters = {}
+) {
   const requestedConcurrency = normalizeBatchConcurrency(args, options);
   if (requestedConcurrency <= 1) {
     return 1;
@@ -175,7 +236,7 @@ function resolvePreparedEdgeWorkerConcurrency(args = {}, options = {}, template 
   return Math.max(1, preparedConcurrency);
 }
 
-function buildListTargetShortfallError(expandedInputs = {}) {
+function buildListTargetShortfallWarning(expandedInputs = {}) {
   const summary = expandedInputs.summary || {};
   const filters = summary.filters || {};
   const listInputCount = normalizePositiveInteger(summary.listInputCount, 0);
@@ -203,9 +264,90 @@ function buildListTargetShortfallError(expandedInputs = {}) {
         .filter(Boolean)
     : [];
   const errorSuffix = listErrors.length ? `；列表采集错误：${listErrors.join('; ')}` : '';
-  return new Error(
-    `携程列表页只展开 ${expandedCount}/${desiredCount} 家目标宾馆，未达到目标数量。为避免漏采，本次任务已停止；请稍后重试或放宽列表页前筛条件${errorSuffix}`
-  );
+  const message = `携程列表页只展开 ${expandedCount}/${desiredCount} 家目标宾馆，未达到目标数量；本次将继续采集已确认候选，请稍后可重试或放宽列表页前筛条件${errorSuffix}`;
+  return {
+    type: 'list_target_shortfall',
+    message,
+    expandedCount,
+    desiredCount,
+    listErrors
+  };
+}
+
+function buildEmptyListResult({
+  args = {},
+  startedAt,
+  latestRunPath,
+  template = {},
+  matchedTemplate = null,
+  effectiveTemplate = {},
+  expandedInputs = {},
+  reportLevel = 'normal'
+}) {
+  const finishedAt = new Date().toISOString();
+  const summary = expandedInputs.summary || {};
+  const warnings = Array.isArray(summary.warnings) ? summary.warnings : [];
+  const emptyReason = '未筛选到宾馆，请放宽列表页前筛条件后重试。';
+  const requestedUrls = Array.isArray(expandedInputs.requestedUrls)
+    ? expandedInputs.requestedUrls
+    : [];
+  const batchSummary = {
+    ...summary,
+    inputMode: summary.inputMode || expandedInputs.inputMode || 'list',
+    requestedUrlCount: summary.requestedUrlCount ?? requestedUrls.length,
+    expandedHotelCount: 0,
+    succeededCount: 0,
+    failedCount: 0,
+    eligibleHotelRecordCount: 0,
+    emptyReason,
+    warnings: warnings.includes(emptyReason) ? warnings : [...warnings, emptyReason]
+  };
+
+  return {
+    success: true,
+    startedAt,
+    finishedAt,
+    latestRunPath,
+    outputPath: '',
+    compareAppStorePath: '',
+    templateName:
+      effectiveTemplate.template_name ||
+      effectiveTemplate.name ||
+      template.template_name ||
+      args.templateName ||
+      '',
+    templateId:
+      effectiveTemplate.template_id ||
+      effectiveTemplate.id ||
+      template.template_id ||
+      args.templateId ||
+      null,
+    templateSnapshot: buildTemplateSnapshot(
+      effectiveTemplate && Object.keys(effectiveTemplate).length ? effectiveTemplate : template,
+      matchedTemplate ? 'matched' : 'effective'
+    ),
+    requestedUrl: args.url || args.ctrip_url || args['ctrip-url'] || '',
+    requestedUrls,
+    resolvedUrl: '',
+    resolvedUrls: [],
+    inputMode: expandedInputs.inputMode || 'list',
+    batchMode: true,
+    items: [],
+    batchStats: batchSummary,
+    batchSummary,
+    hotelName: '未筛选到宾馆',
+    eligibleCount: 0,
+    eligibleRoomTypes: [],
+    eligibleHotels: [],
+    totalPrice: null,
+    writeSkipped: true,
+    writeSkipReason: emptyReason,
+    writeResult: null,
+    error: null,
+    emptyListResult: true,
+    emptyReason,
+    reportLevel
+  };
 }
 
 async function runHotelImportTask(rawArgs = {}, options = {}) {
@@ -299,7 +441,9 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           loadedTemplate.template_name || args.templateName
         );
         const loadedEffectiveTemplate = applyMatchedTemplate(loadedTemplate, loadedMatchedTemplate);
-        validateTemplate(loadedEffectiveTemplate);
+        validateTemplate(loadedEffectiveTemplate, {
+          requireCtripUrl: !getAddressQueryFromArgs(args)
+        });
         const loadedEffectiveDestination = normalizePlaceName(
           (loadedMatchedTemplate && loadedMatchedTemplate.destination) ||
             loadedEffectiveTemplate.destination
@@ -399,6 +543,29 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         }
 
         assertNotCancelled(signal);
+        const addressQuery = getAddressQueryFromArgs(args);
+        if (args.inputMode === 'address' && !addressQuery) {
+          throw new Error('请输入地址或目的地。');
+        }
+        if (addressQuery) {
+          emit('address-search:start', `正在用地址搜索携程列表页：${addressQuery}`);
+          const resolvedAddressUrl = await perf.runPhase('address_search', { taskId }, async () =>
+            resolveCtripListUrlFromAddress(addressQuery, effectiveTemplate, {
+              edgeSession: buildEdgeSessionOptions(effectiveTemplate),
+              signal
+            })
+          );
+          args.url = resolvedAddressUrl;
+          args.urls = '';
+          args.text = '';
+          args.inputText = '';
+          effectiveTemplate.ctrip_url = resolvedAddressUrl;
+          emit('address-search:done', '地址已解析为携程列表页，继续执行前筛与采集', {
+            addressQuery,
+            resolvedUrl: resolvedAddressUrl
+          });
+        }
+
         emit('list:start', '正在解析携程链接与列表页候选', {
           desiredHotelCount: listFilters.desiredHotelCount,
           targetCount: listFilters.targetCount,
@@ -439,16 +606,59 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             .filter(Boolean)
             .join('; ');
           if (Number(listSummary.listInputCount || 0) > 0) {
-            throw new Error(
-              listErrors ||
-                '已识别携程酒店列表页，但没有解析到可进入详情页的候选酒店。请确认采集浏览器携程登录态可用，或放宽列表页前筛条件后重试。'
-            );
+            if (listErrors) {
+              throw new Error(listErrors);
+            }
+            const result = buildEmptyListResult({
+              args,
+              startedAt,
+              latestRunPath,
+              template,
+              matchedTemplate,
+              effectiveTemplate,
+              expandedInputs,
+              reportLevel
+            });
+            emit('list:empty', result.emptyReason, {
+              inputMode: expandedInputs.inputMode,
+              expandedHotelCount: 0,
+              listCandidateCount:
+                listSummary.listCandidateCount !== undefined ? listSummary.listCandidateCount : 0,
+              listRejectedCount:
+                listSummary.listRejectedCount !== undefined ? listSummary.listRejectedCount : 0,
+              emptyListResult: true
+            });
+            await perf.runPhase('write_latest_run', { taskId, hotelCount: 0 }, async () => {
+              writeLatestRunFile(latestRunPath, buildRunSummary(result));
+            });
+            emit('task:done', result.emptyReason, {
+              inputMode: result.inputMode,
+              hotelCount: 0,
+              eligibleCount: 0,
+              failedCount: 0,
+              wrote: false,
+              emptyListResult: true
+            });
+            return result;
           }
           throw new Error(skippedReason || '未从输入中解析到可采集的携程酒店详情页或列表页 URL。');
         }
-        const listShortfallError = buildListTargetShortfallError(expandedInputs);
-        if (listShortfallError) {
-          throw listShortfallError;
+        const listShortfallWarning = buildListTargetShortfallWarning(expandedInputs);
+        if (listShortfallWarning) {
+          const previousSummary = expandedInputs.summary || {};
+          const previousWarnings = Array.isArray(previousSummary.warnings)
+            ? previousSummary.warnings
+            : [];
+          expandedInputs.summary = {
+            ...previousSummary,
+            listTargetShortfall: listShortfallWarning,
+            warnings: [...previousWarnings, listShortfallWarning.message]
+          };
+          emit('list:warning', listShortfallWarning.message, {
+            expandedHotelCount: listShortfallWarning.expandedCount,
+            desiredHotelCount: listShortfallWarning.desiredCount,
+            listErrors: listShortfallWarning.listErrors
+          });
         }
 
         if (expandedInputs.inputMode !== 'detail' || expandedInputs.hotelInputs.length !== 1) {

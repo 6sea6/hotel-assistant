@@ -20,13 +20,43 @@ function shouldUseSeparate360Profile(browserName, userDataDir) {
   if (browserName !== '360 Browser') {
     return false;
   }
-  const normalized = String(userDataDir || '').replace(/\\/g, '/').toLowerCase();
+  const normalized = String(userDataDir || '')
+    .replace(/\\/g, '/')
+    .toLowerCase();
   return /(^|\/)edge-profile(\/|$)/.test(normalized);
 }
 
 function resolve360UserDataDir(edgeUserDataDir) {
   const resolvedEdgeDir = resolveEdgeUserDataDir(edgeUserDataDir);
   return path.join(path.dirname(resolvedEdgeDir), '360-profile');
+}
+
+function buildVisibleBrowserWindowArgs() {
+  return ['--new-window', '--window-size=1280,900', '--window-position=80,80'];
+}
+
+function is360BrowserRuntime(runtime = {}) {
+  return (
+    runtime.browserName === '360 Browser' ||
+    runtime.browserPreference === '360' ||
+    /(^|[\\/])360[^\\/]*\.exe$/i.test(String(runtime.browserExecutable || ''))
+  );
+}
+
+function buildBackgroundBrowserWindowArgs(runtime = {}) {
+  const args = ['--disable-gpu', '--headless=new', '--no-startup-window'];
+  if (is360BrowserRuntime(runtime)) {
+    args.push(
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-component-update',
+      '--disable-sync',
+      '--start-minimized',
+      '--window-size=1280,900',
+      '--window-position=-32000,-32000'
+    );
+  }
+  return args;
 }
 
 function resolveAutoEdgeRuntime(options = {}) {
@@ -119,14 +149,9 @@ async function launchAndWaitForEdge(options) {
   ];
 
   if (headless) {
-    launchArgs.push('--disable-gpu', '--headless=new', '--no-startup-window');
+    launchArgs.push(...buildBackgroundBrowserWindowArgs(runtime));
   } else {
-    launchArgs.push(
-      '--new-window',
-      '--window-position=-32000,-32000',
-      '--window-size=1280,900',
-      '--start-minimized'
-    );
+    launchArgs.push(...buildVisibleBrowserWindowArgs());
   }
 
   launchArgs.push(
@@ -142,7 +167,7 @@ async function launchAndWaitForEdge(options) {
   const child = spawn(edgeExecutable, launchArgs, {
     stdio: 'ignore',
     detached: true,
-    windowsHide: true
+    windowsHide: headless
   });
   child.unref();
 
@@ -176,8 +201,7 @@ async function launchAndWaitForEdge(options) {
 }
 
 function closeAutoEdge(target, details = {}) {
-  const closeTarget =
-    target && typeof target === 'object' ? target : { ...details, pid: target };
+  const closeTarget = target && typeof target === 'object' ? target : { ...details, pid: target };
   const pid = closeTarget.pid;
   if (!pid) {
     return;
@@ -216,7 +240,7 @@ async function runInteractiveEdgeLoginPrep(options = {}) {
       [
         '--no-first-run',
         '--no-default-browser-check',
-        '--new-window',
+        ...buildVisibleBrowserWindowArgs(),
         `--remote-debugging-port=${port}`,
         `--user-data-dir=${userDataDir}`,
         `--profile-directory=${profileDirectory}`,
@@ -252,6 +276,8 @@ async function runInteractiveEdgeLoginPrep(options = {}) {
 }
 
 module.exports = {
+  buildBackgroundBrowserWindowArgs,
+  buildVisibleBrowserWindowArgs,
   closeAutoEdge,
   hasReusableEdgeProfile,
   launchAndWaitForEdge,

@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const { normalizeText, toNumber, ensureDir } = require('../utils');
 const {
   delay,
+  getBrowserDisplayName,
   killBrowserProcessesByCommandLine,
   killProcessTree,
   findEdgeExecutable,
@@ -68,6 +69,33 @@ function cloneEdgeUserDataDir(sourceDir) {
   return clonedDir;
 }
 
+function buildVisibleManagedBrowserWindowArgs() {
+  return ['--new-window', '--window-size=1280,900', '--window-position=80,80'];
+}
+
+function is360ManagedBrowser(edgeExecutable, sessionOptions = {}) {
+  return (
+    sessionOptions.browserPreference === '360' ||
+    getBrowserDisplayName(edgeExecutable) === '360 Browser'
+  );
+}
+
+function buildBackgroundManagedBrowserWindowArgs(edgeExecutable, sessionOptions = {}) {
+  const args = ['--disable-gpu', '--headless=new', '--no-startup-window'];
+  if (is360ManagedBrowser(edgeExecutable, sessionOptions)) {
+    args.push(
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-component-update',
+      '--disable-sync',
+      '--start-minimized',
+      '--window-size=1280,900',
+      '--window-position=-32000,-32000'
+    );
+  }
+  return args;
+}
+
 async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requestedPort) {
   const launchWithUserDataDir = async (userDataDir, shouldCleanupUserDataDir, port, timeoutMs) => {
     ensureDir(userDataDir);
@@ -83,20 +111,12 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
     ];
 
     if (sessionOptions.headless) {
-      launchArgs.push('--disable-gpu', '--headless=new', '--no-startup-window');
+      launchArgs.push(...buildBackgroundManagedBrowserWindowArgs(edgeExecutable, sessionOptions));
     } else {
-      launchArgs.push(
-        '--new-window',
-        '--window-position=-32000,-32000',
-        '--window-size=1280,900',
-        '--start-minimized'
-      );
+      launchArgs.push(...buildVisibleManagedBrowserWindowArgs());
     }
 
-    launchArgs.push(
-      `--remote-debugging-port=${port}`,
-      `--user-data-dir=${userDataDir}`
-    );
+    launchArgs.push(`--remote-debugging-port=${port}`, `--user-data-dir=${userDataDir}`);
 
     if (sessionOptions.profileDirectory) {
       launchArgs.push(`--profile-directory=${sessionOptions.profileDirectory}`);
@@ -108,7 +128,7 @@ async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requeste
     const browser = spawn(edgeExecutable, launchArgs, {
       stdio: 'ignore',
       detached: true,
-      windowsHide: true
+      windowsHide: sessionOptions.headless
     });
     browser.unref();
 
@@ -469,6 +489,8 @@ async function waitForStableCount(getCount, options = {}) {
 module.exports = {
   findAvailablePort,
   findEdgeExecutable,
+  buildBackgroundManagedBrowserWindowArgs,
+  buildVisibleManagedBrowserWindowArgs,
   normalizeEdgeSessionOptions,
   cloneEdgeUserDataDir,
   launchManagedEdgeSession,

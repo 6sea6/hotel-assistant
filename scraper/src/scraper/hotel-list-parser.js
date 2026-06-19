@@ -551,7 +551,12 @@ function extractStructuredCardCandidates(html, baseUrl, template = {}) {
     '[data-hotel-id]',
     '[data-masterhotelid]',
     '[data-master-hotel-id]',
-    '[data-exposure*="masterhotelid"]'
+    '[data-exposure*="masterhotelid"]',
+    '[data-exposure*="masterHotelId"]',
+    '[data-exposure*="masterHotelID"]',
+    '[data-exposure*="hotelId"]',
+    '[data-exposure*="hotelID"]',
+    '[data-exposure*="hotelid"]'
   ].join(',');
 
   $(selector).each((_, element) => {

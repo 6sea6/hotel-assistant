@@ -31,6 +31,7 @@ export {
   getLastTaskError,
   getReadableEventTitle,
   getStepDefinitions,
+  isSoftCtripLoginPromptEvent,
   isRecord,
   LOGIN_STEP_DEFINITION,
   normalizeEvent,

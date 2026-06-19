@@ -1,9 +1,6 @@
 import { state } from './state.js';
 import { getValue, setChecked, setValue } from './dom-helpers.js';
-import {
-  extractCtripUrls,
-  updateAiInputCount as updateTaskInputCount
-} from './ai-task-console.js';
+import { extractCtripUrls, updateAiInputCount as updateTaskInputCount } from './ai-task-console.js';
 
 /**
  * @typedef {import('../../shared/contracts').AiListFilters} AiListFilters
@@ -19,6 +16,43 @@ export function getSubmittedUrls() {
 
 export function getSubmittedUrl() {
   return getSubmittedUrls()[0] || '';
+}
+
+function hasSubmittedHttpUrl() {
+  return /https?:\/\/\S+/i.test(getValue('aiHotelUrlInput'));
+}
+
+export function detectSubmittedTaskInput() {
+  const rawInput = getValue('aiHotelUrlInput').trim();
+  if (!rawInput) {
+    return {
+      inputMode: 'empty',
+      rawInput,
+      url: '',
+      addressQuery: ''
+    };
+  }
+
+  if (hasSubmittedHttpUrl()) {
+    return {
+      inputMode: 'url',
+      rawInput,
+      url: getSubmittedUrl(),
+      addressQuery: ''
+    };
+  }
+
+  return {
+    inputMode: 'address',
+    rawInput,
+    url: '',
+    addressQuery: rawInput
+  };
+}
+
+function getCurrentAiSearchMode() {
+  const input = detectSubmittedTaskInput();
+  return input.inputMode === 'url' ? 'url' : 'address';
 }
 
 function isCtripListUrl(url) {
@@ -201,12 +235,14 @@ export function readCtripUrlFilterSettings(options = {}) {
 
 function applyChoiceButtonsToDom(settingKey, values = []) {
   const selected = new Set((Array.isArray(values) ? values : []).map((item) => String(item)));
-  document.querySelectorAll(`[data-setting-key="${settingKey}"][data-option-value]`).forEach((button) => {
-    const optionButton = /** @type {HTMLElement} */ (button);
-    const isSelected = selected.has(String(optionButton.dataset.optionValue || ''));
-    optionButton.classList.toggle('is-selected', isSelected);
-    optionButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-  });
+  document
+    .querySelectorAll(`[data-setting-key="${settingKey}"][data-option-value]`)
+    .forEach((button) => {
+      const optionButton = /** @type {HTMLElement} */ (button);
+      const isSelected = selected.has(String(optionButton.dataset.optionValue || ''));
+      optionButton.classList.toggle('is-selected', isSelected);
+      optionButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    });
 }
 
 function applyAccommodationModeToDom(mode) {
@@ -284,9 +320,7 @@ async function persistCtripUrlFilterSettingsFromParsed(parsed) {
     updates.aiCtripRoomFeatures = Array.isArray(known.roomFeatures) ? known.roomFeatures : [];
   }
   if (detected.has('featureThemes')) {
-    updates.aiCtripFeatureThemes = Array.isArray(known.featureThemes)
-      ? known.featureThemes
-      : [];
+    updates.aiCtripFeatureThemes = Array.isArray(known.featureThemes) ? known.featureThemes : [];
   }
 
   const entries = Object.entries(updates);
@@ -365,6 +399,9 @@ let ctripListUrlSyncTimer = null;
 
 export function handleAiTaskInputChange() {
   updateTaskInputCount();
+  if (getCurrentAiSearchMode() === 'address') {
+    return;
+  }
   if (ctripListUrlSyncTimer) {
     clearTimeout(ctripListUrlSyncTimer);
   }
@@ -412,10 +449,13 @@ export function readCollectBrowser() {
 export function buildTaskPayload(task) {
   const listFilters =
     task.listFilters && typeof task.listFilters === 'object' ? task.listFilters : {};
+  const inputMode = task.inputMode === 'address' ? 'address' : 'url';
   return omitUndefinedFields({
     templateId: task.templateId,
     templateName: task.templateName || '',
-    url: task.url,
+    inputMode: inputMode === 'address' ? inputMode : undefined,
+    addressQuery: inputMode === 'address' ? task.addressQuery : undefined,
+    url: inputMode === 'address' ? undefined : task.url,
     listFilters,
     listUrlFilters: task.listUrlFilters || readCtripUrlFilterSettings({ activeOnly: true }),
     desiredHotelCount: listFilters.desiredHotelCount,

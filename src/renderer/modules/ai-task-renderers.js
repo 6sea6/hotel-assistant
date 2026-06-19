@@ -237,9 +237,9 @@ export function renderIdleView() {
     <div class="task-empty-state">
       <div class="task-empty-icon" aria-hidden="true">⌁</div>
       <h3>等待开始任务</h3>
-      <p>请选择模板，并粘贴携程酒店详情页或列表页链接，系统将自动采集酒店房型、价格、交通和比较信息。</p>
+      <p>请选择模板，并输入携程链接或目的地地址，系统将自动采集酒店房型、价格、交通和比较信息。</p>
       <div class="task-empty-tips">
-        <span>支持详情页和列表页</span>
+        <span>支持详情页、列表页和宾馆地址</span>
         <span>自动采集房型、价格、交通等信息</span>
         <span>结果可导出，便于对比与分析</span>
       </div>

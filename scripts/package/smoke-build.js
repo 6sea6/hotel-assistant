@@ -25,6 +25,10 @@ function runElectronBuilderDirectoryBuild({ projectRoot, configPath }) {
   );
 }
 
+function createSmokeOutputDir(projectRoot) {
+  return fs.mkdtempSync(path.join(projectRoot, 'dist-smoke-'));
+}
+
 function main() {
   if (process.platform !== 'win32') {
     console.log('Windows packaging smoke test skipped: this script only runs on Windows.');
@@ -33,7 +37,7 @@ function main() {
 
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.join(projectRoot, 'scraper');
-  const outputDir = path.join(projectRoot, 'dist-smoke');
+  const outputDir = createSmokeOutputDir(projectRoot);
   let builderConfig = null;
   let preparedBundle = null;
 
@@ -87,4 +91,10 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  createSmokeOutputDir
+};

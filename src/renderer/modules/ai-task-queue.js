@@ -61,6 +61,7 @@ export function findQueueTaskByBackendTaskId(taskId) {
  * @param {AiListFilters} [listFilters]
  * @param {AiListUrlFilters} [listUrlFilters]
  * @param {AiTaskKind} [taskKind]
+ * @param {{inputMode?: 'url'|'address'|string, addressQuery?: string}} [options]
  * @returns {AiTaskQueueItem}
  */
 export function createQueueTask(
@@ -68,21 +69,30 @@ export function createQueueTask(
   url,
   listFilters = {},
   listUrlFilters = {},
-  taskKind = 'collect'
+  taskKind = 'collect',
+  options = {}
 ) {
   const queueIndex = bumpAiTaskQueueCounter();
   const displayIndex = String(queueIndex).padStart(2, '0');
   const isRefresh = taskKind === 'refresh-data';
-  const title = isRefresh ? '更新整个程序目前的宾馆数据' : formatAiTemplateLabel(template);
+  const inputMode = options.inputMode === 'address' ? 'address' : 'url';
+  const addressQuery = String(options.addressQuery || '').trim();
+  const baseTitle = isRefresh ? '更新整个程序目前的宾馆数据' : formatAiTemplateLabel(template);
+  const title =
+    !isRefresh && inputMode === 'address' && addressQuery
+      ? `${baseTitle} · ${addressQuery}`
+      : baseTitle;
   return {
     id: `queue-${Date.now()}-${queueIndex}`,
     displayIndex,
     url,
     templateId: isRefresh ? '' : String(template.id ?? ''),
     templateName: isRefresh ? '' : template.name || '',
-    templateLabel: title,
+    templateLabel: baseTitle,
     title,
     template,
+    inputMode,
+    addressQuery,
     listFilters,
     listUrlFilters,
     taskKind,

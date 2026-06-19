@@ -1,5 +1,4 @@
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { createBuilderConfig } = require('./create-builder-config');
@@ -33,15 +32,10 @@ function parseBuildOptions(argv = process.argv.slice(2), env = process.env) {
 }
 
 function runElectronBuilder({ projectRoot, configPath }) {
-  const electronBuilderBin = path.join(
-    projectRoot,
-    'node_modules',
-    '.bin',
-    resolveWindowsCommand('electron-builder')
-  );
+  const electronBuilderCli = path.join(projectRoot, 'node_modules', 'electron-builder', 'cli.js');
   runCommand(
-    electronBuilderBin,
-    ['--win', 'nsis', '--x64', '--publish', 'never', '--config', configPath],
+    process.execPath,
+    [electronBuilderCli, '--win', 'nsis', '--x64', '--publish', 'never', '--config', configPath],
     {
       cwd: projectRoot
     }
@@ -151,10 +145,14 @@ function syncAppInfo(projectRoot) {
   });
 }
 
+function createTempBuildDir(projectRoot) {
+  return fs.mkdtempSync(path.join(projectRoot, 'dist-verify-build-'));
+}
+
 async function main() {
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.resolve(projectRoot, 'scraper');
-  const tempBuildDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-verify-build-'));
+  const tempBuildDir = createTempBuildDir(projectRoot);
   const buildOptions = parseBuildOptions();
 
   let preparedBundle = null;
@@ -241,6 +239,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  createTempBuildDir,
   getAmapKeyModeLabel,
   parseBuildOptions
 };

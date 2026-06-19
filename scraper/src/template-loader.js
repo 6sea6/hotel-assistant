@@ -164,9 +164,9 @@ function applyMatchedTemplate(template, matchedTemplate) {
   return normalized;
 }
 
-function validateTemplate(template) {
+function validateTemplate(template, options = {}) {
   const missing = [];
-  if (!template.ctrip_url) missing.push('ctrip_url');
+  if (options.requireCtripUrl !== false && !template.ctrip_url) missing.push('ctrip_url');
   if (!template.check_in_date) missing.push('check_in_date');
   if (!template.check_out_date) missing.push('check_out_date');
   if (!template.room_count) missing.push('room_count');

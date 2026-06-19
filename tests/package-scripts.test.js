@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const asar = require('@electron/asar');
 
 const { PROMPT_CONTRACT } = require('../shared/compare-app/prompt-contract');
 const {
@@ -13,6 +14,10 @@ const {
 const { createBuilderConfig } = require('../scripts/package/create-builder-config');
 const { prepareFullBundle } = require('../scripts/package/prepare-full-bundle');
 const { verifyPackageLayout } = require('../scripts/package/verify-package-layout');
+const {
+  buildRceditArgs,
+  toWindowsProductVersion
+} = require('../scripts/package/edit-extracted-exe-resources');
 const {
   cleanupRuntimeArtifacts,
   DEFAULT_RUNTIME_ARTIFACT_PATHS
@@ -46,6 +51,30 @@ function writePackageFixture(nodeModulesDir, packageName, packageJson = {}) {
   return packageDir;
 }
 
+async function writeAppAsarFixture(resourcesDir, options = {}) {
+  const sourceDir = path.join(resourcesDir, '_app-asar-fixture');
+  fs.rmSync(sourceDir, { recursive: true, force: true });
+
+  const manifest = getBundleManifest('_unused');
+  const omitted = new Set((options.omit || []).map((item) => String(item).replace(/\\/g, '/')));
+  const writeFixtureFile = (relativePath, content = 'fixture') => {
+    const normalized = String(relativePath).replace(/\\/g, '/');
+    if (omitted.has(normalized)) {
+      return;
+    }
+    const targetPath = path.join(sourceDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, content, 'utf-8');
+  };
+
+  manifest.expectations.appAsarResources.forEach((relativePath) => writeFixtureFile(relativePath));
+  (options.extra || []).forEach((relativePath) => writeFixtureFile(relativePath, 'unexpected'));
+
+  fs.mkdirSync(resourcesDir, { recursive: true });
+  await asar.createPackage(sourceDir, path.join(resourcesDir, 'app.asar'));
+  fs.rmSync(sourceDir, { recursive: true, force: true });
+}
+
 test('package manifest keeps full bundle resource contracts stable', () => {
   const manifest = getBundleManifest('E:/temp/bundle-root');
 
@@ -58,6 +87,9 @@ test('package manifest keeps full bundle resource contracts stable', () => {
   assert.equal('baseOnlyAbsentResources' in manifest.expectations, false);
   assert.deepEqual(manifest.expectations.fullOnlyResources, [
     path.join('scraper', 'src', 'cli.js'),
+    path.join('scraper', 'src', 'task-runner.js'),
+    path.join('scraper', 'src', 'scraper', 'list-page-address-search.js'),
+    path.join('scraper', 'src', 'scraper', 'list-page-collector.js'),
     path.join('scraper', 'src', 'runtime', 'perf.js'),
     path.join('scraper', 'src', 'runtime', 'file-perf.js'),
     path.join('scraper', 'src', 'runtime', 'noop-perf.js'),
@@ -239,9 +271,37 @@ test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', ()
   assert.deepEqual(nsis.installerLanguages, ['zh_CN']);
   assert.equal(nsis.displayLanguageSelector, false);
   assert.equal(nsis.unicode, true);
+  assert.equal(nsis.createDesktopShortcut, 'always');
   assert.equal(packageJson.build.productName, '宾馆比较终极版');
+  assert.equal(packageJson.build.afterExtract, 'scripts/package/edit-extracted-exe-resources.js');
+  assert.equal(packageJson.build.win.signAndEditExecutable, false);
   assert.equal(nsis.shortcutName, '宾馆比较终极版');
   assert.equal(nsis.uninstallDisplayName, '宾馆比较终极版');
+});
+
+test('Windows exe resources are edited before asar integrity is added', () => {
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+  );
+  const args = buildRceditArgs({
+    executablePath: 'C:\\tmp\\electron.exe',
+    iconPath: 'C:\\tmp\\icon.ico',
+    packageJson
+  });
+
+  assert.equal(toWindowsProductVersion('8.9.0'), '8.9.0.0');
+  assert.deepEqual(args.slice(0, 4), [
+    'C:\\tmp\\electron.exe',
+    '--set-version-string',
+    'FileDescription',
+    '宾馆比较终极版'
+  ]);
+  assert.ok(args.includes('--set-icon'));
+  assert.equal(args[args.indexOf('--set-icon') + 1], 'C:\\tmp\\icon.ico');
+  assert.equal(args[args.indexOf('ProductName') + 1], '宾馆比较终极版');
+  assert.equal(args[args.indexOf('--set-file-version') + 1], packageJson.version);
+  assert.equal(args[args.indexOf('--set-product-version') + 1], '8.9.0.0');
+  assert.equal(args[args.indexOf('CompanyName') + 1], 'Sea');
 });
 
 test('scraper dependency packages are declared only in the workspace package', () => {
@@ -572,7 +632,11 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
     'module.exports = {};',
     'utf-8'
   );
-  fs.writeFileSync(path.join(packageDir, 'tests', 'fixture.test.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    path.join(packageDir, 'tests', 'fixture.test.js'),
+    'module.exports = {};',
+    'utf-8'
+  );
   fs.writeFileSync(path.join(packageDir, '.nycrc'), '{}\n', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'bench.js'), 'module.exports = {};', 'utf-8');
   fs.writeFileSync(path.join(packageDir, 'benchmark.js'), 'module.exports = {};', 'utf-8');
@@ -628,7 +692,81 @@ test('prepareFullBundle prunes copied vendor development assets', (t) => {
   });
 });
 
-test('verifyPackageLayout requires full resource layout', (t) => {
+test('prepareFullBundle prunes unused vendor runtime variants but keeps CommonJS entries', (t) => {
+  const tempRoot = makeTempRoot();
+  const scraperDir = path.join(tempRoot, 'scraper');
+  const nodeModulesDir = path.join(tempRoot, 'node_modules');
+
+  fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(scraperDir, 'src', 'cli.js'), 'module.exports = {};', 'utf-8');
+  fs.writeFileSync(
+    path.join(scraperDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'fixture-scraper',
+        dependencies: {
+          axios: '^1.0.0',
+          cheerio: '^1.0.0',
+          htmlparser2: '^9.0.0'
+        }
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  );
+  fs.writeFileSync(
+    path.join(scraperDir, PROMPT_CONTRACT.unifiedPromptFileName),
+    '# guide\n',
+    'utf-8'
+  );
+
+  const axiosDir = writePackageFixture(nodeModulesDir, 'axios');
+  fs.mkdirSync(path.join(axiosDir, 'dist', 'node'), { recursive: true });
+  fs.mkdirSync(path.join(axiosDir, 'dist', 'browser'), { recursive: true });
+  fs.mkdirSync(path.join(axiosDir, 'dist', 'esm'), { recursive: true });
+  fs.writeFileSync(path.join(axiosDir, 'dist', 'node', 'axios.cjs'), 'module.exports = {};');
+  fs.writeFileSync(path.join(axiosDir, 'dist', 'browser', 'axios.cjs'), 'module.exports = {};');
+  fs.writeFileSync(path.join(axiosDir, 'dist', 'esm', 'axios.js'), 'export default {};');
+
+  const cheerioDir = writePackageFixture(nodeModulesDir, 'cheerio');
+  fs.mkdirSync(path.join(cheerioDir, 'dist', 'commonjs'), { recursive: true });
+  fs.mkdirSync(path.join(cheerioDir, 'dist', 'browser'), { recursive: true });
+  fs.mkdirSync(path.join(cheerioDir, 'dist', 'esm'), { recursive: true });
+  fs.writeFileSync(path.join(cheerioDir, 'dist', 'commonjs', 'index.js'), 'module.exports = {};');
+  fs.writeFileSync(path.join(cheerioDir, 'dist', 'browser', 'index.js'), 'export default {};');
+  fs.writeFileSync(path.join(cheerioDir, 'dist', 'esm', 'index.js'), 'export default {};');
+
+  const htmlparserDir = writePackageFixture(nodeModulesDir, 'htmlparser2');
+  fs.mkdirSync(path.join(htmlparserDir, 'lib', 'esm'), { recursive: true });
+  fs.writeFileSync(path.join(htmlparserDir, 'lib', 'index.js'), 'module.exports = {};');
+  fs.writeFileSync(path.join(htmlparserDir, 'lib', 'esm', 'index.js'), 'export default {};');
+
+  const prepared = prepareFullBundle({
+    projectRoot: tempRoot,
+    scraperDir
+  });
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(prepared.bundleRoot, { recursive: true, force: true });
+  });
+
+  const vendorDir = path.join(prepared.manifest.directories.scraperRoot, 'vendor');
+  assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'node', 'axios.cjs')), true);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'browser')), false);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'esm')), false);
+  assert.equal(
+    fs.existsSync(path.join(vendorDir, 'cheerio', 'dist', 'commonjs', 'index.js')),
+    true
+  );
+  assert.equal(fs.existsSync(path.join(vendorDir, 'cheerio', 'dist', 'browser')), false);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'cheerio', 'dist', 'esm')), false);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'htmlparser2', 'lib', 'index.js')), true);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'htmlparser2', 'lib', 'esm')), false);
+});
+
+test('verifyPackageLayout requires full resource layout', async (t) => {
   const tempRoot = makeTempRoot();
   const fullResourcesDir = path.join(tempRoot, 'full', 'win-unpacked', 'resources');
 
@@ -658,6 +796,7 @@ test('verifyPackageLayout requires full resource layout', (t) => {
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach((relativePath) => {
     writeFile(fullResourcesDir, relativePath);
   });
+  await writeAppAsarFixture(fullResourcesDir);
 
   assert.doesNotThrow(() => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }));
 });
@@ -716,7 +855,35 @@ test('package layout rejects local data and login state resources', (t) => {
   );
 });
 
-test('package layout rejects unexpected Electron locale packs', (t) => {
+test('package layout rejects unexpected app.asar resources', async (t) => {
+  const tempRoot = makeTempRoot();
+  const resourcesDir = path.join(tempRoot, 'full', 'win-unpacked', 'resources');
+
+  const writeResourceFile = (relativePath) => {
+    const targetPath = path.join(resourcesDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, 'fixture', 'utf-8');
+  };
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  [
+    path.join('shared', 'compare-app', 'constants.js'),
+    path.join('shared', 'compare-app', 'data-folder.js'),
+    path.join('shared', 'compare-app', 'hotel-groups.js')
+  ].forEach(writeResourceFile);
+  getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
+  await writeAppAsarFixture(resourcesDir, { extra: ['README.md'] });
+
+  assert.throws(
+    () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }),
+    /app\.asar 不应包含资源/
+  );
+});
+
+test('package layout rejects unexpected Electron locale packs', async (t) => {
   const tempRoot = makeTempRoot();
   const unpackedDir = path.join(tempRoot, 'full', 'win-unpacked');
   const resourcesDir = path.join(unpackedDir, 'resources');
@@ -742,6 +909,7 @@ test('package layout rejects unexpected Electron locale packs', (t) => {
     path.join('shared', 'compare-app', 'hotel-groups.js')
   ].forEach(writeResourceFile);
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
+  await writeAppAsarFixture(resourcesDir);
   writeLocale('zh-CN');
   writeLocale('en-US');
   writeLocale('ja');
@@ -939,7 +1107,7 @@ test('run-build script uses Chinese UI text and does not contain English menu st
     path.resolve(__dirname, '..', 'scripts', 'package', 'run-build.js'),
     'utf-8'
   );
-  const { parseBuildOptions } = require('../scripts/package/run-build');
+  const { createTempBuildDir, parseBuildOptions } = require('../scripts/package/run-build');
 
   assert.doesNotMatch(runBuildScript, /选择打包模式/);
   assert.doesNotMatch(runBuildScript, /基础版安装包/);
@@ -966,17 +1134,29 @@ test('run-build script uses Chinese UI text and does not contain English menu st
     parseBuildOptions([], { HOTEL_PACKAGE_AMAP_KEY_MODE: 'without-amap-key' }).amapKeyMode,
     'none'
   );
+  assert.equal(typeof createTempBuildDir, 'function');
 });
 
-test('run-build uses ASCII temporary NSIS output paths', () => {
+test('run-build uses project-local ASCII temporary NSIS output paths', (t) => {
+  const projectRoot = path.resolve(__dirname, '..');
   const runBuildScript = fs.readFileSync(
-    path.resolve(__dirname, '..', 'scripts', 'package', 'run-build.js'),
+    path.join(projectRoot, 'scripts', 'package', 'run-build.js'),
     'utf-8'
   );
+  const { createTempBuildDir } = require('../scripts/package/run-build');
+  const tempBuildDir = createTempBuildDir(projectRoot);
 
-  assert.match(runBuildScript, /require\('os'\)/);
-  assert.match(runBuildScript, /os\.tmpdir\(\)/);
-  assert.match(runBuildScript, /hotel-verify-build-/);
+  t.after(() => {
+    fs.rmSync(tempBuildDir, { recursive: true, force: true });
+  });
+
+  assert.doesNotMatch(runBuildScript, /require\('os'\)/);
+  assert.doesNotMatch(runBuildScript, /os\.tmpdir\(\)/);
+  assert.ok(tempBuildDir.startsWith(path.join(projectRoot, 'dist-verify-build-')));
+  assert.ok(
+    [...path.relative(projectRoot, tempBuildDir)].every((char) => char.charCodeAt(0) <= 0x7f)
+  );
+  assert.match(runBuildScript, /dist-verify-build-/);
   assert.match(runBuildScript, /useAsciiInstallerArtifactName/);
   assert.match(runBuildScript, /hotel-comparison-app-\$\{version\}-setup\.\\\$\{ext\}/);
   assert.match(runBuildScript, /getSetupArtifactName\(version,\s*\{\s*amapKeyMode\s*\}\)/);

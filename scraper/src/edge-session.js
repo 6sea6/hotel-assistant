@@ -12,6 +12,27 @@ const {
   normalizeBrowserPreference
 } = require('./scraper/process-utils');
 
+function buildVisibleBrowserWindowArgs() {
+  return ['--new-window', '--window-size=1280,900', '--window-position=80,80'];
+}
+
+function buildBackgroundBrowserWindowArgs(browserName, browserPreference) {
+  const args = ['--headless=new', '--disable-gpu'];
+  if (browserName === '360 Browser' || browserPreference === '360') {
+    args.push(
+      '--no-startup-window',
+      '--disable-extensions',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-component-update',
+      '--disable-sync',
+      '--start-minimized',
+      '--window-size=1280,900',
+      '--window-position=-32000,-32000'
+    );
+  }
+  return args;
+}
+
 function printHelp() {
   console.log(`
 用法:
@@ -41,9 +62,8 @@ function main() {
     return;
   }
 
-  const browser = findChromiumBrowserExecutable({
-    browserPreference: normalizeBrowserPreference(args.browser || args['browser-preference'])
-  });
+  const browserPreference = normalizeBrowserPreference(args.browser || args['browser-preference']);
+  const browser = findChromiumBrowserExecutable({ browserPreference });
   const edgeExecutable = browser.executablePath;
   const browserName = browser.browserName || getBrowserDisplayName(edgeExecutable);
   if (!edgeExecutable) {
@@ -64,14 +84,15 @@ function main() {
   const launchArgs = [
     '--no-first-run',
     '--no-default-browser-check',
-    '--new-window',
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
     `--profile-directory=${profileDirectory}`
   ];
 
   if (headless) {
-    launchArgs.push('--headless=new', '--disable-gpu');
+    launchArgs.push(...buildBackgroundBrowserWindowArgs(browserName, browserPreference));
+  } else {
+    launchArgs.push(...buildVisibleBrowserWindowArgs());
   }
 
   launchArgs.push(url);
@@ -99,4 +120,12 @@ function main() {
   console.log(JSON.stringify(summary, null, 2));
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  buildBackgroundBrowserWindowArgs,
+  buildVisibleBrowserWindowArgs,
+  main
+};

@@ -333,6 +333,10 @@ function compactCliResult(result) {
     totalPrice: result.totalPrice ?? null,
     outputPath: result.outputPath || '',
     latestRunPath: result.latestRunPath || '',
+    writeSkipped: Boolean(result.writeSkipped),
+    writeSkipReason: result.writeSkipReason || '',
+    emptyListResult: Boolean(result.emptyListResult),
+    emptyReason: result.emptyReason || '',
     error: result.error || null
   };
 
@@ -344,7 +348,8 @@ function compactCliResult(result) {
           expandedHotelCount: result.batchSummary.expandedHotelCount,
           succeededCount: result.batchSummary.succeededCount,
           failedCount: result.batchSummary.failedCount,
-          eligibleHotelRecordCount: result.batchSummary.eligibleHotelRecordCount
+          eligibleHotelRecordCount: result.batchSummary.eligibleHotelRecordCount,
+          emptyReason: result.batchSummary.emptyReason || ''
         }
       : null;
     compact.items = Array.isArray(result.items)

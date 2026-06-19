@@ -40,11 +40,15 @@ function prepareBatchCollections({ itemResults = [], reportDisabled = false }) {
     .map((item) => item.performanceItem)
     .filter((performanceItem) => performanceItem);
   const itemMs = orderedItemResults.reduce((sum, item) => sum + Number(item.durationMs || 0), 0);
-  const allHotels = reportDisabled
-    ? childResults.flatMap((result) =>
-        Array.isArray(result.eligibleHotels) ? result.eligibleHotels : []
-      )
-    : resultPayloads.flatMap((payload) => (Array.isArray(payload.hotels) ? payload.hotels : []));
+  const allHotels = orderedItemResults.flatMap((item) => {
+    if (item.childResult && Array.isArray(item.childResult.eligibleHotels)) {
+      return item.childResult.eligibleHotels;
+    }
+    if (!reportDisabled && item.childPayload && Array.isArray(item.childPayload.hotels)) {
+      return item.childPayload.hotels;
+    }
+    return [];
+  });
 
   return {
     orderedItemResults,

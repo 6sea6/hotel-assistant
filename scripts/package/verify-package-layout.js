@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const asar = require('@electron/asar');
 const { getBundleManifest } = require('./bundle-manifest');
 
 function getAllowedElectronLanguages() {
@@ -21,6 +22,38 @@ function assertMissing(baseDir, relativePath) {
   const fullPath = path.join(baseDir, relativePath);
   if (fs.existsSync(fullPath)) {
     throw new Error(`不应存在的打包资源: ${relativePath}`);
+  }
+}
+
+function normalizeAsarPath(value) {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+}
+
+function loadAsarEntries(appAsarPath) {
+  if (!fs.existsSync(appAsarPath)) {
+    throw new Error(`未找到 app.asar: ${appAsarPath}`);
+  }
+  return new Set(asar.listPackage(appAsarPath).map(normalizeAsarPath));
+}
+
+function hasAsarEntry(entries, relativePath) {
+  const normalized = normalizeAsarPath(relativePath);
+  return (
+    entries.has(normalized) || [...entries].some((entry) => entry.startsWith(`${normalized}/`))
+  );
+}
+
+function assertAsarExists(entries, relativePath) {
+  if (!hasAsarEntry(entries, relativePath)) {
+    throw new Error(`app.asar 缺少资源: ${relativePath}`);
+  }
+}
+
+function assertAsarMissing(entries, relativePath) {
+  if (hasAsarEntry(entries, relativePath)) {
+    throw new Error(`app.asar 不应包含资源: ${relativePath}`);
   }
 }
 
@@ -66,6 +99,13 @@ function verifyPackageLayout({ tempBuildDir }) {
 
   manifest.expectations.fullOnlyResources.forEach((relativePath) =>
     assertExists(resourcesDir, relativePath)
+  );
+  const appAsarEntries = loadAsarEntries(path.join(resourcesDir, 'app.asar'));
+  (manifest.expectations.appAsarResources || []).forEach((relativePath) =>
+    assertAsarExists(appAsarEntries, relativePath)
+  );
+  (manifest.expectations.neverAppAsarResources || []).forEach((relativePath) =>
+    assertAsarMissing(appAsarEntries, relativePath)
   );
   verifyElectronLocales(tempBuildDir);
 

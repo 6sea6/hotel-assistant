@@ -154,6 +154,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         reason: detection.reason,
         stage,
         url,
+        actionRequired: false,
         instruction:
           '当前采集浏览器登录态可能无效；请在采集浏览器中登录携程后重新采集。'
       });

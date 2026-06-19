@@ -125,6 +125,22 @@ const VENDOR_PRUNE_EXTENSIONS = new Set([
   '.yml'
 ]);
 
+const VENDOR_RUNTIME_PRUNE_DIRS = new Map([
+  ['axios', [path.join('dist', 'browser'), path.join('dist', 'esm')]],
+  ['cheerio', [path.join('dist', 'browser'), path.join('dist', 'esm')]],
+  ['cheerio-select', [path.join('lib', 'esm')]],
+  ['css-select', [path.join('lib', 'esm')]],
+  ['css-what', [path.join('lib', 'esm')]],
+  ['dom-serializer', [path.join('lib', 'esm')]],
+  ['domelementtype', [path.join('lib', 'esm')]],
+  ['domhandler', [path.join('lib', 'esm')]],
+  ['domutils', [path.join('lib', 'esm')]],
+  ['entities', [path.join('lib', 'esm')]],
+  ['htmlparser2', [path.join('lib', 'esm')]],
+  ['nth-check', [path.join('lib', 'esm')]],
+  ['parse5-htmlparser2-tree-adapter', [path.join('dist', 'esm')]]
+]);
+
 function getRuntimeEntryText(packageJson = {}) {
   return JSON.stringify({
     main: packageJson.main,
@@ -204,7 +220,16 @@ function pruneFilesRecursively(rootDir) {
 }
 
 function pruneVendorPackageDevelopmentAssets(packageDir) {
+  if (!fs.existsSync(path.join(packageDir, 'package.json'))) {
+    return;
+  }
   const packageJson = readPackageJson(packageDir);
+  (VENDOR_RUNTIME_PRUNE_DIRS.get(packageJson.name) || []).forEach((relativeDir) => {
+    const targetPath = path.join(packageDir, relativeDir);
+    if (fs.existsSync(targetPath)) {
+      fs.rmSync(targetPath, { recursive: true, force: true });
+    }
+  });
   for (const dirName of VENDOR_PRUNE_DIR_NAMES) {
     const targetPath = path.join(packageDir, dirName);
     if (fs.existsSync(targetPath)) {

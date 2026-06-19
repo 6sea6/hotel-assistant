@@ -1,6 +1,6 @@
 {
   "name": "hotel-comparison-app",
-  "version": "8.8.8",
+  "version": "8.9.0",
   "description": "宾馆比较终极版应用程序",
   "main": "src/main/main.js",
   "workspaces": [
@@ -136,6 +136,7 @@
       }
     ],
     "asar": true,
+    "afterExtract": "scripts/package/edit-extracted-exe-resources.js",
     "win": {
       "icon": "icon.ico",
       "target": [
@@ -146,7 +147,7 @@
           ]
         }
       ],
-      "signAndEditExecutable": true
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
@@ -160,7 +161,7 @@
       "uninstallerSidebar": "installerSidebar.bmp",
       "shortcutName": "宾馆比较终极版",
       "uninstallDisplayName": "宾馆比较终极版",
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "installerLanguages": [
         "zh_CN"

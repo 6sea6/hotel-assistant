@@ -53,6 +53,46 @@ function isPlausibleRoomPrice(value) {
   return price !== null && price >= MIN_PLAUSIBLE_ROOM_PRICE;
 }
 
+function isAddOnFeePriceContext(source, matchIndex, matchedText = '') {
+  const index = Number.isFinite(matchIndex) ? matchIndex : 0;
+  const token = String(matchedText || '');
+  const localBefore = source.slice(Math.max(0, index - 28), index);
+  const localAfter = source.slice(index + token.length, index + token.length + 28);
+  const immediateBefore = source.slice(Math.max(0, index - 8), index);
+  const immediateAfter = source.slice(index + token.length, index + token.length + 8);
+  const localContext = `${localBefore}${token}${localAfter}`;
+
+  if (/^\s*[/／]\s*(?:人|位|份|次)/.test(immediateAfter)) {
+    return true;
+  }
+  if (/(?:每人|每位|每份)\s*$/.test(immediateBefore)) {
+    return true;
+  }
+  if (
+    /(?:addBreakfastFee|早餐费|加早餐|餐食|餐费|加餐)/i.test(localContext) &&
+    (/(?:每人|每位|每份)\s*$/.test(immediateBefore) ||
+      /^\s*[/／]\s*(?:人|位|份|次)/.test(immediateAfter))
+  ) {
+    return true;
+  }
+  if (
+    /(?:addBed|加床|婴儿床)/i.test(localContext) &&
+    (/(?:每人|每位)\s*$/.test(immediateBefore) ||
+      /^\s*[/／]\s*(?:人|位|次)/.test(immediateAfter))
+  ) {
+    return true;
+  }
+  if (
+    /(?:ceilInfos|tableInfo|tableDetails)/.test(localContext) &&
+    (/(?:每人|每位|每份)\s*$/.test(immediateBefore) ||
+      /^\s*[/／]\s*(?:人|位|份|次)/.test(immediateAfter))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function extractRoomSection(text) {
   const normalized = normalizeText(text);
   const startMarkers = ['选择房间', '房型摘要', '可住人数 今日价格', '立即确认', '登录看低价'];
@@ -123,15 +163,19 @@ function isLikelyValidRoomSnippet(snippet) {
 }
 
 function extractPrices(snippet) {
+  const source = String(snippet || '');
   const matches = [
-    ...String(snippet || '').matchAll(/[¥￥]\s*(\d+(?:\.\d+)?)/g),
-    ...String(snippet || '').matchAll(/(?:CNY|RMB|USD)\s*(\d+(?:\.\d+)?)/gi),
-    ...String(snippet || '').matchAll(
+    ...source.matchAll(/[¥￥]\s*(\d+(?:\.\d+)?)/g),
+    ...source.matchAll(/(?:CNY|RMB|USD)\s*(\d+(?:\.\d+)?)/gi),
+    ...source.matchAll(
       /(?:未划线价格|实时标价|价格|总价|每晚|起价|salePrice|discountPrice|payAmount|totalPrice)[^\d]{0,12}(\d+(?:\.\d+)?)/gi
     )
   ];
 
-  const numbers = matches.map((match) => toNumber(match[1])).filter(isPlausibleRoomPrice);
+  const numbers = matches
+    .filter((match) => !isAddOnFeePriceContext(source, match.index, match[0]))
+    .map((match) => toNumber(match[1]))
+    .filter(isPlausibleRoomPrice);
 
   return [...new Set(numbers)].sort((left, right) => left - right);
 }
@@ -139,25 +183,10 @@ function extractPrices(snippet) {
 function extractRelevantPricesFromSnippet(snippet) {
   const source = String(snippet || '');
   const regex = /[¥￥]\s*(\d+(?:\.\d+)?)/g;
-  const excludedContextMarkers = [
-    '取消',
-    '罚款',
-    '加餐',
-    '早餐',
-    '加床',
-    '儿童',
-    '每份',
-    '每人',
-    '费用',
-    '餐食'
-  ];
   const prices = [];
 
   for (const match of source.matchAll(regex)) {
-    const start = Math.max(0, (match.index || 0) - 20);
-    const end = Math.min(source.length, (match.index || 0) + match[0].length + 20);
-    const context = source.slice(start, end);
-    if (excludedContextMarkers.some((marker) => context.includes(marker))) {
+    if (isAddOnFeePriceContext(source, match.index, match[0])) {
       continue;
     }
     const value = toNumber(match[1]);
@@ -172,25 +201,10 @@ function extractRelevantPricesFromSnippet(snippet) {
 function extractExcludedPricesFromSnippet(snippet) {
   const source = String(snippet || '');
   const regex = /[¥￥]\s*(\d+(?:\.\d+)?)/g;
-  const excludedContextMarkers = [
-    '取消',
-    '罚款',
-    '加餐',
-    '早餐',
-    '加床',
-    '儿童',
-    '每份',
-    '每人',
-    '费用',
-    '餐食'
-  ];
   const prices = [];
 
   for (const match of source.matchAll(regex)) {
-    const start = Math.max(0, (match.index || 0) - 24);
-    const end = Math.min(source.length, (match.index || 0) + match[0].length + 24);
-    const context = source.slice(start, end);
-    if (!excludedContextMarkers.some((marker) => context.includes(marker))) {
+    if (!isAddOnFeePriceContext(source, match.index, match[0])) {
       continue;
     }
     const value = toNumber(match[1]);

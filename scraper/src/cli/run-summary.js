@@ -89,6 +89,10 @@ function buildRunSummary(payload) {
       eligibleCount: payload.eligibleCount || 0,
       totalPrice: pickFirst(payload.totalPrice, null),
       batchMode: Boolean(payload.batchMode),
+      emptyListResult: Boolean(payload.emptyListResult),
+      emptyReason: payload.emptyReason || '',
+      writeSkipped: Boolean(payload.writeSkipped),
+      writeSkipReason: payload.writeSkipReason || '',
       batchSummary: payload.batchSummary
         ? {
             inputMode: payload.batchSummary.inputMode,
@@ -96,7 +100,8 @@ function buildRunSummary(payload) {
             expandedHotelCount: payload.batchSummary.expandedHotelCount,
             succeededCount: payload.batchSummary.succeededCount,
             failedCount: payload.batchSummary.failedCount,
-            eligibleHotelRecordCount: payload.batchSummary.eligibleHotelRecordCount
+            eligibleHotelRecordCount: payload.batchSummary.eligibleHotelRecordCount,
+            emptyReason: payload.batchSummary.emptyReason || ''
           }
         : null,
       outputPath: payload.outputPath || '',
@@ -146,6 +151,10 @@ function buildRunSummary(payload) {
     busRoute: pickFirst(payload.busRoute, firstHotel.bus_route, ''),
     pageSnapshot: buildPageSnapshotSummary(payload.pageSnapshot),
     writeResult: payload.writeResult ?? null,
+    writeSkipped: Boolean(payload.writeSkipped),
+    writeSkipReason: payload.writeSkipReason || '',
+    emptyListResult: Boolean(payload.emptyListResult),
+    emptyReason: payload.emptyReason || '',
     error: payload.error || null,
     reportLevel: payload.reportLevel || 'normal'
   };

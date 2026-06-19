@@ -209,7 +209,7 @@ function buildBatchOutputPayload({
   const isFullReport = reportLevel === 'full';
 
   const payload = {
-    hotels: isFullReport ? allHotels : allHotels.slice(0, 5),
+    hotels: allHotels,
     hotel: firstHotel,
     compare_app_store: getCompareAppStorePath(),
     matched_template: matchedTemplate,

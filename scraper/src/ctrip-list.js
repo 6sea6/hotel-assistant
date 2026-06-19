@@ -8,12 +8,10 @@ const {
 const {
   buildCtripListUrl,
   hasCtripUrlFilterSettings,
-  normalizeCtripUrlFilterSettings
+  normalizeCtripUrlFilterSettings,
+  parseCtripListUrl
 } = require('./ctrip-url-filters');
-const {
-  captureListHtmlPagesWithEdge,
-  collectListPageCandidates
-} = require('./scraper/list-page-collector');
+const { collectListPageCandidates } = require('./scraper/list-page-collector');
 const { normalizeListPageFilterOptions } = require('./scraper/list-page-parser');
 const { normalizeText } = require('./utils');
 
@@ -119,6 +117,12 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
     const effectiveListUrl = ctripUrlFilterSettings
       ? buildCtripListUrl(url, ctripUrlFilterSettings)
       : url;
+    let effectiveListFilters = '';
+    try {
+      effectiveListFilters = parseCtripListUrl(effectiveListUrl).listFiltersRaw || '';
+    } catch (_error) {
+      effectiveListFilters = '';
+    }
     const remainingTarget = Math.max(1, filters.desiredHotelCount - selectedFromLists);
     const listStartedAt = Date.now();
     const listResult = await collectHotelListCandidates(
@@ -136,6 +140,8 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
     performance.lists.push({
       inputUrl: url,
       effectiveListUrl,
+      effectiveListFilters,
+      ctripUrlFilterSettings,
       durationMs: listDurationMs,
       selectedCount: Array.isArray(listResult.selected) ? listResult.selected.length : 0,
       totalCandidates: Number(listResult.totalCandidates || 0),
@@ -193,6 +199,7 @@ async function expandCtripHotelInputs(rawInput = {}, template = {}, rawFilters =
         0
       ),
       filters,
+      ctripUrlFilterSettings,
       performance
     }
   };
@@ -216,10 +223,6 @@ function normalizeListFiltersFromArgs(args = {}) {
       args['max-candidates-per-page'] ??
       listFilters.maxCandidatesPerPage
   });
-}
-
-function hasMultipleHotelInputs(expandedInputs = {}) {
-  return Array.isArray(expandedInputs.hotelInputs) && expandedInputs.hotelInputs.length > 1;
 }
 
 function describeExpandedInput(expandedInputs = {}) {
@@ -254,12 +257,8 @@ function buildListResultsSummary(listResults = []) {
 }
 
 module.exports = {
-  buildDetailInput,
   buildListResultsSummary,
-  captureListHtmlPagesWithEdge,
-  collectHotelListCandidates,
   describeExpandedInput,
   expandCtripHotelInputs,
-  hasMultipleHotelInputs,
   normalizeListFiltersFromArgs
 };

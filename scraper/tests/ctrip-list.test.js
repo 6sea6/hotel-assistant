@@ -16,6 +16,18 @@ const { expandCtripHotelInputs, normalizeListFiltersFromArgs } = require('../src
 const {
   collectListPageCandidates: collectRawListPageCandidates
 } = require('../src/scraper/list-page-collector');
+const {
+  buildAddressKeywordListUrlFromResponses,
+  buildAddressSearchBaseUrl,
+  normalizeResolvedListUrl,
+  resolveCtripListUrlFromAddress
+} = require('../src/scraper/list-page-address-search');
+const {
+  fetchListApiPagesFromHtml,
+  fetchListApiPagesInEdgeSession,
+  isCtripListResponseBodyReadable,
+  isCtripListNetworkResponse
+} = require('../src/scraper/list-page-network-drain');
 
 function buildListHtml(cards = []) {
   return `
@@ -101,6 +113,208 @@ test('classifyCtripHotelUrl separates detail URLs from list URLs', () => {
   assert.equal(list.hotelId, '');
   assert.equal(isCtripHotelDetailUrl(list.url), false);
   assert.equal(isCtripHotelListUrl(list.url), true);
+});
+
+test('buildAddressSearchBaseUrl prefers template list URL and applies stay options', () => {
+  const url = buildAddressSearchBaseUrl({
+    ctrip_url:
+      'https://hotels.ctrip.com/hotels/list?cityId=17&cityName=%E6%9D%AD%E5%B7%9E&destName=%E6%9D%AD%E5%B7%9E',
+    check_in_date: '2026-06-17',
+    check_out_date: '2026-06-18',
+    room_count: 2
+  });
+  const parsed = new URL(url);
+
+  assert.equal(parsed.searchParams.get('cityId'), '17');
+  assert.equal(parsed.searchParams.get('checkIn'), '2026-06-17');
+  assert.equal(parsed.searchParams.get('checkOut'), '2026-06-18');
+  assert.equal(parsed.searchParams.get('adult'), '2');
+});
+
+test('buildAddressSearchBaseUrl falls back to Shanghai list URL for address search', () => {
+  const url = buildAddressSearchBaseUrl({
+    ctrip_url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001',
+    check_in_date: '2026-06-17',
+    check_out_date: '2026-06-18',
+    room_count: 1
+  });
+  const parsed = new URL(url);
+
+  assert.equal(parsed.hostname, 'hotels.ctrip.com');
+  assert.equal(parsed.pathname, '/hotels/list');
+  assert.equal(parsed.searchParams.get('cityName'), '上海');
+  assert.equal(parsed.searchParams.get('destName'), '上海');
+  assert.equal(parsed.searchParams.get('checkIn'), '2026-06-17');
+  assert.equal(parsed.searchParams.get('checkOut'), '2026-06-18');
+});
+
+test('buildAddressKeywordListUrlFromResponses writes Ctrip landmark list filter', () => {
+  const url = buildAddressKeywordListUrlFromResponses(
+    'https://hotels.ctrip.com/hotels/list?cityId=2&cityName=%E4%B8%8A%E6%B5%B7&destName=%E4%B8%8A%E6%B5%B7&searchType=CT&optionId=2&checkIn=2026-06-17&checkOut=2026-06-18&adult=3&listFilters=13~old*13*old,17~6*17*6',
+    '国家会展中心',
+    [
+      {
+        body: JSON.stringify({
+          data: {
+            mainKeywordList: {
+              keywords: [
+                {
+                  keyword: {
+                    keywordContentInfo: {
+                      keywordId: 4558399,
+                      keyword: '国家会展中心(上海)',
+                      keywordDesc: '国家会展中心(上海)',
+                      keywordCode: '4558399',
+                      tripType: 'LM',
+                      urlType: 'list'
+                    }
+                  },
+                  controlInfo: {
+                    keywordFilterItem: {
+                      data: {
+                        filterID: '13|4558399',
+                        title: '国家会展中心(上海)',
+                        type: '13',
+                        value: '31.1896495|121.3019423|国家会展中心(上海)|4558399'
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        })
+      }
+    ]
+  );
+  const parsed = new URL(url);
+  const decodedFilters = parsed.searchParams.get('listFilters');
+
+  assert.equal(parsed.searchParams.get('destName'), '国家会展中心(上海)');
+  assert.equal(parsed.searchParams.get('searchType'), 'LM');
+  assert.equal(parsed.searchParams.get('optionId'), '4558399');
+  assert.equal(parsed.searchParams.get('searchWord'), '国家会展中心(上海)');
+  assert.equal(parsed.searchParams.get('searchValue'), '4558399');
+  assert.match(
+    decodedFilters,
+    /13~4558399\*13\*31\.1896495\|121\.3019423\|国家会展中心\(上海\)\|4558399/
+  );
+  assert.match(decodedFilters, /17~6\*17\*6/);
+  assert.doesNotMatch(decodedFilters, /13~old/);
+});
+
+test('normalizeResolvedListUrl accepts Ctrip-rewritten list URLs without original address text', () => {
+  const url =
+    'https://hotels.ctrip.com/hotels/list?cityId=2&destName=%E4%B8%8A%E6%B5%B7%E6%96%B0%E5%9B%BD%E9%99%85%E5%8D%9A%E8%A7%88%E4%B8%AD%E5%BF%83&searchType=LM&optionId=103&searchValue=103';
+
+  assert.equal(normalizeResolvedListUrl(url), url);
+});
+
+test('normalizeResolvedListUrl rejects login pages that only contain a list backurl', () => {
+  const loginUrl =
+    'https://passport.ctrip.com/user/login?backurl=https%3A%2F%2Fhotels.ctrip.com%2Fhotels%2Flist%3FcityId%3D2%26destName%3D%25E4%25B8%258A%25E6%25B5%25B7';
+
+  assert.equal(normalizeResolvedListUrl(loginUrl), '');
+});
+
+function createAddressSearchRetryDependencies(browserPreference, urlsByAttempt) {
+  let connectCount = 0;
+  const cleanupCalls = [];
+  const controls = {
+    destinationInput: { x: 120, y: 80 },
+    searchButton: { x: 640, y: 80 }
+  };
+  return {
+    get connectCount() {
+      return connectCount;
+    },
+    cleanupCalls,
+    dependencies: {
+      getEdgeWebSocket: () => function FakeWebSocket() {},
+      findEdgeExecutable: () => 'C:/Browser/browser.exe',
+      normalizeEdgeSessionOptions: () => ({ browserPreference }),
+      connectListEdgeSession: async () => {
+        connectCount += 1;
+        return {
+          connection: {
+            async send() {
+              return {};
+            },
+            addListener() {
+              return () => undefined;
+            },
+            async close() {}
+          },
+          browserExecutable: 'C:/Browser/browser.exe',
+          browserPort: 9222,
+          userDataDir: 'E:/profile',
+          shouldCleanupUserDataDir: false
+        };
+      },
+      acquireListPageTarget: async () => ({
+        targetId: `target-${connectCount}`,
+        sessionId: `session-${connectCount}`,
+        shouldCloseTarget: true,
+        error: ''
+      }),
+      cleanupListEdgeSession: async (payload) => {
+        cleanupCalls.push(payload);
+      },
+      waitForPromiseOrTimeout: async () => undefined,
+      waitForSessionCondition: async () => true,
+      delay: async () => undefined,
+      evaluateInSession: async (_connection, _sessionId, expression) => {
+        if (expression === 'location.href') {
+          return urlsByAttempt[connectCount - 1] || '';
+        }
+        if (/destinationInput/.test(expression) && /searchButton/.test(expression)) {
+          return controls;
+        }
+        if (/setElementValue/.test(expression) || /address-input/.test(expression)) {
+          return { ok: true, value: '新国际博览中心' };
+        }
+        if (/samples/.test(expression) && /skipped/.test(expression)) {
+          return { point: { x: 160, y: 120 }, samples: [] };
+        }
+        return controls;
+      }
+    }
+  };
+}
+
+test('resolveCtripListUrlFromAddress retries transient 360 address search failures once', async () => {
+  const validUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=2&destName=%E6%96%B0%E5%9B%BD%E9%99%85%E5%8D%9A%E8%A7%88%E4%B8%AD%E5%BF%83';
+  const harness = createAddressSearchRetryDependencies('360', ['about:blank', validUrl]);
+  const debugEvents = [];
+
+  const result = await resolveCtripListUrlFromAddress(
+    '新国际博览中心',
+    {},
+    {
+      dependencies: harness.dependencies,
+      onDebug(event, data) {
+        debugEvents.push({ event, data });
+      }
+    }
+  );
+
+  assert.equal(result, validUrl);
+  assert.equal(harness.connectCount, 2);
+  assert.equal(harness.cleanupCalls.length, 2);
+  assert.ok(debugEvents.some((item) => item.event === 'retry'));
+});
+
+test('resolveCtripListUrlFromAddress does not retry Edge address search by default', async () => {
+  const harness = createAddressSearchRetryDependencies('edge', ['about:blank']);
+
+  await assert.rejects(
+    resolveCtripListUrlFromAddress('新国际博览中心', {}, { dependencies: harness.dependencies }),
+    /地址搜索未得到有效/
+  );
+
+  assert.equal(harness.connectCount, 1);
+  assert.equal(harness.cleanupCalls.length, 1);
 });
 
 test('parseListPageCandidatesFromHtml reads ctrip structured list cards', () => {
@@ -308,6 +522,180 @@ test('parseListPageCandidatesFromHtml reads Ctrip fetchHotelList JSON payloads',
   });
   assert.equal(prefilter.selected.length, 1);
   assert.equal(prefilter.selected[0].hotelId, '9001');
+});
+
+test('parseListPageCandidatesFromHtml reads camel-case hotel ids from data-exposure', () => {
+  const html = `
+    <html>
+      <body>
+        <section data-exposure='{"masterHotelId":"9901","hotelId":"9901"}'>
+          <strong class="hotel-title">曝光埋点酒店</strong>
+          <span>评分 4.7</span>
+        </section>
+      </body>
+    </html>
+  `;
+  const candidates = parseListPageCandidatesFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/list?city=2'
+  );
+
+  assert.equal(candidates.some((candidate) => candidate.hotelId === '9901'), true);
+});
+
+test('fetchListApiPagesInEdgeSession accepts captured request body when next data is missing', async () => {
+  let evaluatedExpression = '';
+  let evaluateOptions = null;
+  const connection = {
+    async send(method, params, sessionId, options) {
+      assert.equal(method, 'Runtime.evaluate');
+      evaluatedExpression = String(params.expression || '');
+      evaluateOptions = options || null;
+      return {
+        result: {
+          value: JSON.stringify({
+            responses: [
+              {
+                pageIndex: 2,
+                status: 200,
+                data: {
+                  data: {
+                    hotelList: [
+                      {
+                        hotelInfo: {
+                          summary: { hotelId: '9902', masterHotelId: '9902' },
+                          nameInfo: { name: '请求体回放酒店' }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            pageIndexes: [2],
+            error: ''
+          })
+        }
+      };
+    }
+  };
+
+  const result = await fetchListApiPagesInEdgeSession(connection, 'session-1', {
+    desiredHotelCount: 20,
+    initialRequests: [
+      {
+        url: 'https://m.ctrip.com/restapi/soa2/34951/fetchHotelList',
+        postData: JSON.stringify({
+          paging: { pageIndex: 1, pageSize: 10 },
+          head: { isSSR: true }
+        })
+      }
+    ]
+  });
+
+  assert.match(evaluatedExpression, /initialListRequests/);
+  assert.match(evaluatedExpression, /const maxReplayPages = 3/);
+  assert.match(evaluatedExpression, /pageSize/);
+  assert.doesNotMatch(evaluatedExpression, /seenIds\.size\s*<\s*targetCount/);
+  assert.ok(evaluateOptions.timeoutMs > 5000);
+  assert.equal(result.count, 1);
+  assert.deepEqual(result.pageIndexes, [2]);
+  assert.match(result.html, /请求体回放酒店/);
+});
+
+test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async () => {
+  const initData = {
+    hotelList: [
+      {
+        hotelInfo: {
+          summary: { hotelId: '1001', masterHotelId: '1001' },
+          nameInfo: { name: '第一页酒店' }
+        }
+      }
+    ],
+    pagingInfo: { pageIndex: 1, pageSize: 10 }
+  };
+  const initRequest = {
+    hotelIdFilter: { hotelAldyShown: [] },
+    paging: { pageIndex: 1, pageSize: 10 },
+    head: { isSSR: true }
+  };
+  const escapedInitData = JSON.stringify(initData).replace(/"/g, '\\"');
+  const escapedInitRequest = JSON.stringify(initRequest).replace(/"/g, '\\"');
+  const html = `<script>self.__next_f=[["x","\\\"initListData\\\":${escapedInitData},\\\"initListRequest\\\":${escapedInitRequest}"]]</script>`;
+  const requests = [];
+
+  const result = await fetchListApiPagesFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/list?cityId=2',
+    {
+      desiredHotelCount: 20,
+      maxListApiReplayPages: 2,
+      fetchImpl: async (_endpoint, options) => {
+        const body = JSON.parse(options.body);
+        requests.push(body);
+        const pageIndex = body.paging.pageIndex;
+        return {
+          status: 200,
+          async json() {
+            return {
+              data: {
+                hotelList: [
+                  {
+                    hotelInfo: {
+                      summary: {
+                        hotelId: String(9000 + pageIndex),
+                        masterHotelId: String(9000 + pageIndex),
+                        hotelTypeName: '酒店'
+                      },
+                      nameInfo: { name: `静态接口酒店 ${pageIndex}` },
+                      commentInfo: { commentScore: 4.7 }
+                    }
+                  }
+                ]
+              }
+            };
+          }
+        };
+      }
+    }
+  );
+
+  assert.equal(result.count, 2);
+  assert.deepEqual(result.pageIndexes, [2, 3]);
+  assert.deepEqual(
+    requests.map((request) => request.paging.pageIndex),
+    [2, 3]
+  );
+  assert.deepEqual(requests[0].hotelIdFilter.hotelAldyShown, ['1001']);
+  assert.match(result.html, /html-list-api-replay/);
+  assert.match(result.html, /静态接口酒店 2/);
+});
+
+test('isCtripListNetworkResponse accepts current list API variants', () => {
+  assert.equal(
+    isCtripListNetworkResponse('https://m.ctrip.com/restapi/soa2/34951/fetchHotelList'),
+    true
+  );
+  assert.equal(isCtripListNetworkResponse('https://example.test/api/getHotelList'), true);
+  assert.equal(isCtripListNetworkResponse('https://example.test/static/logo.png'), false);
+});
+
+test('isCtripListResponseBodyReadable skips html list pages and keeps JSON APIs', () => {
+  assert.equal(
+    isCtripListResponseBodyReadable({
+      url: 'https://hotels.ctrip.com/hotels/list?cityId=2',
+      mimeType: 'text/html'
+    }),
+    false
+  );
+  assert.equal(
+    isCtripListResponseBodyReadable({
+      url: 'https://m.ctrip.com/restapi/soa2/34951/fetchHotelList',
+      mimeType: 'application/json'
+    }),
+    true
+  );
 });
 
 test('list page filter keeps accommodation names in list candidates', () => {
@@ -554,6 +942,47 @@ test('collectListPageCandidates skips Edge fallback when HTML prefilter reaches 
   assert.equal(result.edgeFallbackUsed, false);
   assert.equal(result.selected.length, 1);
   assert.equal(result.performance.htmlPages.length, 1);
+});
+
+test('collectListPageCandidates uses static list API replay before Edge fallback', async () => {
+  let edgeCalled = false;
+  let replayCalled = false;
+  const result = await collectRawListPageCandidates(
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {},
+    {
+      desiredHotelCount: 2
+    },
+    {
+      autoEdge: true,
+      fetchHtml: async () => ({
+        html: buildListHtml([{ id: '6101', name: 'HTML 第一家' }])
+      }),
+      fetchListApiPagesFromHtml: async () => {
+        replayCalled = true;
+        return {
+          count: 1,
+          pageIndexes: [2],
+          html: buildListHtml([{ id: '6102', name: '静态接口第二家' }]),
+          error: ''
+        };
+      },
+      captureListHtmlPagesWithEdge: async () => {
+        edgeCalled = true;
+        return { pages: [], error: '' };
+      }
+    }
+  );
+
+  assert.equal(replayCalled, true);
+  assert.equal(edgeCalled, false);
+  assert.equal(result.edgeFallbackUsed, false);
+  assert.deepEqual(
+    result.selected.map((candidate) => candidate.hotelId),
+    ['6101', '6102']
+  );
+  assert.equal(result.performance.staticApiPages.length, 1);
+  assert.equal(result.performance.staticApiPages[0].listApiResponseCount, 1);
 });
 
 test('collectListPageCandidates uses Edge fallback when HTML pages stall below target', async () => {

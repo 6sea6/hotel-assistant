@@ -15,19 +15,6 @@ const { assertEdgeNotAborted, isAbortLikeError } = require('./edge-retry-policy'
 const EDGE_RESPONSE_PARSE_MAX_MS = 12000;
 const EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET = 8;
 
-function hasUsableStructuredPrice(candidates) {
-  return (
-    Array.isArray(candidates) &&
-    candidates.some(
-      (candidate) =>
-        candidate &&
-        candidate.price !== null &&
-        candidate.price !== undefined &&
-        !candidate.price_locked
-    )
-  );
-}
-
 function isRawFallbackCandidate(candidate) {
   return candidate && String(candidate.source || '') === 'edge-cdp-raw';
 }
@@ -59,43 +46,12 @@ function pruneRawFallbackCandidatesAfterStructuredPrice(roomBlocks) {
 
 function shouldUseEdgeRawTextFallback({
   isRoomResponse,
-  roomBlocks,
-  structuredCandidates,
-  template,
-  matchingOptions = {}
+  structuredCandidates
 }) {
   if (!isRoomResponse) {
     return true;
   }
-  if (!Array.isArray(structuredCandidates) || structuredCandidates.length === 0) {
-    return true;
-  }
-  if (hasUsableStructuredPrice(structuredCandidates)) {
-    return false;
-  }
-  const hasTemplateSignal = Boolean(
-    template &&
-    (template.room_type ||
-      template.roomType ||
-      template.room_count ||
-      template.roomCount ||
-      template.occupancy)
-  );
-  if (!hasTemplateSignal) {
-    return true;
-  }
-
-  const normalizedTemplate = {
-    ...template,
-    room_type: template.room_type || template.roomType || '',
-    room_count: template.room_count || template.roomCount || template.occupancy
-  };
-
-  return !isEdgeRoomFastPathComplete(
-    [...roomBlocks, ...structuredCandidates],
-    normalizedTemplate,
-    matchingOptions
-  );
+  return !Array.isArray(structuredCandidates) || structuredCandidates.length === 0;
 }
 
 function isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions = {}) {

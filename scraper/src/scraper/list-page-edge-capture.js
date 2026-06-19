@@ -11,6 +11,7 @@ const {
 const {
   drainListNetworkResponses,
   fetchListApiPagesInEdgeSession,
+  isCtripListResponseBodyReadable,
   isCtripListNetworkResponse
 } = require('./list-page-network-drain');
 const {
@@ -136,18 +137,35 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     await connection.send('Page.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
     const listNetworkResponses = [];
+    const listNetworkRequests = [];
     const processedListNetworkResponses = new Set();
     stopNetworkListener = connection.addListener((message) => {
-      if (
-        !message ||
-        message.sessionId !== sessionId ||
-        message.method !== 'Network.responseReceived'
-      ) {
+      if (!message || message.sessionId !== sessionId) {
+        return;
+      }
+      if (message.method === 'Network.requestWillBeSent') {
+        const params = message.params || {};
+        const request = params.request || {};
+        if (!isCtripListNetworkResponse(request.url)) {
+          return;
+        }
+        listNetworkRequests.push({
+          requestId: params.requestId,
+          url: request.url,
+          method: request.method || '',
+          postData: request.postData || ''
+        });
+        if (listNetworkRequests.length > 20) {
+          listNetworkRequests.splice(0, listNetworkRequests.length - 20);
+        }
+        return;
+      }
+      if (message.method !== 'Network.responseReceived') {
         return;
       }
       const params = message.params || {};
       const response = params.response || {};
-      if (!isCtripListNetworkResponse(response.url)) {
+      if (!isCtripListResponseBodyReadable(response)) {
         return;
       }
       listNetworkResponses.push({
@@ -213,7 +231,8 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         const listApiReplayStartedAt = Date.now();
         pendingListApiSnapshot = await fetchListApiPagesInEdgeSession(connection, sessionId, {
           desiredHotelCount: options.desiredHotelCount,
-          maxListApiReplayPages: options.maxListApiReplayPages
+          maxListApiReplayPages: options.maxListApiReplayPages,
+          initialRequests: listNetworkRequests
         });
         listApiReplayDurationMs = durationSince(listApiReplayStartedAt);
       }

@@ -65,6 +65,8 @@ function compactTaskResult(result = {}) {
     resolvedUrls: Array.isArray(result.resolvedUrls) ? result.resolvedUrls.slice(0, 20) : [],
     writeSkipped: Boolean(result.writeSkipped),
     writeSkipReason: result.writeSkipReason || '',
+    emptyListResult: Boolean(result.emptyListResult),
+    emptyReason: result.emptyReason || '',
     writeResult: result.writeResult || null,
     loginRetry: result.loginRetry || null,
     eligibleRoomTypes,
@@ -374,6 +376,8 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
       flushStoreBeforeExternalWrite();
       return runner(
         {
+          inputMode: payload.inputMode,
+          addressQuery: payload.addressQuery,
           url: payload.url,
           urls: payload.urls,
           text: payload.text || payload.inputText || '',

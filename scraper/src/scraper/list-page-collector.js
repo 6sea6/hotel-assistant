@@ -5,6 +5,7 @@ const {
   parseListPageCandidatesFromHtml
 } = require('./list-page-parser');
 const { captureListHtmlPagesWithEdge } = require('./list-page-edge-capture');
+const { fetchListApiPagesFromHtml } = require('./list-page-network-drain');
 const { buildListPageUrls } = require('./list-page-url-builder');
 const {
   appendPageCandidates,
@@ -23,17 +24,25 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
   const pages = [];
   const errors = [];
   const htmlPageResults = new Map();
+  const htmlPageBodies = new Map();
+  const htmlPageCookies = new Map();
   const fetchPageHtml = typeof options.fetchHtml === 'function' ? options.fetchHtml : fetchHtml;
+  const fetchListApiPagesFromHtmlFn =
+    typeof options.fetchListApiPagesFromHtml === 'function'
+      ? options.fetchListApiPagesFromHtml
+      : fetchListApiPagesFromHtml;
   const capturePagesWithEdge =
     typeof options.captureListHtmlPagesWithEdge === 'function'
       ? options.captureListHtmlPagesWithEdge
       : captureListHtmlPagesWithEdge;
   const performance = {
     htmlFetchMs: 0,
+    staticApiReplayMs: 0,
     edgeFallbackMs: 0,
     totalMs: 0,
     htmlStoppedReason: '',
     htmlPages: [],
+    staticApiPages: [],
     edgePages: []
   };
   let candidates = [];
@@ -45,6 +54,8 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     const pageStartedAt = Date.now();
     try {
       const page = await fetchPageHtml(pageUrl, DESKTOP_HEADERS);
+      htmlPageBodies.set(pageUrl, page.html || '');
+      htmlPageCookies.set(pageUrl, page.cookieHeader || '');
       const pageCandidates = parseListPageCandidatesFromHtml(page.html, pageUrl, {
         template,
         filters,
@@ -91,6 +102,57 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
         source: 'html',
         error: error && error.message ? error.message : String(error)
       });
+    }
+  }
+
+  if (
+    prefilter.selected.length < filters.desiredHotelCount &&
+    options.enableStaticListApiReplay !== false
+  ) {
+    for (const pageUrl of pageUrls) {
+      if (prefilter.selected.length >= filters.desiredHotelCount) {
+        break;
+      }
+      const html = htmlPageBodies.get(pageUrl);
+      if (!html) {
+        continue;
+      }
+      const replayStartedAt = Date.now();
+      const replaySnapshot = await fetchListApiPagesFromHtmlFn(html, pageUrl, {
+        desiredHotelCount: filters.desiredHotelCount,
+        maxListApiReplayPages: options.maxListApiReplayPages,
+        headers: DESKTOP_HEADERS,
+        cookieHeader: htmlPageCookies.get(pageUrl) || '',
+        fetchImpl: options.fetchListApi || options.fetchImpl
+      });
+      const replayDurationMs = durationSince(replayStartedAt);
+      performance.staticApiReplayMs += replayDurationMs;
+      if (!replaySnapshot.html && !replaySnapshot.error) {
+        continue;
+      }
+      const pageCandidates = replaySnapshot.html
+        ? parseListPageCandidatesFromHtml(replaySnapshot.html, pageUrl, {
+            template,
+            filters,
+            sourceOrderOffset: candidates.length
+          })
+        : [];
+      const pageRecord = {
+        url: pageUrl,
+        source: 'html-list-api-replay',
+        candidateCount: pageCandidates.length,
+        durationMs: replayDurationMs,
+        networkResponseCount: 0,
+        listApiResponseCount: Number(replaySnapshot.count) || 0,
+        listApiPageIndexes: Array.isArray(replaySnapshot.pageIndexes)
+          ? replaySnapshot.pageIndexes
+          : [],
+        listApiError: replaySnapshot.error || ''
+      };
+      pages.push(pageRecord);
+      performance.staticApiPages.push(pageRecord);
+      appendPageCandidates(candidates, pageCandidates, candidates.length);
+      prefilter = filterListPageCandidates(candidates, filters);
     }
   }
 
@@ -151,7 +213,8 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
               };
             },
             shouldStop: () => prefilter.selected.length >= filters.desiredHotelCount,
-            desiredHotelCount: filters.desiredHotelCount
+            desiredHotelCount: filters.desiredHotelCount,
+            maxListApiReplayPages: options.maxListApiReplayPages
           })
         : {
             pages: [],

@@ -467,7 +467,7 @@ test('normal collect: getTransitInfo is still called when skipTransit is false',
   );
 });
 
-test('normal collect: enqueueAiCollectTask still requires template and URL', async () => {
+test('normal collect: enqueueAiCollectTask still requires template and recognized input', async () => {
   const code = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'renderer', 'modules', 'ai-assistant.js'),
     'utf8'
@@ -479,8 +479,12 @@ test('normal collect: enqueueAiCollectTask still requires template and URL', asy
     'enqueueAiCollectTask should still check for template'
   );
   assert.ok(
+    collectFnMatch[0].includes('detectSubmittedTaskInput'),
+    'enqueueAiCollectTask should still classify the submitted link or address'
+  );
+  assert.ok(
     collectFnMatch[0].includes('getSubmittedUrl'),
-    'enqueueAiCollectTask should still check for URL'
+    'enqueueAiCollectTask should still validate URL-mode input as a Ctrip URL'
   );
 });
 

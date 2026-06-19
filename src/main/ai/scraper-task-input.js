@@ -58,6 +58,13 @@ function getCtripHotelInputUrls(input = {}) {
   return extractUrlsFromText(rawValues).filter(isCtripHotelUrl);
 }
 
+function isAddressSearchInput(input = {}) {
+  return (
+    String(input.inputMode || '').trim() === 'address' ||
+    String(input.addressQuery || '').trim() !== ''
+  );
+}
+
 function normalizeBatchConcurrency(value) {
   const concurrency = Number(value);
   return concurrency === 2 || concurrency === 3 ? concurrency : 1;
@@ -69,6 +76,8 @@ function normalizeCollectBrowser(value) {
 
 function buildScraperArgs(input, workDir) {
   const args = {
+    inputMode: input.inputMode,
+    addressQuery: input.addressQuery,
     url: input.url,
     urls: Array.isArray(input.urls) ? input.urls.join('\n') : input.urls,
     text: input.text || input.inputText || '',
@@ -206,6 +215,7 @@ module.exports = {
   emitScraperEvent,
   getCtripHotelInputUrls,
   isCtripHotelUrl,
+  isAddressSearchInput,
   isTaskCancelled,
   normalizeCollectBrowser,
   normalizeBatchConcurrency

@@ -224,6 +224,12 @@ test('scraper runner responsibilities are split behind the existing facade', () 
   const refreshRunner = readProjectFile('src/main/ai/refresh-runner.js');
   assert.match(refreshRunner, /async function refreshExistingCtripHotels/);
   assert.match(refreshRunner, /runRefreshHotelBatch/);
+
+  assert.match(facade, /apply-latest-run\.json/);
+  assert.match(
+    facade,
+    /latestRunPath:\s*path\.join\(workDir,\s*'output',\s*'apply-latest-run\.json'\)/
+  );
 });
 
 test('Ctrip detail capture strategy is expressed as reusable steps and a plan table', () => {

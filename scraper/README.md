@@ -10,8 +10,8 @@
 
 ## 能力范围
 
-- 读取携程酒店详情页链接、酒店列表页链接，或混合粘贴文本中的多个携程 URL
-- 列表页先做前筛，再逐个进入详情页复用原采集链路；携程 URL 前筛支持价格、星级、排序、免费取消、点评数、评分档位、住宿类型、房型、客房特色、特色主题；应用内列表过滤只保留目标采集数量
+- 读取携程酒店详情页链接、酒店列表页链接，或混合粘贴文本中的多个携程 URL；应用内还支持先输入宾馆地址，让携程改写并生成列表页 URL 后继续采集
+- 列表页先做前筛，再逐个进入详情页复用原采集链路；携程 URL 前筛支持价格、星级、排序、免费取消、点评数、评分档位、住宿类型、房型、客房特色、特色主题；应用内列表过滤只保留目标采集数量，候选不足时继续采集已确认候选并在结果里给出数量提示
 - 自动提取酒店名、地址、携程评分、候选房型
 - 输出**所有**符合条件的房型（有价格、人数达标），而非仅最优
 - 调用高德开放平台计算酒店到目的地的公共交通距离、时间、最近地铁站距离和推荐换乘路线；若模板中的 destination 为空，则只查询酒店附近地铁站，不计算到目的地的距离与路线
@@ -55,7 +55,7 @@ npm install
 node src/cli.js --url "携程链接" --templateName 模板名 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
 ```
 
-`--url` 既可以传详情页，也可以传列表页。携程列表页 URL 中已有的城市、日期、人数、搜索词、`listFilters` 等原生筛选参数会被保留。多个链接或混合粘贴文本用 `--urls`：
+`--url` 既可以传详情页，也可以传列表页。携程列表页 URL 中已有的城市、日期、人数、搜索词、`listFilters` 等原生筛选参数会被保留。应用内“地址搜索”会先在携程列表页输入宾馆地址并点击搜索，按携程最终生成的列表 URL 传入这里继续执行；如果携程自动改写文本或点位，以携程结果为准。多个链接或混合粘贴文本用 `--urls`：
 
 ```bash
 node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateName 模板名 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
@@ -65,7 +65,7 @@ node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateN
 
 已识别的携程前筛包括价格、星级、排序、免费取消、点评数、评分档位、住宿类型、房型、客房特色和特色主题；未识别的 `listFilters` 片段会原样保留，避免破坏携程页面上的品牌、商圈、行政区等筛选。应用内列表过滤只保留目标采集数量；房型、价格、取消规则、窗户和人数规则仍在详情页阶段复核。
 
-携程列表页不是传统分页页面，不要通过拼接 `pageIndex`、`page` 或 `start` 参数来补页。候选不足时，当前链路会在 Edge 登录态页面内复用携程自身的 `initListRequest` 调用 `fetchHotelList`，把懒加载接口返回的酒店补进候选池，然后仍然走原有详情页采集。排查“设置采 N 家但实际少于 N 家”时，优先看列表展开摘要和性能日志中的 `listApiResponseCount`、`listApiPageIndexes`、`listApiError`，不要先改详情页房型筛选规则。
+携程列表页不是传统分页页面，不要通过拼接 `pageIndex`、`page` 或 `start` 参数来补页。候选不足时，当前链路会在 Edge 登录态页面内复用携程自身的 `initListRequest` 调用 `fetchHotelList`，把懒加载接口返回的酒店补进候选池，然后仍然走原有详情页采集。排查“设置采 N 家但实际少于 N 家”时，优先看列表展开摘要和性能日志中的 `listApiResponseCount`、`listApiPageIndexes`、`listApiError`，不要先改详情页房型筛选规则。如果携程列表页真实没有解析到可进入详情页的候选，应用层会按空结果完成并提示“未筛选到宾馆”，不再把这种情况报成采集异常。
 
 ```bash
 node src/cli.js --url "携程列表页链接" --templateName 模板名 --targetCount 5 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
@@ -78,6 +78,8 @@ node src/cli.js --url "携程列表页链接" --templateName 模板名 --priceMi
 ```
 
 `--auto-edge` 会自动在后台隐藏启动 Edge、等待调试端口就绪、执行采集、采集完成后关闭 Edge，不再把网页弹到前台影响当前电脑使用。首次使用如果还没有可复用的 Edge profile，会先自动打开一次可见 Edge 窗口让你登录携程；登录完成后关闭窗口，当前任务再继续后台采集。默认优先用 hidden/headless 会话；只有排障或主动重登时，才需要单独运行可见的 `edge-session.js --login`。如果某家酒店疑似必须在登录态的可见窗口里手动打开后，目标房型价格才会真正显示出来，不要只在后台盲重试；改为先用可见窗口重试一次并确认目标房型价格已在页面上显示，再继续采集。
+
+应用内“更新数据”复用正常详情页采集脚本刷新已有携程链接的房型与价格，默认跳过高德交通计算，不会重算并覆盖已有距离、地铁和公交字段。
 
 也可以在首次登录或登录态失效时分两步手动执行：
 
@@ -110,7 +112,7 @@ node src/cli.js --url "携程链接" --templateName 模板名 --auto-edge --edge
 1. 如果用户已经明确给出模板名，优先直接运行 CLI；只有模板名不确定时，才读取当前比较助手数据目录中的 `hotel-data.json` 的 `templates` 数组确认模板。
 2. 只运行上面的推荐命令，不自行组合其他采集路径；如果在 PowerShell 里写成单行，命令之间用 `;`，不要用 `&&`。
 3. 采集后只读取 `output/latest-run.json` 判断是否成功，不看终端回显。
-如果打包版流程临时写了 `_run.js` 等脚本，清理时统一在 Node.js 进程内用 `fs.unlinkSync()` 或 `fs.rmSync({ recursive: true, force: true })`；不要在 PowerShell 或 cmd 层用 `Remove-Item`、`del`。
+   如果打包版流程临时写了 `_run.js` 等脚本，清理时统一在 Node.js 进程内用 `fs.unlinkSync()` 或 `fs.rmSync({ recursive: true, force: true })`；不要在 PowerShell 或 cmd 层用 `Remove-Item`、`del`。
 4. `success=false`、`eligibleCount=0` 或 `totalPrice=null` 时，停止写入，先汇报结果。
 5. 只有 `success=true`、`eligibleCount>0`、`totalPrice!=null` 时，先用 `eligibleRoomTypes` 和 `eligibleHotels` 做快速复核；只有排障或怀疑房型解析异常时，才继续读取 `output/<酒店名>.json`。
 6. 复核通过后，不要手工直接改 `hotel-data.json` 的磁盘分组结构；改为执行桥接回写命令：`node src/cli.js --apply-output "output/<酒店名>.json"`。
@@ -175,18 +177,18 @@ node src/cli.js --url "携程链接" --templateName "模板名" \
 
 读取 `output/latest-run.json`：
 
-| 字段 | 说明 |
-|------|------|
-| `success` | true=执行完成 |
-| `hotelName` | 酒店名（非空=页面抓取成功） |
-| `eligibleCount` | 符合条件的房间数量（>0=有可用房型） |
-| `eligibleRoomTypes` | 所有房型摘要，包含标准房型、原始房型、价格、人数、退改与窗户信息 |
-| `eligibleHotels` | 可直接作为写入候选的完整酒店记录数组；复核通过后按它的结构写入比较助手即可 |
-| `totalPrice` | 第一条记录的总价（非 null=有价格） |
-| `ctripScore` | 携程评分 |
-| `distance` / `transportTime` | 交通信息 |
-| `subwayDistance` / `subwayStation` | 最近地铁站距离和站名 |
-| `inputMode` / `batchSummary` | 多 URL 或列表页输入时的模式与展开/前筛摘要；旧字段仍保留 |
+| 字段                               | 说明                                                                       |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| `success`                          | true=执行完成                                                              |
+| `hotelName`                        | 酒店名（非空=页面抓取成功）                                                |
+| `eligibleCount`                    | 符合条件的房间数量（>0=有可用房型）                                        |
+| `eligibleRoomTypes`                | 所有房型摘要，包含标准房型、原始房型、价格、人数、退改与窗户信息           |
+| `eligibleHotels`                   | 可直接作为写入候选的完整酒店记录数组；复核通过后按它的结构写入比较助手即可 |
+| `totalPrice`                       | 第一条记录的总价（非 null=有价格）                                         |
+| `ctripScore`                       | 携程评分                                                                   |
+| `distance` / `transportTime`       | 交通信息                                                                   |
+| `subwayDistance` / `subwayStation` | 最近地铁站距离和站名                                                       |
+| `inputMode` / `batchSummary`       | 多 URL 或列表页输入时的模式与展开/前筛摘要；旧字段仍保留                   |
 
 **成功**：success=true, eligibleCount>0, totalPrice 非空
 **部分成功**：success=true, hotelName 非空, 但 totalPrice=null（价格被反爬拦截）

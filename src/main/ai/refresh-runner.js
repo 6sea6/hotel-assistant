@@ -102,7 +102,8 @@ function normalizeRefreshItemResult(result = {}, fallback = {}) {
     updatedRoomTypeCount: Number(result.updatedRoomTypeCount || updatedHotels.length || 0),
     deletedRoomTypeCount: Number(result.deletedRoomTypeCount || 0),
     skipReason: result.skipReason || '',
-    error: result.error || ''
+    error: result.error || '',
+    retryAfterLogin: Boolean(result.retryAfterLogin)
   };
 }
 
@@ -114,7 +115,63 @@ function toPublicRefreshItem(item = {}) {
     updatedRoomTypeCount: Number(item.updatedRoomTypeCount || 0),
     deletedRoomTypeCount: Number(item.deletedRoomTypeCount || 0),
     skipReason: item.skipReason || '',
-    error: item.error || ''
+    error: item.error || '',
+    retryAfterLogin: Boolean(item.retryAfterLogin)
+  };
+}
+
+function combineRefreshWriteResults(...writeResults) {
+  const operations = [];
+  for (const result of writeResults) {
+    if (Array.isArray(result)) {
+      operations.push(...result);
+    } else if (result) {
+      operations.push(result);
+    }
+  }
+  return operations;
+}
+
+function mergeRefreshBatchResults(firstPass = {}, retryPass = {}) {
+  const retryItemsByUrl = new Map(
+    (Array.isArray(retryPass.items) ? retryPass.items : [])
+      .filter((item) => item && item.url)
+      .map((item) => [item.url, item])
+  );
+  const firstItems = Array.isArray(firstPass.items) ? firstPass.items : [];
+  const mergedItems = firstItems.map((item) => retryItemsByUrl.get(item.url) || item);
+  const firstUrls = new Set(firstItems.map((item) => item && item.url).filter(Boolean));
+  for (const item of Array.isArray(retryPass.items) ? retryPass.items : []) {
+    if (item && item.url && !firstUrls.has(item.url)) {
+      mergedItems.push(item);
+    }
+  }
+
+  const updatedItems = mergedItems.filter((item) => item.status === 'updated');
+  const skippedItems = mergedItems.filter((item) => item.status !== 'updated');
+
+  return {
+    ...firstPass,
+    effectiveConcurrency: firstPass.effectiveConcurrency,
+    updatedHotelCount: updatedItems.length,
+    updatedRoomTypeCount: updatedItems.reduce(
+      (sum, item) => sum + Number(item.updatedRoomTypeCount || 0),
+      0
+    ),
+    deletedRoomTypeCount: updatedItems.reduce(
+      (sum, item) => sum + Number(item.deletedRoomTypeCount || 0),
+      0
+    ),
+    skippedHotelCount: skippedItems.length,
+    items: mergedItems,
+    updatedHotels: [
+      ...(Array.isArray(firstPass.updatedHotels) ? firstPass.updatedHotels : []),
+      ...(Array.isArray(retryPass.updatedHotels) ? retryPass.updatedHotels : [])
+    ],
+    rawWriteResult: combineRefreshWriteResults(
+      firstPass.rawWriteResult,
+      retryPass.rawWriteResult
+    )
   };
 }
 
@@ -511,17 +568,23 @@ async function refreshExistingCtripHotels(input, context = {}) {
           normalizePlaceName
         });
 
-        const batchResult = await runRefreshHotelBatch({
+        const getRefreshHotelName = (url) => {
+          const existingHotels = hotelGroups.get(url) || [];
+          const firstHotel = existingHotels[0] || {};
+          return firstHotel.name || '';
+        };
+        const writeRefreshHotels = (hotels) =>
+          hotelMerge.appendHotelsToStore(hotels, {
+            overwriteExistingGroup: true
+          });
+
+        let batchResult = await runRefreshHotelBatch({
           hotelUrls,
           requestedConcurrency,
           workerContexts,
           signal: context.signal,
           emit,
-          getHotelName(url) {
-            const existingHotels = hotelGroups.get(url) || [];
-            const firstHotel = existingHotels[0] || {};
-            return firstHotel.name || '';
-          },
+          getHotelName: getRefreshHotelName,
           runWorkers: runBoundedWorkers,
           getEffectiveConcurrency: getEffectiveBoundedConcurrency,
           runPreparedDetails: runPreparedDetailBatch,
@@ -530,12 +593,109 @@ async function refreshExistingCtripHotels(input, context = {}) {
             assertNotCancelled(context.signal);
             return mapRefreshPreparedResult(args);
           },
-          writeHotels(hotels) {
-            return hotelMerge.appendHotelsToStore(hotels, {
-              overwriteExistingGroup: true
+          writeHotels: writeRefreshHotels
+        });
+
+        const loginRetryUrls = batchResult.items
+          .filter((item) => item.retryAfterLogin)
+          .map((item) => item.url)
+          .filter(Boolean);
+        if (loginRetryUrls.length > 0) {
+          emit(
+            'edge:login-required',
+            `有 ${loginRetryUrls.length} 家宾馆价格被携程隐藏，正在打开浏览器重新确认登录态`,
+            {
+              retryHotelCount: loginRetryUrls.length,
+              instruction:
+                '请在打开的采集浏览器中登录携程，并确认目标酒店页能看到具体房价；关闭窗口后会自动重试这些宾馆。'
+            }
+          );
+
+          await edgeSession.close();
+          edgeSession = null;
+
+          const { runInteractiveEdgeLoginPrep } = await loadScraperModule(
+            scraperPath,
+            'cli/auto-edge.js'
+          );
+          const loginPrepResult = await runInteractiveEdgeLoginPrep({
+            userDataDir: baseEdgeTemplate.edge_user_data_dir,
+            profileDirectory: baseEdgeTemplate.edge_profile_directory,
+            browserPreference: collectBrowser,
+            port: baseEdgeTemplate.edge_debugging_port || 9222,
+            url: loginRetryUrls[0] || hotelUrls[0] || 'https://hotels.ctrip.com/'
+          });
+          assertNotCancelled(context.signal);
+
+          if (loginPrepResult && loginPrepResult.loginConfirmed) {
+            emit('edge:login-done', '携程登录窗口已关闭，正在重试价格不可见的宾馆', {
+              retryHotelCount: loginRetryUrls.length
+            });
+          } else {
+            emit('edge:login-unconfirmed', '携程登录窗口已关闭，但尚未确认登录态', {
+              retryHotelCount: loginRetryUrls.length,
+              instruction: '仍会重试一次；如果继续跳过，请重新登录携程后再次更新数据。'
             });
           }
-        });
+
+          edgeSession = await createManagedRefreshEdgeWorkerSession({
+            scraperPath,
+            workDir,
+            collectBrowser,
+            requestedConcurrency,
+            totalHotelCount: loginRetryUrls.length,
+            firstHotelUrl: loginRetryUrls[0] || 'https://hotels.ctrip.com/',
+            emit,
+            getEffectiveBoundedConcurrency
+          });
+          const {
+            baseEdgeTemplate: retryBaseEdgeTemplate,
+            workerContexts: retryWorkerContexts,
+            effectiveConcurrency: retryEdgeEffectiveConcurrency
+          } = edgeSession;
+
+          emit('refresh:retry-login', `正在重试 ${loginRetryUrls.length} 家价格不可见的宾馆`, {
+            retryHotelCount: loginRetryUrls.length,
+            requestedConcurrency,
+            effectiveConcurrency: retryEdgeEffectiveConcurrency
+          });
+
+          const retryCreateRefreshDetailContext = createRefreshDetailContextFactory({
+            input,
+            taskContext: context,
+            workDir,
+            hotelGroups,
+            bridge,
+            store,
+            compareAppSettings,
+            baseEdgeUserDataDir: retryBaseEdgeTemplate.edge_user_data_dir,
+            baseEdgeProfileDirectory: retryBaseEdgeTemplate.edge_profile_directory,
+            emit,
+            createScrapeEventForwarder,
+            applyMatchedTemplate,
+            mergeTemplateWithArgs,
+            validateTemplate,
+            normalizePlaceName
+          });
+          const retryBatchResult = await runRefreshHotelBatch({
+            hotelUrls: loginRetryUrls,
+            requestedConcurrency,
+            workerContexts: retryWorkerContexts,
+            signal: context.signal,
+            emit,
+            getHotelName: getRefreshHotelName,
+            runWorkers: runBoundedWorkers,
+            getEffectiveConcurrency: getEffectiveBoundedConcurrency,
+            runPreparedDetails: runPreparedDetailBatch,
+            createDetailContext: retryCreateRefreshDetailContext,
+            mapPreparedResult: async (args) => {
+              assertNotCancelled(context.signal);
+              return mapRefreshPreparedResult(args);
+            },
+            writeHotels: writeRefreshHotels
+          });
+          batchResult = mergeRefreshBatchResults(batchResult, retryBatchResult);
+        }
 
         const {
           updatedHotelCount,
@@ -610,11 +770,10 @@ async function createManagedRefreshEdgeWorkerSession({
   emit = () => {},
   getEffectiveBoundedConcurrency
 } = {}) {
-  const baseEdgeDebuggingPort = 9222;
   const baseEdgeTemplate = {
     edge_user_data_dir: path.join(workDir, 'state', 'edge-profile'),
     edge_profile_directory: 'Default',
-    edge_debugging_port: baseEdgeDebuggingPort,
+    edge_debugging_port: 0,
     edge_headless: true,
     browser_preference: collectBrowser
   };
@@ -625,6 +784,7 @@ async function createManagedRefreshEdgeWorkerSession({
   const {
     createBatchEdgeWorkerPool,
     cleanupBatchEdgeWorkerProfileClones,
+    findAvailablePort,
     prepareBatchEdgeWorkerProfileClones
   } = await loadScraperModule(scraperPath, 'batch-edge-worker-pool.js');
   const autoEdgeRuntime = resolveAutoEdgeRuntime({
@@ -675,6 +835,10 @@ async function createManagedRefreshEdgeWorkerSession({
         existingWorkerCount: 1
       });
     }
+
+    const baseEdgeDebuggingPort =
+      typeof findAvailablePort === 'function' ? await findAvailablePort() : 9222;
+    baseEdgeTemplate.edge_debugging_port = baseEdgeDebuggingPort;
 
     const primaryEdge = await launchAndWaitForEdge({
       userDataDir: baseEdgeTemplate.edge_user_data_dir,
@@ -751,6 +915,7 @@ async function createManagedRefreshEdgeWorkerSession({
 }
 
 module.exports = {
+  mergeRefreshBatchResults,
   refreshExistingCtripHotels,
   runRefreshHotelBatch
 };

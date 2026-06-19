@@ -1952,7 +1952,7 @@ test('edge response parse skips raw text fallback when structured room data comp
   }
 });
 
-test('edge response parse keeps raw text fallback when structured room data is incomplete', async () => {
+test('edge response parse skips raw fallback when structured room data has room identities without prices', async () => {
   let rawFallbackCalls = 0;
   const htmlParserPath = installMock('../src/scraper/html-parser', {
     findRoomBlocksFromStructuredText: () => {
@@ -2025,11 +2025,12 @@ test('edge response parse keeps raw text fallback when structured room data is i
       debugHotelId: '112433891'
     });
 
-    assert.equal(rawFallbackCalls, 1);
-    assert.equal(stats.rawFallbackUsedCount, 1);
-    assert.equal(stats.rawFallbackSkippedCount, 0);
-    assert.equal(roomBlocks.length, 2);
-    assert.equal(stats.fastPathComplete, true);
+    assert.equal(rawFallbackCalls, 0);
+    assert.equal(stats.rawFallbackUsedCount, 0);
+    assert.equal(stats.rawFallbackSkippedCount, 1);
+    assert.equal(roomBlocks.length, 1);
+    assert.equal(roomBlocks[0].price, null);
+    assert.equal(stats.fastPathComplete, false);
   } finally {
     clearModules([networkCapturePath, extractorPath, htmlParserPath, debugPath]);
   }

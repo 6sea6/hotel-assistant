@@ -93,7 +93,7 @@ test('ai-task-progress: buildProgressStats counts batch item progress', async ()
   assert.deepEqual(
     progress.buildProgressStats([
       { type: 'batch:item-start', message: '第 1/3 家', details: { index: 1, total: 3 } },
-      { type: 'batch:item-done', details: { index: 1, total: 3 } },
+      { type: 'batch:item-done', message: '第 1/3 家酒店采集完成', details: {} },
       { type: 'batch:item-start', details: { index: 2, total: 3 } }
     ]),
     {
@@ -101,6 +101,34 @@ test('ai-task-progress: buildProgressStats counts batch item progress', async ()
       completed: 1,
       running: 1,
       pending: 1
+    }
+  );
+});
+
+test('ai-task-progress: buildProgressStats caps stale running items by effective concurrency', async () => {
+  const { progress } = await loadAiTaskLogicModules();
+
+  assert.deepEqual(
+    progress.buildProgressStats([
+      {
+        type: 'batch:start',
+        details: {
+          summary: '模式=list，输入URL=1，展开酒店=20',
+          concurrency: 2,
+          effectiveConcurrency: 2
+        }
+      },
+      ...Array.from({ length: 6 }, (_item, index) => ({
+        type: 'batch:item-start',
+        message: `正在采集第 ${index + 1}/20 家酒店`,
+        details: { index: index + 1, total: 20 }
+      }))
+    ]),
+    {
+      total: 20,
+      completed: 0,
+      running: 2,
+      pending: 18
     }
   );
 });

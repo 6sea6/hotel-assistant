@@ -36,3 +36,14 @@ test('findRoomBlocksFromStructuredText ignores implausibly small decorative pric
   assert.equal(blocks.find((room) => room.title.includes('高级大床房')).price, null);
   assert.equal(blocks.find((room) => room.title.includes('高级双床房')).price, 268);
 });
+
+test('findRoomBlocksFromStructuredText ignores per-person breakfast fees before room prices', () => {
+  const blocks = findRoomBlocksFromStructuredText(
+    '珍宝商务大床房 房型摘要 可住人数 2人 无早餐 addBreakfastFeeTables headers 年龄 费用 ceilInfos 成人 ¥90/人 付款担保暂扣¥1019 立即确认'
+  );
+  const room = blocks.find((item) => item.title.includes('珍宝商务大床房'));
+
+  assert.ok(room);
+  assert.deepEqual(room.prices, [1019]);
+  assert.equal(room.price, 1019);
+});

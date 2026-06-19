@@ -30,6 +30,7 @@ const {
   restoreWriteRollbackSnapshot,
   runRefreshHotelBatch
 } = require('../src/main/ai/scraper-runner');
+const { mergeRefreshBatchResults } = require('../src/main/ai/refresh-runner');
 
 function createTrustedIpcEvent() {
   return {
@@ -472,6 +473,10 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     success: false,
     error: '无效的 AI 请求参数'
   });
+  assert.deepEqual(await handlers.get('ai:task:start')(event, { inputMode: 'place' }), {
+    success: false,
+    error: '无效的 AI 请求参数'
+  });
   assert.deepEqual(
     await handlers.get('ai:task:refresh-data')(event, { collectBrowser: 'chrome' }),
     {
@@ -526,6 +531,14 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
     { success: true }
   );
   assert.deepEqual(
+    await handlers.get('ai:task:start')(event, {
+      inputMode: 'address',
+      addressQuery: '国家会展中心',
+      templateId: '100'
+    }),
+    { success: true }
+  );
+  assert.deepEqual(
     await handlers.get('ai:task:refresh-data')(event, {
       collectBrowser: '360',
       batchConcurrency: 3
@@ -556,6 +569,14 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
         url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
         collectBrowser: '360',
         batchConcurrency: 3
+      }
+    },
+    {
+      channel: 'start',
+      payload: {
+        inputMode: 'address',
+        addressQuery: '国家会展中心',
+        templateId: '100'
       }
     },
     {
@@ -668,6 +689,19 @@ test('scraper runner maps batch concurrency to scraper arguments', () => {
 
   assert.equal(args.browser, '360');
   assert.equal(args['batch-concurrency'], 3);
+
+  const addressArgs = buildScraperArgs(
+    {
+      inputMode: 'address',
+      addressQuery: '国家会展中心',
+      templateId: '100'
+    },
+    path.join(os.tmpdir(), 'hotel-scraper-workdir')
+  );
+
+  assert.equal(addressArgs.inputMode, 'address');
+  assert.equal(addressArgs.addressQuery, '国家会展中心');
+  assert.equal(addressArgs.templateId, '100');
 });
 
 test('scraper runner perfLogDir is independent of workDir', () => {
@@ -871,6 +905,52 @@ test('direct AI task start runs the hotel task runner without provider config', 
   assert.ok(
     events.some((event) => event.channel === 'ai:task:event' && event.payload.type === 'task:done')
   );
+});
+
+test('direct AI address task forwards address query to hotel task runner', async () => {
+  const calls = [];
+  const service = createAiService({
+    dataService: {
+      getDataFolderPath() {
+        return 'E:/实验/1/宾馆比较助手';
+      }
+    },
+    windowService: {
+      getMainWindow() {
+        return {
+          isDestroyed: () => false,
+          webContents: {
+            send() {}
+          }
+        };
+      }
+    },
+    hotelTaskRunner: async (input) => {
+      calls.push(input);
+      return {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 1,
+        eligibleRoomTypes: [{ dailyPrice: 300, totalPrice: 300 }],
+        writeResult: { operation: 'inserted' }
+      };
+    }
+  });
+
+  await service.startTask({
+    inputMode: 'address',
+    addressQuery: '国家会展中心',
+    templateId: '100',
+    listUrlFilters: {
+      priceMin: 200
+    }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].inputMode, 'address');
+  assert.equal(calls[0].addressQuery, '国家会展中心');
+  assert.equal(calls[0].url, undefined);
+  assert.deepEqual(calls[0].listUrlFilters, { priceMin: 200 });
 });
 
 test('direct AI refresh passes batch concurrency to scraper runner', async (t) => {
@@ -1096,6 +1176,66 @@ test('refresh hotel batch runner stays serial when requested concurrency is one'
   assert.equal(result.requestedConcurrency, 1);
   assert.equal(result.effectiveConcurrency, 1);
   assert.equal(result.updatedHotelCount, 2);
+});
+
+test('refresh batch merge replaces login retry skips with retry results', () => {
+  const firstPass = {
+    requestedConcurrency: 2,
+    effectiveConcurrency: 2,
+    totalHotelCount: 2,
+    updatedHotelCount: 1,
+    updatedRoomTypeCount: 1,
+    deletedRoomTypeCount: 0,
+    skippedHotelCount: 1,
+    items: [
+      {
+        hotelName: '已更新酒店',
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
+        status: 'updated',
+        updatedRoomTypeCount: 1,
+        deletedRoomTypeCount: 0
+      },
+      {
+        hotelName: '锁价酒店',
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
+        status: 'skipped',
+        updatedRoomTypeCount: 0,
+        deletedRoomTypeCount: 0,
+        retryAfterLogin: true,
+        skipReason: '已找到房型信息，但未采集到有效价格'
+      }
+    ],
+    updatedHotels: [{ id: 1, name: '已更新酒店' }],
+    rawWriteResult: [{ operation: 'first' }]
+  };
+  const retryPass = {
+    items: [
+      {
+        hotelName: '锁价酒店',
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
+        status: 'updated',
+        updatedRoomTypeCount: 3,
+        deletedRoomTypeCount: 1
+      }
+    ],
+    updatedHotels: [{ id: 2, name: '锁价酒店' }],
+    rawWriteResult: [{ operation: 'retry' }]
+  };
+
+  const merged = mergeRefreshBatchResults(firstPass, retryPass);
+
+  assert.equal(merged.updatedHotelCount, 2);
+  assert.equal(merged.skippedHotelCount, 0);
+  assert.equal(merged.updatedRoomTypeCount, 4);
+  assert.equal(merged.deletedRoomTypeCount, 1);
+  assert.deepEqual(
+    merged.items.map((item) => item.status),
+    ['updated', 'updated']
+  );
+  assert.deepEqual(
+    merged.rawWriteResult.map((item) => item.operation),
+    ['first', 'retry']
+  );
 });
 
 test('direct AI task reloads the data store after scraper writeback', async () => {

@@ -11,6 +11,7 @@ const taskRunnerRelatedModules = [
   '../src/task-writeback',
   '../src/batch-artifact-writer',
   '../src/batch-result-builder',
+  '../src/scraper/list-page-address-search',
   '../src/single-detail-runner',
   '../src/batch-orchestrator',
   '../src/batch-edge-worker-pool'
@@ -54,6 +55,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
   const calls = {
     appendHotelsToStore: 0,
     appendedHotels: [],
+    expandedArgs: [],
     order: [],
     scrape: 0,
     scrapeOptions: [],
@@ -88,23 +90,26 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
         hotelInputs.length > 1
           ? `模式=multi-detail，展开酒店=${hotelInputs.length}`
           : '模式=detail，展开酒店=1',
-      expandCtripHotelInputs: async () => ({
-        inputMode: hotelInputs.length > 1 ? 'multi-detail' : 'detail',
-        requestedUrls: hotelInputs.map((item) => item.url),
-        hotelInputs,
-        listResults: [],
-        skippedUrls: [],
-        performance: { totalMs: 1, listCollectMs: 0, lists: [] },
-        summary: {
+      expandCtripHotelInputs: async (rawInput) => {
+        calls.expandedArgs.push(rawInput);
+        return {
           inputMode: hotelInputs.length > 1 ? 'multi-detail' : 'detail',
-          requestedUrlCount: hotelInputs.length,
-          detailInputCount: hotelInputs.length,
-          listInputCount: 0,
-          expandedHotelCount: hotelInputs.length,
-          filters: {},
-          performance: { totalMs: 1, listCollectMs: 0, lists: [] }
-        }
-      }),
+          requestedUrls: hotelInputs.map((item) => item.url),
+          hotelInputs,
+          listResults: [],
+          skippedUrls: [],
+          performance: { totalMs: 1, listCollectMs: 0, lists: [] },
+          summary: {
+            inputMode: hotelInputs.length > 1 ? 'multi-detail' : 'detail',
+            requestedUrlCount: hotelInputs.length,
+            detailInputCount: hotelInputs.length,
+            listInputCount: 0,
+            expandedHotelCount: hotelInputs.length,
+            filters: {},
+            performance: { totalMs: 1, listCollectMs: 0, lists: [] }
+          }
+        };
+      },
       normalizeListFiltersFromArgs: () => ({})
     })
   );
@@ -257,6 +262,61 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
 
   return { calls, mockedPaths };
 }
+
+test('runHotelImportTask resolves address before expanding Ctrip inputs', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-address-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir);
+  const resolvedUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=2&searchWord=%E5%9B%BD%E5%AE%B6%E4%BC%9A%E5%B1%95%E4%B8%AD%E5%BF%83';
+  const events = [];
+  const addressCalls = [];
+
+  mockedPaths.push(
+    installMock('../src/scraper/list-page-address-search', {
+      resolveCtripListUrlFromAddress: async (addressQuery, template, options) => {
+        addressCalls.push({ addressQuery, template, options });
+        return resolvedUrl;
+      }
+    })
+  );
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    await runHotelImportTask(
+      {
+        inputMode: 'address',
+        addressQuery: '国家会展中心',
+        templateId: 'tpl-fast',
+        latestRun: latestRunPath,
+        'auto-edge': true
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent(event) {
+          events.push(event);
+        }
+      }
+    );
+
+    assert.equal(addressCalls.length, 1);
+    assert.equal(addressCalls[0].addressQuery, '国家会展中心');
+    assert.equal(calls.expandedArgs.length, 1);
+    assert.equal(calls.expandedArgs[0].url, resolvedUrl);
+    assert.equal(calls.expandedArgs[0].inputMode, 'address');
+    assert.deepEqual(
+      events
+        .filter((event) =>
+          ['address-search:start', 'address-search:done', 'list:start'].includes(event.type)
+        )
+        .map((event) => event.type),
+      ['address-search:start', 'address-search:done', 'list:start']
+    );
+  } finally {
+    clearModules(mockedPaths);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
 
 test('runHotelImportTask marks apply-output perf records as apply_output task kind', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
@@ -539,9 +599,7 @@ test('reportLevel off skips review/report output for single hotel', async () => 
       : [];
     assert.deepEqual(outputJsonFiles, []);
     assert.equal(
-      records.some((record) =>
-        ['build_report', 'write_report'].includes(record.phase)
-      ),
+      records.some((record) => ['build_report', 'write_report'].includes(record.phase)),
       false
     );
 
@@ -624,9 +682,7 @@ test('reportLevel off batch skips item reports and can still write app data', as
       : [];
     assert.deepEqual(outputJsonFiles, []);
     assert.equal(
-      records.some((record) =>
-        ['build_report', 'write_report'].includes(record.phase)
-      ),
+      records.some((record) => ['build_report', 'write_report'].includes(record.phase)),
       false
     );
 
@@ -752,7 +808,7 @@ test('batch skips transit for items that have no eligible rooms to write', async
   }
 });
 
-test('runHotelImportTask fails when list expansion stays below desired target', async () => {
+test('runHotelImportTask warns and continues when list expansion stays below desired target', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -766,7 +822,8 @@ test('runHotelImportTask fails when list expansion stays below desired target', 
   const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
   const ctripListPath = installMock('../src/ctrip-list', {
     buildListResultsSummary: () => [],
-    describeExpandedInput: () => '模式=list，输入URL=1，展开酒店=3，列表页=1，前筛候选=3，前筛排除=0',
+    describeExpandedInput: () =>
+      '模式=list，输入URL=1，展开酒店=3，列表页=1，前筛候选=3，前筛排除=0',
     expandCtripHotelInputs: async () => ({
       inputMode: 'list',
       requestedUrls: ['https://hotels.ctrip.com/hotels/list?city=477'],
@@ -805,22 +862,111 @@ test('runHotelImportTask fails when list expansion stays below desired target', 
 
   try {
     const { runHotelImportTask } = require('../src/task-runner');
-    await assert.rejects(
-      () =>
-        runHotelImportTask(
-          {
-            url: 'https://hotels.ctrip.com/hotels/list?city=477',
-            latestRun: latestRunPath,
-            targetCount: 5,
-            'report-level': 'off'
-          },
-          {
-            workingDirectory: tempDir
-          }
-        ),
-      /只展开 3\/5 家目标宾馆/
+    const events = [];
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/list?city=477',
+        latestRun: latestRunPath,
+        targetCount: 5,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent(event) {
+          events.push(event);
+        }
+      }
     );
+    assert.equal(result.success, true);
+    assert.equal(calls.scrape, 3);
+    const warning = events.find((event) => event.type === 'list:warning');
+    assert.ok(warning);
+    assert.match(warning.message, /只展开 3\/5 家目标宾馆/);
+    assert.equal(result.batchSummary.listTargetShortfall.expandedCount, 3);
+    assert.equal(result.batchSummary.listTargetShortfall.desiredCount, 5);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runHotelImportTask reports empty list prefilter as a completed empty result', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-list-empty-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs: [] });
+  const ctripListPath = installMock('../src/ctrip-list', {
+    buildListResultsSummary: () => [],
+    describeExpandedInput: () =>
+      '模式=list，输入URL=1，展开酒店=0，列表页=1，前筛候选=0，前筛排除=0',
+    expandCtripHotelInputs: async () => ({
+      inputMode: 'list',
+      requestedUrls: ['https://hotels.ctrip.com/hotels/list?city=477'],
+      hotelInputs: [],
+      listResults: [
+        {
+          selected: [],
+          rejected: [],
+          totalCandidates: 0,
+          errors: []
+        }
+      ],
+      skippedUrls: [],
+      performance: { totalMs: 10, listCollectMs: 10, lists: [] },
+      summary: {
+        inputMode: 'list',
+        requestedUrlCount: 1,
+        detailInputCount: 0,
+        listInputCount: 1,
+        expandedHotelCount: 0,
+        listSelectedCount: 0,
+        skippedUrlCount: 0,
+        listCandidateCount: 0,
+        listRejectedCount: 0,
+        filters: { priceMin: 0, priceMax: 400, desiredHotelCount: 20, targetCount: 20 },
+        performance: { totalMs: 10, listCollectMs: 10, lists: [] }
+      }
+    }),
+    normalizeListFiltersFromArgs: () => ({ priceMin: 0, priceMax: 400, desiredHotelCount: 20 })
+  });
+  mockedPaths.push(ctripListPath);
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const events = [];
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/list?city=477',
+        latestRun: latestRunPath,
+        targetCount: 20,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent(event) {
+          events.push(event);
+        }
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.emptyListResult, true);
+    assert.equal(result.writeSkipped, true);
+    assert.equal(result.hotelName, '未筛选到宾馆');
+    assert.match(result.writeSkipReason, /未筛选到宾馆/);
+    assert.equal(result.batchSummary.expandedHotelCount, 0);
     assert.equal(calls.scrape, 0);
+
+    const emptyEvent = events.find((event) => event.type === 'list:empty');
+    assert.ok(emptyEvent);
+    assert.match(emptyEvent.message, /未筛选到宾馆/);
+
+    const latestRun = JSON.parse(fs.readFileSync(latestRunPath, 'utf8'));
+    assert.equal(latestRun.success, true);
+    assert.equal(latestRun.emptyListResult, true);
+    assert.match(latestRun.emptyReason, /未筛选到宾馆/);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1017,10 +1163,7 @@ test('auto-edge profile preparation is capped to effective worker limit', async 
     assert.equal(preparedCalls[0].concurrency, 3);
     assert.equal(poolCalls.length, 1);
     assert.equal(poolCalls[0].concurrency, 3);
-    assert.deepEqual(poolCalls[0].preparedUserDataDirs, [
-      'profile-worker-2',
-      'profile-worker-3'
-    ]);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, ['profile-worker-2', 'profile-worker-3']);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1096,10 +1239,7 @@ test('list input over max concurrency prepares capped batch Edge workers immedia
     assert.equal(poolCalls.length, 1);
     assert.equal(poolCalls[0].concurrency, 3);
     assert.notEqual(poolCalls[0].existingWorker, null);
-    assert.deepEqual(poolCalls[0].preparedUserDataDirs, [
-      'profile-worker-2',
-      'profile-worker-3'
-    ]);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, ['profile-worker-2', 'profile-worker-3']);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1140,7 +1280,10 @@ test('auto-edge login prep emits done only after Ctrip login is confirmed', asyn
 
     assert.ok(events.some((event) => event.type === 'edge:login-required'));
     assert.ok(events.some((event) => event.type === 'edge:login-unconfirmed'));
-    assert.equal(events.some((event) => event.type === 'edge:login-done'), false);
+    assert.equal(
+      events.some((event) => event.type === 'edge:login-done'),
+      false
+    );
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1269,7 +1412,7 @@ test('batch artifact writer derives ordered collections from itemResults', () =>
       {
         index: 2,
         hotelInput: { hotelId: 'second' },
-        childResult: { inputIndex: 2, success: true, eligibleHotels: [{ name: 'ignored' }] },
+        childResult: { inputIndex: 2, success: true, eligibleHotels: [{ name: 'Hotel 2' }] },
         childPayload: { hotels: [{ name: 'Hotel 2' }] },
         savedHtmlFiles: ['second.html'],
         failedItem: null,
@@ -1296,7 +1439,7 @@ test('batch artifact writer derives ordered collections from itemResults', () =>
     [1, 2]
   );
   assert.deepEqual(collections.childResults, [
-    { inputIndex: 2, success: true, eligibleHotels: [{ name: 'ignored' }] }
+    { inputIndex: 2, success: true, eligibleHotels: [{ name: 'Hotel 2' }] }
   ]);
   assert.deepEqual(collections.resultPayloads, [{ hotels: [{ name: 'Hotel 2' }] }]);
   assert.deepEqual(collections.failedItems, [
@@ -1304,6 +1447,64 @@ test('batch artifact writer derives ordered collections from itemResults', () =>
   ]);
   assert.deepEqual(collections.allHotels, [{ name: 'Hotel 2' }]);
   assert.equal(collections.itemMs, 7);
+});
+
+test('batch artifact writer keeps full child result hotels when payload is compacted', () => {
+  const { prepareBatchCollections } = require('../src/batch-artifact-writer');
+  const fullHotels = Array.from({ length: 8 }, (_item, index) => ({
+    name: `Hotel ${index + 1}`,
+    room: `Room ${index + 1}`
+  }));
+
+  const collections = prepareBatchCollections({
+    reportDisabled: false,
+    itemResults: [
+      {
+        index: 1,
+        hotelInput: { hotelId: 'full' },
+        childResult: { inputIndex: 1, success: true, eligibleHotels: fullHotels },
+        childPayload: { hotels: fullHotels.slice(0, 5) },
+        savedHtmlFiles: [],
+        failedItem: null,
+        durationMs: 1,
+        performanceItem: null,
+        uncollectedItem: null
+      }
+    ]
+  });
+
+  assert.equal(collections.allHotels.length, 8);
+  assert.deepEqual(collections.allHotels, fullHotels);
+});
+
+test('batch output payload keeps all writable hotels in normal report', () => {
+  const { buildBatchOutputPayload } = require('../src/task-runner');
+  const allHotels = Array.from({ length: 8 }, (_item, index) => ({ name: `Hotel ${index + 1}` }));
+
+  const payload = buildBatchOutputPayload({
+    args: {},
+    template: { ctrip_url: 'https://hotels.ctrip.com/hotels/list?city=2' },
+    matchedTemplate: null,
+    effectiveTemplate: {},
+    compareAppSettings: {},
+    expandedInputs: {
+      inputMode: 'list',
+      requestedUrls: ['https://hotels.ctrip.com/hotels/list?city=2'],
+      hotelInputs: [{ url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1' }],
+      skippedUrls: [],
+      summary: {},
+      listResults: []
+    },
+    resultPayloads: [],
+    childResults: [],
+    failedItems: [],
+    allHotels,
+    writeResult: null,
+    performance: {},
+    reportLevel: 'normal'
+  });
+
+  assert.equal(payload.hotels.length, 8);
 });
 
 test('batch report writer propagates report failures before latest-run is written', async () => {
@@ -1801,7 +2002,9 @@ test('batch concurrency caps requested auto-edge workers at three', async () => 
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-concurrency-cap-three-'));
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'hotel-task-runner-concurrency-cap-three-')
+  );
   const latestRunPath = path.join(tempDir, 'latest-run.json');
   const hotelInputs = [1, 2, 3, 4, 5, 6].map((index) => ({
     url: `https://hotels.ctrip.com/hotels/detail/?hotelId=concurrency-cap-${index}`,
@@ -1872,7 +2075,9 @@ test('batch concurrency caps shared Edge sessions at three', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-shared-edge-cap-three-'));
+  const tempDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'hotel-task-runner-shared-edge-cap-three-')
+  );
   const latestRunPath = path.join(tempDir, 'latest-run.json');
   const hotelInputs = [1, 2, 3, 4, 5, 6].map((index) => ({
     url: `https://hotels.ctrip.com/hotels/detail/?hotelId=shared-edge-cap-${index}`,
