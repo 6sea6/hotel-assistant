@@ -54,6 +54,9 @@ test('renderer tokens include semantic color typography spacing focus and motion
     '--color-favorite',
     '--color-template-badge',
     '--focus-ring',
+    '--duration-fast',
+    '--ease-standard',
+    '--transition-lift',
     '--duration-motion-reduced',
     '--z-notification'
   ].forEach((tokenName) => {
@@ -82,15 +85,47 @@ test('shared status colors in component and page CSS use semantic tokens', () =>
 test('renderer CSS defines keyboard focus and reduced motion safeguards', () => {
   const css = [
     readStyleFile('tokens.css'),
+    readStyleFile('motion.css'),
     readStyleFile('components/app-shell.css'),
     readStyleFile('components/custom-select.css'),
     readStyleFile('components/modal-form.css'),
     readStyleFile('components/notifications.css'),
-    readStyleFile('components/view-controls.css')
+    readStyleFile('components/view-controls.css'),
+    readStyleFile('pages/ai-assistant.css')
   ].join('\n');
 
   assert.match(css, /:focus-visible/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(css, /@keyframes\s+spin/);
+  assert.match(
+    css,
+    /\.loading-icon,[\s\S]*?animation-duration:\s*1s\s*!important;[\s\S]*?animation-iteration-count:\s*infinite\s*!important;/
+  );
+});
+
+test('renderer CSS avoids broad transitions and blue-tinted theme leaks', () => {
+  const css = [
+    readStyleFile('components/app-shell.css'),
+    readStyleFile('components/custom-select.css'),
+    readStyleFile('components/modal-form.css'),
+    readStyleFile('components/notifications.css'),
+    readStyleFile('components/view-controls.css'),
+    readStyleFile('pages/app-modals.css'),
+    readStyleFile('pages/hotel-cards.css'),
+    readStyleFile('pages/hotel-table.css'),
+    readStyleFile('pages/settings-prefilter.css'),
+    readStyleFile('pages/ai-assistant.css')
+  ].join('\n');
+
+  assert.doesNotMatch(css, /transition\s*:\s*all\b/);
+  assert.doesNotMatch(
+    readStyleFile('pages/ai-assistant.css'),
+    /#eaf3ff|#68a7ff|#0e4cd9|rgba\(28,\s*54,\s*84/i
+  );
+  assert.doesNotMatch(
+    readStyleFile('components/custom-select.css'),
+    /#0e4cd9|rgba\(28,\s*54,\s*84/i
+  );
 });
 
 test('form controls use the soft selected field focus treatment', () => {
@@ -155,7 +190,8 @@ test('modal overlay does not draw a divider between header and main content', ()
 
 test('default app window width keeps hotel card grid at three columns', () => {
   const modalCss = readStyleFile('components/modal-form.css');
-  const defaultWindowBreakpoint = /@media\s*\(max-width:\s*1400px\)\s*{\s*\.hotel-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*1fr\)/;
+  const defaultWindowBreakpoint =
+    /@media\s*\(max-width:\s*1400px\)\s*{\s*\.hotel-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*1fr\)/;
 
   assert.doesNotMatch(modalCss, defaultWindowBreakpoint);
   assert.match(
@@ -228,10 +264,7 @@ test('native and virtual card scrollbar widths share the same visual contract', 
   const contentArea = readCssRuleBlock(appShell, '.content-area');
 
   assert.match(nativeScrollbar, /width:\s*8px/);
-  assert.match(
-    contentArea,
-    /--content-area-scrollbar-width:\s*8px/
-  );
+  assert.match(contentArea, /--content-area-scrollbar-width:\s*8px/);
 });
 
 test('virtual scrollbar uses the same subdued default colors as native scrollbars', () => {

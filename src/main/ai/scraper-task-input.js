@@ -3,6 +3,10 @@ const {
   TRAILING_URL_PUNCTUATION,
   INLINE_URL_TEXT_SEPARATOR
 } = require('../../shared/url-constants');
+const {
+  normalizeCollectBatchConcurrency: normalizeBatchConcurrency,
+  normalizeCollectBrowser
+} = require('../../shared/settings-normalizers');
 
 function isCtripHotelUrl(url) {
   try {
@@ -63,15 +67,6 @@ function isAddressSearchInput(input = {}) {
     String(input.inputMode || '').trim() === 'address' ||
     String(input.addressQuery || '').trim() !== ''
   );
-}
-
-function normalizeBatchConcurrency(value) {
-  const concurrency = Number(value);
-  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
-}
-
-function normalizeCollectBrowser(value) {
-  return String(value || '').trim() === '360' ? '360' : 'edge';
 }
 
 function buildScraperArgs(input, workDir) {

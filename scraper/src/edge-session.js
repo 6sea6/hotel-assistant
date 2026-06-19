@@ -11,27 +11,10 @@ const {
   getBrowserDisplayName,
   normalizeBrowserPreference
 } = require('./scraper/process-utils');
-
-function buildVisibleBrowserWindowArgs() {
-  return ['--new-window', '--window-size=1280,900', '--window-position=80,80'];
-}
-
-function buildBackgroundBrowserWindowArgs(browserName, browserPreference) {
-  const args = ['--headless=new', '--disable-gpu'];
-  if (browserName === '360 Browser' || browserPreference === '360') {
-    args.push(
-      '--no-startup-window',
-      '--disable-extensions',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-component-update',
-      '--disable-sync',
-      '--start-minimized',
-      '--window-size=1280,900',
-      '--window-position=-32000,-32000'
-    );
-  }
-  return args;
-}
+const {
+  buildBackgroundBrowserWindowArgs,
+  buildVisibleBrowserWindowArgs
+} = require('./browser-launch-args');
 
 function printHelp() {
   console.log(`

@@ -1,5 +1,4 @@
 const fs = require('fs');
-const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
 const {
@@ -15,6 +14,12 @@ const {
   resolveEdgeUserDataDir,
   toBoolean
 } = require('../edge-runtime');
+const {
+  buildBackgroundBrowserWindowArgs,
+  buildVisibleBrowserWindowArgs,
+  is360BrowserRuntime
+} = require('../browser-launch-args');
+const { waitForDebuggerEndpoint } = require('../debugger-endpoint');
 
 function shouldUseSeparate360Profile(browserName, userDataDir) {
   if (browserName !== '360 Browser') {
@@ -29,34 +34,6 @@ function shouldUseSeparate360Profile(browserName, userDataDir) {
 function resolve360UserDataDir(edgeUserDataDir) {
   const resolvedEdgeDir = resolveEdgeUserDataDir(edgeUserDataDir);
   return path.join(path.dirname(resolvedEdgeDir), '360-profile');
-}
-
-function buildVisibleBrowserWindowArgs() {
-  return ['--new-window', '--window-size=1280,900', '--window-position=80,80'];
-}
-
-function is360BrowserRuntime(runtime = {}) {
-  return (
-    runtime.browserName === '360 Browser' ||
-    runtime.browserPreference === '360' ||
-    /(^|[\\/])360[^\\/]*\.exe$/i.test(String(runtime.browserExecutable || ''))
-  );
-}
-
-function buildBackgroundBrowserWindowArgs(runtime = {}) {
-  const args = ['--disable-gpu', '--headless=new', '--no-startup-window'];
-  if (is360BrowserRuntime(runtime)) {
-    args.push(
-      '--disable-extensions',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-component-update',
-      '--disable-sync',
-      '--start-minimized',
-      '--window-size=1280,900',
-      '--window-position=-32000,-32000'
-    );
-  }
-  return args;
 }
 
 function resolveAutoEdgeRuntime(options = {}) {
@@ -89,36 +66,6 @@ function resolveAutoEdgeRuntime(options = {}) {
     browserPreference,
     usingSeparate360Profile
   };
-}
-
-function waitForDebuggerEndpoint(port, timeoutMs = 15000) {
-  return new Promise((resolve, reject) => {
-    const deadline = Date.now() + timeoutMs;
-    const tryConnect = () => {
-      if (Date.now() > deadline) {
-        reject(new Error(`Edge 调试端口 ${port} 在 ${timeoutMs}ms 内未就绪`));
-        return;
-      }
-      const req = http.get(`http://127.0.0.1:${port}/json/version`, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          try {
-            const info = JSON.parse(data);
-            resolve(info.webSocketDebuggerUrl);
-          } catch (_error) {
-            setTimeout(tryConnect, 500);
-          }
-        });
-      });
-      req.on('error', () => {
-        setTimeout(tryConnect, 500);
-      });
-    };
-    tryConnect();
-  });
 }
 
 async function launchAndWaitForEdge(options) {
@@ -280,6 +227,7 @@ module.exports = {
   buildVisibleBrowserWindowArgs,
   closeAutoEdge,
   hasReusableEdgeProfile,
+  is360BrowserRuntime,
   launchAndWaitForEdge,
   resolveAutoEdgeRuntime,
   runInteractiveEdgeLoginPrep,

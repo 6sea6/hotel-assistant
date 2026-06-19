@@ -303,7 +303,12 @@ body.platform-windows .window-controls {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
   white-space: nowrap;
 }
 
@@ -523,7 +528,9 @@ select.input {
   border-radius: 50%;
   background: var(--primary-color);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .weight-item input[type='range']::-webkit-slider-thumb:hover {
@@ -538,5 +545,13 @@ select.input {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: var(--duration-motion-reduced) !important;
+  }
+
+  .btn-icon.is-refreshing span,
+  .loading-icon,
+  .task-step-running .task-step-marker::before,
+  .task-button-spinner {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
   }
 }

@@ -16,6 +16,7 @@ import { refreshCustomSelects } from './custom-select.js';
 import { applyThemeSelection, loadAppIconState, applyAppIconState } from './personalization-ui.js';
 import { applyListPrefilterSettings } from './list-prefilter-ui.js';
 import { loadDataPath } from './data-transfer-ui.js';
+import '../../shared/settings-normalizers.js';
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} SettingsFormValueElement
@@ -27,22 +28,8 @@ import { loadDataPath } from './data-transfer-ui.js';
  */
 const getFormValueElement = (id) => /** @type {SettingsFormValueElement|null} */ ($(id));
 
-/**
- * @param {unknown} value
- * @returns {1|2|3}
- */
-function normalizeCollectBatchConcurrency(value) {
-  const concurrency = Number(value);
-  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
-}
-
-/**
- * @param {unknown} value
- * @returns {'edge'|'360'}
- */
-function normalizeCollectBrowser(value) {
-  return String(value || '').trim() === '360' ? '360' : 'edge';
-}
+const { normalizeCollectBatchConcurrency, normalizeCollectBrowser } =
+  globalThis.HotelComparisonSettingsNormalizers;
 
 export async function openSettings() {
   setModalActive('settingsModal', true);

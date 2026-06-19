@@ -320,6 +320,31 @@ test('browser executable discovery falls back to 360 browser when Edge is missin
   assert.equal(getBrowserDisplayName(fake360Executable), '360 Browser');
 });
 
+test('browser executable discovery enumerates available Windows drives dynamically', () => {
+  const dynamicDriveRoot = 'Z:\\';
+  const fake360Executable = path.join(
+    dynamicDriveRoot,
+    '360se6',
+    'Application',
+    '360se.exe'
+  );
+  const existingPaths = new Set([dynamicDriveRoot, fake360Executable]);
+  const existsSync = (candidatePath) => existingPaths.has(candidatePath);
+
+  assert.deepEqual(
+    findChromiumBrowserExecutable({
+      env: {},
+      existsSync,
+      platform: 'win32',
+      browserPreference: '360'
+    }),
+    {
+      executablePath: fake360Executable,
+      browserName: '360 Browser'
+    }
+  );
+});
+
 test('browser executable discovery honors explicit browser preference', (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'browser-preference-'));
   const fakeProgramFiles = path.join(tempRoot, 'Program Files');

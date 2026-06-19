@@ -77,14 +77,35 @@ function uniqueNonEmpty(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function getWindowsDriveRoots(env = process.env) {
+function enumerateWindowsDriveRoots(options = {}) {
+  const platform = options.platform || process.platform;
+  if (platform !== 'win32') {
+    return [];
+  }
+
+  const existsSync = options.existsSync || fs.existsSync;
+  const roots = [];
+
+  for (let code = 65; code <= 90; code += 1) {
+    const root = `${String.fromCharCode(code)}:\\`;
+    try {
+      if (existsSync(root)) {
+        roots.push(root);
+      }
+    } catch (_error) {
+      // Some removable or restricted drives can throw during probing.
+    }
+  }
+
+  return roots;
+}
+
+function getWindowsDriveRoots(env = process.env, options = {}) {
   const roots = [
     env.SystemDrive ? `${env.SystemDrive.replace(/[\\/]$/, '')}\\` : '',
     env.HOMEDRIVE ? `${env.HOMEDRIVE.replace(/[\\/]$/, '')}\\` : '',
     path.parse(process.cwd()).root,
-    'C:\\',
-    'D:\\',
-    'E:\\'
+    ...enumerateWindowsDriveRoots(options)
   ];
 
   for (const key of ['PROGRAMFILES(X86)', 'PROGRAMFILES', 'LOCALAPPDATA']) {
@@ -126,7 +147,7 @@ function buildChromiumBrowserCandidates(options = {}) {
   const env = options.env || process.env;
   const driveRoots = Array.isArray(options.driveRoots)
     ? options.driveRoots
-    : getWindowsDriveRoots(env);
+    : getWindowsDriveRoots(env, options);
   const directExecutableCandidates = [
     env.HOTEL_COLLECTOR_BROWSER_EXECUTABLE,
     env.CTRIP_BROWSER_EXECUTABLE,

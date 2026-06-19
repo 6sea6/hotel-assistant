@@ -7,6 +7,7 @@ import { $ } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import { setModalActive } from './ui-utils.js';
 import { actions } from './actions.js';
+import '../../shared/theme-config.js';
 import {
   normalizeHotelCardVisibleFields,
   DEFAULT_HOTEL_CARD_VISIBLE_FIELDS,
@@ -23,23 +24,7 @@ import {
  */
 const getFormValueElement = (id) => /** @type {PersonalizationFormValueElement|null} */ ($(id));
 
-const THEME_ALIAS_MAP = Object.freeze({
-  light: 'cloud-white',
-  'changing-mode': 'colorful-mode'
-});
-
-const SUPPORTED_THEMES = new Set([
-  'totoro-blue',
-  'sweet-lime',
-  'grass-green',
-  'pineapple-yellow',
-  'oak-brown',
-  'cloud-white',
-  'autumn-gold',
-  'diehard-pink',
-  'grape-purple',
-  'colorful-mode'
-]);
+const { normalizeThemeKey: normalizeSharedThemeKey } = globalThis.HotelComparisonThemeConfig;
 
 export async function openPersonalization() {
   setModalActive('personalizationModal', true);
@@ -57,9 +42,7 @@ export function closePersonalizationModal() {
  * @returns {string}
  */
 export function normalizeThemeKey(theme) {
-  const themeKey = String(theme || '');
-  const normalizedTheme = THEME_ALIAS_MAP[themeKey] || themeKey;
-  return SUPPORTED_THEMES.has(normalizedTheme) ? normalizedTheme : 'totoro-blue';
+  return normalizeSharedThemeKey(theme, 'totoro-blue');
 }
 
 /**

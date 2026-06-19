@@ -4,50 +4,12 @@ const { app, BrowserWindow, nativeImage } = require('electron');
 const { APP_CONFIG, getPaths } = require('./config');
 const storeManager = require('./store-manager');
 const appIconManager = require('./app-icon-manager');
-
-const THEME_ALIAS_MAP = Object.freeze({
-  light: 'cloud-white',
-  'changing-mode': 'colorful-mode'
-});
-
-const THEME_WINDOW_COLORS = Object.freeze({
-  'totoro-blue': '#EEF4F9',
-  'sweet-lime': '#EEF7F3',
-  'grass-green': '#F2F7EB',
-  'pineapple-yellow': '#FCF5DE',
-  'oak-brown': '#F8F0E9',
-  'cloud-white': '#FFFFFF',
-  'autumn-gold': '#FFF8E7',
-  'diehard-pink': '#FEF2F7',
-  'grape-purple': '#F4F0FF',
-  'colorful-mode': '#FFF7FB'
-});
-
-const THEME_TITLEBAR_COLORS = Object.freeze({
-  'totoro-blue': '#6B8FB5',
-  'sweet-lime': '#4E8C80',
-  'grass-green': '#6A934A',
-  'pineapple-yellow': '#C39A23',
-  'oak-brown': '#8A6344',
-  'cloud-white': '#FFFFFF',
-  'autumn-gold': '#DDB457',
-  'diehard-pink': '#E28EB0',
-  'grape-purple': '#8A73D1',
-  'colorful-mode': '#8A78F2'
-});
-
-const THEME_TITLEBAR_SYMBOL_COLORS = Object.freeze({
-  'totoro-blue': '#FFFFFF',
-  'sweet-lime': '#FFFFFF',
-  'grass-green': '#FFFFFF',
-  'pineapple-yellow': '#FFFBEF',
-  'oak-brown': '#FFFFFF',
-  'cloud-white': '#5A5F66',
-  'autumn-gold': '#FFFCEF',
-  'diehard-pink': '#FFFDFE',
-  'grape-purple': '#FFFEFF',
-  'colorful-mode': '#FFFDFE'
-});
+const {
+  getThemeTitleBarColor,
+  getThemeTitleBarSymbolColor,
+  getThemeWindowBackground,
+  normalizeThemeKey
+} = require('../shared/theme-config');
 
 class WindowManager {
   constructor() {
@@ -149,24 +111,23 @@ class WindowManager {
   }
 
   normalizeTheme(theme = '') {
-    const normalizedTheme = THEME_ALIAS_MAP[theme] || theme;
-    return THEME_WINDOW_COLORS[normalizedTheme]
-      ? normalizedTheme
-      : APP_CONFIG.STORE_DEFAULTS.settings.theme;
+    return normalizeThemeKey(theme, APP_CONFIG.STORE_DEFAULTS.settings.theme);
   }
 
   getThemeWindowBackground(theme = '') {
-    return THEME_WINDOW_COLORS[this.normalizeTheme(theme)] || APP_CONFIG.WINDOW.BACKGROUND_COLOR;
+    return (
+      getThemeWindowBackground(this.normalizeTheme(theme)) || APP_CONFIG.WINDOW.BACKGROUND_COLOR
+    );
   }
 
   getThemeTitleBarColor(theme = '') {
     return (
-      THEME_TITLEBAR_COLORS[this.normalizeTheme(theme)] || this.getThemeWindowBackground(theme)
+      getThemeTitleBarColor(this.normalizeTheme(theme)) || this.getThemeWindowBackground(theme)
     );
   }
 
   getThemeTitleBarSymbolColor(theme = '') {
-    return THEME_TITLEBAR_SYMBOL_COLORS[this.normalizeTheme(theme)] || '#FFFFFF';
+    return getThemeTitleBarSymbolColor(this.normalizeTheme(theme));
   }
 
   getStoredTheme() {

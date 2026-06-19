@@ -60,7 +60,12 @@ async function loadAiAssistantModules() {
   if (!aiAssistantModuleUrl) {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-ai-assistant-'));
     const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
+    const sharedDir = path.join(__dirname, '..', 'src', 'shared');
     fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
+    fs.copyFileSync(
+      path.join(sharedDir, 'settings-normalizers.js'),
+      path.join(tempRoot, 'settings-normalizers.js')
+    );
     [
       'actions.js',
       'ai-assistant.js',
@@ -78,7 +83,10 @@ async function loadAiAssistantModules() {
       'notification.js',
       'state.js'
     ].forEach((fileName) => {
-      fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
+      const source = fs
+        .readFileSync(path.join(sourceDir, fileName), 'utf8')
+        .replace('../../shared/settings-normalizers.js', './settings-normalizers.js');
+      fs.writeFileSync(path.join(tempRoot, fileName), source, 'utf8');
     });
     aiAssistantModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-assistant.js')).href;
     aiAssistantStateModuleUrl = pathToFileURL(path.join(tempRoot, 'state.js')).href;

@@ -1,6 +1,10 @@
 import { state } from './state.js';
 import { getValue, setChecked, setValue } from './dom-helpers.js';
 import { extractCtripUrls, updateAiInputCount as updateTaskInputCount } from './ai-task-console.js';
+import '../../shared/settings-normalizers.js';
+
+const { normalizeCollectBatchConcurrency, normalizeCollectBrowser } =
+  globalThis.HotelComparisonSettingsNormalizers;
 
 /**
  * @typedef {import('../../shared/contracts').AiListFilters} AiListFilters
@@ -431,15 +435,14 @@ export function readListFilterForm() {
  * @returns {1|2|3}
  */
 export function readCollectBatchConcurrency() {
-  const concurrency = Number(state.settings.collectBatchConcurrency);
-  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
+  return normalizeCollectBatchConcurrency(state.settings.collectBatchConcurrency);
 }
 
 /**
  * @returns {'edge'|'360'}
  */
 export function readCollectBrowser() {
-  return String(state.settings.collectBrowser || '').trim() === '360' ? '360' : 'edge';
+  return normalizeCollectBrowser(state.settings.collectBrowser);
 }
 
 /**

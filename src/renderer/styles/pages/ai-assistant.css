@@ -6,7 +6,7 @@
   max-height: calc(100dvh - var(--app-header-height));
   min-height: 0;
   overflow: hidden;
-  background: color-mix(in srgb, var(--window-bg) 86%, #eaf3ff 14%);
+  background: color-mix(in srgb, var(--window-bg) 88%, var(--bg-tertiary) 12%);
 }
 
 .ai-assistant-header {
@@ -18,7 +18,7 @@
   padding: 14px 28px;
   background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
   border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 8px 24px rgba(28, 54, 84, 0.05);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 5%, transparent);
   flex: 0 0 auto;
 }
 
@@ -42,8 +42,8 @@
     radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.32), transparent 28%),
     linear-gradient(
       145deg,
-      color-mix(in srgb, var(--primary-color) 88%, #68a7ff),
-      color-mix(in srgb, var(--primary-color) 78%, #0e4cd9)
+      color-mix(in srgb, var(--primary-color) 92%, white 8%),
+      color-mix(in srgb, var(--primary-color) 78%, black 22%)
     );
   box-shadow:
     0 12px 24px color-mix(in srgb, var(--primary-color) 26%, transparent),
@@ -150,7 +150,7 @@
   background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-tertiary) 8%);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  box-shadow: 0 6px 18px rgba(28, 54, 84, 0.06);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .ai-ghost-button:hover {
@@ -185,7 +185,7 @@
   background: color-mix(in srgb, var(--bg-primary) 96%, var(--bg-tertiary) 4%);
   border: 1px solid var(--border-color);
   border-radius: 16px;
-  box-shadow: 0 16px 42px rgba(28, 54, 84, 0.08);
+  box-shadow: 0 16px 42px color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .current-task-card {
@@ -375,7 +375,7 @@
   border: 1px solid var(--border-color);
   border-radius: 10px;
   background: var(--bg-primary);
-  box-shadow: 0 14px 34px rgba(28, 54, 84, 0.16);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 
 .task-queue-menu-popover button {

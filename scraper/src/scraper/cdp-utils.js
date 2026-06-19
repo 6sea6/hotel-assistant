@@ -6,12 +6,16 @@ const { spawn } = require('child_process');
 const { normalizeText, toNumber, ensureDir } = require('../utils');
 const {
   delay,
-  getBrowserDisplayName,
   killBrowserProcessesByCommandLine,
   killProcessTree,
   findEdgeExecutable,
   normalizeBrowserPreference
 } = require('./process-utils');
+const {
+  buildBackgroundBrowserWindowArgs,
+  buildVisibleBrowserWindowArgs
+} = require('../browser-launch-args');
+const { waitForDebuggerEndpoint } = require('../debugger-endpoint');
 
 function findAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -69,32 +73,14 @@ function cloneEdgeUserDataDir(sourceDir) {
   return clonedDir;
 }
 
-function buildVisibleManagedBrowserWindowArgs() {
-  return ['--new-window', '--window-size=1280,900', '--window-position=80,80'];
-}
-
-function is360ManagedBrowser(edgeExecutable, sessionOptions = {}) {
-  return (
-    sessionOptions.browserPreference === '360' ||
-    getBrowserDisplayName(edgeExecutable) === '360 Browser'
-  );
-}
-
 function buildBackgroundManagedBrowserWindowArgs(edgeExecutable, sessionOptions = {}) {
-  const args = ['--disable-gpu', '--headless=new', '--no-startup-window'];
-  if (is360ManagedBrowser(edgeExecutable, sessionOptions)) {
-    args.push(
-      '--disable-extensions',
-      '--disable-component-extensions-with-background-pages',
-      '--disable-component-update',
-      '--disable-sync',
-      '--start-minimized',
-      '--window-size=1280,900',
-      '--window-position=-32000,-32000'
-    );
-  }
-  return args;
+  return buildBackgroundBrowserWindowArgs({
+    browserExecutable: edgeExecutable,
+    browserPreference: sessionOptions.browserPreference
+  });
 }
+
+const buildVisibleManagedBrowserWindowArgs = buildVisibleBrowserWindowArgs;
 
 async function launchManagedEdgeSession(edgeExecutable, sessionOptions, requestedPort) {
   const launchWithUserDataDir = async (userDataDir, shouldCleanupUserDataDir, port, timeoutMs) => {
@@ -214,25 +200,6 @@ async function connectToDebugger(debuggerUrl, EdgeWebSocket) {
     );
   });
   return createCdpConnection(socket);
-}
-
-async function waitForDebuggerEndpoint(port, timeoutMs = 10000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.webSocketDebuggerUrl) {
-          return data.webSocketDebuggerUrl;
-        }
-      }
-    } catch (_error) {
-      // Browser may still be starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error('Timed out waiting for Edge remote debugging endpoint');
 }
 
 function createCdpTimeoutError(method, timeoutMs) {

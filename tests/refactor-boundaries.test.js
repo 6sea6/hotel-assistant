@@ -154,6 +154,7 @@ test('renderer CSS is split into token theme component and page layers', () => {
   const expectedStyleFiles = [
     'src/renderer/styles/tokens.css',
     'src/renderer/styles/themes.css',
+    'src/renderer/styles/motion.css',
     'src/renderer/styles/components/icons.css',
     'src/renderer/styles/components/app-shell.css',
     'src/renderer/styles/components/modal-form.css',
@@ -179,6 +180,7 @@ test('renderer CSS is split into token theme component and page layers', () => {
   assert.deepEqual(imports, [
     './styles/tokens.css',
     './styles/themes.css',
+    './styles/motion.css',
     './styles/components/icons.css',
     './styles/components/app-shell.css',
     './styles/pages/hotel-cards.css',

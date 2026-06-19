@@ -1,5 +1,9 @@
 const { loadScraperRunner } = require('./scraper-lazy-loader');
 const { redactAiProviderConfig } = require('./provider-presets');
+const {
+  normalizeCollectBatchConcurrency,
+  normalizeCollectBrowser
+} = require('../../shared/settings-normalizers');
 
 const AI_TOOL_DEFINITIONS = Object.freeze([
   {
@@ -173,7 +177,8 @@ const AI_TOOL_DEFINITIONS = Object.freeze([
     type: 'function',
     function: {
       name: 'open_visible_edge_login',
-      description: '打开可见采集浏览器登录准备窗口，用于携程登录态失效或价格不可见时让用户手动登录。',
+      description:
+        '打开可见采集浏览器登录准备窗口，用于携程登录态失效或价格不可见时让用户手动登录。',
       parameters: {
         type: 'object',
         properties: {
@@ -219,11 +224,6 @@ function sanitizeSettings(settings = {}) {
   return sanitized;
 }
 
-function normalizeCollectBatchConcurrency(value) {
-  const concurrency = Number(value);
-  return concurrency === 2 || concurrency === 3 ? concurrency : 1;
-}
-
 async function executeAiTool(name, rawArguments, context) {
   const args = parseToolArguments(rawArguments);
   const { dataService, getTaskStatus, runTask } = context;
@@ -249,8 +249,7 @@ async function executeAiTool(name, rawArguments, context) {
           collectArgs.amapKey = settings.amapApiKey;
         }
         collectArgs.enableCollectPerfLog = Boolean(settings.enableCollectPerfLog);
-        collectArgs.collectBrowser =
-          String(settings.collectBrowser || '').trim() === '360' ? '360' : 'edge';
+        collectArgs.collectBrowser = normalizeCollectBrowser(settings.collectBrowser);
         collectArgs.batchConcurrency = normalizeCollectBatchConcurrency(
           settings.collectBatchConcurrency
         );

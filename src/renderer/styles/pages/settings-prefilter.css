@@ -524,7 +524,7 @@
   bottom: 0;
   background-color: var(--border-color);
   border-radius: 26px;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast);
 }
 
 .switch-slider::before {
@@ -536,7 +536,7 @@
   bottom: 3px;
   background-color: white;
   border-radius: 50%;
-  transition: all var(--transition-fast);
+  transition: transform var(--transition-fast);
 }
 
 .switch-label input:checked + .switch-slider {

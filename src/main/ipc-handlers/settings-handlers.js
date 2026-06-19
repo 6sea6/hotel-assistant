@@ -6,24 +6,11 @@ const { normalizeAiProviderConfig } = require('../ai/provider-presets');
 const { safeHandle } = require('../ipc-safe-handler');
 const { assertAllowedValue } = require('../ipc-validators');
 const { hasNormalizedValueChanged } = require('../normalization-utils');
-
-const THEME_ALIAS_MAP = Object.freeze({
-  light: 'cloud-white',
-  'changing-mode': 'colorful-mode'
-});
-
-const SUPPORTED_THEMES = new Set([
-  'totoro-blue',
-  'sweet-lime',
-  'grass-green',
-  'pineapple-yellow',
-  'oak-brown',
-  'cloud-white',
-  'autumn-gold',
-  'diehard-pink',
-  'grape-purple',
-  'colorful-mode'
-]);
+const {
+  normalizeCollectBatchConcurrency,
+  normalizeCollectBrowser
+} = require('../../shared/settings-normalizers');
+const { normalizeThemeKey } = require('../../shared/theme-config');
 
 const SUPPORTED_SETTING_KEYS = Object.freeze([
   ...Object.keys(APP_CONFIG.STORE_DEFAULTS.settings),
@@ -75,20 +62,7 @@ const OLD_HOTEL_CARD_VISIBLE_FIELDS_V2 = Object.freeze([
 function registerSettingsHandlers({ ipcMain, cache, services }) {
   const { dataService, windowService } = services;
   const normalizeThemeSetting = (theme) => {
-    const normalizedTheme = THEME_ALIAS_MAP[theme] || theme;
-    return SUPPORTED_THEMES.has(normalizedTheme)
-      ? normalizedTheme
-      : APP_CONFIG.STORE_DEFAULTS.settings.theme;
-  };
-
-  const normalizeCollectBatchConcurrency = (value) => {
-    const concurrency = Number(value);
-    return concurrency === 2 || concurrency === 3 ? concurrency : 1;
-  };
-
-  const normalizeCollectBrowser = (value) => {
-    const normalized = String(value || '').trim().toLowerCase();
-    return normalized === '360' ? '360' : 'edge';
+    return normalizeThemeKey(theme, APP_CONFIG.STORE_DEFAULTS.settings.theme);
   };
 
   const normalizeSettings = (settings = {}) => {

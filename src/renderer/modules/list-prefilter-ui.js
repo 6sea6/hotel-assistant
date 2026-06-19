@@ -284,8 +284,10 @@ function applyCtripAccommodationTypeMode() {
 }
 
 function readCtripAccommodationTypeModeFromDom() {
-  const selectedButton = document.querySelector(
-    '[data-accommodation-type-mode].is-selected, [data-accommodation-type-mode][aria-pressed="true"]'
+  const selectedButton = /** @type {HTMLElement|null} */ (
+    document.querySelector(
+      '[data-accommodation-type-mode].is-selected, [data-accommodation-type-mode][aria-pressed="true"]'
+    )
   );
   const domMode =
     selectedButton && selectedButton.dataset ? selectedButton.dataset.accommodationTypeMode : '';
@@ -365,7 +367,9 @@ function readListPrefilterFormValues() {
     aiCtripRoomTypes: normalizeListPrefilterSettingValue(
       'aiCtripRoomTypes',
       Array.from(
-        document.querySelectorAll('[data-setting-key="aiCtripRoomTypes"][data-option-value].is-selected')
+        document.querySelectorAll(
+          '[data-setting-key="aiCtripRoomTypes"][data-option-value].is-selected'
+        )
       ).map((button) => /** @type {HTMLElement} */ (button).dataset.optionValue)
     ),
     aiCtripRoomFeatures: normalizeListPrefilterSettingValue(

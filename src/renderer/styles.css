@@ -1,5 +1,6 @@
 @import url('./styles/tokens.css');
 @import url('./styles/themes.css');
+@import url('./styles/motion.css');
 @import url('./styles/components/icons.css');
 @import url('./styles/components/app-shell.css');
 @import url('./styles/pages/hotel-cards.css');
