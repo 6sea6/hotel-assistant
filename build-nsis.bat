@@ -1,45 +1,37 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-chcp 936 >nul
+chcp 65001 >nul
 
 cd /d "%~dp0"
 
 set "NO_PAUSE=%NO_PAUSE%"
 set "EXIT_CODE=0"
+set "AMAP_KEY_ARG=--select-amap-key"
+if "%NO_PAUSE%"=="1" set "AMAP_KEY_ARG=--with-amap-key"
 
-for /f "delims=" %%I in ('node -p "require('./package.json').version" 2^>nul') do set "APP_VERSION=%%I"
-if not defined APP_VERSION set "APP_VERSION=unknown"
+title hotel-comparison-app packager
 
-title 宾馆比较终极版打包工具 v%APP_VERSION%
-
-echo ========================================
-echo   宾馆比较终极版打包工具 v%APP_VERSION%
-echo ========================================
-echo.
+if /I "%~1"=="--with-amap-key" set "AMAP_KEY_ARG=--with-amap-key"
+if /I "%~1"=="--no-amap-key" set "AMAP_KEY_ARG=--no-amap-key"
+if /I "%~1"=="--without-amap-key" set "AMAP_KEY_ARG=--no-amap-key"
 
 where node >nul 2>&1
 if errorlevel 1 (
-    echo [错误] 未找到 Node.js。
+    echo [error] Node.js was not found.
     set "EXIT_CODE=1"
     goto END
 )
 
-echo.
-echo [1/1] 开始打包...
-node scripts\package\run-build.js
+node scripts\package\run-build.js %AMAP_KEY_ARG%
 if errorlevel 1 (
-    echo [错误] 打包失败。
+    echo [error] Build failed.
     set "EXIT_CODE=1"
     goto END
 )
 
-echo.
-echo ========================================
-echo   打包完成
-echo ========================================
 if exist dist\last-successful-setup.txt (
     echo.
-    echo 安装包路径：
+    echo Installer path:
     type dist\last-successful-setup.txt
 )
 

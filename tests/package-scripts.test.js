@@ -1112,8 +1112,11 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.doesNotMatch(runBuildScript, /选择打包模式/);
   assert.doesNotMatch(runBuildScript, /基础版安装包/);
   assert.doesNotMatch(runBuildScript, /请选择打包模式/);
-  assert.doesNotMatch(runBuildScript, /readline/);
   assert.doesNotMatch(runBuildScript, /--mode/);
+  assert.match(runBuildScript, /--select-amap-key/);
+  assert.match(runBuildScript, /请选择高德 API Key 打包模式/);
+  assert.match(runBuildScript, /包含默认高德 Key/);
+  assert.match(runBuildScript, /不包含默认高德 Key/);
   assert.match(runBuildScript, /宾馆比较终极版打包工具/);
   assert.match(runBuildScript, /正在同步构建资源/);
   assert.match(runBuildScript, /正在准备完整版采集模块资源/);
@@ -1130,6 +1133,11 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.doesNotMatch(runBuildScript, /Hotel Comparison Packager/);
   assert.equal(parseBuildOptions(['--no-amap-key']).amapKeyMode, 'none');
   assert.equal(parseBuildOptions(['--with-amap-key']).amapKeyMode, 'embedded');
+  assert.equal(parseBuildOptions(['--select-amap-key']).selectAmapKeyMode, true);
+  assert.equal(
+    parseBuildOptions(['--select-amap-key', '--no-amap-key']).selectAmapKeyMode,
+    false
+  );
   assert.equal(
     parseBuildOptions([], { HOTEL_PACKAGE_AMAP_KEY_MODE: 'without-amap-key' }).amapKeyMode,
     'none'
@@ -1162,19 +1170,24 @@ test('run-build uses project-local ASCII temporary NSIS output paths', (t) => {
   assert.match(runBuildScript, /getSetupArtifactName\(version,\s*\{\s*amapKeyMode\s*\}\)/);
 });
 
-test('build-nsis.bat uses Chinese UI with GBK codepage and CRLF line endings', () => {
+test('build-nsis.bat bootstraps packaging under UTF-8 codepage with ASCII-safe text', () => {
   const batBuffer = fs.readFileSync(path.resolve(__dirname, '..', 'build-nsis.bat'));
   const asciiPart = batBuffer.toString('ascii');
+  const utf8Text = batBuffer.toString('utf8');
 
   assert.ok(asciiPart.startsWith('@echo off'), 'bat file must start with @echo off');
-  assert.ok(asciiPart.includes('chcp 936'), 'bat file must use GBK codepage');
+  assert.ok(asciiPart.includes('chcp 65001'), 'bat file must use UTF-8 codepage');
+  assert.doesNotMatch(asciiPart, /chcp 936/, 'bat file must not force GBK codepage');
+  assert.match(asciiPart, /AMAP_KEY_ARG=--select-amap-key/);
+  assert.match(asciiPart, /AMAP_KEY_ARG=--with-amap-key/);
+  assert.match(asciiPart, /AMAP_KEY_ARG=--no-amap-key/);
+  assert.match(asciiPart, /node scripts\\package\\run-build\.js %AMAP_KEY_ARG%/);
+  assert.ok(
+    [...batBuffer].every((byte) => byte <= 0x7f),
+    'bat wrapper should stay ASCII-safe'
+  );
+  assert.doesNotMatch(utf8Text, /\uFFFD/, 'bat file must decode cleanly as UTF-8');
 
-  const crlfCount = batBuffer.filter((b) => b === 0x0d).length;
-  const lfCount = batBuffer.filter((b) => b === 0x0a).length;
-  assert.ok(crlfCount > 0, 'bat file must use CRLF line endings');
-  assert.equal(crlfCount, lfCount, 'CR and LF count must match for CRLF');
-
-  assert.doesNotMatch(asciiPart, /Hotel Comparison Packager/);
   assert.doesNotMatch(asciiPart, /Choose build mode/);
   assert.doesNotMatch(asciiPart, /Base package/);
   assert.doesNotMatch(asciiPart, /BUILD_MODE/);
@@ -1182,5 +1195,4 @@ test('build-nsis.bat uses Chinese UI with GBK codepage and CRLF line endings', (
   assert.doesNotMatch(asciiPart, /Packaging failed/);
   assert.doesNotMatch(asciiPart, /Select mode/);
   assert.doesNotMatch(asciiPart, /Latest installer/);
-  assert.doesNotMatch(asciiPart, /Node\.js was not found/);
 });

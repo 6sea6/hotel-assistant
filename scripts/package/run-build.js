@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const readline = require('readline/promises');
 const { createBuilderConfig } = require('./create-builder-config');
 const { getSetupArtifactName, normalizeAmapKeyMode } = require('./bundle-manifest');
 const { prepareFullBundle } = require('./prepare-full-bundle');
@@ -8,26 +9,37 @@ const { verifyPackageLayout } = require('./verify-package-layout');
 const { removeIfExists, resolveWindowsCommand, runCommand } = require('./utils');
 
 function parseBuildOptions(argv = process.argv.slice(2), env = process.env) {
-  let amapKeyMode = normalizeAmapKeyMode(env.HOTEL_PACKAGE_AMAP_KEY_MODE || 'embedded');
+  const envAmapKeyMode = env.HOTEL_PACKAGE_AMAP_KEY_MODE || '';
+  let amapKeyMode = normalizeAmapKeyMode(envAmapKeyMode || 'embedded');
+  let hasExplicitAmapKeyMode = Boolean(envAmapKeyMode);
+  let selectAmapKeyMode = false;
 
   for (const arg of argv) {
     const normalized = String(arg || '').trim();
+    if (normalized === '--select-amap-key') {
+      selectAmapKeyMode = true;
+      continue;
+    }
     if (normalized === '--no-amap-key' || normalized === '--without-amap-key') {
       amapKeyMode = 'none';
+      hasExplicitAmapKeyMode = true;
       continue;
     }
     if (normalized === '--with-amap-key') {
       amapKeyMode = 'embedded';
+      hasExplicitAmapKeyMode = true;
       continue;
     }
     const match = normalized.match(/^--amap-key(?:-mode)?=(.+)$/);
     if (match) {
       amapKeyMode = normalizeAmapKeyMode(match[1]);
+      hasExplicitAmapKeyMode = true;
     }
   }
 
   return {
-    amapKeyMode
+    amapKeyMode,
+    selectAmapKeyMode: selectAmapKeyMode && !hasExplicitAmapKeyMode
   };
 }
 
@@ -88,6 +100,27 @@ function useAsciiInstallerArtifactName({ builderConfig, version }) {
 
 function getAmapKeyModeLabel(amapKeyMode) {
   return normalizeAmapKeyMode(amapKeyMode) === 'none' ? '不含默认高德 Key' : '包含默认高德 Key';
+}
+
+async function selectAmapKeyMode(defaultMode = 'embedded', streams = {}) {
+  const input = streams.input || process.stdin;
+  const output = streams.output || process.stdout;
+  const normalizedDefault = normalizeAmapKeyMode(defaultMode);
+
+  if (!input.isTTY && !streams.force) {
+    return normalizedDefault;
+  }
+
+  const rl = readline.createInterface({ input, output });
+  try {
+    output.write('\n请选择高德 API Key 打包模式：\n');
+    output.write('  1. 包含默认高德 Key\n');
+    output.write('  2. 不包含默认高德 Key\n');
+    const answer = String(await rl.question('请输入 1 或 2（默认 1）：')).trim();
+    return answer === '2' ? 'none' : 'embedded';
+  } finally {
+    rl.close();
+  }
 }
 
 function printHeader(version, options = {}) {
@@ -159,6 +192,10 @@ async function main() {
   let builderConfig = null;
 
   try {
+    if (buildOptions.selectAmapKeyMode) {
+      buildOptions.amapKeyMode = await selectAmapKeyMode(buildOptions.amapKeyMode);
+    }
+
     syncAppInfo(projectRoot);
     const { APP_INFO } = require('../../src/shared/app-info.generated');
     const version = APP_INFO.version;
@@ -241,5 +278,6 @@ if (require.main === module) {
 module.exports = {
   createTempBuildDir,
   getAmapKeyModeLabel,
-  parseBuildOptions
+  parseBuildOptions,
+  selectAmapKeyMode
 };

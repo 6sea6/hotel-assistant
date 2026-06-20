@@ -73,7 +73,19 @@ function getRuleDeleteThresholds() {
   };
 }
 
-function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels()) {
+export function isSubwayDistanceRuleMatched(subwayDistance, threshold) {
+  if (threshold === null) {
+    return false;
+  }
+
+  if (subwayDistance === 0) {
+    return true;
+  }
+
+  return subwayDistance !== null && subwayDistance > threshold;
+}
+
+export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels()) {
   const hasActiveRule =
     thresholds.price !== null ||
     thresholds.subwayDistance !== null ||
@@ -90,9 +102,7 @@ function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels
 
     return (
       (thresholds.price !== null && Number.isFinite(totalPrice) && totalPrice > thresholds.price) ||
-      (thresholds.subwayDistance !== null &&
-        subwayDistance !== null &&
-        subwayDistance > thresholds.subwayDistance) ||
+      isSubwayDistanceRuleMatched(subwayDistance, thresholds.subwayDistance) ||
       (thresholds.transportTime !== null &&
         transportTime !== null &&
         transportTime > thresholds.transportTime)
