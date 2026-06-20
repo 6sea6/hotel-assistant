@@ -177,6 +177,7 @@ test('applyFiltersToHotels produces same result with and without _derived', asyn
   const filterCases = [
     {},
     { name: '酒店A' },
+    { score: '4.7' },
     { score: '4.0' },
     { transportTime: '30' },
     { subwayDistance: '1.0' },
@@ -188,6 +189,20 @@ test('applyFiltersToHotels produces same result with and without _derived', asyn
     const withDerived = filters.applyFiltersToHotels(hotelsWithDerived, f).map((h) => h.id);
     assert.deepEqual(withDerived, withoutDerived, `Filter ${JSON.stringify(f)} should match`);
   }
+});
+
+test('applyFiltersToHotels supports ctrip score 4.7 threshold', async () => {
+  const { filters } = await loadModules();
+  const hotels = [
+    makeHotel({ id: 1, ctrip_score: 4.8 }),
+    makeHotel({ id: 2, ctrip_score: 4.7 }),
+    makeHotel({ id: 3, ctrip_score: 4.6 }),
+    makeHotel({ id: 4, ctrip_score: null })
+  ];
+
+  const filteredIds = filters.applyFiltersToHotels(hotels, { score: '4.7' }).map((hotel) => hotel.id);
+
+  assert.deepEqual(filteredIds, [1, 2]);
 });
 
 test('sortHotels produces same order with and without _derived', async () => {
