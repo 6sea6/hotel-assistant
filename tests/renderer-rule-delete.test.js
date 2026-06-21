@@ -153,3 +153,27 @@ test('rule delete ctrip score threshold includes only hotels below threshold', a
     [3]
   );
 });
+
+test('rule delete price threshold uses daily price instead of total price', async () => {
+  const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
+
+  const candidates = getRuleDeleteCandidates(
+    {
+      price: 500,
+      ctripScore: null,
+      subwayDistance: null,
+      transportTime: null
+    },
+    [
+      { id: 1, total_price: 1200, daily_price: 400 },
+      { id: 2, total_price: 900, daily_price: 550 },
+      { id: 3, total_price: 520, daily_price: null },
+      { id: 4, total_price: null, daily_price: 501 }
+    ]
+  );
+
+  assert.deepEqual(
+    candidates.map((hotel) => hotel.id),
+    [2, 4]
+  );
+});

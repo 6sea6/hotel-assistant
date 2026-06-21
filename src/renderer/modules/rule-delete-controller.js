@@ -68,7 +68,7 @@ function getRuleDeleteThresholds() {
     return result;
   };
 
-  const price = parseThreshold(getValue('ruleDeletePrice'), '总价格阈值');
+  const price = parseThreshold(getValue('ruleDeletePrice'), '日均价格阈值');
   if (price.error) return price;
 
   const ctripScore = parseScoreThreshold(getValue('ruleDeleteCtripScore'));
@@ -127,15 +127,15 @@ export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCar
   }
 
   return sourceHotels.filter((hotel) => {
-    const totalPrice = Number(hotel.total_price);
+    const dailyPrice = Number(hotel.daily_price);
     const ctripScore = Number(hotel.ctrip_score);
     const subwayDistance = extractDistanceNumber(hotel.subway_distance);
     const transportTime = extractTimeNumber(hotel.transport_time);
 
     return (
       (hasRuleThreshold(thresholds.price) &&
-        Number.isFinite(totalPrice) &&
-        totalPrice > thresholds.price) ||
+        Number.isFinite(dailyPrice) &&
+        dailyPrice > thresholds.price) ||
       isCtripScoreRuleMatched(ctripScore, thresholds.ctripScore) ||
       isSubwayDistanceRuleMatched(subwayDistance, thresholds.subwayDistance) ||
       (hasRuleThreshold(thresholds.transportTime) &&
