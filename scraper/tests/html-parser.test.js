@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  extractHotelDiamondLevelFromHtml,
   extractHotelMetaFromHtml,
   findRoomBlocksFromStructuredText
 } = require('../src/scraper/html-parser');
@@ -14,6 +15,43 @@ test('extractHotelMetaFromHtml tolerates transient empty detail HTML', () => {
 
   assert.equal(meta.hotelName, '');
   assert.equal(meta.sourceUrl, 'https://hotels.ctrip.com/hotels/detail/?hotelId=533161');
+});
+
+test('extractHotelMetaFromHtml extracts ctrip diamond level from hotel level aria label', () => {
+  const html = `
+    <html>
+      <body>
+        <h1>测试酒店</h1>
+        <span class="hotelLevel_hotelLevel__mhh3v" aria-label="4 out of 5 diamonds" role="img">
+          <i class="u-icon-ic_new_diamond"></i>
+          <i class="u-icon-ic_new_diamond"></i>
+          <i class="u-icon-ic_new_diamond"></i>
+          <i class="u-icon-ic_new_diamond"></i>
+        </span>
+        <span>舒适型酒店</span>
+      </body>
+    </html>
+  `;
+
+  const meta = extractHotelMetaFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=533161'
+  );
+
+  assert.equal(extractHotelDiamondLevelFromHtml(html), 4);
+  assert.equal(meta.ctripDiamondLevel, 4);
+});
+
+test('extractHotelDiamondLevelFromHtml falls back to diamond icon count', () => {
+  const html = `
+    <span class="hotelLevel_hotelLevel__mhh3v">
+      <i class="u-icon-ic_new_diamond"></i>
+      <i class="u-icon-ic_new_diamond"></i>
+      <i class="u-icon-ic_new_diamond"></i>
+    </span>
+  `;
+
+  assert.equal(extractHotelDiamondLevelFromHtml(html), 3);
 });
 
 test('findRoomBlocksFromStructuredText extracts mixed-bed advanced twin room from DOM-style snippet', () => {

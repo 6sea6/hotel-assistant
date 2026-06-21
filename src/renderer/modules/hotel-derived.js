@@ -44,6 +44,7 @@ function normalizeFilterOptionKey(value) {
  * @property {number|null} totalPriceNumber
  * @property {number|null} dailyPriceNumber
  * @property {number|null} scoreNumber
+ * @property {number|null} diamondLevelNumber
  * @property {number|null} distanceNumber
  * @property {number|null} subwayDistanceNumber
  * @property {number|null} transportTimeNumber
@@ -67,6 +68,7 @@ export function buildHotelDerivedFields(hotel) {
     totalPriceNumber: parsePositiveNumber(hotel.total_price),
     dailyPriceNumber: parsePositiveNumber(hotel.daily_price),
     scoreNumber: parsePositiveNumber(hotel.ctrip_score),
+    diamondLevelNumber: parsePositiveNumber(hotel.ctrip_diamond_level),
     distanceNumber: extractDistanceNumber(hotel.distance),
     subwayDistanceNumber: extractDistanceNumber(hotel.subway_distance),
     transportTimeNumber: extractTimeNumber(hotel.transport_time),

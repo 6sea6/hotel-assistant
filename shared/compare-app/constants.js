@@ -20,6 +20,7 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   collectBrowser: 'edge',
   collectBatchConcurrency: 1,
   hotelCardVisibleFields: [
+    'ctrip_diamond_level',
     'original_room_type',
     'address',
     'website',

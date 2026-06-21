@@ -78,7 +78,7 @@ async function loadControllerModule() {
   writeFile(
     path.join(tempRoot, 'hotel-filters.js'),
     `
-    export const DEFAULT_SORT_MODE = 'review_high';
+    export const DEFAULT_SORT_MODE = 'price_low';
     export function formatSubwayInfo() { return '-'; }
     export function formatDistanceValue(value) { return value; }
     export function formatTransportValue(value) { return value; }
@@ -97,6 +97,15 @@ async function loadControllerModule() {
     export function renderHotelList() {}
     export function requestHotelListRender(options = {}) {
       globalThis.__viewModeRenderRequests.push(options);
+    }
+    `
+  );
+  writeFile(
+    path.join(tempRoot, 'hotel-card-fields.js'),
+    `
+    export function formatCtripDiamondLevel(value) {
+      const level = Number(value);
+      return Number.isFinite(level) && level > 0 ? '★'.repeat(level) + ' 携程' + level + '星' : null;
     }
     `
   );
@@ -170,7 +179,8 @@ function installViewModeDom() {
       'viewModeCardOption',
       'viewModeListOption',
       'batchDeleteBtn',
-      'ruleDeleteBtn'
+      'ruleDeleteBtn',
+      'hotelDetailsContent'
     ].map((id) => [id, createElement(id)])
   );
   globalThis.__viewModeElements = elements;
@@ -234,6 +244,45 @@ test('setViewModeChoice applies the requested mode and synchronizes segmented st
     assert.equal(elements.get('viewModeCardOption').getAttribute('aria-current'), 'true');
     assert.equal(elements.get('batchDeleteBtn').hidden, true);
     assert.equal(elements.get('ruleDeleteBtn').hidden, false);
+  } finally {
+    globalThis.document = previousDocument;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('showHotelDetails renders ctrip star level directly below ctrip score', async () => {
+  const { tempRoot, moduleUrl } = await loadControllerModule();
+  const previousDocument = globalThis.document;
+  globalThis.__viewModeState = {
+    viewMode: 'list',
+    currentFilters: {},
+    selectedHotels: new Set(),
+    hotels: [
+      {
+        id: 1,
+        name: '星级酒店',
+        ctrip_score: 4.8,
+        ctrip_diamond_level: 2
+      }
+    ]
+  };
+  globalThis.__viewModeSetCalls = [];
+  globalThis.__viewModeRenderRequests = [];
+  globalThis.__viewModeBatchResetCalls = [];
+  globalThis.__viewModeClearSelectionCalls = 0;
+  const elements = installViewModeDom();
+
+  try {
+    const { showHotelDetails } = await import(moduleUrl);
+
+    showHotelDetails(1);
+
+    const html = elements.get('hotelDetailsContent').innerHTML;
+    const scoreIndex = html.indexOf('携程评分');
+    const starIndex = html.indexOf('携程星级');
+    assert.ok(scoreIndex >= 0, 'details should include ctrip score');
+    assert.ok(starIndex > scoreIndex, 'ctrip star level should be rendered after ctrip score');
+    assert.match(html, /★★ 携程2星/);
   } finally {
     globalThis.document = previousDocument;
     fs.rmSync(tempRoot, { recursive: true, force: true });

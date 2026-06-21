@@ -8,7 +8,11 @@ import { resetBatchDeleteConfirmation } from './ui-utils.js';
 import { getSortedVisibleHotels, getVisibleHotelListSummary } from './hotel-list-model.js';
 import { syncHotelNameFilterOptions } from './hotel-list-filter-options.js';
 import { createHotelListRow } from './hotel-list-table-renderer.js';
-import { cleanupHotelActionArtifacts, createHotelCard } from './hotel-list-card-renderer.js';
+import {
+  alignHotelCardTitleRows,
+  cleanupHotelActionArtifacts,
+  createHotelCard
+} from './hotel-list-card-renderer.js';
 import { syncSelectAllCheckboxState } from './hotel-list-selection.js';
 
 export function updateVisibleHotelSummary(sortedHotels) {
@@ -150,6 +154,9 @@ export function patchHotelCards(changedIds, options = {}) {
   }
 
   cleanupHotelActionArtifacts(container);
+  if (state.viewMode !== 'list') {
+    alignHotelCardTitleRows(container);
+  }
   syncSelectAllCheckboxState();
   resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
   return true;

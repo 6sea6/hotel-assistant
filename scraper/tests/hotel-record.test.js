@@ -145,6 +145,7 @@ test('buildHotelRecord fills room area and notes from structured room data', () 
       hotel_name: '武汉白沙洲大道万达悦华酒店',
       address: '湖北省武汉市洪山区张家湾街道烽火崇文兰庭武梁路',
       ctrip_score: 4.7,
+      ctrip_diamond_level: 4,
       room: createStructuredRoom(),
       page_snapshot: {
         sources: []
@@ -155,6 +156,7 @@ test('buildHotelRecord fills room area and notes from structured room data', () 
   );
 
   assert.equal(record.room_area, '37');
+  assert.equal(record.ctrip_diamond_level, 4);
   assert.match(record.notes, /床型：1张单人床（1.2米宽）和1张大床（1.8米宽）/);
   assert.match(record.notes, /早餐：无早餐/);
   assert.match(record.notes, /¥38\/份/);

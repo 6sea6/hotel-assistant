@@ -27,6 +27,7 @@ test('expandStoredHotels supports grouped and flat entries together', () => {
         check_out_date: '2026-05-03',
         days: 2,
         ctrip_score: 4.8,
+        ctrip_diamond_level: 4,
         destination: '上海国家会展中心',
         distance: '1.2',
         subway_station: '徐泾东站',
@@ -63,6 +64,7 @@ test('expandStoredHotels supports grouped and flat entries together', () => {
 
   assert.equal(expandedHotels.length, 3);
   assert.equal(expandedHotels[0].name, '测试酒店');
+  assert.equal(expandedHotels[0].ctrip_diamond_level, 4);
   assert.equal(expandedHotels[1].room_type, '双床房');
   assert.equal(expandedHotels[2].name, '独立酒店');
   assert.deepEqual(expandedHotels[0].template_info, { id: 1001, name: 'bw' });
@@ -78,6 +80,7 @@ test('compactHotels keeps shared fields together and splits room fields out', ()
       check_out_date: '2026-05-03',
       days: 2,
       ctrip_score: 4.8,
+      ctrip_diamond_level: 4,
       destination: '上海国家会展中心',
       distance: '1.2',
       subway_station: '徐泾东站',
@@ -101,6 +104,7 @@ test('compactHotels keeps shared fields together and splits room fields out', ()
       check_out_date: '2026-05-03',
       days: 2,
       ctrip_score: 4.8,
+      ctrip_diamond_level: 4,
       destination: '上海国家会展中心',
       distance: '1.2',
       subway_station: '徐泾东站',
@@ -129,6 +133,8 @@ test('compactHotels keeps shared fields together and splits room fields out', ()
   assert.equal(compactedHotels.length, 2);
   assert.equal(compactedHotels[0].rooms.length, 2);
   assert.equal(compactedHotels[1].shared.name, '第二家酒店');
+  assert.equal(compactedHotels[0].shared.ctrip_diamond_level, 4);
+  assert.ok(!('ctrip_diamond_level' in compactedHotels[0].rooms[0]));
   assert.ok(!('room_type' in compactedHotels[0].shared));
   assert.equal(compactedHotels[0].rooms[0].room_type, '大床房');
   assert.equal(compactedHotels[0].rooms[1].room_type, '双床房');

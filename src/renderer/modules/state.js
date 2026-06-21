@@ -675,6 +675,7 @@ export function buildVisibleHotelsFiltersKey(filters) {
   return JSON.stringify([
     normalize(filters.name),
     normalize(filters.score),
+    normalize(filters.diamondLevel),
     normalize(filters.favorite),
     normalize(filters.template),
     normalize(filters.transportTime),

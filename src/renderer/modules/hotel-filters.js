@@ -83,6 +83,21 @@ export function applyFiltersToHotels(hotels, filters) {
       }
     }
 
+    if (filters.diamondLevel && filters.diamondLevel !== '') {
+      const minDiamondLevel = parseFloat(String(filters.diamondLevel));
+      if (Number.isFinite(minDiamondLevel)) {
+        const hotelDiamondLevel =
+          derived?.diamondLevelNumber ??
+          (Number.isFinite(Number(hotel.ctrip_diamond_level)) &&
+          Number(hotel.ctrip_diamond_level) > 0
+            ? Number(hotel.ctrip_diamond_level)
+            : null);
+        if (hotelDiamondLevel === null || hotelDiamondLevel < minDiamondLevel) {
+          return false;
+        }
+      }
+    }
+
     if (filters.favorite !== undefined && filters.favorite !== '') {
       const isFavorite = hotel.is_favorite === 1;
       if (filters.favorite === '1' && !isFavorite) return false;
@@ -127,7 +142,7 @@ export function applyFiltersToHotels(hotels, filters) {
   });
 }
 
-export const DEFAULT_SORT_MODE = 'review_high';
+export const DEFAULT_SORT_MODE = 'price_low';
 
 /**
  * @param {NormalizedHotelRecord[]} hotels
@@ -199,6 +214,7 @@ export function sortHotels(hotels = [], sortMode = DEFAULT_SORT_MODE) {
 
       switch (mode) {
         case 'price_low':
+        default:
           result = compareMissingLast(getTotalPriceNumber(a.hotel), getTotalPriceNumber(b.hotel), 'asc');
           break;
         case 'price_high':
@@ -208,7 +224,6 @@ export function sortHotels(hotels = [], sortMode = DEFAULT_SORT_MODE) {
           result = compareMissingLast(getDistanceNumberForSort(a.hotel), getDistanceNumberForSort(b.hotel), 'asc');
           break;
         case 'review_high':
-        default:
           result = compareMissingLast(getScoreNumber(a.hotel), getScoreNumber(b.hotel), 'desc');
           break;
       }

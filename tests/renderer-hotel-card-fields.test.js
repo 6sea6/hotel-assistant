@@ -104,6 +104,7 @@ function makeHotel(overrides = {}) {
     name: '测试酒店',
     address: '北京市朝阳区建国路100号',
     website: 'https://example.com',
+    ctrip_diamond_level: 4,
     original_room_type: '豪华大床房',
     total_price: 300,
     daily_price: 150,
@@ -134,6 +135,7 @@ function makeHelpers() {
 }
 
 const ALL_KEYS = [
+  'ctrip_diamond_level',
   'original_room_type',
   'address',
   'website',
@@ -157,6 +159,52 @@ test('renderCardFields returns headerFieldItems', async () => {
 
   assert.ok(Array.isArray(result.headerFieldItems), 'headerFieldItems should be an array');
   assert.ok(result.headerFieldItems.length > 0, 'headerFieldItems should not be empty');
+});
+
+test('ctrip diamond level is supported and visible by default', async () => {
+  const { cardFields } = await loadModules();
+
+  assert.ok(cardFields.SUPPORTED_HOTEL_CARD_FIELD_KEYS.has('ctrip_diamond_level'));
+  assert.ok(cardFields.DEFAULT_HOTEL_CARD_VISIBLE_FIELDS.includes('ctrip_diamond_level'));
+});
+
+test('headerFieldItems contains formatted ctrip diamond level badge', async () => {
+  const { cardFields } = await loadModules();
+  const hotel = makeHotel();
+  const helpers = makeHelpers();
+  const result = cardFields.renderCardFields(hotel, ALL_KEYS, helpers);
+
+  const diamondLevel = result.headerFieldItems.find((item) => item.key === 'ctrip_diamond_level');
+  assert.ok(diamondLevel, 'should have ctrip_diamond_level in headerFieldItems');
+  assert.ok(diamondLevel.html.includes('hotel-level-badge'), 'html should include badge class');
+  assert.ok(
+    diamondLevel.html.includes('hotel-level-badge-text'),
+    'html should include badge text wrapper'
+  );
+  assert.ok(diamondLevel.html.includes('★★★★'), 'html should include formatted star level');
+  assert.ok(diamondLevel.html.includes('携程4星'), 'html should include ctrip star label');
+  assert.doesNotMatch(diamondLevel.html, /钻/);
+});
+
+test('headerFieldItems formats low ctrip diamond level as ctrip star label', async () => {
+  const { cardFields } = await loadModules();
+  const hotel = makeHotel({ ctrip_diamond_level: 2 });
+  const helpers = makeHelpers();
+  const result = cardFields.renderCardFields(hotel, ALL_KEYS, helpers);
+
+  const diamondLevel = result.headerFieldItems.find((item) => item.key === 'ctrip_diamond_level');
+  assert.ok(diamondLevel, 'should have ctrip_diamond_level in headerFieldItems');
+  assert.ok(diamondLevel.html.includes('★★ 携程2星'));
+});
+
+test('headerFieldItems ignores non-diamond hotel class text', async () => {
+  const { cardFields } = await loadModules();
+  const hotel = makeHotel({ ctrip_diamond_level: '舒适型酒店' });
+  const helpers = makeHelpers();
+  const result = cardFields.renderCardFields(hotel, ALL_KEYS, helpers);
+
+  const diamondLevel = result.headerFieldItems.find((item) => item.key === 'ctrip_diamond_level');
+  assert.equal(diamondLevel, undefined);
 });
 
 test('headerFieldItems contains original_room_type with card class', async () => {

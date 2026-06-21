@@ -93,6 +93,17 @@
               </div>
 
               <div class="filter-group">
+                <label>携程星级</label>
+                <select id="filterDiamondLevel" class="input" data-custom-select="true">
+                  <option value="">全部</option>
+                  <option value="5">5星以上</option>
+                  <option value="4">4星以上</option>
+                  <option value="3">3星以上</option>
+                  <option value="2">2星以上</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
                 <label>收藏状态</label>
                 <select id="filterFavorite" class="input" data-custom-select="true">
                   <option value="">全部</option>
@@ -125,7 +136,7 @@
                 </select>
               </div>
 
-              <div class="filter-group filter-group-full">
+              <div class="filter-group">
                 <label>按模板筛选</label>
                 <select id="filterTemplate" class="input" data-custom-select="true">
                   <option value="">全部</option>
@@ -140,16 +151,16 @@
               <h2 class="section-title">排序方式</h2>
               <div class="sort-mode-list" role="radiogroup" aria-label="排序方式">
                 <label class="sort-mode-option">
-                  <input type="radio" name="sortMode" value="review_high" checked />
-                  <span>好评优先</span>
-                </label>
-                <label class="sort-mode-option">
-                  <input type="radio" name="sortMode" value="price_low" />
+                  <input type="radio" name="sortMode" value="price_low" checked />
                   <span>低价优先</span>
                 </label>
                 <label class="sort-mode-option">
                   <input type="radio" name="sortMode" value="price_high" />
                   <span>高价优先</span>
+                </label>
+                <label class="sort-mode-option">
+                  <input type="radio" name="sortMode" value="review_high" />
+                  <span>好评优先</span>
                 </label>
                 <label class="sort-mode-option">
                   <input type="radio" name="sortMode" value="distance_near" />
@@ -402,7 +413,7 @@
                 />
               </div>
 
-              <div class="form-row form-row-compact">
+              <div class="form-row form-row-dates">
                 <div class="form-group">
                   <label for="totalPrice">总价格 (元)</label>
                   <input
@@ -425,9 +436,6 @@
                     placeholder="日均价格"
                   />
                 </div>
-              </div>
-
-              <div class="form-row form-row-dates">
                 <div class="form-group">
                   <label for="checkInDate">入住日期</label>
                   <input type="date" id="checkInDate" class="input" />
@@ -436,6 +444,9 @@
                   <label for="checkOutDate">离店日期</label>
                   <input type="date" id="checkOutDate" class="input" />
                 </div>
+              </div>
+
+              <div class="form-row form-row-compact">
                 <div class="form-group">
                   <label for="days">住宿天数</label>
                   <input type="number" id="days" min="1" class="input" placeholder="天数" />
@@ -450,6 +461,18 @@
                     max="5"
                     class="input"
                     placeholder="如: 4.5"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="ctripDiamondLevel">携程星级 (1-5星)</label>
+                  <input
+                    type="number"
+                    id="ctripDiamondLevel"
+                    step="1"
+                    min="1"
+                    max="5"
+                    class="input"
+                    placeholder="如: 2"
                   />
                 </div>
               </div>
@@ -1278,6 +1301,10 @@
                 >
                 <div class="card-field-picker" id="cardFieldPicker">
                   <label class="card-field-option">
+                    <input type="checkbox" data-card-field="ctrip_diamond_level" checked />
+                    <span>携程星级</span>
+                  </label>
+                  <label class="card-field-option">
                     <input type="checkbox" data-card-field="original_room_type" checked />
                     <span>原始房型</span>
                   </label>
@@ -1560,11 +1587,11 @@
                   <h3>版本信息</h3>
                   <div class="version-item">
                     <span>版本号：</span>
-                    <span id="aboutVersionText">v8.9.1</span>
+                    <span id="aboutVersionText">v8.9.2</span>
                   </div>
                   <div class="version-item">
                     <span>更新日期：</span>
-                    <span id="aboutUpdateDateText">2026-06-20</span>
+                    <span id="aboutUpdateDateText">2026-06-22</span>
                   </div>
                 </div>
               </div>

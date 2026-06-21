@@ -167,6 +167,62 @@ test('form controls use the soft selected field focus treatment', () => {
   assert.match(prefilterFocus, /box-shadow:\s*var\(--field-focus-shadow\)/);
 });
 
+test('sort mode radio controls are custom painted for consistent theme colors', () => {
+  const appShell = readStyleFile('components/app-shell.css');
+  const radioRule = readCssRuleBlock(appShell, ".sort-mode-option input[type='radio']");
+  const checkedRadioRule = readCssRuleBlock(
+    appShell,
+    ".sort-mode-option input[type='radio']:checked"
+  );
+
+  assert.match(radioRule, /appearance:\s*none/);
+  assert.match(radioRule, /-webkit-appearance:\s*none/);
+  assert.match(radioRule, /border:\s*2px solid var\(--primary-color\)/);
+  assert.match(radioRule, /background:\s*var\(--bg-primary\)/);
+  assert.doesNotMatch(radioRule, /accent-color/);
+  assert.match(checkedRadioRule, /radial-gradient\(circle at center,\s*var\(--primary-color\)/);
+  assert.match(checkedRadioRule, /var\(--bg-primary\)/);
+});
+
+test('sort mode defaults to low price and lists price options first', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const sortListMatch = html.match(
+    /<div class="sort-mode-list" role="radiogroup" aria-label="排序方式">([\s\S]*?)<\/div>/
+  );
+  assert.ok(sortListMatch, 'sort mode list should exist');
+
+  const values = [...sortListMatch[1].matchAll(/name="sortMode" value="([^"]+)"/g)].map(
+    (match) => match[1]
+  );
+
+  assert.deepEqual(values, ['price_low', 'price_high', 'review_high', 'distance_near']);
+  assert.match(sortListMatch[1], /value="price_low" checked/);
+});
+
+test('custom select menus use an opaque theme-safe background', () => {
+  const customSelect = readStyleFile('components/custom-select.css');
+  const menuRule = readCssRuleBlock(customSelect, '.custom-select-menu,\n.ai-template-picker-menu');
+
+  assert.match(menuRule, /background:\s*var\(--bg-primary\)/);
+  assert.doesNotMatch(menuRule, /background:\s*color-mix\([^;]*--bg-secondary/);
+});
+
+test('hotel edit form keeps dates after prices and ctrip star after score', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const totalIndex = html.indexOf('for="totalPrice"');
+  const dailyIndex = html.indexOf('for="dailyPrice"');
+  const checkInIndex = html.indexOf('for="checkInDate"');
+  const checkOutIndex = html.indexOf('for="checkOutDate"');
+  const scoreIndex = html.indexOf('for="ctripScore"');
+  const starIndex = html.indexOf('for="ctripDiamondLevel"');
+
+  assert.ok(totalIndex >= 0, 'total price field should exist');
+  assert.ok(dailyIndex > totalIndex, 'daily price should follow total price');
+  assert.ok(checkInIndex > dailyIndex, 'check-in date should follow daily price');
+  assert.ok(checkOutIndex > checkInIndex, 'check-out date should follow check-in date');
+  assert.ok(starIndex > scoreIndex, 'ctrip star level should follow ctrip score');
+});
+
 test('modal layering uses z-index tokens without inline overrides', () => {
   const modalCss = readStyleFile('components/modal-form.css');
   const uiUtils = readProjectFile('src/renderer/modules/ui-utils.js');

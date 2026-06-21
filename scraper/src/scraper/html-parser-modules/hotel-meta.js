@@ -56,15 +56,47 @@ function extractHotelMetaFromHtml(html, url) {
   );
 
   const score = extractHotelScoreFromHtml(html, mergedText, description);
+  const ctripDiamondLevel = extractHotelDiamondLevelFromHtml(html);
 
   return {
     hotelName: normalizeText(hotelName).replace(/\(/g, '（').replace(/\)/g, '）'),
     address,
     score,
+    ctripDiamondLevel,
     geoInfo: extractGeoInfoFromHtml(html),
     mergedText,
     sourceUrl: url
   };
+}
+
+function normalizeDiamondLevel(value) {
+  const level = toNumber(value);
+  if (level === null || level <= 0 || level > 5) {
+    return null;
+  }
+  return Math.round(level);
+}
+
+function extractHotelDiamondLevelFromHtml(html) {
+  const source = String(html || '');
+  const $ = cheerio.load(source);
+  const ariaLabel = pickFirst(
+    normalizeText($('[class*="hotelLevel"][aria-label*="diamonds"]').first().attr('aria-label')),
+    normalizeText($('[aria-label*="out of 5 diamonds"]').first().attr('aria-label')),
+    normalizeText($('[aria-label*="out of 5 diamond"]').first().attr('aria-label'))
+  );
+  const ariaLevel = normalizeDiamondLevel(
+    extractFirstMatch(ariaLabel, /([1-5](?:\.\d+)?)\s*out of\s*5\s*diamonds?/i)
+  );
+  if (ariaLevel !== null) {
+    return ariaLevel;
+  }
+
+  const levelBlock =
+    source.match(/<span[^>]+class=["'][^"']*hotelLevel[^"']*["'][^>]*>[\s\S]{0,1500}?<\/span>/i)?.[0] ||
+    '';
+  const iconCount = (levelBlock.match(/ic_new_diamond/g) || []).length;
+  return normalizeDiamondLevel(iconCount);
 }
 
 function extractHotelScoreFromHtml(html, mergedText = '', description = '') {
@@ -268,5 +300,6 @@ function extractGeoInfoFromHtml(html) {
 module.exports = {
   extractGeoInfoFromHtml,
   extractHotelMetaFromHtml,
+  extractHotelDiamondLevelFromHtml,
   extractHotelScoreFromHtml
 };

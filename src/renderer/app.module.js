@@ -498,6 +498,7 @@ function setupEventListeners() {
 
   addEvent('filterName', 'change', applyFilters);
   addEvent('filterScore', 'change', applyFilters);
+  addEvent('filterDiamondLevel', 'change', applyFilters);
   addEvent('filterFavorite', 'change', applyFilters);
   addEvent('filterTemplate', 'change', applyFilters);
   addEvent('filterTransportTime', 'change', applyFilters);

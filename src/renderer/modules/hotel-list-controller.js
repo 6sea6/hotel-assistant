@@ -29,6 +29,7 @@ import {
   formatDistanceValue,
   formatTransportValue
 } from './hotel-filters.js';
+import { formatCtripDiamondLevel } from './hotel-card-fields.js';
 import {
   buildHotelNameFilterOptions,
   syncHotelNameFilterOptions
@@ -193,6 +194,7 @@ export function showHotelDetails(id) {
         : '-'
     )
   );
+  content.push(getField('携程星级', formatCtripDiamondLevel(hotel.ctrip_diamond_level)));
   content.push(getField('目的地', hotel.destination));
   content.push(getField('距离', formatDistanceValue(hotel.distance, 'km')));
   content.push(
@@ -311,6 +313,7 @@ export function applyFilters() {
   replaceCurrentFilters({
     name: getValue('filterName'),
     score: getValue('filterScore'),
+    diamondLevel: getValue('filterDiamondLevel'),
     favorite: getValue('filterFavorite'),
     template: getValue('filterTemplate'),
     transportTime: getValue('filterTransportTime'),
@@ -325,6 +328,7 @@ export function clearFilters() {
   [
     'filterName',
     'filterScore',
+    'filterDiamondLevel',
     'filterFavorite',
     'filterTemplate',
     'filterTransportTime',

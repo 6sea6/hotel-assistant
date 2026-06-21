@@ -12,6 +12,7 @@ const {
 } = require('./html-parser-modules/embedded-json');
 const {
   extractGeoInfoFromHtml,
+  extractHotelDiamondLevelFromHtml,
   extractHotelMetaFromHtml,
   extractHotelScoreFromHtml
 } = require('./html-parser-modules/hotel-meta');
@@ -29,6 +30,7 @@ module.exports = {
   extractEmbeddedObject,
   extractExcludedPricesFromSnippet,
   extractGeoInfoFromHtml,
+  extractHotelDiamondLevelFromHtml,
   extractHotelMetaFromHtml,
   extractHotelScoreFromHtml,
   extractJsonBlock,

@@ -45,6 +45,7 @@ function makeHotel(overrides = {}) {
     total_price: 300,
     daily_price: 150,
     ctrip_score: 4.5,
+    ctrip_diamond_level: 4,
     distance: '1.2公里',
     subway_distance: '0.8',
     transport_time: '35分钟',
@@ -65,6 +66,7 @@ test('buildHotelDerivedFields correctly parses numeric fields', async () => {
   assert.equal(d.totalPriceNumber, 300);
   assert.equal(d.dailyPriceNumber, 150);
   assert.equal(d.scoreNumber, 4.5);
+  assert.equal(d.diamondLevelNumber, 4);
   assert.equal(d.distanceNumber, 1.2);
   assert.equal(d.subwayDistanceNumber, 0.8);
   assert.equal(d.transportTimeNumber, 35);
@@ -76,6 +78,7 @@ test('buildHotelDerivedFields returns null for missing or invalid numbers', asyn
     total_price: null,
     daily_price: 0,
     ctrip_score: -1,
+    ctrip_diamond_level: 0,
     distance: '',
     subway_distance: null,
     transport_time: '无'
@@ -85,6 +88,7 @@ test('buildHotelDerivedFields returns null for missing or invalid numbers', asyn
   assert.equal(d.totalPriceNumber, null);
   assert.equal(d.dailyPriceNumber, null);
   assert.equal(d.scoreNumber, null);
+  assert.equal(d.diamondLevelNumber, null);
   assert.equal(d.distanceNumber, null);
   assert.equal(d.subwayDistanceNumber, null);
   assert.equal(d.transportTimeNumber, null);
@@ -179,6 +183,7 @@ test('applyFiltersToHotels produces same result with and without _derived', asyn
     { name: '酒店A' },
     { score: '4.7' },
     { score: '4.0' },
+    { diamondLevel: '4' },
     { transportTime: '30' },
     { subwayDistance: '1.0' },
     { name: '酒店A', score: '4.0', transportTime: '30' }
@@ -205,6 +210,22 @@ test('applyFiltersToHotels supports ctrip score 4.7 threshold', async () => {
   assert.deepEqual(filteredIds, [1, 2]);
 });
 
+test('applyFiltersToHotels supports ctrip diamond level threshold', async () => {
+  const { filters } = await loadModules();
+  const hotels = [
+    makeHotel({ id: 1, ctrip_diamond_level: 5 }),
+    makeHotel({ id: 2, ctrip_diamond_level: 4 }),
+    makeHotel({ id: 3, ctrip_diamond_level: 3 }),
+    makeHotel({ id: 4, ctrip_diamond_level: null })
+  ];
+
+  const filteredIds = filters
+    .applyFiltersToHotels(hotels, { diamondLevel: '4' })
+    .map((hotel) => hotel.id);
+
+  assert.deepEqual(filteredIds, [1, 2]);
+});
+
 test('sortHotels produces same order with and without _derived', async () => {
   const { derived, filters } = await loadModules();
   const hotels = [
@@ -221,6 +242,19 @@ test('sortHotels produces same order with and without _derived', async () => {
     const withDerived = filters.sortHotels(hotelsWithDerived, mode).map((h) => h.id);
     assert.deepEqual(withDerived, withoutDerived, `Sort mode ${mode} should match`);
   }
+});
+
+test('sortHotels defaults invalid or empty sort mode to low price first', async () => {
+  const { filters } = await loadModules();
+  const hotels = [
+    makeHotel({ id: 1, total_price: 300, ctrip_score: 4.8 }),
+    makeHotel({ id: 2, total_price: 200, ctrip_score: 3.5 }),
+    makeHotel({ id: 3, total_price: 500, ctrip_score: 4.2 })
+  ];
+
+  assert.deepEqual(filters.sortHotels(hotels).map((hotel) => hotel.id), [2, 1, 3]);
+  assert.deepEqual(filters.sortHotels(hotels, '').map((hotel) => hotel.id), [2, 1, 3]);
+  assert.deepEqual(filters.sortHotels(hotels, 'unknown').map((hotel) => hotel.id), [2, 1, 3]);
 });
 
 test('getVisibleHotelSummary produces same result with and without _derived', async () => {

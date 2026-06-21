@@ -61,6 +61,13 @@ const HOTEL_EDITABLE_FIELDS = [
     description: '0-5 分评分数字'
   },
   {
+    key: 'ctrip_diamond_level',
+    label: '携程星级',
+    type: 'number|null',
+    required: false,
+    description: '携程详情页展示的 1-5 星等级'
+  },
+  {
     key: 'destination',
     label: '目的地',
     type: 'string',

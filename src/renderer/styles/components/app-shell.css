@@ -468,8 +468,21 @@ select.input {
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--primary-color);
   flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 2px solid var(--primary-color);
+  border-radius: 50%;
+  background: var(--bg-primary);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.sort-mode-option input[type='radio']:checked {
+  background:
+    radial-gradient(circle at center, var(--primary-color) 0 38%, transparent 42%),
+    var(--bg-primary);
 }
 
 .sort-mode-option span {

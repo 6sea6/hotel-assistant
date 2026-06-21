@@ -30,7 +30,11 @@ import {
   normalizeWheelToStep
 } from './virtual-scrollbar-math.js';
 import { createHotelListRow } from './hotel-list-table-renderer.js';
-import { cleanupHotelActionArtifacts, createHotelCard } from './hotel-list-card-renderer.js';
+import {
+  alignHotelCardTitleRows,
+  cleanupHotelActionArtifacts,
+  createHotelCard
+} from './hotel-list-card-renderer.js';
 
 /** @type {ReturnType<typeof createDefaultVirtualState>|null} */
 let virtualHotelListState = null;
@@ -887,6 +891,7 @@ export function renderVirtualHotelCardGrid(
     wheelDuration: 180,
     afterItemsRendered: (nextItemsContainer) => {
       cleanupHotelActionArtifacts(nextItemsContainer);
+      alignHotelCardTitleRows(nextItemsContainer);
     },
     getRangeKeySuffix: () => columns
   });

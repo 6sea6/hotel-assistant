@@ -132,6 +132,7 @@ function buildRecordFromRoom(template, scraped, matchedTemplate, room, context, 
     check_out_date: (template && template.check_out_date) || null,
     days: context.days || null,
     ctrip_score: toNumber(scraped && scraped.ctrip_score),
+    ctrip_diamond_level: toNumber(scraped && scraped.ctrip_diamond_level),
     destination: normalizePlaceName(
       (matchedTemplate && matchedTemplate.destination) || (template && template.destination)
     ),

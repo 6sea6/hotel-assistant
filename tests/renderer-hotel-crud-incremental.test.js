@@ -227,6 +227,7 @@ test('saveHotel add success does not call getAllHotels', async () => {
   setFormField('checkOutDate', '');
   setFormField('days', '');
   setFormField('ctripScore', '');
+  setFormField('ctripDiamondLevel', '2');
   setFormField('destination', '');
   setFormField('distance', '');
   setFormField('subwayStation', '');
@@ -243,10 +244,12 @@ test('saveHotel add success does not call getAllHotels', async () => {
   const addedHotel = { id: 100, name: '新宾馆', is_favorite: 0 };
   let addCallCount = 0;
   let getAllCallCount = 0;
+  let addedPayload = null;
 
   window.electronAPI = {
-    addHotel: async () => {
+    addHotel: async (hotel) => {
       addCallCount++;
+      addedPayload = hotel;
       return addedHotel;
     },
     updateHotel: async () => null,
@@ -261,6 +264,7 @@ test('saveHotel add success does not call getAllHotels', async () => {
   await flushMicrotasks();
 
   assert.equal(addCallCount, 1);
+  assert.equal(addedPayload.ctrip_diamond_level, 2);
   assert.equal(getAllCallCount, 0, 'getAllHotels should not be called on success');
   assert.equal(globalThis.__testState.hotels.length, 1);
   assert.equal(globalThis.__testState.hotels[0].name, '新宾馆');

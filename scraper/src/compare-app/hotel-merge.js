@@ -24,6 +24,7 @@ const COMPARE_APP_HOTEL_ALLOWED_KEYS = new Set([
   'check_out_date',
   'days',
   'ctrip_score',
+  'ctrip_diamond_level',
   'destination',
   'distance',
   'subway_station',

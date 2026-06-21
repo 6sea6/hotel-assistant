@@ -797,6 +797,9 @@ async function scrapeCtripHotel(url, template, options = {}) {
     ...parsedSources.map((item) => item.meta.score),
     ...parsedSources.map((item) => extractHotelScoreFromHtml(item.html))
   );
+  const resolvedDiamondLevel = pickFirst(
+    ...parsedSources.map((item) => item.meta.ctripDiamondLevel)
+  );
   const shouldSaveSnapshots =
     !options.htmlPath && (options.saveHtml || !selectedRoom || selectedRoom.price === null);
   const snapshotDir = shouldSaveSnapshots
@@ -849,6 +852,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
       primarySource.meta.address
     ),
     ctrip_score: resolvedScore,
+    ctrip_diamond_level: resolvedDiamondLevel,
     geo: primarySource.meta.geoInfo,
     room: selectedRoom,
     room_candidates: persistedRoomBlocks,

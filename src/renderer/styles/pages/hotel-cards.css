@@ -57,6 +57,12 @@
 .hotel-card-header-main .hotel-name {
   margin-bottom: 0;
   padding-right: 0;
+  line-height: 1.45;
+  min-height: var(--hotel-card-title-row-height, auto);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .hotel-favorite-star {
@@ -108,6 +114,10 @@
   min-width: 0;
 }
 
+.hotel-card-level-row {
+  min-width: 0;
+}
+
 .hotel-card-original-room {
   margin-bottom: 0;
   font-size: 15px;
@@ -116,6 +126,66 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hotel-level-badge {
+  position: relative;
+  isolation: isolate;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 34%, var(--border-color));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary));
+  color: var(--primary-color);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-theme='colorful-mode'] .hotel-level-badge {
+  border-color: transparent;
+  background: transparent;
+}
+
+.hotel-level-badge-text {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-theme='colorful-mode'] .hotel-level-badge-text {
+  background: linear-gradient(90deg, #ff84ae 0%, #fdba64 30%, #79cbff 66%, #8a78f2 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+[data-theme='colorful-mode'] .hotel-level-badge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+        90deg,
+        color-mix(in srgb, #ff84ae 12%, var(--bg-primary)),
+        color-mix(in srgb, #fdba64 10%, var(--bg-primary)) 30%,
+        color-mix(in srgb, #79cbff 12%, var(--bg-primary)) 66%,
+        color-mix(in srgb, #8a78f2 12%, var(--bg-primary))
+      )
+      padding-box,
+    linear-gradient(90deg, #ff84ae 0%, #fdba64 30%, #79cbff 66%, #8a78f2 100%) border-box;
 }
 
 .hotel-card-meta-pair {

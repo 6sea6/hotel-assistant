@@ -6,6 +6,7 @@ const SHARED_HOTEL_FIELDS = [
   'check_out_date',
   'days',
   'ctrip_score',
+  'ctrip_diamond_level',
   'destination',
   'distance',
   'subway_station',

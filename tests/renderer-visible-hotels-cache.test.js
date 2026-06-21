@@ -69,6 +69,7 @@ function makeHotels(count) {
       total_price: 200 + (i % 10) * 50,
       daily_price: 100 + (i % 10) * 25,
       ctrip_score: 3.0 + (i % 5) * 0.4,
+      ctrip_diamond_level: 1 + (i % 5),
       distance: `${1 + (i % 20)}km`,
       transport_time: `${5 + (i % 15)}min`,
       subway_distance: `${0.1 + (i % 10) * 0.2}km`,
@@ -80,6 +81,7 @@ function makeHotels(count) {
         totalPriceNumber: 200 + (i % 10) * 50,
         dailyPriceNumber: 100 + (i % 10) * 25,
         scoreNumber: 3.0 + (i % 5) * 0.4,
+        diamondLevelNumber: 1 + (i % 5),
         distanceNumber: 1 + (i % 20),
         subwayDistanceNumber: 0.1 + (i % 10) * 0.2,
         transportTimeNumber: 5 + (i % 15),
@@ -248,6 +250,7 @@ test('buildVisibleHotelsFiltersKey 输出稳定', async () => {
   const filters1 = {
     name: '宾馆A',
     score: '4.0',
+    diamondLevel: '4',
     favorite: '1',
     template: '',
     transportTime: '30',
@@ -256,6 +259,7 @@ test('buildVisibleHotelsFiltersKey 输出稳定', async () => {
   const filters2 = {
     name: '宾馆A',
     score: '4.0',
+    diamondLevel: '4',
     favorite: '1',
     template: '',
     transportTime: '30',
@@ -264,6 +268,7 @@ test('buildVisibleHotelsFiltersKey 输出稳定', async () => {
   const filters3 = {
     name: '宾馆B',
     score: '4.0',
+    diamondLevel: '4',
     favorite: '1',
     template: '',
     transportTime: '30',
@@ -282,6 +287,16 @@ test('buildVisibleHotelsFiltersKey 不含 sortMode', async () => {
   const key = getVisibleHotelsCacheKey(filters);
   assert.ok(!key.includes('review_high'), 'filtersKey 不应包含 sortMode');
   assert.ok(!key.includes('sortMode'), 'filtersKey 不应包含 sortMode 字段名');
+});
+
+test('buildVisibleHotelsFiltersKey 包含携程星级筛选', async () => {
+  const { modelMod } = await loadModules();
+  const { getVisibleHotelsCacheKey } = modelMod;
+
+  const base = { name: '宾馆A', score: '4.0', diamondLevel: '4' };
+  const changed = { name: '宾馆A', score: '4.0', diamondLevel: '5' };
+
+  assert.notEqual(getVisibleHotelsCacheKey(base), getVisibleHotelsCacheKey(changed));
 });
 
 test('markVisibleHotelsCacheDirty 独立失效', async () => {
@@ -320,6 +335,7 @@ test('空筛选条件和默认 sortMode', async () => {
     filtersMod.DEFAULT_SORT_MODE,
     '空 sortMode 应使用默认值'
   );
+  assert.equal(filtersMod.DEFAULT_SORT_MODE, 'price_low');
 });
 
 test('多个筛选条件同时变化', async () => {

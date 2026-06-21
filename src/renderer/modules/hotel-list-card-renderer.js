@@ -16,6 +16,8 @@ import { isHotelInputPriorityActive, queueHotelRenderResume } from './render-sch
 import { formatSubwayInfo } from './hotel-filters.js';
 import { normalizeHotelCardVisibleFields, renderCardFields } from './hotel-card-fields.js';
 
+const CARD_TITLE_ROW_HEIGHT_VAR = '--hotel-card-title-row-height';
+
 export function createHotelCard(hotel, index) {
   const rank = index + 1;
   const isTop3 = rank <= 3;
@@ -75,15 +77,23 @@ export function createHotelCard(hotel, index) {
 
   const originalRoomHtml =
     headerFieldItems.find((item) => item.key === 'original_room_type')?.html || '';
+  const diamondLevelHtml =
+    headerFieldItems.find((item) => item.key === 'ctrip_diamond_level')?.html || '';
   const websiteHtml = headerFieldItems.find((item) => item.key === 'website')?.html || '';
   const addressHtml = headerFieldItems.find((item) => item.key === 'address')?.html || '';
   const extraHeaderHtml = headerFieldItems
-    .filter((item) => !['original_room_type', 'website', 'address'].includes(item.key))
+    .filter(
+      (item) =>
+        !['ctrip_diamond_level', 'original_room_type', 'website', 'address'].includes(item.key)
+    )
     .map((item) => item.html)
     .join('');
 
   const originalRoomLineHtml = originalRoomHtml
     ? `<div class="hotel-card-original-room-row">${originalRoomHtml}</div>`
+    : '';
+  const diamondLevelLineHtml = diamondLevelHtml
+    ? `<div class="hotel-card-level-row">${diamondLevelHtml}</div>`
     : '';
 
   const metaPairClasses = [
@@ -108,8 +118,9 @@ export function createHotelCard(hotel, index) {
     : '';
 
   const headerMetaHtml =
-    originalRoomLineHtml || metaPairHtml || extraHeaderLineHtml
+    diamondLevelLineHtml || originalRoomLineHtml || metaPairHtml || extraHeaderLineHtml
       ? `<div class="hotel-card-header-meta">
+          ${diamondLevelLineHtml}
           ${originalRoomLineHtml}
           ${metaPairHtml}
           ${extraHeaderLineHtml}
@@ -160,6 +171,40 @@ export function createHotelCard(hotel, index) {
   `;
 
   return card;
+}
+
+function getCardTop(card) {
+  return card.getBoundingClientRect().top;
+}
+
+function getElementHeight(element) {
+  return element.getBoundingClientRect().height;
+}
+
+export function alignHotelCardTitleRows(container) {
+  const cards = Array.from(container.querySelectorAll('.hotel-card'));
+  const rows = new Map();
+
+  for (const card of cards) {
+    const name = card.querySelector('.hotel-card-header-main .hotel-name');
+
+    name.style.removeProperty(CARD_TITLE_ROW_HEIGHT_VAR);
+
+    const rowKey = String(Math.round(getCardTop(card)));
+    const height = Math.ceil(getElementHeight(name));
+    if (!height) continue;
+
+    const row = rows.get(rowKey) || { height: 0, names: [] };
+    row.height = Math.max(row.height, height);
+    row.names.push(name);
+    rows.set(rowKey, row);
+  }
+
+  for (const row of rows.values()) {
+    for (const name of row.names) {
+      name.style.setProperty(CARD_TITLE_ROW_HEIGHT_VAR, `${row.height}px`);
+    }
+  }
 }
 
 export function cleanupHotelActionArtifacts(container) {
@@ -223,6 +268,7 @@ function renderHotelCardsInBatches(
   }
 
   cleanupHotelActionArtifacts(container);
+  alignHotelCardTitleRows(container);
   options.finishHotelRender?.(taskVersion, perfLabel);
 }
 
@@ -240,6 +286,7 @@ export function renderHotelCardGrid(
     });
     container.appendChild(fragment);
     cleanupHotelActionArtifacts(container);
+    alignHotelCardTitleRows(container);
     options.finishHotelRender?.(taskVersion, perfLabel);
     return;
   }

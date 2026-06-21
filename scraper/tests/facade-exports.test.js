@@ -46,6 +46,7 @@ test('html-parser facade keeps room extraction helpers stable', () => {
       'extractEmbeddedObject',
       'extractExcludedPricesFromSnippet',
       'extractGeoInfoFromHtml',
+      'extractHotelDiamondLevelFromHtml',
       'extractHotelMetaFromHtml',
       'extractHotelScoreFromHtml',
       'extractJsonBlock',

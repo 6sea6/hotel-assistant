@@ -204,6 +204,7 @@
  * @property {string|null} [check_out_date]
  * @property {number|string|null} [days]
  * @property {number|string|null} [ctrip_score]
+ * @property {number|string|null} [ctrip_diamond_level]
  * @property {string|null} [destination]
  * @property {string|null} [distance]
  * @property {string|null} [subway_station]
@@ -238,6 +239,7 @@
  * @property {string|null} check_out_date
  * @property {number|null} days
  * @property {number|null} ctrip_score
+ * @property {number|null} ctrip_diamond_level
  * @property {string} destination
  * @property {string} distance
  * @property {string} subway_station

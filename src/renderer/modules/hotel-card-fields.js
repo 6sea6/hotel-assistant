@@ -42,6 +42,7 @@ export function setFieldRenderHelpers(helpers) {
 
 export const SUPPORTED_HOTEL_CARD_FIELD_KEYS = Object.freeze(
   new Set([
+    'ctrip_diamond_level',
     'original_room_type',
     'address',
     'website',
@@ -67,6 +68,7 @@ export const SUPPORTED_HOTEL_CARD_FIELD_KEYS = Object.freeze(
 );
 
 export const DEFAULT_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
+  'ctrip_diamond_level',
   'original_room_type',
   'address',
   'website',
@@ -94,8 +96,33 @@ export function normalizeHotelCardVisibleFields(value) {
   return [...new Set(value.filter((key) => typeof key === 'string' && allowed.has(key)))];
 }
 
+export function formatCtripDiamondLevel(value) {
+  const rawText = String(value ?? '').trim();
+  if (!rawText) {
+    return null;
+  }
+
+  const numeric = Number(rawText);
+  const textLevel = rawText.match(/([1-5](?:\.\d+)?)(?:\s*out of\s*5)?\s*(?:钻|星|diamonds?)/i);
+  const rawLevel = Number.isFinite(numeric) ? numeric : textLevel ? Number(textLevel[1]) : NaN;
+  if (!Number.isFinite(rawLevel)) {
+    return null;
+  }
+
+  const level = Math.max(1, Math.min(5, Math.round(rawLevel)));
+  return `${'★'.repeat(level)} 携程${level}星`;
+}
+
 /** @type {HotelCardFieldDef[]} */
 export const HOTEL_CARD_FIELDS = [
+  {
+    key: 'ctrip_diamond_level',
+    label: '携程星级',
+    group: 'header',
+    getValue: (hotel) => formatCtripDiamondLevel(hotel.ctrip_diamond_level),
+    render: (value) =>
+      `<div class="hotel-level-badge"><span class="hotel-level-badge-text">${escapeHtml(value)}</span></div>`
+  },
   {
     key: 'original_room_type',
     label: '原始房型',

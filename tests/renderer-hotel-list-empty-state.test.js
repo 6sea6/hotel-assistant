@@ -103,7 +103,7 @@ async function loadHotelListModule() {
   writeFile(
     path.join(tempRoot, 'hotel-filters.js'),
     `
-    export const DEFAULT_SORT_MODE = 'review_high';
+    export const DEFAULT_SORT_MODE = 'price_low';
     export function applyFiltersToHotels(hotels) { return hotels || []; }
     export function sortHotels(hotels) { return hotels || []; }
     export function getVisibleHotelSummary(hotels) { return { hotelCount: hotels.length, roomTypeCount: hotels.length }; }
@@ -127,6 +127,7 @@ async function loadHotelListModule() {
     path.join(tempRoot, 'hotel-card-fields.js'),
     `
     export function normalizeHotelCardVisibleFields() { return []; }
+    export function formatCtripDiamondLevel() { return null; }
     export function renderCardFields() { return { headerFieldItems: [], compactItems: [], fullItems: [], footerItems: [], actionItems: [] }; }
     `
   );

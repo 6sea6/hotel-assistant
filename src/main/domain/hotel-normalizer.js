@@ -79,6 +79,7 @@ function normalizeHotelPayload(hotel = {}, existingHotel = {}) {
   normalized.daily_price = normalizeNullableNumber(normalized.daily_price);
   normalized.days = normalizeNullableNumber(normalized.days);
   normalized.ctrip_score = normalizeNullableNumber(normalized.ctrip_score);
+  normalized.ctrip_diamond_level = normalizeNullableNumber(normalized.ctrip_diamond_level);
   normalized.room_count = normalizeNullableNumber(normalized.room_count) || 1;
 
   normalized.distance = normalizeStringNumber(normalized.distance);

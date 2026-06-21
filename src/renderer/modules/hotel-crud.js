@@ -309,6 +309,7 @@ export function editHotel(id) {
   setElementValue('checkOutDate', hotel.check_out_date || '');
   setElementValue('days', hotel.days || '');
   setElementValue('ctripScore', hotel.ctrip_score || '');
+  setElementValue('ctripDiamondLevel', hotel.ctrip_diamond_level || '');
   setElementValue('destination', hotel.destination || '');
   setElementValue('distance', hotel.distance || '');
   setElementValue('subwayStation', hotel.subway_station || '');
@@ -463,6 +464,7 @@ export async function saveHotel() {
     check_out_date: getVal('checkOutDate') || null,
     days: parseInt(getVal('days')) || null,
     ctrip_score: parseFloat(getVal('ctripScore')) || null,
+    ctrip_diamond_level: parseFloat(getVal('ctripDiamondLevel')) || null,
     destination: getVal('destination').trim(),
     distance: getVal('distance').trim(),
     subway_station: getVal('subwayStation').trim(),

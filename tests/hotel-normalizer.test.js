@@ -19,6 +19,7 @@ test('hotel normalizer trims text fields and normalizes numeric fields', () => {
     daily_price: '344.25',
     days: '2',
     ctrip_score: '4.8',
+    ctrip_diamond_level: '4',
     distance: ' 1.2 ',
     subway_distance: 0.8,
     transport_time: ' 18 ',
@@ -39,6 +40,7 @@ test('hotel normalizer trims text fields and normalizes numeric fields', () => {
   assert.equal(normalized.daily_price, 344.25);
   assert.equal(normalized.days, 2);
   assert.equal(normalized.ctrip_score, 4.8);
+  assert.equal(normalized.ctrip_diamond_level, 4);
   assert.equal(normalized.distance, '1.2');
   assert.equal(normalized.subway_distance, '0.8');
   assert.equal(normalized.transport_time, '18');
