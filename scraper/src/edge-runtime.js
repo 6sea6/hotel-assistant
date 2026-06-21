@@ -56,22 +56,57 @@ const CTRIP_LOGIN_COOKIE_SIGNALS = Object.freeze([
   'AHeadUserInfo',
   '_udl'
 ]);
+const EDGE_PROFILE_LOCKED_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
-function hasCtripLoginCookieSignal(userDataDir, profileDirectory) {
-  return getEdgeProfileCookiePaths(userDataDir, profileDirectory).some((filePath) => {
-    try {
-      if (!fs.existsSync(filePath) || fs.statSync(filePath).size <= 0) {
-        return false;
-      }
-      const cookieBytes = fs.readFileSync(filePath);
-      return CTRIP_LOGIN_COOKIE_SIGNALS.some((signal) => cookieBytes.includes(signal));
-    } catch (_error) {
-      return false;
-    }
-  });
+function isEdgeProfileFileLockedError(error) {
+  if (!error) {
+    return false;
+  }
+  const code = error.code ? String(error.code).toUpperCase() : '';
+  const message = error.message ? String(error.message).toLowerCase() : '';
+  return (
+    EDGE_PROFILE_LOCKED_ERROR_CODES.has(code) ||
+    message.includes('resource busy') ||
+    message.includes('locked') ||
+    message.includes('being used by another process')
+  );
 }
 
-function hasReusableEdgeProfile(userDataDir, profileDirectory) {
+function inspectCtripLoginCookieSignal(userDataDir, profileDirectory) {
+  const result = {
+    hasCookieSignal: false,
+    cookieReadBlocked: false,
+    blockedPath: '',
+    blockedError: ''
+  };
+
+  for (const filePath of getEdgeProfileCookiePaths(userDataDir, profileDirectory)) {
+    try {
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).size <= 0) {
+        continue;
+      }
+      const cookieBytes = fs.readFileSync(filePath);
+      if (CTRIP_LOGIN_COOKIE_SIGNALS.some((signal) => cookieBytes.includes(signal))) {
+        result.hasCookieSignal = true;
+        return result;
+      }
+    } catch (error) {
+      if (isEdgeProfileFileLockedError(error) && !result.cookieReadBlocked) {
+        result.cookieReadBlocked = true;
+        result.blockedPath = filePath;
+        result.blockedError = error && error.message ? error.message : String(error);
+      }
+    }
+  }
+
+  return result;
+}
+
+function hasCtripLoginCookieSignal(userDataDir, profileDirectory) {
+  return inspectCtripLoginCookieSignal(userDataDir, profileDirectory).hasCookieSignal;
+}
+
+function inspectReusableEdgeProfile(userDataDir, profileDirectory) {
   const hasBrowserProfile = getEdgeProfileSignalPaths(userDataDir, profileDirectory).some((filePath) => {
     try {
       return fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
@@ -79,7 +114,16 @@ function hasReusableEdgeProfile(userDataDir, profileDirectory) {
       return false;
     }
   });
-  return hasBrowserProfile && hasCtripLoginCookieSignal(userDataDir, profileDirectory);
+  const cookieInspection = inspectCtripLoginCookieSignal(userDataDir, profileDirectory);
+  return {
+    reusable: hasBrowserProfile && cookieInspection.hasCookieSignal,
+    hasBrowserProfile,
+    ...cookieInspection
+  };
+}
+
+function hasReusableEdgeProfile(userDataDir, profileDirectory) {
+  return inspectReusableEdgeProfile(userDataDir, profileDirectory).reusable;
 }
 
 module.exports = {
@@ -88,6 +132,8 @@ module.exports = {
   getEdgeProfileSignalPaths,
   hasCtripLoginCookieSignal,
   hasReusableEdgeProfile,
+  inspectReusableEdgeProfile,
+  isEdgeProfileFileLockedError,
   resolveEdgeProfileDirectory,
   resolveEdgeUserDataDir,
   toBoolean

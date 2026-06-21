@@ -16,6 +16,7 @@ const { prepareFullBundle } = require('../scripts/package/prepare-full-bundle');
 const { verifyPackageLayout } = require('../scripts/package/verify-package-layout');
 const {
   buildRceditArgs,
+  buildWindowsResourceOptions,
   toWindowsProductVersion
 } = require('../scripts/package/edit-extracted-exe-resources');
 const {
@@ -262,8 +263,13 @@ test('electron-builder config excludes development perf tooling and JSONL logs',
 });
 
 test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', () => {
+  const projectRoot = path.resolve(__dirname, '..');
   const packageJson = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
+    fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')
+  );
+  const installerInclude = fs.readFileSync(
+    path.join(projectRoot, 'build', 'installer.nsh'),
+    'utf-8'
   );
   const nsis = packageJson.build.nsis;
 
@@ -271,7 +277,13 @@ test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', ()
   assert.deepEqual(nsis.installerLanguages, ['zh_CN']);
   assert.equal(nsis.displayLanguageSelector, false);
   assert.equal(nsis.unicode, true);
+  assert.equal(nsis.include, 'installer.nsh');
   assert.equal(nsis.createDesktopShortcut, 'always');
+  assert.match(installerInclude, /customPageAfterChangeDir/);
+  assert.match(installerInclude, /nsDialogs::Create/);
+  assert.match(installerInclude, /创建桌面快捷方式/);
+  assert.match(installerInclude, /customInstall/);
+  assert.match(installerInclude, /Delete "\$newDesktopLink"/);
   assert.equal(packageJson.build.productName, '宾馆比较终极版');
   assert.equal(packageJson.build.afterExtract, 'scripts/package/edit-extracted-exe-resources.js');
   assert.equal(packageJson.build.win.signAndEditExecutable, false);
@@ -283,13 +295,20 @@ test('Windows exe resources are edited before asar integrity is added', () => {
   const packageJson = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8')
   );
+  const executablePath = 'C:\\tmp\\electron.exe';
+  const iconPath = 'C:\\tmp\\icon.ico';
   const args = buildRceditArgs({
-    executablePath: 'C:\\tmp\\electron.exe',
-    iconPath: 'C:\\tmp\\icon.ico',
+    executablePath,
+    iconPath,
+    packageJson
+  });
+  const resourceOptions = buildWindowsResourceOptions({
+    executablePath,
+    iconPath,
     packageJson
   });
 
-  assert.equal(toWindowsProductVersion('8.9.0'), '8.9.0.0');
+  assert.equal(toWindowsProductVersion(packageJson.version), `${packageJson.version}.0`);
   assert.deepEqual(args.slice(0, 4), [
     'C:\\tmp\\electron.exe',
     '--set-version-string',
@@ -300,8 +319,18 @@ test('Windows exe resources are edited before asar integrity is added', () => {
   assert.equal(args[args.indexOf('--set-icon') + 1], 'C:\\tmp\\icon.ico');
   assert.equal(args[args.indexOf('ProductName') + 1], '宾馆比较终极版');
   assert.equal(args[args.indexOf('--set-file-version') + 1], packageJson.version);
-  assert.equal(args[args.indexOf('--set-product-version') + 1], '8.9.0.0');
+  assert.equal(
+    args[args.indexOf('--set-product-version') + 1],
+    toWindowsProductVersion(packageJson.version)
+  );
   assert.equal(args[args.indexOf('CompanyName') + 1], 'Sea');
+  assert.equal(resourceOptions.file, executablePath);
+  assert.equal(resourceOptions.iconPath, iconPath);
+  assert.equal(resourceOptions.fileVersion, packageJson.version);
+  assert.equal(resourceOptions.productVersion, toWindowsProductVersion(packageJson.version));
+  assert.equal(resourceOptions.versionStrings.FileDescription, '宾馆比较终极版');
+  assert.equal(resourceOptions.versionStrings.ProductName, '宾馆比较终极版');
+  assert.equal(resourceOptions.versionStrings.CompanyName, 'Sea');
 });
 
 test('scraper dependency packages are declared only in the workspace package', () => {

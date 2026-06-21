@@ -122,6 +122,11 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
         options.autoEdgeMock && options.autoEdgeMock.hasReusableEdgeProfile
           ? options.autoEdgeMock.hasReusableEdgeProfile
           : () => true,
+      ...(options.autoEdgeMock && options.autoEdgeMock.inspectReusableEdgeProfile
+        ? {
+            inspectReusableEdgeProfile: options.autoEdgeMock.inspectReusableEdgeProfile
+          }
+        : {}),
       launchAndWaitForEdge:
         options.autoEdgeMock && options.autoEdgeMock.launchAndWaitForEdge
           ? options.autoEdgeMock.launchAndWaitForEdge
@@ -1170,6 +1175,79 @@ test('auto-edge profile preparation is capped to effective worker limit', async 
   }
 });
 
+test('auto-edge locked worker profile preparation falls back to sequential batch', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-profile-locked-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [1, 2, 3].map((index) => ({
+    url: `https://hotels.ctrip.com/hotels/detail/?hotelId=${930000 + index}`,
+    hotelId: `profile-locked-${index}`,
+    source: 'detail-input'
+  }));
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, { hotelInputs });
+  const preparedCalls = [];
+  const poolCalls = [];
+  const events = [];
+  const lockedError = Object.assign(
+    new Error(
+      "EBUSY: resource busy or locked, copyfile 'state/edge-profile/Default/Network/Cookies'"
+    ),
+    {
+      code: 'EBUSY',
+      syscall: 'copyfile',
+      path: path.join('state', 'edge-profile', 'Default', 'Network', 'Cookies')
+    }
+  );
+
+  mockedPaths.push(
+    installMock('../src/batch-edge-worker-pool', {
+      cleanupBatchEdgeWorkerProfileClones: () => undefined,
+      describeLockedEdgeProfileCopyError: (error) =>
+        `浏览器登录资料正在被 Edge 占用：${error.path}；本次已改为单浏览器顺序采集。`,
+      isLockedEdgeProfileCopyError: (error) => error && error.code === 'EBUSY',
+      prepareBatchEdgeWorkerProfileClones: (params) => {
+        preparedCalls.push(params);
+        throw lockedError;
+      },
+      createBatchEdgeWorkerPool: async () => {
+        poolCalls.push({});
+        throw new Error('locked profile fallback should not create a batch Edge worker pool');
+      }
+    })
+  );
+
+  try {
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'batch-concurrency': 3,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent: (event) => events.push(event)
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(preparedCalls.length, 1);
+    assert.equal(poolCalls.length, 0);
+    assert.equal(result.performance.concurrency, 3);
+    assert.equal(result.performance.effectiveConcurrency, 1);
+    assert.equal(result.performance.parallelRequestedButDisabled, true);
+    assert.match(result.performance.parallelDisabledReason, /单浏览器顺序采集/);
+    assert.ok(events.some((event) => event.type === 'edge:parallel-disabled'));
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('list input over max concurrency prepares capped batch Edge workers immediately', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
@@ -1282,6 +1360,62 @@ test('auto-edge login prep emits done only after Ctrip login is confirmed', asyn
     assert.ok(events.some((event) => event.type === 'edge:login-unconfirmed'));
     assert.equal(
       events.some((event) => event.type === 'edge:login-done'),
+      false
+    );
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('auto-edge locked profile cookie check skips interactive login prompt', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-login-locked-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  let loginPrepCalls = 0;
+  const { mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    autoEdgeMock: {
+      inspectReusableEdgeProfile: () => ({
+        reusable: false,
+        hasBrowserProfile: true,
+        hasCookieSignal: false,
+        cookieReadBlocked: true,
+        blockedPath: path.join(tempDir, 'edge-profile', 'Default', 'Network', 'Cookies'),
+        blockedError: 'EBUSY: resource busy or locked'
+      }),
+      runInteractiveEdgeLoginPrep: async () => {
+        loginPrepCalls += 1;
+        throw new Error('locked profile should not open the interactive login window');
+      }
+    }
+  });
+
+  try {
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=login-locked',
+        latestRun: latestRunPath,
+        'auto-edge': true,
+        'report-level': 'off'
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent: (event) => events.push(event)
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(loginPrepCalls, 0);
+    assert.equal(
+      events.some((event) => event.type === 'edge:login-required'),
+      false
+    );
+    assert.equal(
+      events.some((event) => event.type === 'edge:login-unconfirmed'),
       false
     );
   } finally {

@@ -11,6 +11,7 @@ const { classifyCtripHotelUrl, extractCtripUrlsFromInput } = require('./ctrip-ur
 const {
   closeAutoEdge,
   hasReusableEdgeProfile,
+  inspectReusableEdgeProfile,
   launchAndWaitForEdge,
   resolveAutoEdgeRuntime,
   runInteractiveEdgeLoginPrep
@@ -49,11 +50,36 @@ const { runPreparedSingleDetailImport } = require('./single-detail-runner');
 const { runBatchHotelImportTask } = require('./batch-orchestrator');
 const {
   cleanupBatchEdgeWorkerProfileClones,
+  describeLockedEdgeProfileCopyError,
+  isLockedEdgeProfileCopyError,
   prepareBatchEdgeWorkerProfileClones
 } = require('./batch-edge-worker-pool');
 const { buildBatchOutputPayload } = require('./batch-result-builder');
 
 const MAX_AUTO_EDGE_PREPARED_WORKERS = 3;
+
+function getReusableEdgeProfileInspection(userDataDir, profileDirectory) {
+  if (typeof inspectReusableEdgeProfile === 'function') {
+    return inspectReusableEdgeProfile(userDataDir, profileDirectory);
+  }
+  return {
+    reusable: hasReusableEdgeProfile(userDataDir, profileDirectory),
+    hasBrowserProfile: false,
+    hasCookieSignal: false,
+    cookieReadBlocked: false,
+    blockedPath: '',
+    blockedError: ''
+  };
+}
+
+function shouldSkipInteractiveLoginForLockedProfile(inspection) {
+  return Boolean(
+    inspection &&
+      !inspection.reusable &&
+      inspection.hasBrowserProfile &&
+      inspection.cookieReadBlocked
+  );
+}
 
 function buildFailureResult(error, latestRunPath, startedAt) {
   const failedAt = new Date().toISOString();
@@ -466,6 +492,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       let autoEdgeProcess = null;
       let autoEdgePid = null;
       let preparedEdgeWorkerProfileDirs = [];
+      let edgeParallelDisabledReason = '';
       const autoEdge = Boolean(args['auto-edge']);
       const autoEdgeRuntime = autoEdge
         ? resolveAutoEdgeRuntime({
@@ -484,12 +511,20 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           }
           emit('edge:start', '正在准备浏览器登录态');
           await perf.runPhase('browser_context', { taskId, taskKind: 'login_prep' }, async () => {
-            if (
-              !hasReusableEdgeProfile(
-                effectiveTemplate.edge_user_data_dir,
-                effectiveTemplate.edge_profile_directory
-              )
-            ) {
+            const profileInspection = getReusableEdgeProfileInspection(
+              effectiveTemplate.edge_user_data_dir,
+              effectiveTemplate.edge_profile_directory
+            );
+            if (!profileInspection.reusable) {
+              if (shouldSkipInteractiveLoginForLockedProfile(profileInspection)) {
+                perf.event('edge_login_check_skipped', {
+                  phase: 'browser_context',
+                  status: 'profile_cookie_locked',
+                  blocked_path: profileInspection.blockedPath || '',
+                  error_message: profileInspection.blockedError || ''
+                });
+                return;
+              }
               emit('edge:login-required', '首次采集需要登录携程后继续', {
                 reason: '未检测到可复用的携程登录资料。',
                 instruction:
@@ -520,11 +555,31 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
               listFilters
             );
             if (preparedWorkerConcurrency > 1) {
-              preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
-                effectiveTemplate,
-                concurrency: preparedWorkerConcurrency,
-                existingWorkerCount: 1
-              });
+              try {
+                preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
+                  effectiveTemplate,
+                  concurrency: preparedWorkerConcurrency,
+                  existingWorkerCount: 1
+                });
+              } catch (error) {
+                if (!isLockedEdgeProfileCopyError(error)) {
+                  throw error;
+                }
+                edgeParallelDisabledReason = describeLockedEdgeProfileCopyError(error);
+                preparedEdgeWorkerProfileDirs = [];
+                emit('edge:parallel-disabled', edgeParallelDisabledReason, {
+                  reason: edgeParallelDisabledReason,
+                  error: error && error.message ? error.message : String(error)
+                });
+                perf.event('edge_parallel_disabled', {
+                  phase: 'browser_launch',
+                  status: 'fallback_serial',
+                  reason: edgeParallelDisabledReason,
+                  error_type: error && error.name ? error.name : 'Error',
+                  error_code: error && error.code ? error.code : '',
+                  error_message: error && error.message ? error.message : String(error)
+                });
+              }
             }
             return launchAndWaitForEdge({
               userDataDir: effectiveTemplate.edge_user_data_dir,
@@ -681,6 +736,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             reportLevel,
             scrapeEventForwarder,
             preparedEdgeWorkerProfileDirs,
+            edgeParallelDisabledReason,
             existingEdgeWorker:
               autoEdge && autoEdgePid && normalizeBatchConcurrency(args, options) > 1
                 ? {

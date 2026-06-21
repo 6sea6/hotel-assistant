@@ -55,8 +55,24 @@ function getRuleDeleteThresholds() {
     return { value: parsed };
   };
 
+  const parseScoreThreshold = (rawValue) => {
+    const result = parseThreshold(rawValue, '携程评分阈值');
+    if (result.error || result.value === null) {
+      return result;
+    }
+
+    if (result.value > 5) {
+      return { error: '携程评分阈值必须是 0 到 5 之间的数字' };
+    }
+
+    return result;
+  };
+
   const price = parseThreshold(getValue('ruleDeletePrice'), '总价格阈值');
   if (price.error) return price;
+
+  const ctripScore = parseScoreThreshold(getValue('ruleDeleteCtripScore'));
+  if (ctripScore.error) return ctripScore;
 
   const subwayDistance = parseThreshold(getValue('ruleDeleteSubwayDistance'), '地铁站距离阈值');
   if (subwayDistance.error) return subwayDistance;
@@ -67,14 +83,19 @@ function getRuleDeleteThresholds() {
   return {
     value: {
       price: price.value,
+      ctripScore: ctripScore.value,
       subwayDistance: subwayDistance.value,
       transportTime: transportTime.value
     }
   };
 }
 
+function hasRuleThreshold(value) {
+  return value !== null && value !== undefined;
+}
+
 export function isSubwayDistanceRuleMatched(subwayDistance, threshold) {
-  if (threshold === null) {
+  if (!hasRuleThreshold(threshold)) {
     return false;
   }
 
@@ -85,11 +106,21 @@ export function isSubwayDistanceRuleMatched(subwayDistance, threshold) {
   return subwayDistance !== null && subwayDistance > threshold;
 }
 
+export function isCtripScoreRuleMatched(score, threshold) {
+  return (
+    hasRuleThreshold(threshold) &&
+    Number.isFinite(score) &&
+    score > 0 &&
+    score < threshold
+  );
+}
+
 export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels()) {
   const hasActiveRule =
-    thresholds.price !== null ||
-    thresholds.subwayDistance !== null ||
-    thresholds.transportTime !== null;
+    hasRuleThreshold(thresholds.price) ||
+    hasRuleThreshold(thresholds.ctripScore) ||
+    hasRuleThreshold(thresholds.subwayDistance) ||
+    hasRuleThreshold(thresholds.transportTime);
 
   if (!hasActiveRule) {
     return [];
@@ -97,13 +128,17 @@ export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCar
 
   return sourceHotels.filter((hotel) => {
     const totalPrice = Number(hotel.total_price);
+    const ctripScore = Number(hotel.ctrip_score);
     const subwayDistance = extractDistanceNumber(hotel.subway_distance);
     const transportTime = extractTimeNumber(hotel.transport_time);
 
     return (
-      (thresholds.price !== null && Number.isFinite(totalPrice) && totalPrice > thresholds.price) ||
+      (hasRuleThreshold(thresholds.price) &&
+        Number.isFinite(totalPrice) &&
+        totalPrice > thresholds.price) ||
+      isCtripScoreRuleMatched(ctripScore, thresholds.ctripScore) ||
       isSubwayDistanceRuleMatched(subwayDistance, thresholds.subwayDistance) ||
-      (thresholds.transportTime !== null &&
+      (hasRuleThreshold(thresholds.transportTime) &&
         transportTime !== null &&
         transportTime > thresholds.transportTime)
     );
@@ -143,9 +178,11 @@ export function openRuleDeleteModal() {
   setModalActive(RULE_DELETE_MODAL_ID, true);
 
   const priceInput = getFormValueElement('ruleDeletePrice');
+  const scoreInput = getFormValueElement('ruleDeleteCtripScore');
   const subwayInput = getFormValueElement('ruleDeleteSubwayDistance');
   const transportInput = getFormValueElement('ruleDeleteTransportTime');
   if (priceInput) priceInput.value = '';
+  if (scoreInput) scoreInput.value = '';
   if (subwayInput) subwayInput.value = '';
   if (transportInput) transportInput.value = '';
   resetRuleDeleteConfirmation();

@@ -3,8 +3,8 @@
 
 const APP_INFO = Object.freeze({
   name: '宾馆比较助手',
-  version: '8.9.0',
-  releaseDate: '2026-06-18',
+  version: '8.9.1',
+  releaseDate: '2026-06-20',
   author: 'Sea'
 });
 

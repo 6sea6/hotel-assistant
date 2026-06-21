@@ -333,6 +333,7 @@ function handleDelegatedInput(event) {
 
   if (
     target.id === 'ruleDeletePrice' ||
+    target.id === 'ruleDeleteCtripScore' ||
     target.id === 'ruleDeleteSubwayDistance' ||
     target.id === 'ruleDeleteTransportTime'
   ) {
@@ -454,6 +455,7 @@ function setupStaticFormListeners() {
     if (event.target instanceof HTMLInputElement) formatScoreOnBlur(event.target);
   });
   addEvent('ruleDeletePrice', 'input', updateRuleDeletePreview);
+  addEvent('ruleDeleteCtripScore', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
   state.staticFormEventsBound = true;

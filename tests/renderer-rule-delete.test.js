@@ -93,12 +93,24 @@ test('rule delete treats subway distance zero as no nearby subway and over thres
   assert.equal(isSubwayDistanceRuleMatched(1.2, null), false);
 });
 
+test('rule delete matches ctrip score below threshold only for known positive scores', async () => {
+  const { isCtripScoreRuleMatched } = await loadRuleDeleteModule();
+
+  assert.equal(isCtripScoreRuleMatched(4.6, 4.7), true);
+  assert.equal(isCtripScoreRuleMatched(4.7, 4.7), false);
+  assert.equal(isCtripScoreRuleMatched(4.8, 4.7), false);
+  assert.equal(isCtripScoreRuleMatched(0, 4.7), false);
+  assert.equal(isCtripScoreRuleMatched(Number.NaN, 4.7), false);
+  assert.equal(isCtripScoreRuleMatched(4.6, null), false);
+});
+
 test('rule delete subway threshold includes hotels with no nearby subway station', async () => {
   const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
 
   const candidates = getRuleDeleteCandidates(
     {
       price: null,
+      ctripScore: null,
       subwayDistance: 0.8,
       transportTime: null
     },
@@ -114,5 +126,30 @@ test('rule delete subway threshold includes hotels with no nearby subway station
   assert.deepEqual(
     candidates.map((hotel) => hotel.id),
     [1, 3]
+  );
+});
+
+test('rule delete ctrip score threshold includes only hotels below threshold', async () => {
+  const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
+
+  const candidates = getRuleDeleteCandidates(
+    {
+      price: null,
+      ctripScore: 4.7,
+      subwayDistance: null,
+      transportTime: null
+    },
+    [
+      { id: 1, ctrip_score: 4.8 },
+      { id: 2, ctrip_score: 4.7 },
+      { id: 3, ctrip_score: 4.6 },
+      { id: 4, ctrip_score: null },
+      { id: 5, ctrip_score: 0 }
+    ]
+  );
+
+  assert.deepEqual(
+    candidates.map((hotel) => hotel.id),
+    [3]
   );
 });

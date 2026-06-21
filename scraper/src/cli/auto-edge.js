@@ -10,6 +10,7 @@ const {
 } = require('../scraper/process-utils');
 const {
   hasReusableEdgeProfile,
+  inspectReusableEdgeProfile,
   resolveEdgeProfileDirectory,
   resolveEdgeUserDataDir,
   toBoolean
@@ -227,6 +228,7 @@ module.exports = {
   buildVisibleBrowserWindowArgs,
   closeAutoEdge,
   hasReusableEdgeProfile,
+  inspectReusableEdgeProfile,
   is360BrowserRuntime,
   launchAndWaitForEdge,
   resolveAutoEdgeRuntime,

@@ -347,6 +347,7 @@ function showTaskCancellationNotificationOnce(queueTask = null) {
  */
 export function showCtripLoginNotificationOnce(event, queueTask = null) {
   if (!isActionableCtripLoginRequiredEvent(event)) return;
+  if (hasLockedEdgeProfileFallbackEvent(queueTask)) return;
   const key = getCtripLoginNotificationKey(event, queueTask);
   if (activeLoginNotifications.has(key)) return;
   if (queueTask) {
@@ -356,6 +357,11 @@ export function showCtripLoginNotificationOnce(event, queueTask = null) {
     persistent: true
   });
   activeLoginNotifications.set(key, notification);
+}
+
+function hasLockedEdgeProfileFallbackEvent(queueTask = null) {
+  const events = queueTask && Array.isArray(queueTask.events) ? queueTask.events : [];
+  return events.some((event) => event && event.type === 'edge:parallel-disabled');
 }
 
 function isActionableCtripLoginRequiredEvent(event = {}) {

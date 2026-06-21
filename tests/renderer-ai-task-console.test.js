@@ -702,6 +702,37 @@ test('normalizeTaskState hides soft Ctrip login prompts after successful collect
   );
 });
 
+test('normalizeTaskState hides edge parallel-disabled detail text', async () => {
+  const { normalizeTaskState } = await loadTaskConsoleModule();
+  const message =
+    '浏览器登录资料正在被 Edge 占用，无法复制并发采集用的临时资料：state/edge-profile/Default/Network/Cookies；本次已改为单浏览器顺序采集。';
+  const taskState = normalizeTaskState({
+    task: {
+      submitted: true,
+      taskId: 'parallel-disabled-detail-hidden',
+      templateLabel: '实验 · 上海 · 2026-08-01 至 2026-08-02 · 2人',
+      startedAt: '2026-06-17T11:16:33.000Z'
+    },
+    events: [
+      { type: 'task:start', at: '2026-06-17T11:16:33.000Z' },
+      {
+        type: 'edge:parallel-disabled',
+        message,
+        details: {
+          reason: message,
+          error: 'EBUSY: resource busy or locked'
+        },
+        at: '2026-06-17T11:16:34.000Z'
+      }
+    ],
+    inProgress: true
+  });
+
+  const edgeStep = taskState.steps.find((step) => step.key === 'edge');
+  assert.equal(edgeStep.title, message);
+  assert.equal(edgeStep.detail, '');
+});
+
 test('renderSummaryCards replaces write status row with skipped hotel reasons only when needed', async () => {
   const { normalizeTaskState, renderSummaryCards } = await loadTaskConsoleModule();
   const originalDocument = global.document;
@@ -1287,6 +1318,37 @@ test('Ctrip browser preparation event without login instruction does not show lo
   });
 
   assert.equal(notifications.length, 0);
+});
+
+test('Ctrip login-required after locked profile fallback does not show login notification', async () => {
+  const { notifications } = installAiAssistantDom(
+    'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01'
+  );
+  const { module } = await loadAiAssistantModules();
+  const queueTask = {
+    id: 'queue-task-locked-profile',
+    events: [
+      {
+        type: 'edge:parallel-disabled',
+        message: '浏览器登录资料正在被 Edge 占用，本次已改为单浏览器顺序采集。'
+      }
+    ]
+  };
+
+  module.handleCtripLoginNotificationEvent(
+    {
+      type: 'edge:login-required',
+      message: '首次采集需要登录携程后继续',
+      details: {
+        instruction: '请在窗口中登录携程，完成后关闭窗口。'
+      },
+      taskId: 'backend-task-locked-profile'
+    },
+    queueTask
+  );
+
+  assert.equal(notifications.length, 0);
+  assert.equal(queueTask.loginNoticeShown, undefined);
 });
 
 test('soft Ctrip login prompt does not show manual login notification', async () => {

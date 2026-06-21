@@ -579,6 +579,18 @@
                   />
                 </div>
                 <div class="form-group">
+                  <label for="ruleDeleteCtripScore">携程评分低于（分）</label>
+                  <input
+                    type="number"
+                    id="ruleDeleteCtripScore"
+                    class="input"
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    placeholder="留空表示不限制"
+                  />
+                </div>
+                <div class="form-group">
                   <label for="ruleDeleteSubwayDistance">最近地铁站距离高于（公里）</label>
                   <input
                     type="number"
@@ -604,7 +616,7 @@
               <div class="rule-delete-summary">
                 <div id="ruleDeleteSummaryText">当前卡片结果 0 条，命中规则 0 条</div>
                 <div class="rule-delete-hint">
-                  留空表示不启用该规则；填写多个规则时，只要超过任一已填写阈值就会被删除。
+                  留空表示不启用该规则；填写多个规则时，只要命中任一已填写阈值就会被删除。
                 </div>
               </div>
             </div>
@@ -1548,11 +1560,11 @@
                   <h3>版本信息</h3>
                   <div class="version-item">
                     <span>版本号：</span>
-                    <span id="aboutVersionText">v8.9.0</span>
+                    <span id="aboutVersionText">v8.9.1</span>
                   </div>
                   <div class="version-item">
                     <span>更新日期：</span>
-                    <span id="aboutUpdateDateText">2026-06-18</span>
+                    <span id="aboutUpdateDateText">2026-06-20</span>
                   </div>
                 </div>
               </div>

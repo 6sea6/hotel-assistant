@@ -25,7 +25,7 @@ function buildAppInfo(packageJson) {
   return {
     name: '宾馆比较助手',
     version: packageJson.version,
-    releaseDate: '2026-06-18',
+    releaseDate: '2026-06-20',
     author: packageJson.author || 'Sea'
   };
 }
@@ -79,7 +79,10 @@ function updateReadmeVersion(readmeSource, appInfo) {
   return readmeSource
     .replace(/^# 宾馆比较助手 v.+$/m, `# 宾馆比较助手 v${appInfo.version}`)
     .replace(/宾馆比较助手 v[\d.]+ 主要面向/g, `宾馆比较助手 v${appInfo.version} 主要面向`)
-    .replace(/v[\d.]+ 的采集扩充能力包括/g, `v${appInfo.version} 的采集扩充能力包括`);
+    .replace(
+      /v[\d.]+ 的(?:采集扩充能力|主要变化)包括/g,
+      `v${appInfo.version} 的主要变化包括`
+    );
 }
 
 function updateRendererVersionFallbacks(htmlSource, appInfo) {

@@ -145,6 +145,15 @@ class BatchOrchestrator {
       return this.runSequential({ concurrency, batchOptions });
     }
 
+    if (this.context.edgeParallelDisabledReason) {
+      return this.runSequential({
+        concurrency,
+        batchOptions,
+        parallelRequestedButDisabled: true,
+        parallelDisabledReason: this.context.edgeParallelDisabledReason
+      });
+    }
+
     let edgeWorkerPool = null;
     try {
       edgeWorkerPool = await createBatchEdgeWorkerPool({

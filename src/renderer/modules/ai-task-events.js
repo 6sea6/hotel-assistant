@@ -233,6 +233,9 @@ export function normalizeEvent(event = {}, taskKind = 'collect') {
 export function getEventDetailText(event = {}) {
   const detail = event && event.detail;
   if (!detail || typeof detail !== 'object') return '';
+  const rawEvent = event.raw && typeof event.raw === 'object' ? event.raw : {};
+  const rawDetails = rawEvent.details && isRecord(rawEvent.details) ? rawEvent.details : {};
+  if (rawEvent.type === 'edge:parallel-disabled' || rawDetails.suppressDetail === true) return '';
   return String(detail.instruction || detail.reason || detail.action || '').trim();
 }
 

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { executeAppBuilder } = require('builder-util');
+const { editWindowsResources } = require('app-builder-lib/out/util/resEdit');
 
 function getBuildResourcesDir(projectRoot, packageJson) {
   const configured = packageJson?.build?.directories?.buildResources || 'build';
@@ -71,6 +71,34 @@ function buildRceditArgs({ executablePath, iconPath, packageJson }) {
   return args;
 }
 
+function buildWindowsResourceOptions({ executablePath, iconPath, packageJson }) {
+  const productName = getProductName(packageJson);
+  const version = packageJson?.version || '0.0.0';
+  const versionStrings = {
+    FileDescription: productName,
+    ProductName: productName,
+    InternalName: productName,
+    OriginalFilename: ''
+  };
+  const copyright = packageJson?.build?.copyright;
+  const companyName = getCompanyName(packageJson);
+
+  if (copyright) {
+    versionStrings.LegalCopyright = copyright;
+  }
+  if (companyName) {
+    versionStrings.CompanyName = companyName;
+  }
+
+  return {
+    file: executablePath,
+    iconPath,
+    fileVersion: version,
+    productVersion: toWindowsProductVersion(version),
+    versionStrings
+  };
+}
+
 function findExtractedExecutable({ appOutDir, packageJson }) {
   const projectName = packageJson?.build?.electronBranding?.projectName || 'electron';
   const candidates = [`${projectName}.exe`, 'electron.exe'].map((name) =>
@@ -103,18 +131,19 @@ async function editExtractedExeResources(context, options = {}) {
     throw new Error(`未找到应用图标：${iconPath}`);
   }
 
-  const args = buildRceditArgs({
+  const resourceOptions = buildWindowsResourceOptions({
     executablePath,
     iconPath,
     packageJson
   });
-  const runner = options.runner || executeAppBuilder;
-  await runner(['rcedit', '--args', JSON.stringify(args)], undefined, {}, 3);
+  const runner = options.runner || editWindowsResources;
+  await runner(resourceOptions);
 }
 
 module.exports = {
   default: editExtractedExeResources,
   buildRceditArgs,
+  buildWindowsResourceOptions,
   editExtractedExeResources,
   findExtractedExecutable,
   toWindowsProductVersion

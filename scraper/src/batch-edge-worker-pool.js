@@ -34,6 +34,7 @@ const EDGE_PROFILE_SKIP_SEGMENT_PATTERNS = [
   /^shared_proto_db$/i,
   /^storage$/i
 ];
+const EDGE_PROFILE_LOCKED_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
 function findAvailablePort() {
   return new Promise((resolve, reject) => {
@@ -83,17 +84,45 @@ function shouldCopyEdgeProfilePath(sourceRoot, sourcePath) {
   );
 }
 
+function isLockedEdgeProfileCopyError(error) {
+  if (!error) {
+    return false;
+  }
+
+  const code = error.code ? String(error.code).toUpperCase() : '';
+  const syscall = error.syscall ? String(error.syscall).toLowerCase() : '';
+  const message = error.message ? String(error.message).toLowerCase() : '';
+
+  return (
+    EDGE_PROFILE_LOCKED_ERROR_CODES.has(code) &&
+    (syscall.includes('copy') ||
+      message.includes('resource busy') ||
+      message.includes('locked') ||
+      message.includes('being used by another process'))
+  );
+}
+
+function describeLockedEdgeProfileCopyError(error) {
+  const lockedPath = error && (error.path || error.dest) ? `：${error.path || error.dest}` : '';
+  return `浏览器登录资料正在被 Edge 占用，无法复制并发采集用的临时资料${lockedPath}；本次已改为单浏览器顺序采集。`;
+}
+
 function copyProfileForWorker(sourceDir) {
   const targetDir = createTemporaryProfileDir();
-  if (sourceDir && fs.existsSync(sourceDir)) {
-    fs.cpSync(sourceDir, targetDir, {
-      recursive: true,
-      force: true,
-      errorOnExist: false,
-      filter: (sourcePath) => shouldCopyEdgeProfilePath(sourceDir, sourcePath)
-    });
+  try {
+    if (sourceDir && fs.existsSync(sourceDir)) {
+      fs.cpSync(sourceDir, targetDir, {
+        recursive: true,
+        force: true,
+        errorOnExist: false,
+        filter: (sourcePath) => shouldCopyEdgeProfilePath(sourceDir, sourcePath)
+      });
+    }
+    return targetDir;
+  } catch (error) {
+    cleanupBatchEdgeWorkerProfileClones([targetDir]);
+    throw error;
   }
-  return targetDir;
 }
 
 function cleanupBatchEdgeWorkerProfileClones(profileDirs) {
@@ -252,7 +281,9 @@ module.exports = {
   cleanupBatchEdgeWorkerProfileClones,
   closeBatchEdgeWorkerPool,
   createBatchEdgeWorkerPool,
+  describeLockedEdgeProfileCopyError,
   findAvailablePort,
+  isLockedEdgeProfileCopyError,
   prepareBatchEdgeWorkerProfileClones,
   shouldCopyEdgeProfilePath
 };

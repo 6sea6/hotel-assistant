@@ -30,6 +30,28 @@ test('batch edge worker profile copy skips locked root Crashpad metrics file', (
   );
 });
 
+test('batch edge worker profile copy classifies locked cookie copy errors', () => {
+  clearPoolModules();
+  const {
+    describeLockedEdgeProfileCopyError,
+    isLockedEdgeProfileCopyError
+  } = require('../src/batch-edge-worker-pool');
+  const error = Object.assign(
+    new Error(
+      "EBUSY: resource busy or locked, copyfile 'state/edge-profile/Default/Network/Cookies'"
+    ),
+    {
+      code: 'EBUSY',
+      syscall: 'copyfile',
+      path: path.join('state', 'edge-profile', 'Default', 'Network', 'Cookies')
+    }
+  );
+
+  assert.equal(isLockedEdgeProfileCopyError(error), true);
+  assert.match(describeLockedEdgeProfileCopyError(error), /单浏览器顺序采集/);
+  assert.match(describeLockedEdgeProfileCopyError(error), /Cookies/);
+});
+
 test('batch edge worker pool launches separate debugging ports and cleans cloned profiles', async (t) => {
   clearPoolModules();
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-edge-worker-pool-'));
