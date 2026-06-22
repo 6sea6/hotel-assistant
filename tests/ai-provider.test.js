@@ -10,7 +10,7 @@ const {
   redactAiProviderConfig
 } = require('../src/main/ai/provider-presets');
 const registerAiHandlers = require('../src/main/ipc-handlers/ai-handlers');
-const { buildSystemPrompt, createAiService } = require('../src/main/services/ai-service');
+const { createAiService } = require('../src/main/services/ai-service');
 const {
   buildAnthropicMessagesUrl,
   buildChatCompletionRequest,
@@ -19,7 +19,6 @@ const {
   convertMessagesToAnthropic,
   parseChatCompletionMessage
 } = require('../src/main/ai/provider-client');
-const { AI_TOOL_DEFINITIONS, sanitizeSettings } = require('../src/main/ai/tools');
 const {
   buildScraperArgs,
   createWriteRollbackSnapshot,
@@ -298,50 +297,6 @@ test('MiMo error messages explain TokenPlan authentication and parameter failure
   );
 });
 
-test('AI settings sanitizer removes API key from settings-shaped objects', () => {
-  const sanitized = sanitizeSettings({
-    theme: 'totoro-blue',
-    amapApiKey: 'amap-secret',
-    ai_provider_config: {
-      provider: 'openai',
-      apiKey: 'secret'
-    }
-  });
-
-  assert.equal(sanitized.ai_provider_config.apiKey, '');
-  assert.equal(sanitized.ai_provider_config.hasApiKey, true);
-  assert.equal(sanitized.amapApiKey, '[REDACTED]');
-});
-
-test('AI fallback system prompt is compact and ignores legacy guide text', () => {
-  const prompt = buildSystemPrompt('legacy guide should be ignored');
-
-  assert.match(prompt, /内置 AI 兜底助手/);
-  assert.match(prompt, /详情页链接和酒店列表页链接/);
-  assert.match(prompt, /列表页会先合并携程 URL 前筛/);
-  assert.doesNotMatch(prompt, /排除名称关键词/);
-  assert.match(prompt, /collect_and_write_ctrip_hotel/);
-  assert.doesNotMatch(prompt, /legacy guide/);
-});
-
-test('AI collect tool schema documents list and detail URL inputs', () => {
-  const collectTool = AI_TOOL_DEFINITIONS.find(
-    (tool) => tool.function.name === 'collect_and_write_ctrip_hotel'
-  );
-  const properties = collectTool.function.parameters.properties;
-
-  assert.match(collectTool.function.description, /详情页/);
-  assert.match(collectTool.function.description, /列表页/);
-  assert.ok(properties.url);
-  assert.ok(properties.urls);
-  assert.ok(properties.listFilters);
-  assert.ok(properties.listUrlFilters);
-  assert.ok(properties.desiredHotelCount);
-  assert.equal(properties.minScore, undefined);
-  assert.equal(properties.excludeKeywords, undefined);
-  assert.equal(properties.maxPages, undefined);
-});
-
 test('AI IPC registers direct task start endpoint', () => {
   const handlers = new Map();
   let aiServiceAccessCount = 0;
@@ -364,8 +319,8 @@ test('AI IPC registers direct task start endpoint', () => {
           },
           saveProviderConfig() {},
           testConnection() {},
-          sendChat() {},
           startTask() {},
+          refreshHotelData() {},
           cancelTask() {},
           getTaskStatus() {}
         };
@@ -397,8 +352,8 @@ test('AI IPC keeps compatibility with direct aiService object', () => {
         getProviderPresets() {},
         saveProviderConfig() {},
         testConnection() {},
-        sendChat() {},
         startTask() {},
+        refreshHotelData() {},
         cancelTask() {},
         getTaskStatus() {}
       }
@@ -431,10 +386,6 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
           received.push({ channel: 'test', config });
           return { success: true };
         },
-        sendChat(payload) {
-          received.push({ channel: 'chat', payload });
-          return { success: true };
-        },
         startTask(payload) {
           received.push({ channel: 'start', payload });
           return { success: true };
@@ -453,10 +404,6 @@ test('AI IPC normalizes unsafe renderer payloads at the handler boundary', async
 
   assert.deepEqual(await handlers.get('ai:config:save')(event, 'bad'), { success: true });
   assert.deepEqual(await handlers.get('ai:config:test')(event, null), { success: true });
-  assert.deepEqual(await handlers.get('ai:chat:send')(event, 'bad'), {
-    success: false,
-    error: '无效的 AI 请求参数'
-  });
   assert.deepEqual(await handlers.get('ai:task:start')(event, null), {
     success: false,
     error: '无效的 AI 请求参数'
@@ -603,7 +550,6 @@ test('AI IPC validates Ctrip list URL parser and builder inputs', async () => {
         getProviderPresets() {},
         saveProviderConfig() {},
         testConnection() {},
-        sendChat() {},
         startTask() {},
         refreshHotelData() {},
         cancelTask() {},

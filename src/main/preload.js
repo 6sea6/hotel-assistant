@@ -110,14 +110,6 @@ const subscribeIpc = (channel, callback, mapEvent) => {
   };
 };
 
-const batchOperations = {
-  async updateMultipleHotels(hotels) {
-    const result = await ipcRenderer.invoke('hotel:updateMultiple', hotels);
-    invalidateCache('hotel');
-    return result;
-  }
-};
-
 /** @type {ElectronAPI} */
 const electronAPI = {
   appInfo: {
@@ -147,18 +139,8 @@ const electronAPI = {
   },
   getAllHotels: () => ipcRenderer.invoke('hotel:getAll'),
   getHotelsMeta: () => ipcRenderer.invoke('hotel:getMeta'),
-  getHotelsRevision: () => ipcRenderer.invoke('hotel:getRevision'),
   getAllHotelsWithMeta: () => ipcRenderer.invoke('hotel:getAllWithMeta'),
   getHotelById: (id) => cachedInvoke('hotel:getById', id),
-  updateMultipleHotels: batchOperations.updateMultipleHotels,
-  addMultipleHotels: async (hotels) => {
-    invalidateCache('hotel');
-    return ipcRenderer.invoke('hotel:addMultiple', hotels);
-  },
-  upsertMultipleHotels: async (hotels, options = {}) => {
-    invalidateCache('hotel');
-    return ipcRenderer.invoke('hotel:upsertMultiple', hotels, options);
-  },
 
   // 模板操作
   addTemplate: async (template) => {
@@ -224,8 +206,6 @@ const electronAPI = {
     return ipcRenderer.invoke('data:changePath');
   },
 
-  batch: batchOperations,
-
   onMenuExportData: (callback) => subscribeIpc('menu-export-data', callback),
   onMenuImportData: (callback) => subscribeIpc('menu-import-data', callback),
 
@@ -245,7 +225,6 @@ const electronAPI = {
       return ipcRenderer.invoke('ai:config:save', config);
     },
     testConnection: (config) => ipcRenderer.invoke('ai:config:test', config),
-    sendChat: (payload) => ipcRenderer.invoke('ai:chat:send', payload),
     startTask: (payload) => ipcRenderer.invoke('ai:task:start', payload),
     refreshHotelData: (payload) => ipcRenderer.invoke('ai:task:refresh-data', payload),
     cancelTask: () => ipcRenderer.invoke('ai:task:cancel'),

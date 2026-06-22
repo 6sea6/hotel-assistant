@@ -6,12 +6,8 @@
 
 /** @type {Record<string, string>} */
 export const TOOL_LABELS = {
-  get_task_status: '获取任务状态',
-  list_templates: '读取模板列表',
-  get_settings: '读取比较助手设置',
   collect_and_write_ctrip_hotel: '采集携程酒店页面',
   refresh_existing_ctrip_hotels: '更新已有宾馆数据',
-  open_visible_edge_login: '打开采集浏览器登录准备窗口',
   prepare_edge: '准备浏览器登录态',
   calculate_traffic: '计算交通与地铁信息',
   write_result: '回写采集结果'

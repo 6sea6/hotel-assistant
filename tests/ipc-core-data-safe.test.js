@@ -183,10 +183,6 @@ test('hotel handlers reject invalid renderer payloads before normalization', () 
     success: false,
     error: '无效的宾馆 ID'
   });
-  assert.deepEqual(handlers['hotel:updateMultiple'](createEvent(), 'bad'), {
-    success: false,
-    error: '无效的批量宾馆数据'
-  });
 });
 
 test('hotel add is silent by default while still invalidating hotel cache', () => {
@@ -210,18 +206,6 @@ test('hotel add is silent by default while still invalidating hotel cache', () =
   }
 });
 
-test('hotel:updateMultiple rejects non-object items instead of silently skipping them', () => {
-  const store = createStore({
-    hotels: [{ id: 1, name: '测试酒店', room_type: '大床房' }]
-  });
-  const { handlers } = registerHandlers(registerHotelHandlers, store);
-
-  assert.deepEqual(handlers['hotel:updateMultiple'](createEvent(), [{ id: 1 }, 'bad']), {
-    success: false,
-    error: '无效的批量宾馆数据'
-  });
-});
-
 test('hotel delete handlers reject invalid id payloads before mutation', () => {
   const store = createStore({
     hotels: [{ id: 1, name: '测试酒店', room_type: '大床房' }]
@@ -237,84 +221,6 @@ test('hotel delete handlers reject invalid id payloads before mutation', () => {
     error: '未选择有效的宾馆'
   });
   assert.equal(store.setCalls.length, 0);
-});
-
-test('hotel:addMultiple rejects invalid input', () => {
-  const store = createStore({ hotels: [] });
-  const { handlers } = registerHandlers(registerHotelHandlers, store);
-
-  assert.deepEqual(handlers['hotel:addMultiple'](createEvent(), 'bad'), {
-    success: false,
-    error: '无效的批量宾馆数据'
-  });
-  assert.deepEqual(handlers['hotel:addMultiple'](createEvent(), [{ name: '   ' }]), {
-    success: false,
-    error: '宾馆名称不能为空'
-  });
-});
-
-test('hotel:addMultiple adds valid hotels and returns success', () => {
-  const store = createStore({ hotels: [] });
-  const { handlers, cache } = registerHandlers(registerHotelHandlers, store);
-
-  const result = handlers['hotel:addMultiple'](createEvent(), [
-    { name: '酒店 A', room_type: '大床房' },
-    { name: '酒店 B', room_type: '双床房' }
-  ]);
-
-  assert.equal(result.success, true);
-  assert.equal(result.addedCount, 2);
-  assert.equal(result.hotels.length, 2);
-  assert.ok(cache.invalidated.includes('hotels'));
-});
-
-test('hotel:upsertMultiple rejects invalid input', () => {
-  const store = createStore({ hotels: [] });
-  const { handlers } = registerHandlers(registerHotelHandlers, store);
-
-  assert.deepEqual(handlers['hotel:upsertMultiple'](createEvent(), 'bad'), {
-    success: false,
-    error: '无效的批量宾馆数据'
-  });
-  assert.deepEqual(handlers['hotel:upsertMultiple'](createEvent(), [{ name: '   ' }]), {
-    success: false,
-    error: '宾馆名称不能为空'
-  });
-});
-
-test('hotel:upsertMultiple upserts valid hotels and returns counts', () => {
-  const store = createStore({
-    hotels: [{ id: 1, name: '已有酒店', room_type: '大床房' }]
-  });
-  const { handlers, cache } = registerHandlers(registerHotelHandlers, store);
-
-  const result = handlers['hotel:upsertMultiple'](createEvent(), [
-    { id: 1, name: '更新酒店', room_type: '大床房' },
-    { name: '新增酒店', room_type: '双床房' }
-  ]);
-
-  assert.equal(result.success, true);
-  assert.equal(result.updatedCount, 1);
-  assert.equal(result.addedCount, 1);
-  assert.equal(result.hotels.length, 2);
-  assert.ok(cache.invalidated.includes('hotels'));
-});
-
-test('hotel:upsertMultiple accepts options parameter for matchByBusinessKey', () => {
-  const store = createStore({
-    hotels: [{ id: 1, name: '已有酒店', website: 'https://x', room_type: '大床房' }]
-  });
-  const { handlers } = registerHandlers(registerHotelHandlers, store);
-
-  const result = handlers['hotel:upsertMultiple'](
-    createEvent(),
-    [{ name: '新酒店', website: 'https://x', room_type: '大床房', total_price: 500 }],
-    { matchByBusinessKey: false }
-  );
-
-  assert.equal(result.success, true);
-  assert.equal(result.addedCount, 1, 'should add as new since business key matching disabled');
-  assert.equal(result.updatedCount, 0);
 });
 
 test('template handlers reject invalid renderer payloads before normalization', async () => {

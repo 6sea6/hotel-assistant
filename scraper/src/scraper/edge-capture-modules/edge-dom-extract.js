@@ -8,7 +8,7 @@ const { evaluateInSession } = require('../cdp-utils');
 const {
   buildEdgeDomExtractExpression,
   buildLightweightEdgeDomExtractExpression
-} = require('./dom-extract-script');
+} = require('./dom-extract-browser-script');
 const { writeEdgeDebugArtifact } = require('./debug');
 const { isAbortLikeError } = require('./edge-retry-policy');
 

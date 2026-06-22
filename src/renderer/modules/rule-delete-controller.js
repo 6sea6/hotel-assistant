@@ -18,6 +18,13 @@ let ruleDeleteInProgress = false;
 
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} RuleDeleteFormValueElement
+ * @typedef {object} RuleDeleteThresholds
+ * @property {number|null} price
+ * @property {number|null} ctripScore
+ * @property {number|null} subwayDistance
+ * @property {number|null} transportTime
+ * @property {boolean} [protectFavorite]
+ * @typedef {{value: RuleDeleteThresholds, error?: undefined}|{error: string, value?: undefined}} RuleDeleteThresholdResult
  */
 
 /**
@@ -45,7 +52,15 @@ function getCurrentCardHotels() {
   return applyFiltersToHotels(state.hotels, state.currentFilters);
 }
 
+/**
+ * @returns {RuleDeleteThresholdResult}
+ */
 function getRuleDeleteThresholds() {
+  /**
+   * @param {unknown} rawValue
+   * @param {string} label
+   * @returns {{value: number|null, error?: undefined}|{error: string, value?: undefined}}
+   */
   const parseThreshold = (rawValue, label) => {
     const normalized = String(rawValue ?? '').trim();
     if (normalized === '') {
@@ -74,16 +89,16 @@ function getRuleDeleteThresholds() {
   };
 
   const price = parseThreshold(getValue('ruleDeletePrice'), '日均价格阈值');
-  if (price.error) return price;
+  if (price.error) return { error: price.error };
 
   const ctripScore = parseScoreThreshold(getValue('ruleDeleteCtripScore'));
-  if (ctripScore.error) return ctripScore;
+  if (ctripScore.error) return { error: ctripScore.error };
 
   const subwayDistance = parseThreshold(getValue('ruleDeleteSubwayDistance'), '地铁站距离阈值');
-  if (subwayDistance.error) return subwayDistance;
+  if (subwayDistance.error) return { error: subwayDistance.error };
 
   const transportTime = parseThreshold(getValue('ruleDeleteTransportTime'), '公共交通时间阈值');
-  if (transportTime.error) return transportTime;
+  if (transportTime.error) return { error: transportTime.error };
 
   return {
     value: {
@@ -121,6 +136,11 @@ export function isCtripScoreRuleMatched(score, threshold) {
   );
 }
 
+/**
+ * @param {RuleDeleteThresholds} thresholds
+ * @param {import('../../shared/contracts').NormalizedHotelRecord[]} [sourceHotels]
+ * @returns {import('../../shared/contracts').NormalizedHotelRecord[]}
+ */
 export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels()) {
   const hasActiveRule =
     hasRuleThreshold(thresholds.price) ||

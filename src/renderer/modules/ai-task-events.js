@@ -134,14 +134,12 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
     if (type === 'refresh:write') return 'write';
     if (type === 'refresh:summary') return 'write';
     if (type.startsWith('refresh:')) return 'refresh';
-    if (type.startsWith('edge:') || toolName === 'open_visible_edge_login') return 'edge';
+    if (type.startsWith('edge:')) return 'edge';
     if (type.startsWith('write:') || type.startsWith('apply:')) return 'write';
     if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return 'received';
     if (toolName === 'refresh_existing_ctrip_hotels') return 'refresh';
-    if (toolName === 'get_task_status') return 'received';
     return '';
   }
-  if (toolName === 'list_templates' || toolName === 'get_settings') return 'template';
   if (
     type === 'edge:login-required' ||
     type === 'edge:login-window' ||
@@ -149,7 +147,7 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
     type === 'edge:login-unconfirmed'
   )
     return 'login';
-  if (toolName === 'open_visible_edge_login' || type.startsWith('edge:')) return 'edge';
+  if (type.startsWith('edge:')) return 'edge';
   if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return 'received';
   if (type === 'scrape:retry') return 'scrape';
   if (type.startsWith('batch:') || type.startsWith('list:')) return 'scrape';
@@ -157,7 +155,6 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
   if (type.startsWith('template:')) return 'template';
   if (type.startsWith('transit:')) return 'transit';
   if (type.startsWith('write:') || type.startsWith('apply:')) return 'write';
-  if (toolName === 'get_task_status') return 'received';
   return '';
 }
 
@@ -200,8 +197,6 @@ export function getReadableEventTitle(event = {}, taskKind = 'collect') {
     if (toolName === 'collect_and_write_ctrip_hotel') return '正在采集携程酒店页面';
     if (toolName === 'refresh_existing_ctrip_hotels' && type === 'tool:start') return '已接收任务';
     if (toolName === 'refresh_existing_ctrip_hotels') return '正在更新已有宾馆数据';
-    if (toolName === 'list_templates' || toolName === 'get_settings')
-      return '正在读取模板与比较助手设置';
     return label.startsWith('正在') ? label : `正在${label}`;
   }
 

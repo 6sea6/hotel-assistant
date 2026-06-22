@@ -47,21 +47,6 @@ function validateHotelPayload(
   };
 }
 
-function validateHotelPayloadArray(hotels, options) {
-  if (!Array.isArray(hotels)) {
-    return { error: { success: false, error: options.arrayError } };
-  }
-
-  const payloads = [];
-  for (const hotel of hotels) {
-    const validated = validateHotelPayload(hotel, options);
-    if (validated.error) return { error: validated.error };
-    payloads.push(validated.payload);
-  }
-
-  return { payloads };
-}
-
 function validateHotelIdList(ids, error) {
   if (!Array.isArray(ids) || ids.some((id) => assertEntityId(id))) {
     return { success: false, error };
@@ -120,26 +105,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     return null;
   });
 
-  // 批量更新酒店
-  safeHandle(ipcMain, 'hotel:updateMultiple', (_event, hotels) => {
-    const validated = validateHotelPayloadArray(hotels, {
-      arrayError: '无效的批量宾馆数据',
-      objectError: '无效的批量宾馆数据',
-      idError: '无效的批量宾馆数据',
-      nameMode: 'optional'
-    });
-    if (validated.error) return validated.error;
-
-    const repo = getHotelRepo();
-    if (validated.payloads.some((hotel) => !repo.hasValidId(hotel.id))) {
-      return { success: false, error: '无效的批量宾馆数据' };
-    }
-
-    const results = repo.updateMany(validated.payloads);
-    cache.invalidate('hotels');
-    return results;
-  });
-
   // 删除酒店
   safeHandle(ipcMain, 'hotel:delete', (_event, id) => {
     const idPayloadError = assertEntityId(id, '无效的宾馆 ID');
@@ -196,12 +161,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     return getHotelRepo().getMeta();
   });
 
-  // 获取酒店数据 revision
-  safeHandle(ipcMain, 'hotel:getRevision', () => {
-    const meta = getHotelRepo().getMeta();
-    return { revision: meta.revision, count: meta.count };
-  });
-
   // 获取所有酒店 + 元信息
   safeHandle(ipcMain, 'hotel:getAllWithMeta', () => {
     const repo = getHotelRepo();
@@ -216,47 +175,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
   // 根据ID获取酒店
   safeHandle(ipcMain, 'hotel:getById', (_event, id) => {
     return getHotelRepo().getById(/** @type {EntityId} */ (id));
-  });
-
-  // 批量添加酒店
-  safeHandle(ipcMain, 'hotel:addMultiple', (_event, hotels) => {
-    const validated = validateHotelPayloadArray(hotels, {
-      arrayError: '无效的批量宾馆数据',
-      objectError: '无效的批量宾馆数据',
-      nameMode: 'required'
-    });
-    if (validated.error) return validated.error;
-
-    const repo = getHotelRepo();
-    const result = repo.addMany(validated.payloads);
-    cache.invalidate('hotels');
-    return {
-      success: true,
-      addedCount: result.length,
-      hotels: result
-    };
-  });
-
-  // 批量 upsert 酒店
-  safeHandle(ipcMain, 'hotel:upsertMultiple', (_event, hotels, options = {}) => {
-    const validated = validateHotelPayloadArray(hotels, {
-      arrayError: '无效的批量宾馆数据',
-      objectError: '无效的批量宾馆数据',
-      nameMode: 'required'
-    });
-    if (validated.error) return validated.error;
-
-    const repo = getHotelRepo();
-    const result = repo.upsertMany(validated.payloads, options);
-    cache.invalidate('hotels');
-    return {
-      success: true,
-      addedCount: result.added.length,
-      updatedCount: result.updated.length,
-      hotels: result.hotels,
-      added: result.added,
-      updated: result.updated
-    };
   });
 }
 

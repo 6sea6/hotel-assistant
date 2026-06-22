@@ -20,7 +20,7 @@ function clearModules(paths) {
         '../src/scraper/edge-capture-modules/network-response-classifier',
         '../src/scraper/edge-capture-modules/response-body-reader',
         '../src/scraper/edge-capture-modules/response-parser',
-        '../src/scraper/edge-capture-modules/dom-extract-script',
+        '../src/scraper/edge-capture-modules/dom-extract-browser-script',
         '../src/scraper/edge-capture-modules/login-detection',
         '../src/scraper/edge-capture-modules/edge-retry-policy',
         '../src/scraper/edge-capture-modules/edge-dom-extract',

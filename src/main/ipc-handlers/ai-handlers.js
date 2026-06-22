@@ -284,12 +284,6 @@ function registerAiHandlers({ ipcMain, services }) {
   safeHandle(ipcMain, 'ai:config:test', (_event, config) =>
     getAiService().testConnection(assertPlainObject(config))
   );
-  safeHandle(ipcMain, 'ai:chat:send', (_event, payload) => {
-    if (!isPlainObject(payload)) {
-      return { success: false, error: '无效的 AI 请求参数' };
-    }
-    return getAiService().sendChat(payload);
-  });
   safeHandle(ipcMain, 'ai:task:start', (_event, payload) => {
     const payloadError = validateAiTaskPayload(payload);
     if (payloadError) return payloadError;

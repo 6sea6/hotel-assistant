@@ -17,7 +17,7 @@ const {
 const {
   buildEdgeDomExtractExpression,
   buildLightweightEdgeDomExtractExpression
-} = require('../src/scraper/edge-capture-modules/dom-extract-script');
+} = require('../src/scraper/edge-capture-modules/dom-extract-browser-script');
 const {
   isEdgeDebugLoggingEnabled,
   logEdgeDebug

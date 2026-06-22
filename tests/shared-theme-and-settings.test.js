@@ -44,7 +44,7 @@ test('shared settings normalizers keep collection options consistent', () => {
   assert.equal(normalizeCollectBatchConcurrency(1), 1);
   assert.equal(normalizeCollectBatchConcurrency('2'), 2);
   assert.equal(normalizeCollectBatchConcurrency(3), 3);
-  assert.equal(normalizeCollectBatchConcurrency(6), 1);
+  assert.equal(normalizeCollectBatchConcurrency(6), 3);
   assert.equal(normalizeCollectBrowser('360'), '360');
   assert.equal(normalizeCollectBrowser('edge'), 'edge');
   assert.equal(normalizeCollectBrowser('unknown'), 'edge');

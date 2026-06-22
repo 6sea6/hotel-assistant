@@ -17,6 +17,8 @@ const SUPPORTED_SETTING_KEYS = Object.freeze([
   'showManualOnStartup'
 ]);
 
+// 旧版卡片字段默认值迁移兜底：读取旧备份或旧数据目录时，将当时的完整默认列表
+// 折叠为当前默认字段，避免用户从很早版本升级后缺少新增的携程星级等字段。
 const OLD_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
   'original_room_type',
   'address',
@@ -41,6 +43,7 @@ const OLD_HOTEL_CARD_VISIBLE_FIELDS = Object.freeze([
   'window_status'
 ]);
 
+// 第二版旧默认字段列表，仍用于兼容 8.x 早期备份导入和数据目录切换后的设置归一化。
 const OLD_HOTEL_CARD_VISIBLE_FIELDS_V2 = Object.freeze([
   'original_room_type',
   'address',

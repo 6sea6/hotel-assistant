@@ -2009,7 +2009,7 @@ test('AI collect task rerun reuses address query instead of requiring the input 
   );
 });
 
-test('AI collect task does not promote unsupported saved batch concurrency to three', async () => {
+test('AI collect task falls back unsupported saved batch concurrency to default three', async () => {
   const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
   const { elements } = installAiAssistantDom(inputUrl);
   const { module, state } = await loadAiAssistantModules();
@@ -2055,7 +2055,7 @@ test('AI collect task does not promote unsupported saved batch concurrency to th
   await module.enqueueAiCollectTask();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.equal(capturedPayload.batchConcurrency, 1);
+  assert.equal(capturedPayload.batchConcurrency, 3);
 });
 
 test('AI refresh task payload includes saved batch concurrency setting', async () => {

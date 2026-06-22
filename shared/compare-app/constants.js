@@ -18,7 +18,7 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
   amapApiKey: '',
   enableCollectPerfLog: false,
   collectBrowser: 'edge',
-  collectBatchConcurrency: 1,
+  collectBatchConcurrency: 3,
   hotelCardVisibleFields: [
     'ctrip_diamond_level',
     'original_room_type',
@@ -38,6 +38,8 @@ const BASE_COMPARE_APP_SETTINGS = Object.freeze({
 });
 
 const DEPRECATED_COMPARE_APP_SETTING_KEYS = Object.freeze([
+  // 旧版本备份和迁移过来的 hotel-data.json 仍可能带这些字段。
+  // 保留该删除清单用于读入时一次性归一化，避免旧权重和旧列表前筛继续污染当前设置。
   'autoMatchTemplate',
   'weight_price',
   'weight_score',

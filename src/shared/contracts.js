@@ -263,6 +263,7 @@
  *   totalPriceNumber: number|null,
  *   dailyPriceNumber: number|null,
  *   scoreNumber: number|null,
+ *   diamondLevelNumber: number|null,
  *   distanceNumber: number|null,
  *   subwayDistanceNumber: number|null,
  *   transportTimeNumber: number|null,
@@ -418,11 +419,6 @@
  */
 
 /**
- * @typedef {object} ElectronBatchAPI
- * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<NormalizedHotelRecord[]>} updateMultipleHotels
- */
-
-/**
  * @callback IpcUnsubscribe
  * @returns {void}
  */
@@ -433,7 +429,6 @@
  * @property {() => Promise<Array<Record<string, unknown>>>} getPresets
  * @property {(config: Record<string, unknown>) => Promise<IpcResult<unknown>>} saveConfig
  * @property {(config: Record<string, unknown>) => Promise<IpcResult<unknown>>} testConnection
- * @property {(payload: Record<string, unknown>) => Promise<Record<string, unknown>>} sendChat
  * @property {(payload: AiTaskPayload) => Promise<AiTaskBackendResult>} startTask
  * @property {(payload: Partial<AiTaskPayload>) => Promise<AiTaskBackendResult>} refreshHotelData
  * @property {() => Promise<IpcResult<unknown>>} cancelTask
@@ -454,12 +449,8 @@
  * @property {(ids: EntityId[]) => Promise<IpcMutationResult>} deleteMultipleHotels
  * @property {() => Promise<NormalizedHotelRecord[]>} getAllHotels
  * @property {() => Promise<{revision: number, count: number, loaded: boolean, dirty: boolean}>} getHotelsMeta
- * @property {() => Promise<{revision: number, count: number}>} getHotelsRevision
  * @property {() => Promise<{revision: number, count: number, hotels: NormalizedHotelRecord[]}>} getAllHotelsWithMeta
  * @property {(id: EntityId) => Promise<NormalizedHotelRecord|undefined>} getHotelById
- * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<NormalizedHotelRecord[]>} updateMultipleHotels
- * @property {(hotels: Partial<RawHotelRecord>[]) => Promise<IpcResult<unknown> & {addedCount?: number, hotels?: NormalizedHotelRecord[]}>} addMultipleHotels
- * @property {(hotels: Partial<RawHotelRecord>[], options?: {matchByBusinessKey?: boolean}) => Promise<IpcResult<unknown> & {addedCount?: number, updatedCount?: number, hotels?: NormalizedHotelRecord[], added?: NormalizedHotelRecord[], updated?: NormalizedHotelRecord[]}>} upsertMultipleHotels
  * @property {(template: Partial<RawTemplateRecord>) => Promise<NormalizedTemplateRecord>} addTemplate
  * @property {(template: Partial<RawTemplateRecord>) => Promise<NormalizedTemplateRecord|null>} updateTemplate
  * @property {(template: Partial<RawTemplateRecord>) => Promise<IpcMutationResult & {template?: NormalizedTemplateRecord}>} updateTemplateAndSync
@@ -483,7 +474,6 @@
  * @property {() => Promise<string>} getDataPath
  * @property {() => Promise<IpcResult<unknown>>} showDataInFolder
  * @property {() => Promise<IpcPathResult>} changeDataPath
- * @property {ElectronBatchAPI} batch
  * @property {(callback: (...args: unknown[]) => void) => IpcUnsubscribe} onMenuExportData
  * @property {(callback: (...args: unknown[]) => void) => IpcUnsubscribe} onMenuImportData
  * @property {() => Promise<unknown>} minimizeWindow

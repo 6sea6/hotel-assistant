@@ -30,7 +30,7 @@ test('service container lazily creates AI and bundle services', () => {
         dataService,
         windowService,
         getProviderConfig() {},
-        sendChat() {}
+        startTask() {}
       };
     },
     createBundleService() {
@@ -66,11 +66,10 @@ test('service container lazily creates AI and bundle services', () => {
 
 test('AI service non-collection APIs do not load the scraper runner', () => {
   const aiServicePath = path.join(__dirname, '..', 'src', 'main', 'services', 'ai-service.js');
-  const toolsPath = path.join(__dirname, '..', 'src', 'main', 'ai', 'tools.js');
   const lazyLoaderPath = path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-lazy-loader.js');
   const scraperRunnerPath = path.join(__dirname, '..', 'src', 'main', 'ai', 'scraper-runner.js');
 
-  [aiServicePath, toolsPath, lazyLoaderPath, scraperRunnerPath].forEach((filePath) => {
+  [aiServicePath, lazyLoaderPath, scraperRunnerPath].forEach((filePath) => {
     delete require.cache[require.resolve(filePath)];
   });
 

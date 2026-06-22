@@ -1,7 +1,7 @@
 (function initSettingsNormalizers(root) {
   function normalizeCollectBatchConcurrency(value) {
     const concurrency = Number(value);
-    return concurrency === 2 || concurrency === 3 ? concurrency : 1;
+    return concurrency === 1 || concurrency === 2 || concurrency === 3 ? concurrency : 3;
   }
 
   function normalizeCollectBrowser(value) {
