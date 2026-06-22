@@ -137,6 +137,34 @@ body.modal-open .modal.active {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.rule-delete-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.rule-delete-option input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color);
+}
+
+.rule-delete-footer {
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.rule-delete-actions {
+  display: inline-flex;
+  gap: 12px;
+}
+
 .rule-delete-summary {
   margin-top: 4px;
   padding: 14px 16px;

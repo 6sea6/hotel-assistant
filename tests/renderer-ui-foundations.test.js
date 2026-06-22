@@ -199,6 +199,28 @@ test('sort mode defaults to low price and lists price options first', () => {
   assert.match(sortListMatch[1], /value="price_low" checked/);
 });
 
+test('Esc returns from the AI assistant page to the hotel list', () => {
+  const appModule = readProjectFile('src/renderer/app.module.js');
+
+  assert.match(appModule, /function\s+isAiAssistantPageVisible\(\)/);
+  assert.match(appModule, /\$\('aiAssistantPage'\)/);
+  assert.match(appModule, /if\s*\(\s*isAiAssistantPageVisible\(\)\s*\)\s*{[\s\S]*?callAiAssistant\('closeAiAssistant'\)/);
+});
+
+test('AI assistant return button uses the dark primary action treatment', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const aiAssistantCss = readStyleFile('pages/ai-assistant.css');
+
+  assert.match(
+    html,
+    /class="ai-ghost-button ai-return-button"[\s\S]*?data-action="close-ai-assistant"/
+  );
+  const returnButtonRule = readCssRuleBlock(aiAssistantCss, '.ai-return-button');
+  assert.match(returnButtonRule, /color:\s*#fff/);
+  assert.match(returnButtonRule, /background:\s*linear-gradient\(135deg,\s*var\(--primary-color\),\s*var\(--primary-hover\)\)/);
+  assert.match(returnButtonRule, /border-color:\s*transparent/);
+});
+
 test('custom select menus use an opaque theme-safe background', () => {
   const customSelect = readStyleFile('components/custom-select.css');
   const menuRule = readCssRuleBlock(customSelect, '.custom-select-menu,\n.ai-template-picker-menu');
@@ -221,6 +243,20 @@ test('hotel edit form keeps dates after prices and ctrip star after score', () =
   assert.ok(checkInIndex > dailyIndex, 'check-in date should follow daily price');
   assert.ok(checkOutIndex > checkInIndex, 'check-out date should follow check-in date');
   assert.ok(starIndex > scoreIndex, 'ctrip star level should follow ctrip score');
+});
+
+test('rule delete protects favorite hotels by default in the modal UI', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const footerMatch = html.match(
+    /<div class="modal-footer rule-delete-footer">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>\s*<\/template>/
+  );
+
+  assert.ok(footerMatch, 'rule delete footer should exist');
+  assert.match(footerMatch[1], /<input type="checkbox" id="ruleDeleteProtectFavorite" checked \/>/);
+  assert.ok(
+    footerMatch[1].indexOf('ruleDeleteProtectFavorite') < footerMatch[1].indexOf('取消'),
+    'favorite protection should be on the left before the cancel button'
+  );
 });
 
 test('modal layering uses z-index tokens without inline overrides', () => {

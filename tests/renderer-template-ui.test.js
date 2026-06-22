@@ -114,7 +114,6 @@ async function loadTemplateUiModules() {
         findTemplateById(id) {
           return globalThis.__templateUiState.templates.find((item) => String(item.id) === String(id));
         },
-        openAddHotelModal() {},
         requestHotelListRender() {},
         renderHotelList() {},
         renderAiTemplateOptions() {
@@ -216,6 +215,7 @@ function installTemplateUiDom() {
   globalThis.__templateUiLoadHotelsCalls = 0;
   globalThis.__templateUiAiTemplateRenderCalls = 0;
   globalThis.__templateUiCustomSelectRefreshCalls = 0;
+  globalThis.__templateUiSavedTemplate = null;
 
   global.window = {
     electronAPI: {
@@ -274,6 +274,70 @@ test('saving an edited template refreshes the AI task template picker immediatel
   assert.equal(globalThis.__templateUiLoadHotelsCalls, 0);
   assert.equal(globalThis.__templateUiAiTemplateRenderCalls, 1);
   assert.match(elements.get('templateList').innerHTML, /新模板/);
+});
+
+test('template list renders copy before delete and copies with a unique incremented name', async () => {
+  const elements = installTemplateUiDom();
+  const { module } = await loadTemplateUiModules();
+
+  globalThis.__templateUiState.templates = [
+    {
+      id: 'tpl-1',
+      name: '实验',
+      destination: '成都',
+      check_in_date: '2026-08-01',
+      check_out_date: '2026-08-02',
+      room_count: 2
+    },
+    {
+      id: 'tpl-2',
+      name: '实验1',
+      destination: '上海',
+      check_in_date: '2026-08-03',
+      check_out_date: '2026-08-04',
+      room_count: 3
+    }
+  ];
+  globalThis.__templateUiNextTemplates = [
+    ...globalThis.__templateUiState.templates,
+    {
+      id: 'tpl-3',
+      name: '实验2',
+      destination: '成都',
+      check_in_date: '2026-08-01',
+      check_out_date: '2026-08-02',
+      room_count: 2
+    }
+  ];
+
+  module.renderTemplateList();
+  const html = elements.get('templateList').innerHTML;
+  const renderedActions = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(renderedActions, [
+    'edit-template',
+    'copy-template',
+    'delete-template',
+    'edit-template',
+    'copy-template',
+    'delete-template'
+  ]);
+  assert.ok(html.indexOf('data-action="copy-template"') < html.indexOf('data-action="delete-template"'));
+
+  await module.copyTemplate('tpl-1');
+
+  assert.deepEqual(globalThis.__templateUiSavedTemplate, {
+    name: '实验2',
+    destination: '成都',
+    check_in_date: '2026-08-01',
+    check_out_date: '2026-08-02',
+    room_count: 2
+  });
+  assert.equal(globalThis.__templateUiLoadTemplatesCalls, 1);
+  assert.match(elements.get('templateList').innerHTML, /实验2/);
+  assert.deepEqual(globalThis.__templateUiNotifications.at(-1), {
+    message: '已复制模板为 实验2',
+    type: 'success'
+  });
 });
 
 test('saving a template that updates hotels reloads hotels once and then refreshes template UI', async () => {

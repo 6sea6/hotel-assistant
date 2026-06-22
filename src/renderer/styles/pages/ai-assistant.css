@@ -159,6 +159,20 @@
   transform: translateY(-1px);
 }
 
+.ai-return-button {
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  border-color: transparent;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--primary-color) 26%, transparent);
+}
+
+.ai-return-button:hover {
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  border-color: transparent;
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--primary-color) 30%, transparent);
+}
+
 .task-console-layout {
   width: min(1440px, calc(100% - 36px));
   flex: 1;

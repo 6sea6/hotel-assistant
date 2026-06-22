@@ -26,6 +26,11 @@ let ruleDeleteInProgress = false;
  */
 const getFormValueElement = (id) => /** @type {RuleDeleteFormValueElement|null} */ ($(id));
 
+function getRuleDeleteProtectFavorite() {
+  const input = $('ruleDeleteProtectFavorite');
+  return input instanceof HTMLInputElement ? input.checked : true;
+}
+
 function resetRuleDeleteConfirmation() {
   const confirmBtn = $('ruleDeleteConfirmBtn');
   if (!confirmBtn) return;
@@ -85,7 +90,8 @@ function getRuleDeleteThresholds() {
       price: price.value,
       ctripScore: ctripScore.value,
       subwayDistance: subwayDistance.value,
-      transportTime: transportTime.value
+      transportTime: transportTime.value,
+      protectFavorite: getRuleDeleteProtectFavorite()
     }
   };
 }
@@ -126,7 +132,13 @@ export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCar
     return [];
   }
 
+  const protectFavorite = thresholds.protectFavorite !== false;
+
   return sourceHotels.filter((hotel) => {
+    if (protectFavorite && hotel.is_favorite === 1) {
+      return false;
+    }
+
     const dailyPrice = Number(hotel.daily_price);
     const ctripScore = Number(hotel.ctrip_score);
     const subwayDistance = extractDistanceNumber(hotel.subway_distance);
@@ -165,7 +177,14 @@ export function updateRuleDeletePreview() {
   }
 
   const candidates = getRuleDeleteCandidates(thresholdsResult.value, visibleHotels);
-  summaryText.textContent = `当前卡片结果 ${visibleHotels.length} 条，命中规则 ${candidates.length} 条`;
+  const protectedFavoriteCount = thresholdsResult.value.protectFavorite
+    ? getRuleDeleteCandidates({ ...thresholdsResult.value, protectFavorite: false }, visibleHotels)
+        .length - candidates.length
+    : 0;
+  summaryText.textContent =
+    protectedFavoriteCount > 0
+      ? `当前卡片结果 ${visibleHotels.length} 条，命中规则 ${candidates.length} 条，已保护收藏 ${protectedFavoriteCount} 条`
+      : `当前卡片结果 ${visibleHotels.length} 条，命中规则 ${candidates.length} 条`;
   confirmBtn.disabled = ruleDeleteInProgress || candidates.length === 0;
 }
 
@@ -181,10 +200,14 @@ export function openRuleDeleteModal() {
   const scoreInput = getFormValueElement('ruleDeleteCtripScore');
   const subwayInput = getFormValueElement('ruleDeleteSubwayDistance');
   const transportInput = getFormValueElement('ruleDeleteTransportTime');
+  const protectFavoriteInput = $('ruleDeleteProtectFavorite');
   if (priceInput) priceInput.value = '';
   if (scoreInput) scoreInput.value = '';
   if (subwayInput) subwayInput.value = '';
   if (transportInput) transportInput.value = '';
+  if (protectFavoriteInput instanceof HTMLInputElement) {
+    protectFavoriteInput.checked = true;
+  }
   resetRuleDeleteConfirmation();
 
   updateRuleDeletePreview();

@@ -264,8 +264,12 @@ function selectBestRoom(roomBlocks, template, options = {}) {
   }
   const desiredOccupancy = getTemplateRoomCount(template, null);
   const candidateRooms = desiredOccupancy
-    ? rooms.filter((room) => isAllowedOccupancy(room, desiredOccupancy, options))
-    : rooms;
+    ? rooms.filter(
+        (room) =>
+          isEffectivelyWindowed(room.windowStatus) &&
+          isAllowedOccupancy(room, desiredOccupancy, options)
+      )
+    : rooms.filter((room) => isEffectivelyWindowed(room.windowStatus));
 
   if (candidateRooms.length === 0) {
     return null;
@@ -286,7 +290,9 @@ function selectBestRoom(roomBlocks, template, options = {}) {
 function isEffectivelyWindowed(windowStatus) {
   if (!windowStatus) return true;
   const s = normalizeText(windowStatus);
-  if (/走廊|过道|内窗|天窗朝内/.test(s)) return false;
+  if (/无窗|部分有窗|封闭窗|走廊|过道|内窗|天窗朝内|窗外.*(?:墙体|遮挡)/.test(s)) {
+    return false;
+  }
   return true;
 }
 

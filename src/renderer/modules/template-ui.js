@@ -1,5 +1,5 @@
 /**
- * 模板管理 UI —— 模板列表展示、新建/编辑/删除、应用模板，以及模板同步事件。
+ * 模板管理 UI —— 模板列表展示、新建/编辑/删除、复制模板，以及模板同步事件。
  */
 
 import {
@@ -57,6 +57,52 @@ function renderAiTemplateOptionsIfAvailable() {
   if (typeof actions.renderAiTemplateOptions === 'function') {
     actions.renderAiTemplateOptions();
   }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function normalizeTemplateName(value) {
+  return String(value || '').trim() || '模板';
+}
+
+/**
+ * @param {unknown} name
+ * @returns {{baseName: string, nextIndex: number}}
+ */
+function getTemplateCopyNameParts(name) {
+  const normalizedName = normalizeTemplateName(name);
+  const trailingNumberMatch = normalizedName.match(/^(.*?)(\d+)$/);
+  if (!trailingNumberMatch || !trailingNumberMatch[1]) {
+    return { baseName: normalizedName, nextIndex: 1 };
+  }
+
+  return {
+    baseName: trailingNumberMatch[1],
+    nextIndex: Number.parseInt(trailingNumberMatch[2], 10) + 1
+  };
+}
+
+/**
+ * @param {unknown} name
+ * @param {Array<Pick<RawTemplateRecord, 'name'>>} templates
+ * @returns {string}
+ */
+export function buildCopiedTemplateName(name, templates = state.templates) {
+  const { baseName, nextIndex } = getTemplateCopyNameParts(name);
+  const usedNames = new Set(
+    (templates || []).map((template) => normalizeTemplateName(template?.name)).filter(Boolean)
+  );
+
+  let index = Number.isFinite(nextIndex) && nextIndex > 0 ? nextIndex : 1;
+  let candidate = `${baseName}${index}`;
+  while (usedNames.has(candidate)) {
+    index += 1;
+    candidate = `${baseName}${index}`;
+  }
+
+  return candidate;
 }
 
 /**
@@ -253,8 +299,8 @@ export function renderTemplateList() {
         </div>
       </div>
       <div class="template-actions">
-        ${buildTemplateActionButton('应用', 'apply-template', template.id)}
         ${buildTemplateActionButton('编辑', 'edit-template', template.id)}
+        ${buildTemplateActionButton('复制', 'copy-template', template.id)}
         ${buildTemplateActionButton(`${iconHtml('trash')} 删除`, 'delete-template', template.id, 'btn-danger')}
       </div>
     </div>
@@ -279,11 +325,11 @@ export function handleTemplateListClick(event) {
   const id = actionButton.dataset.id;
 
   switch (action) {
-    case 'apply-template':
-      applyTemplate(id);
-      return;
     case 'edit-template':
       editTemplate(id);
+      return;
+    case 'copy-template':
+      copyTemplate(id);
       return;
     case 'delete-template':
       if (actionButton.dataset.confirming === 'true') {
@@ -430,13 +476,32 @@ export async function deleteTemplate(id) {
   }
 }
 
-/* ---- 应用模板（跳转到添加宾馆弹窗） ---- */
+/* ---- 复制模板 ---- */
 
-export function applyTemplate(id) {
+export async function copyTemplate(id) {
   const template = actions.findTemplateById(id);
   if (!template) return;
-  actions.openAddHotelModal(id);
-  closeTemplateModal();
+
+  /** @type {Partial<RawTemplateRecord>} */
+  const copiedTemplate = {
+    name: buildCopiedTemplateName(template.name, state.templates),
+    destination: template.destination || '',
+    check_in_date: template.check_in_date || null,
+    check_out_date: template.check_out_date || null,
+    room_count: parseInt(String(template.room_count || '2'), 10) || 2
+  };
+
+  try {
+    await window.electronAPI.addTemplate(copiedTemplate);
+    await refreshTemplatesAfterMutation({
+      reason: 'template-copy',
+      interactionFirst: true
+    });
+    showNotification(`已复制模板为 ${copiedTemplate.name}`, 'success');
+  } catch (error) {
+    console.error('复制模板失败:', error);
+    showNotification(`复制模板失败: ${error.message || '请重试'}`, 'error');
+  }
 }
 
 /* ---- 侧栏模板筛选下拉 ---- */

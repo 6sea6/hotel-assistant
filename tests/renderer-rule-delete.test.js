@@ -177,3 +177,49 @@ test('rule delete price threshold uses daily price instead of total price', asyn
     [2, 4]
   );
 });
+
+test('rule delete protects favorite hotels by default', async () => {
+  const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
+
+  const candidates = getRuleDeleteCandidates(
+    {
+      price: 500,
+      ctripScore: null,
+      subwayDistance: null,
+      transportTime: null
+    },
+    [
+      { id: 1, daily_price: 650, is_favorite: 1 },
+      { id: 2, daily_price: 650, is_favorite: 0 },
+      { id: 3, daily_price: 650 }
+    ]
+  );
+
+  assert.deepEqual(
+    candidates.map((hotel) => hotel.id),
+    [2, 3]
+  );
+});
+
+test('rule delete can include favorite hotels when protection is disabled', async () => {
+  const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
+
+  const candidates = getRuleDeleteCandidates(
+    {
+      price: 500,
+      ctripScore: null,
+      subwayDistance: null,
+      transportTime: null,
+      protectFavorite: false
+    },
+    [
+      { id: 1, daily_price: 650, is_favorite: 1 },
+      { id: 2, daily_price: 650, is_favorite: 0 }
+    ]
+  );
+
+  assert.deepEqual(
+    candidates.map((hotel) => hotel.id),
+    [1, 2]
+  );
+});

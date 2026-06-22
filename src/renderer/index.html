@@ -261,7 +261,11 @@
               <span aria-hidden="true">⌫</span>
               清空记录
             </button>
-            <button class="ai-ghost-button" type="button" data-action="close-ai-assistant">
+            <button
+              class="ai-ghost-button ai-return-button"
+              type="button"
+              data-action="close-ai-assistant"
+            >
               <span aria-hidden="true">↩</span>
               返回列表
             </button>
@@ -643,18 +647,24 @@
                 </div>
               </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-secondary" data-action="close-rule-delete">
-                取消
-              </button>
-              <button
-                type="button"
-                id="ruleDeleteConfirmBtn"
-                class="btn btn-danger"
-                data-action="confirm-rule-delete"
-              >
-                删除命中项
-              </button>
+            <div class="modal-footer rule-delete-footer">
+              <label class="rule-delete-option" for="ruleDeleteProtectFavorite">
+                <input type="checkbox" id="ruleDeleteProtectFavorite" checked />
+                <span>不删除已收藏宾馆</span>
+              </label>
+              <div class="rule-delete-actions">
+                <button type="button" class="btn btn-secondary" data-action="close-rule-delete">
+                  取消
+                </button>
+                <button
+                  type="button"
+                  id="ruleDeleteConfirmBtn"
+                  class="btn btn-danger"
+                  data-action="confirm-rule-delete"
+                >
+                  删除命中项
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -170,6 +170,11 @@ async function callAiAssistant(exportName, ...args) {
   await handler(...args);
 }
 
+function isAiAssistantPageVisible() {
+  const page = $('aiAssistantPage');
+  return Boolean(page && !page.hidden && page.style.display !== 'none');
+}
+
 /* ============ 全局错误捕获 ============ */
 
 window.addEventListener('error', (event) => {
@@ -378,6 +383,11 @@ function handleDelegatedChange(event) {
     return;
   }
 
+  if (target.id === 'ruleDeleteProtectFavorite') {
+    updateRuleDeletePreview();
+    return;
+  }
+
   if (target.dataset.settingKey) {
     Promise.resolve(saveAiListPrefilterSetting(event))
       .then(async () => {
@@ -423,9 +433,17 @@ function handleGlobalKeydown(e) {
   for (const [id, closeFn] of closers) {
     const el = $(id);
     if (el && el.classList.contains('active')) {
+      e.preventDefault();
       closeFn();
-      break;
+      return;
     }
+  }
+
+  if (isAiAssistantPageVisible()) {
+    e.preventDefault();
+    callAiAssistant('closeAiAssistant').catch((error) => {
+      console.error('[采集助手] Esc 返回列表失败:', error);
+    });
   }
 }
 
@@ -458,6 +476,7 @@ function setupStaticFormListeners() {
   addEvent('ruleDeleteCtripScore', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
   addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
+  addEvent('ruleDeleteProtectFavorite', 'change', updateRuleDeletePreview);
   state.staticFormEventsBound = true;
 }
 

@@ -267,6 +267,40 @@ test('selectBestRoom applies the same 1-person occupancy relaxation as eligible 
   assert.equal(room.title, '舒适大床房');
 });
 
+test('selectBestRoom ignores invalid-window rooms even when they are cheaper', () => {
+  const roomBlocks = [
+    {
+      title: '特价房（小冰箱）',
+      standard_title: '大床房',
+      original_title: '特价房（小冰箱）',
+      occupancy: 2,
+      price: 228,
+      total_price: 683,
+      price_locked: false,
+      windowStatus: '无窗',
+      cancelPolicy: '07月29日 18:00前可免费取消'
+    },
+    {
+      title: '标准单间居室（明窗+小冰箱）',
+      standard_title: '大床房',
+      original_title: '标准单间居室（明窗+小冰箱）',
+      occupancy: 2,
+      price: 253,
+      total_price: 757,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '07月29日 18:00前可免费取消'
+    }
+  ];
+
+  const room = selectBestRoom(roomBlocks, {
+    room_count: 2,
+    room_type: ''
+  });
+
+  assert.equal(room.title, '标准单间居室（明窗+小冰箱）');
+});
+
 test('selectMatchingRooms normalizes template room count aliases before applying relaxation', () => {
   const roomBlocks = [
     {
@@ -348,6 +382,53 @@ test('selectMatchingRooms skips non-cancellable and restricted-free-cancellation
   assert.equal(rooms.length, 1);
   assert.equal(rooms[0].price, 1570);
   assert.equal(rooms[0].cancelPolicy, '入住当天18:00前可免费取消');
+});
+
+test('selectMatchingRooms rejects explicit invalid window statuses', () => {
+  const roomBlocks = [
+    ['有窗房', '有窗'],
+    ['明窗房', '明窗'],
+    ['无窗房', '无窗'],
+    ['部分有窗房', '部分有窗'],
+    ['封闭窗房', '封闭窗'],
+    ['窗外遮挡房', '部分有窗且窗外有墙体或遮挡'],
+    ['走廊窗房', '窗户位于走廊'],
+    ['过道窗房', '窗户位于过道'],
+    ['内窗房', '内窗']
+  ].map(([title, windowStatus], index) => ({
+    title,
+    standard_title: '大床房',
+    original_title: title,
+    occupancy: 2,
+    price: 300 + index,
+    price_locked: false,
+    windowStatus,
+    cancelPolicy: '免费取消'
+  }));
+
+  const diagnostics = buildRoomSelectionDiagnostics(roomBlocks, {
+    room_count: 2,
+    room_type: ''
+  });
+
+  assert.deepEqual(
+    diagnostics.eligibleRooms.map((room) => room.title),
+    ['有窗房', '明窗房']
+  );
+  assert.deepEqual(
+    diagnostics.evaluations.map((item) => item.reasonCode),
+    [
+      'selected',
+      'selected',
+      'no_effective_window',
+      'no_effective_window',
+      'no_effective_window',
+      'no_effective_window',
+      'no_effective_window',
+      'no_effective_window',
+      'no_effective_window'
+    ]
+  );
 });
 
 test('buildRoomSelectionDiagnostics records rejected and deduped room reasons', () => {
