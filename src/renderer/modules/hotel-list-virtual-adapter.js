@@ -32,8 +32,8 @@ import {
 import { createHotelListRow } from './hotel-list-table-renderer.js';
 import {
   alignHotelCardTitleRows,
-  cleanupHotelActionArtifacts,
-  createHotelCard
+  createHotelCard,
+  getCurrentHotelCardVisibleKeys
 } from './hotel-list-card-renderer.js';
 
 /** @type {ReturnType<typeof createDefaultVirtualState>|null} */
@@ -824,6 +824,7 @@ export function renderVirtualHotelCardGrid(
   virtualHotelListState = createDefaultVirtualState('card');
   virtualHotelListState.enabled = true;
   virtualHotelListState.itemCount = sortedHotels.length;
+  const visibleKeys = getCurrentHotelCardVisibleKeys();
 
   let columns = calculateCardColumns(container.clientWidth);
   virtualHotelListState.columns = columns;
@@ -879,7 +880,7 @@ export function renderVirtualHotelCardGrid(
         overscan: VIRTUAL_OVERSCAN
       });
     },
-    renderItem: (hotel, index) => createHotelCard(hotel, index),
+    renderItem: (hotel, index) => createHotelCard(hotel, index, visibleKeys),
     measureSelector: '.hotel-card',
     measureFallback: CARD_ESTIMATED_HEIGHT,
     measureTolerance: 8,
@@ -890,7 +891,6 @@ export function renderVirtualHotelCardGrid(
     },
     wheelDuration: 180,
     afterItemsRendered: (nextItemsContainer) => {
-      cleanupHotelActionArtifacts(nextItemsContainer);
       alignHotelCardTitleRows(nextItemsContainer);
     },
     getRangeKeySuffix: () => columns

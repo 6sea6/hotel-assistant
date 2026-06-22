@@ -18,7 +18,11 @@ import { normalizeHotelCardVisibleFields, renderCardFields } from './hotel-card-
 
 const CARD_TITLE_ROW_HEIGHT_VAR = '--hotel-card-title-row-height';
 
-export function createHotelCard(hotel, index) {
+export function getCurrentHotelCardVisibleKeys() {
+  return normalizeHotelCardVisibleFields(state.settings.hotelCardVisibleFields);
+}
+
+export function createHotelCard(hotel, index, visibleKeys = getCurrentHotelCardVisibleKeys()) {
   const rank = index + 1;
   const isTop3 = rank <= 3;
   const hotelIdText = String(hotel.id);
@@ -51,8 +55,6 @@ export function createHotelCard(hotel, index) {
       return true;
     return false;
   };
-
-  const visibleKeys = normalizeHotelCardVisibleFields(state.settings.hotelCardVisibleFields);
 
   const helpers = {
     escapeHtml,
@@ -207,23 +209,14 @@ export function alignHotelCardTitleRows(container) {
   }
 }
 
-export function cleanupHotelActionArtifacts(container) {
-  container.querySelectorAll('.hotel-actions *').forEach((el) => {
-    if (!el || !el.textContent) return;
-    const txt = el.textContent.trim();
-    if (/^[\.·\u2026\u22EF]{1,4}$/.test(txt)) {
-      el.remove();
-    }
-  });
-}
-
 function renderHotelCardsInBatches(
   container,
   hotelsToRender,
   taskVersion,
   perfLabel,
   options = {},
-  startIndex = 0
+  startIndex = 0,
+  visibleKeys = getCurrentHotelCardVisibleKeys()
 ) {
   if (taskVersion !== state.hotelListRenderVersion) {
     options.finishHotelRender?.(taskVersion, perfLabel);
@@ -238,7 +231,8 @@ function renderHotelCardsInBatches(
         taskVersion,
         perfLabel,
         options,
-        startIndex
+        startIndex,
+        visibleKeys
       )
     );
     return;
@@ -248,7 +242,7 @@ function renderHotelCardsInBatches(
   const endIndex = Math.min(startIndex + HOTEL_RENDER_BATCH_SIZE, hotelsToRender.length);
 
   for (let index = startIndex; index < endIndex; index++) {
-    fragment.appendChild(createHotelCard(hotelsToRender[index], index));
+    fragment.appendChild(createHotelCard(hotelsToRender[index], index, visibleKeys));
   }
 
   container.appendChild(fragment);
@@ -261,13 +255,13 @@ function renderHotelCardsInBatches(
         taskVersion,
         perfLabel,
         options,
-        endIndex
+        endIndex,
+        visibleKeys
       )
     );
     return;
   }
 
-  cleanupHotelActionArtifacts(container);
   alignHotelCardTitleRows(container);
   options.finishHotelRender?.(taskVersion, perfLabel);
 }
@@ -279,17 +273,26 @@ export function renderHotelCardGrid(
   perfLabel,
   options = {}
 ) {
+  const visibleKeys = getCurrentHotelCardVisibleKeys();
+
   if (hotelsToRender.length <= LARGE_HOTEL_RENDER_THRESHOLD) {
     const fragment = document.createDocumentFragment();
     hotelsToRender.forEach((hotel, index) => {
-      fragment.appendChild(createHotelCard(hotel, index));
+      fragment.appendChild(createHotelCard(hotel, index, visibleKeys));
     });
     container.appendChild(fragment);
-    cleanupHotelActionArtifacts(container);
     alignHotelCardTitleRows(container);
     options.finishHotelRender?.(taskVersion, perfLabel);
     return;
   }
 
-  renderHotelCardsInBatches(container, hotelsToRender, taskVersion, perfLabel, options);
+  renderHotelCardsInBatches(
+    container,
+    hotelsToRender,
+    taskVersion,
+    perfLabel,
+    options,
+    0,
+    visibleKeys
+  );
 }

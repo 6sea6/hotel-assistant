@@ -9,10 +9,10 @@ class IPCHandlerManager {
   }
 
   registerAllHandlers() {
-    const { DataCache } = require('./utils');
+    const { DataInvalidationTracker } = require('./utils');
 
     if (!this.cache) {
-      this.cache = new DataCache();
+      this.cache = new DataInvalidationTracker();
     }
 
     if (!this.services) {

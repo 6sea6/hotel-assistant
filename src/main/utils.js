@@ -10,39 +10,20 @@ const {
   writePointerDataFolder
 } = requireSharedCompareAppModule('data-folder.js');
 
-// 缓存管理
-class DataCache {
-  constructor(ttl = 5000) {
-    this.cache = new Map();
-    this.ttl = ttl;
+// 主进程数据变更标记。实际读取缓存位于 preload 的 cachedInvoke。
+class DataInvalidationTracker {
+  constructor() {
+    this.revision = 0;
+    this.lastInvalidatedKey = '';
   }
 
-  get(key) {
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.time < this.ttl) {
-      return cached.data;
-    }
-    return null;
+  invalidate(key = '') {
+    this.revision += 1;
+    this.lastInvalidatedKey = String(key || '');
   }
 
-  set(key, data) {
-    this.cache.set(key, { data, time: Date.now() });
-  }
-
-  delete(key) {
-    if (key) {
-      this.cache.delete(key);
-    } else {
-      this.cache.clear();
-    }
-  }
-
-  invalidate(pattern) {
-    for (const key of this.cache.keys()) {
-      if (key.includes(pattern)) {
-        this.cache.delete(key);
-      }
-    }
+  getRevision() {
+    return this.revision;
   }
 }
 
@@ -173,7 +154,7 @@ const notifyRenderer = (mainWindow, channel, data) => {
 };
 
 module.exports = {
-  DataCache,
+  DataInvalidationTracker,
   DataFolderManager,
   notifyRenderer
 };

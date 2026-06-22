@@ -79,7 +79,7 @@ function requestHotelRender(options = {}) {
 /* ---- 公共数据加载 ---- */
 
 /**
- * @param {{force?: boolean, reason?: string}} [options]
+ * @param {{force?: boolean}} [options]
  * @returns {Promise<NormalizedHotelRecord[]>}
  */
 export async function loadHotels(options = {}) {
@@ -185,7 +185,7 @@ export async function reloadAllData(options = {}) {
 
   /** @type {[Promise<NormalizedHotelRecord[]>, Promise<NormalizedTemplateRecord[]>, Promise<AppSettings|null>]} */
   const requests = [
-    loadHotels({ force: shouldForceHotels, reason: 'reloadAllData' }),
+    loadHotels({ force: shouldForceHotels }),
     window.electronAPI.getAllTemplates(),
     includeSettings ? window.electronAPI.getAllSettings() : Promise.resolve(null)
   ];

@@ -193,7 +193,7 @@ async function reloadHotelsForTemplateMutation(options) {
     return true;
   }
 
-  const hotels = await actions.loadHotels({ force: true, reason: options.reason });
+  const hotels = await actions.loadHotels({ force: true });
   setHotels(hotels || []);
   markVisibleHotelsCacheDirty();
   return true;

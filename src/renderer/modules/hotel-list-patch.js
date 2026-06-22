@@ -10,8 +10,8 @@ import { syncHotelNameFilterOptions } from './hotel-list-filter-options.js';
 import { createHotelListRow } from './hotel-list-table-renderer.js';
 import {
   alignHotelCardTitleRows,
-  cleanupHotelActionArtifacts,
-  createHotelCard
+  createHotelCard,
+  getCurrentHotelCardVisibleKeys
 } from './hotel-list-card-renderer.js';
 import { syncSelectAllCheckboxState } from './hotel-list-selection.js';
 
@@ -145,15 +145,15 @@ export function patchHotelCards(changedIds, options = {}) {
   }
 
   bumpHotelListRenderVersion();
+  const visibleKeys = state.viewMode === 'list' ? null : getCurrentHotelCardVisibleKeys();
   for (const item of patchPlan) {
     const replacement =
       state.viewMode === 'list'
         ? createHotelListRow(item.hotel, item.index)
-        : createHotelCard(item.hotel, item.index);
+        : createHotelCard(item.hotel, item.index, visibleKeys);
     item.existingNode.replaceWith(replacement);
   }
 
-  cleanupHotelActionArtifacts(container);
   if (state.viewMode !== 'list') {
     alignHotelCardTitleRows(container);
   }
