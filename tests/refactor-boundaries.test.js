@@ -108,6 +108,19 @@ test('virtual hotel adapter relies on native scrollbars instead of custom wheel 
   assert.doesNotMatch(adapter, /is-dragging-virtual-scrollbar/);
 });
 
+test('hotel list patch falls back when rendered DOM is incomplete', () => {
+  const patchModule = readProjectFile('src/renderer/modules/hotel-list-patch.js');
+  const lengthCheckIndex = patchModule.indexOf('renderedNodes.length !== sortedHotels.length');
+  const deleteBranchIndex = patchModule.indexOf("options.reason === 'hotel-delete'");
+
+  assert.ok(lengthCheckIndex > 0, 'patchHotelCards should check rendered node completeness');
+  assert.ok(
+    deleteBranchIndex > lengthCheckIndex,
+    'hotel-delete patching must happen after rendered node completeness check'
+  );
+  assert.doesNotMatch(patchModule, /renderedNodes\.length !== sortedHotels\.length &&/);
+});
+
 test('AI assistant task page is split into payload queue template and event modules', () => {
   const expectedModules = [
     'src/renderer/modules/ai-task-payload.js',

@@ -97,7 +97,7 @@ export function patchHotelCards(changedIds, options = {}) {
   }
 
   const renderedNodes = getRenderedHotelNodes(container);
-  if (renderedNodes.length !== sortedHotels.length && options.reason !== 'hotel-delete') {
+  if (renderedNodes.length !== sortedHotels.length) {
     return false;
   }
 

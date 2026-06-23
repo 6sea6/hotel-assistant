@@ -38,7 +38,13 @@
 }
 
 .virtual-card-row {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  width: 100%;
   min-width: 0;
+  will-change: transform;
 }
 
 .hotel-list.list-view .hotel-table {

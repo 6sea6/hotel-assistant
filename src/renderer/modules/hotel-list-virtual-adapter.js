@@ -461,16 +461,10 @@ export function renderVirtualHotelCardGrid(
         const row = document.createElement('div');
         row.className = 'virtual-card-row';
         row.dataset.index = String(virtualRow.index);
-        row.style.position = 'absolute';
-        row.style.left = '0';
-        row.style.top = '0';
-        row.style.width = '100%';
-        row.style.display = 'grid';
         row.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
         row.style.gap = `${CARD_GAP}px`;
         row.style.paddingBottom = `${CARD_GAP}px`;
         row.style.transform = `translateY(${virtualRow.start}px)`;
-        row.style.willChange = 'transform';
 
         for (let columnIndex = 0; columnIndex < columns; columnIndex++) {
           const hotelIndex = virtualRow.index * columns + columnIndex;

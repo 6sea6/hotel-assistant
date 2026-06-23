@@ -116,6 +116,7 @@ function getBundleManifest(bundleRoot) {
         path.join('src', 'renderer', 'index.html'),
         path.join('src', 'renderer', 'manual.html'),
         path.join('src', 'shared', 'app-info.generated.js'),
+        path.join('node_modules', '@tanstack', 'virtual-core', 'dist', 'esm', 'index.js'),
         'package.json'
       ],
       neverAppAsarResources: [

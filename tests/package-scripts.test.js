@@ -101,6 +101,12 @@ test('package manifest keeps full bundle resource contracts stable', () => {
     path.join('scraper', 'vendor', 'parse5', 'dist', 'cjs', 'tokenizer', 'index.js'),
     path.join('scraper', PROMPT_CONTRACT.unifiedPromptFileName)
   ]);
+  assert.ok(
+    manifest.expectations.appAsarResources.includes(
+      path.join('node_modules', '@tanstack', 'virtual-core', 'dist', 'esm', 'index.js')
+    ),
+    'package smoke must verify TanStack Virtual Core ESM entry in app.asar'
+  );
   [
     path.join('devtools'),
     path.join('logs'),
@@ -909,6 +915,42 @@ test('package layout rejects unexpected app.asar resources', async (t) => {
   assert.throws(
     () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }),
     /app\.asar 不应包含资源/
+  );
+});
+
+test('package layout requires TanStack Virtual Core ESM entry in app.asar', async (t) => {
+  const tempRoot = makeTempRoot();
+  const resourcesDir = path.join(tempRoot, 'full', 'win-unpacked', 'resources');
+  const tanstackVirtualCoreEntry = path.join(
+    'node_modules',
+    '@tanstack',
+    'virtual-core',
+    'dist',
+    'esm',
+    'index.js'
+  );
+
+  const writeResourceFile = (relativePath) => {
+    const targetPath = path.join(resourcesDir, relativePath);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, 'fixture', 'utf-8');
+  };
+
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  [
+    path.join('shared', 'compare-app', 'constants.js'),
+    path.join('shared', 'compare-app', 'data-folder.js'),
+    path.join('shared', 'compare-app', 'hotel-groups.js')
+  ].forEach(writeResourceFile);
+  getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
+  await writeAppAsarFixture(resourcesDir, { omit: [tanstackVirtualCoreEntry] });
+
+  assert.throws(
+    () => verifyPackageLayout({ tempBuildDir: path.join(tempRoot, 'full') }),
+    /node_modules[\\/]@tanstack[\\/]virtual-core[\\/]dist[\\/]esm[\\/]index\.js/
   );
 });
 

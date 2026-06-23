@@ -53,8 +53,6 @@ async function loadHotelListModule() {
     export function buildVisibleHotelsFiltersKey() { return JSON.stringify(state.currentFilters || {}); }
     export function saveScrollMemory() {}
     export function getScrollBehaviorForReason() { return 'top'; }
-    export function calculateScrollTopForAnchor() { return 0; }
-    export function calculateScrollTopAfterDelete() { return 0; }
     `
   );
 
