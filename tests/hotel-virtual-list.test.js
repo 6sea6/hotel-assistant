@@ -48,29 +48,24 @@ test('getVirtualScrollThreshold: card mode uses lower threshold', async () => {
 });
 
 test('createDefaultVirtualState: list mode defaults', async () => {
-  const { createDefaultVirtualState, LIST_ROW_ESTIMATED_HEIGHT, VIRTUAL_OVERSCAN } =
-    await loadModule();
+  const { createDefaultVirtualState, VIRTUAL_OVERSCAN } = await loadModule();
   const state = createDefaultVirtualState('list');
 
   assert.equal(state.enabled, false);
   assert.equal(state.viewMode, 'list');
   assert.equal(state.itemCount, 0);
-  assert.equal(state.estimatedItemHeight, LIST_ROW_ESTIMATED_HEIGHT);
   assert.equal(state.overscan, VIRTUAL_OVERSCAN);
   assert.equal(state.columns, 1);
-  assert.equal(state.hasMeasuredItemHeight, false);
 });
 
 test('createDefaultVirtualState: card mode defaults', async () => {
-  const { createDefaultVirtualState, CARD_ESTIMATED_HEIGHT, VIRTUAL_OVERSCAN } = await loadModule();
+  const { createDefaultVirtualState, VIRTUAL_OVERSCAN } = await loadModule();
   const state = createDefaultVirtualState('card');
 
   assert.equal(state.enabled, false);
   assert.equal(state.viewMode, 'card');
-  assert.equal(state.estimatedItemHeight, CARD_ESTIMATED_HEIGHT);
   assert.equal(state.overscan, VIRTUAL_OVERSCAN);
   assert.equal(state.columns, 3);
-  assert.equal(state.hasMeasuredItemHeight, false);
 });
 
 test('calculateCardColumns: breakpoints match the card grid rules', async () => {

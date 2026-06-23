@@ -48,13 +48,11 @@ export function shouldUseVirtualHotelList(count, options = {}) {
  *   itemCount: number,
  *   scrollTop: number,
  *   viewportHeight: number,
- *   estimatedItemHeight: number,
  *   overscan: number,
  *   startIndex: number,
  *   endIndex: number,
  *   totalHeight: number,
- *   columns: number,
- *   hasMeasuredItemHeight: boolean
+ *   columns: number
  * }}
  */
 export function createDefaultVirtualState(viewMode) {
@@ -64,13 +62,11 @@ export function createDefaultVirtualState(viewMode) {
     itemCount: 0,
     scrollTop: 0,
     viewportHeight: 0,
-    estimatedItemHeight: viewMode === 'list' ? LIST_ROW_ESTIMATED_HEIGHT : CARD_ESTIMATED_HEIGHT,
     overscan: VIRTUAL_OVERSCAN,
     startIndex: 0,
     endIndex: 0,
     totalHeight: 0,
-    columns: viewMode === 'list' ? 1 : 3,
-    hasMeasuredItemHeight: false
+    columns: viewMode === 'list' ? 1 : 3
   };
 }
 

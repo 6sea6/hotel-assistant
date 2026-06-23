@@ -37,7 +37,6 @@ let virtualScrollRafId = 0;
 let virtualResizeObserver = null;
 let virtualResizeRafId = 0;
 let virtualRenderCleanup = null;
-let activeVirtualizer = null;
 
 /* ---- 虚拟滚动：行式视图 ---- */
 
@@ -267,7 +266,6 @@ function renderVirtualHotelCollection(params) {
   };
 
   virtualizer = new Virtualizer(buildVirtualizerOptions());
-  activeVirtualizer = virtualizer;
   cleanupVirtualizer = virtualizer._didMount();
   virtualizer._willUpdate();
 
@@ -305,9 +303,6 @@ function renderVirtualHotelCollection(params) {
     }
     scrollContainer.removeEventListener('scroll', handleVirtualListScroll);
     cleanupVirtualizer();
-    if (activeVirtualizer === virtualizer) {
-      activeVirtualizer = null;
-    }
     virtualizer = null;
   };
 
@@ -508,7 +503,6 @@ export function renderVirtualHotelCardGrid(
       columns = nextColumns;
       rowCount = Math.ceil(sortedHotels.length / columns);
       virtualHotelListState.columns = columns;
-      virtualHotelListState.hasMeasuredItemHeight = false;
       controls.resetRenderedRange();
       controls.setVirtualizerCount(rowCount);
       controls.updateVirtualItems();
@@ -582,6 +576,5 @@ export function resetVirtualHotelListState() {
     virtualRenderCleanup();
     virtualRenderCleanup = null;
   }
-  activeVirtualizer = null;
   virtualHotelListState = null;
 }
