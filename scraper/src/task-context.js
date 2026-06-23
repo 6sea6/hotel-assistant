@@ -127,6 +127,33 @@ function normalizeBatchConcurrency(args = {}, options = {}) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
 }
 
+function normalizeListApiReplayConcurrency(value, fallback = 2) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return fallback;
+  }
+  return Math.min(8, Math.max(1, Math.floor(number)));
+}
+
+function resolveListApiReplayConcurrency(args = {}, options = {}) {
+  const explicit =
+    options.maxListApiReplayConcurrency ??
+    args.maxListApiReplayConcurrency ??
+    args['max-list-api-replay-concurrency'];
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    return normalizeListApiReplayConcurrency(explicit, 2);
+  }
+
+  const batchConcurrency = Math.min(3, Math.max(1, normalizeBatchConcurrency(args, options)));
+  if (batchConcurrency >= 3) {
+    return 6;
+  }
+  if (batchConcurrency === 2) {
+    return 4;
+  }
+  return 2;
+}
+
 module.exports = {
   assertNotCancelled,
   buildEdgeSessionOptions,
@@ -136,6 +163,7 @@ module.exports = {
   isCancellationError,
   isReportDisabled,
   normalizeBatchConcurrency,
+  resolveListApiReplayConcurrency,
   normalizeTaskArgs,
   resolveBatchCaptureStrategy,
   shouldCleanupOutputArtifactsForRun,

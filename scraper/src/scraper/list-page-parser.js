@@ -42,9 +42,10 @@ function normalizeListPageFilterOptions(options = {}) {
       options['max-hotels'],
     DEFAULT_DESIRED_HOTEL_COUNT
   );
+  const defaultMaxCandidatesPerPage = Math.max(DEFAULT_MAX_CANDIDATES_PER_PAGE, desiredHotelCount);
   const maxCandidatesPerPage = normalizePositiveInteger(
     options.maxCandidatesPerPage ?? options['max-candidates-per-page'],
-    DEFAULT_MAX_CANDIDATES_PER_PAGE
+    defaultMaxCandidatesPerPage
   );
 
   return {

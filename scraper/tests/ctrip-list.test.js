@@ -540,7 +540,55 @@ test('parseListPageCandidatesFromHtml reads camel-case hotel ids from data-expos
     'https://hotels.ctrip.com/hotels/list?city=2'
   );
 
-  assert.equal(candidates.some((candidate) => candidate.hotelId === '9901'), true);
+  assert.equal(
+    candidates.some((candidate) => candidate.hotelId === '9901'),
+    true
+  );
+});
+
+test('parseListPageCandidatesFromHtml raises default candidate cap to desired list target', () => {
+  const cards = Array.from({ length: 120 }, (_, index) => ({
+    id: String(8000 + index),
+    name: `列表候选酒店 ${index + 1}`
+  }));
+  const candidates = parseListPageCandidatesFromHtml(
+    buildListHtml(cards),
+    'https://hotels.ctrip.com/hotels/list?city=2',
+    {
+      desiredHotelCount: 120
+    }
+  );
+
+  assert.equal(candidates.length, 120);
+  assert.equal(candidates[0].hotelId, '8000');
+  assert.equal(candidates.at(-1).hotelId, '8119');
+});
+
+test('parseListPageCandidatesFromHtml reads Edge DOM candidate JSON scripts', () => {
+  const html = `
+    <script type="application/json" data-source="edge-dom-candidates">
+      {
+        "hotelList": [
+          {
+            "hotelId": "8120",
+            "masterHotelId": "8120",
+            "detailUrl": "https://hotels.ctrip.com/hotels/detail/?hotelId=8120",
+            "hotelName": "Edge DOM 候选酒店",
+            "commentScore": 4.8,
+            "hotelTypeName": "酒店"
+          }
+        ]
+      }
+    </script>
+  `;
+  const candidates = parseListPageCandidatesFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/list?city=2'
+  );
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].hotelId, '8120');
+  assert.equal(candidates[0].hotelName, 'Edge DOM 候选酒店');
 });
 
 test('fetchListApiPagesInEdgeSession accepts captured request body when next data is missing', async () => {
@@ -601,6 +649,40 @@ test('fetchListApiPagesInEdgeSession accepts captured request body when next dat
   assert.equal(result.count, 1);
   assert.deepEqual(result.pageIndexes, [2]);
   assert.match(result.html, /请求体回放酒店/);
+});
+
+test('fetchListApiPagesInEdgeSession scales replay pages for large list targets', async () => {
+  let evaluatedExpression = '';
+  const connection = {
+    async send(method, params) {
+      assert.equal(method, 'Runtime.evaluate');
+      evaluatedExpression = String(params.expression || '');
+      return {
+        result: {
+          value: JSON.stringify({
+            responses: [],
+            pageIndexes: [],
+            error: ''
+          })
+        }
+      };
+    }
+  };
+
+  await fetchListApiPagesInEdgeSession(connection, 'session-1', {
+    desiredHotelCount: 300,
+    initialRequests: [
+      {
+        url: 'https://m.ctrip.com/restapi/soa2/34951/fetchHotelList',
+        postData: JSON.stringify({
+          paging: { pageIndex: 1, pageSize: 10 }
+        })
+      }
+    ]
+  });
+
+  assert.match(evaluatedExpression, /const maxReplayPages = 31/);
+  assert.match(evaluatedExpression, /const replayConcurrency = 6/);
 });
 
 test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async () => {
@@ -668,8 +750,67 @@ test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async 
     [2, 3]
   );
   assert.deepEqual(requests[0].hotelIdFilter.hotelAldyShown, ['1001']);
+  assert.deepEqual(requests[1].hotelIdFilter.hotelAldyShown, ['1001']);
   assert.match(result.html, /html-list-api-replay/);
   assert.match(result.html, /静态接口酒店 2/);
+});
+
+test('fetchListApiPagesFromHtml replays enough pages for a 300-hotel target', async () => {
+  const initData = {
+    hotelList: [
+      {
+        hotelInfo: {
+          summary: { hotelId: '1001', masterHotelId: '1001' },
+          nameInfo: { name: '第一页酒店' }
+        }
+      }
+    ],
+    pagingInfo: { pageIndex: 1, pageSize: 10 }
+  };
+  const initRequest = {
+    hotelIdFilter: { hotelAldyShown: [] },
+    paging: { pageIndex: 1, pageSize: 10 }
+  };
+  const html = `<script>window.__INITIAL_DATA__={"initListData":${JSON.stringify(initData)},"initListRequest":${JSON.stringify(initRequest)}}</script>`;
+  const requests = [];
+
+  const result = await fetchListApiPagesFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/list?cityId=2',
+    {
+      desiredHotelCount: 300,
+      fetchImpl: async (_endpoint, options) => {
+        const body = JSON.parse(options.body);
+        requests.push(body);
+        const pageIndex = body.paging.pageIndex;
+        return {
+          status: 200,
+          async json() {
+            return {
+              data: {
+                hotelList: [
+                  {
+                    hotelInfo: {
+                      summary: {
+                        hotelId: String(9000 + pageIndex),
+                        masterHotelId: String(9000 + pageIndex)
+                      },
+                      nameInfo: { name: `静态接口酒店 ${pageIndex}` }
+                    }
+                  }
+                ]
+              }
+            };
+          }
+        };
+      }
+    }
+  );
+
+  assert.equal(result.count, 31);
+  assert.equal(requests.length, 31);
+  assert.deepEqual(result.pageIndexes.slice(0, 3), [2, 3, 4]);
+  assert.equal(result.pageIndexes.at(-1), 32);
 });
 
 test('isCtripListNetworkResponse accepts current list API variants', () => {

@@ -156,6 +156,10 @@ export function renderHotelList(options = {}) {
       }
     } catch (error) {
       console.error('[virtual-list] fallback to full render', error);
+      resetVirtualHotelListState();
+      container.innerHTML = '';
+      state.renderedHotelNodeMap?.clear?.();
+      container.className = state.viewMode === 'list' ? 'hotel-list list-view' : 'hotel-list';
     }
 
     if (state.viewMode === 'list') {

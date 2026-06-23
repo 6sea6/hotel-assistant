@@ -140,22 +140,17 @@ async function loadHotelListModule() {
     export const CARD_GAP = 16;
     export function shouldUseVirtualHotelList() { return false; }
     export function getVirtualScrollThreshold() { return 200; }
-    export function calculateVirtualRange() { return { startIndex: 0, endIndex: 0, beforeHeight: 0, afterHeight: 0 }; }
-    export function calculateCardVirtualRange() { return { startIndex: 0, endIndex: 0, beforeHeight: 0, afterHeight: 0 }; }
     export function createDefaultVirtualState(viewMode = 'card') { return { viewMode }; }
-    export function measureAverageHeight(_elements, fallback) { return fallback; }
     export function calculateCardColumns() { return 3; }
     `
   );
   writeFile(
-    path.join(tempRoot, 'virtual-scrollbar-math.js'),
+    path.join(tempRoot, 'tanstack-virtual-core.js'),
     `
-    export function calculateThumbMetrics() { return {}; }
-    export function calculateScrollTopFromTrackClick() { return 0; }
-    export function calculateScrollTopFromDrag() { return 0; }
-    export function clampValue(value) { return value; }
-    export function normalizeWheelDelta(value) { return value; }
-    export function normalizeWheelToStep(value) { return value; }
+    export class Virtualizer {}
+    export function elementScroll() {}
+    export function observeElementOffset() {}
+    export function observeElementRect() {}
     `
   );
 

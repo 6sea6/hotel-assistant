@@ -1,12 +1,43 @@
 const { evaluateInSession } = require('./cdp-utils');
 
 const LIST_API_ENDPOINT = 'https://m.ctrip.com/restapi/soa2/34951/fetchHotelList';
+const DEFAULT_MAX_LIST_API_REPLAY_PAGES = 60;
+const DEFAULT_LIST_API_REPLAY_CONCURRENCY = 6;
 
 function normalizeMaxReplayPages(desiredCount, explicitMaxReplayPages) {
-  return Math.min(
-    8,
-    Math.max(1, Number(explicitMaxReplayPages) || Math.ceil(desiredCount / 10) + 1)
+  const explicit = Number(explicitMaxReplayPages);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return Math.max(1, Math.trunc(explicit));
+  }
+
+  const requested = Math.max(1, Math.ceil((Number(desiredCount) || 0) / 10) + 1);
+  return Math.min(DEFAULT_MAX_LIST_API_REPLAY_PAGES, requested);
+}
+
+function normalizeReplayConcurrency(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return DEFAULT_LIST_API_REPLAY_CONCURRENCY;
+  }
+  return Math.min(8, Math.max(1, Math.trunc(number)));
+}
+
+async function mapWithConcurrency(items, concurrency, fn) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await fn(items[index], index);
+      }
+    })
   );
+
+  return results;
 }
 
 function isCtripListNetworkResponse(url) {
@@ -36,7 +67,7 @@ function hasHotelListPayload(value) {
 }
 
 function readHotelIds(value, output = []) {
-  if (!value || typeof value !== 'object' || output.length > 500) {
+  if (!value || typeof value !== 'object' || output.length > 5000) {
     return output;
   }
   if (Array.isArray(value)) {
@@ -60,12 +91,9 @@ function delay(ms) {
 async function readNetworkResponseBody(connection, sessionId, requestId) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await connection.send(
-        'Network.getResponseBody',
-        { requestId },
-        sessionId,
-        { timeoutMs: attempt === 0 ? 900 : 1500 }
-      );
+      return await connection.send('Network.getResponseBody', { requestId }, sessionId, {
+        timeoutMs: attempt === 0 ? 900 : 1500
+      });
     } catch (_error) {
       if (attempt === 0) {
         await delay(250);
@@ -239,7 +267,7 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
   }
 
   const maxReplayPages = normalizeMaxReplayPages(desiredCount, options.maxListApiReplayPages);
-  const seenIds = new Set(readHotelIds(initData && initData.hotelList));
+  const initiallyShownIds = [...new Set(readHotelIds(initData && initData.hotelList))];
   const basePageIndex =
     Number(
       (request.paging && request.paging.pageIndex) ||
@@ -255,7 +283,7 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
         10
     ) || 10;
   const headers = {
-    ...((options.headers && typeof options.headers === 'object') ? options.headers : {}),
+    ...(options.headers && typeof options.headers === 'object' ? options.headers : {}),
     accept: 'application/json, text/plain, */*',
     'content-type': 'application/json;charset=UTF-8',
     origin: 'https://hotels.ctrip.com',
@@ -265,34 +293,35 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
     headers.cookie = options.cookieHeader;
   }
 
-  const responses = [];
-  const pageIndexes = [];
-  for (
-    let pageIndex = basePageIndex + 1;
-    pageIndex <= basePageIndex + maxReplayPages;
-    pageIndex += 1
-  ) {
-    const body = applyListPageIndex(request, pageIndex, pageSize);
-    body.hotelIdFilter = {
-      ...(body.hotelIdFilter || {}),
-      hotelAldyShown: Array.from(seenIds)
-    };
+  const pageIndexes = Array.from(
+    { length: maxReplayPages },
+    (_, index) => basePageIndex + index + 1
+  );
+  const replayConcurrency = normalizeReplayConcurrency(options.maxListApiReplayConcurrency);
+  const allResponses = await mapWithConcurrency(
+    pageIndexes,
+    replayConcurrency,
+    async (pageIndex) => {
+      const body = applyListPageIndex(request, pageIndex, pageSize);
+      body.hotelIdFilter = {
+        ...(body.hotelIdFilter || {}),
+        hotelAldyShown: initiallyShownIds
+      };
 
-    const response = await fetchImpl(LIST_API_ENDPOINT, {
-      method: 'POST',
-      credentials: 'include',
-      headers,
-      body: JSON.stringify(body)
-    });
-    const data = await response.json().catch(() => null);
-    const ids = readHotelIds(data);
-    ids.forEach((id) => seenIds.add(id));
-    responses.push({ pageIndex, status: response.status, data });
-    pageIndexes.push(pageIndex);
-    if (!ids.length) {
-      break;
+      const response = await fetchImpl(LIST_API_ENDPOINT, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify(body)
+      });
+      const data = await response.json().catch(() => null);
+      const ids = readHotelIds(data);
+      return { pageIndex, status: response.status, data, ids };
     }
-  }
+  );
+  const firstEmptyIndex = allResponses.findIndex((response) => !response.ids.length);
+  const responses =
+    firstEmptyIndex >= 0 ? allResponses.slice(0, firstEmptyIndex + 1) : allResponses;
 
   const scripts = responses
     .filter((response) => response && response.data)
@@ -303,7 +332,7 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
   return {
     count: scripts.length,
     html: scripts.join('\n'),
-    pageIndexes,
+    pageIndexes: responses.map((response) => response.pageIndex),
     error: ''
   };
 }
@@ -320,9 +349,11 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
   }
 
   const maxReplayPages = normalizeMaxReplayPages(desiredCount, options.maxListApiReplayPages);
+  const replayConcurrency = normalizeReplayConcurrency(options.maxListApiReplayConcurrency);
   const expression = `(async () => {
     const targetCount = ${JSON.stringify(desiredCount)};
     const maxReplayPages = ${JSON.stringify(maxReplayPages)};
+    const replayConcurrency = ${JSON.stringify(replayConcurrency)};
     const initialListRequests = ${JSON.stringify(normalizeInitialListRequests(options.initialRequests))};
     const endpoint = ${JSON.stringify(LIST_API_ENDPOINT)};
     const result = { responses: [], pageIndexes: [], error: '' };
@@ -383,7 +414,7 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       return null;
     };
     const readHotelIds = (value, output = []) => {
-      if (!value || typeof value !== 'object' || output.length > 300) return output;
+      if (!value || typeof value !== 'object' || output.length > 5000) return output;
       if (Array.isArray(value)) {
         value.forEach((item) => readHotelIds(item, output));
         return output;
@@ -403,7 +434,7 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       result.error = 'missing_init_list_request';
       return JSON.stringify(result);
     }
-    const seenIds = new Set(readHotelIds(initData && initData.hotelList));
+    const initiallyShownIds = Array.from(new Set(readHotelIds(initData && initData.hotelList)));
     const basePageIndex = Number(
       (request.paging && request.paging.pageIndex) ||
       request.pageIndex ||
@@ -417,11 +448,21 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       10
     ) || 10;
 
-    for (
-      let pageIndex = basePageIndex + 1;
-      pageIndex <= basePageIndex + maxReplayPages;
-      pageIndex += 1
-    ) {
+    const pageIndexes = Array.from({ length: maxReplayPages }, (_, index) => basePageIndex + index + 1);
+    const mapWithConcurrency = async (items, concurrency, fn) => {
+      const results = new Array(items.length);
+      let nextIndex = 0;
+      const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
+      await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+          const index = nextIndex;
+          nextIndex += 1;
+          results[index] = await fn(items[index], index);
+        }
+      }));
+      return results;
+    };
+    const responses = await mapWithConcurrency(pageIndexes, replayConcurrency, async (pageIndex) => {
       const body = JSON.parse(JSON.stringify(request));
       if (body.paging && typeof body.paging === 'object') {
         body.paging = { ...body.paging, pageIndex, pageSize };
@@ -433,7 +474,7 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       }
       body.hotelIdFilter = {
         ...(body.hotelIdFilter || {}),
-        hotelAldyShown: Array.from(seenIds)
+        hotelAldyShown: initiallyShownIds
       };
       body.head = { ...(body.head || {}), isSSR: false };
       const response = await fetch(endpoint, {
@@ -447,13 +488,12 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       });
       const data = await response.json().catch(() => null);
       const ids = readHotelIds(data);
-      ids.forEach((id) => seenIds.add(id));
-      result.responses.push({ pageIndex, status: response.status, data });
-      result.pageIndexes.push(pageIndex);
-      if (!ids.length) {
-        break;
-      }
-    }
+      return { pageIndex, status: response.status, data, ids };
+    });
+    const firstEmptyIndex = responses.findIndex((response) => !response.ids.length);
+    const keptResponses = firstEmptyIndex >= 0 ? responses.slice(0, firstEmptyIndex + 1) : responses;
+    result.responses.push(...keptResponses.map(({ pageIndex, status, data }) => ({ pageIndex, status, data })));
+    result.pageIndexes.push(...keptResponses.map((response) => response.pageIndex));
     return JSON.stringify(result);
   })()`;
 
@@ -469,8 +509,8 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
     const responses = Array.isArray(parsed.responses) ? parsed.responses : [];
     const html = responses
       .filter((response) => response && response.data)
-      .map(
-        (response) => buildListApiScript(response.data, 'edge-list-api-replay', response.pageIndex)
+      .map((response) =>
+        buildListApiScript(response.data, 'edge-list-api-replay', response.pageIndex)
       )
       .join('\n');
     return {

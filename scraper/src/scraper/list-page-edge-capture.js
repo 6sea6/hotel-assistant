@@ -34,10 +34,12 @@ function normalizePositiveNumber(value, fallback) {
 function getListEdgeCaptureDefaults(options = {}) {
   const desiredHotelCount = normalizePositiveNumber(options.desiredHotelCount, 0);
   const smallTarget = desiredHotelCount > 0 && desiredHotelCount <= 3;
+  const targetScrollRounds =
+    desiredHotelCount > 0 ? Math.min(60, Math.max(20, Math.ceil(desiredHotelCount / 10) + 5)) : 20;
 
   return {
-    maxScrollRounds: smallTarget ? 6 : 20,
-    stableRoundLimit: smallTarget ? 1 : 3,
+    maxScrollRounds: smallTarget ? 6 : targetScrollRounds,
+    stableRoundLimit: smallTarget ? 1 : 5,
     initialSettleMs: smallTarget ? 900 : 2500,
     scrollEvaluateTimeoutMs: smallTarget ? 3000 : 5000
   };
@@ -232,6 +234,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         pendingListApiSnapshot = await fetchListApiPagesInEdgeSession(connection, sessionId, {
           desiredHotelCount: options.desiredHotelCount,
           maxListApiReplayPages: options.maxListApiReplayPages,
+          maxListApiReplayConcurrency: options.maxListApiReplayConcurrency,
           initialRequests: listNetworkRequests
         });
         listApiReplayDurationMs = durationSince(listApiReplayStartedAt);
@@ -322,6 +325,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
             ? listApiSnapshot.pageIndexes
             : [],
           listApiError: listApiSnapshot.error || '',
+          candidateDataCount: Number(parsed.candidateDataCount) || 0,
           fullHtmlIncluded: Boolean(parsed.fullHtmlIncluded)
         };
         pages.push(pageRecord);

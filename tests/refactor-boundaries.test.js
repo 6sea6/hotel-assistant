@@ -85,11 +85,12 @@ test('hotel virtual adapter shares list and card render plumbing', () => {
   assert.match(adapter, /function renderVirtualHotelCollection/);
   assert.match(listBody, /renderVirtualHotelCollection\(/);
   assert.match(cardBody, /renderVirtualHotelCollection\(/);
-  assert.equal(
-    (adapter.match(/= createSmoothWheelController\(scrollContainer/g) || []).length,
-    1,
-    'list/card should share smooth wheel setup'
-  );
+  assert.match(adapter, /new Virtualizer\(/);
+  assert.match(adapter, /observeElementOffset/);
+  assert.match(adapter, /observeElementRect/);
+  assert.doesNotMatch(adapter, /createSmoothWheelController/);
+  assert.doesNotMatch(adapter, /createCustomVirtualScrollbar/);
+  assert.doesNotMatch(adapter, /preventDefault\(\)/);
   assert.equal(
     (adapter.match(/saveScrollMemory\(\{/g) || []).length,
     1,
@@ -97,30 +98,14 @@ test('hotel virtual adapter shares list and card render plumbing', () => {
   );
 });
 
-test('virtual scrollbar drag path avoids synchronous layout work on pointermove', () => {
+test('virtual hotel adapter relies on native scrollbars instead of custom wheel handling', () => {
   const adapter = readProjectFile('src/renderer/modules/hotel-list-virtual-adapter.js');
-  const scrollbarStart = adapter.indexOf('function createCustomVirtualScrollbar');
-  const scrollbarEnd = adapter.indexOf('/* ---- 虚拟滚动：卡片视图 ---- */');
-  assert.ok(scrollbarStart > 0, 'Should find custom scrollbar implementation');
-  assert.ok(scrollbarEnd > scrollbarStart, 'Should find custom scrollbar implementation end');
 
-  const scrollbarBody = adapter.slice(scrollbarStart, scrollbarEnd);
-  const pointerMoveStart = scrollbarBody.indexOf('function handlePointerMove');
-  const pointerMoveEnd = scrollbarBody.indexOf('function stopDragging', pointerMoveStart);
-  assert.ok(pointerMoveStart > 0, 'Should find pointermove handler');
-  assert.ok(pointerMoveEnd > pointerMoveStart, 'Should find pointermove handler end');
-
-  const pointerMoveBody = scrollbarBody.slice(pointerMoveStart, pointerMoveEnd);
-  assert.match(scrollbarBody, /let dragMetrics = null/);
-  assert.match(scrollbarBody, /let thumbUpdateRafId = 0/);
-  assert.match(scrollbarBody, /let dragScrollRafId = 0/);
-  assert.match(scrollbarBody, /function scheduleThumbRender/);
-  assert.match(scrollbarBody, /function scheduleDragScroll/);
-  assert.doesNotMatch(pointerMoveBody, /getScrollMetrics\(\)/);
-  assert.doesNotMatch(pointerMoveBody, /update\(\)/);
-  assert.doesNotMatch(pointerMoveBody, /setScrollTopSafely\(/);
-  assert.match(pointerMoveBody, /dragMetrics/);
-  assert.match(pointerMoveBody, /scheduleDragScroll\(targetScrollTop\)/);
+  assert.match(adapter, /addEventListener\('scroll'/);
+  assert.doesNotMatch(adapter, /addEventListener\('wheel'/);
+  assert.doesNotMatch(adapter, /virtual-scroll-native-hidden/);
+  assert.doesNotMatch(adapter, /virtual-scrollbar/);
+  assert.doesNotMatch(adapter, /is-dragging-virtual-scrollbar/);
 });
 
 test('AI assistant task page is split into payload queue template and event modules', () => {

@@ -49,3 +49,13 @@ test('shared settings normalizers keep collection options consistent', () => {
   assert.equal(normalizeCollectBrowser('edge'), 'edge');
   assert.equal(normalizeCollectBrowser('unknown'), 'edge');
 });
+
+test('shared settings keep collection performance logging disabled by default', () => {
+  const {
+    BASE_COMPARE_APP_SETTINGS,
+    createBaseCompareAppStore
+  } = require('../shared/compare-app/constants');
+
+  assert.equal(BASE_COMPARE_APP_SETTINGS.enableCollectPerfLog, false);
+  assert.equal(createBaseCompareAppStore().settings.enableCollectPerfLog, false);
+});

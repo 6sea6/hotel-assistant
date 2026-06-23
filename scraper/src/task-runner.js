@@ -43,6 +43,7 @@ const {
   buildTemplateSnapshot,
   normalizeBatchConcurrency,
   normalizeTaskArgs,
+  resolveListApiReplayConcurrency,
   withWorkingDirectory
 } = require('./task-context');
 const { createScrapeEventForwarder, createTaskEmitter } = require('./task-events');
@@ -75,9 +76,9 @@ function getReusableEdgeProfileInspection(userDataDir, profileDirectory) {
 function shouldSkipInteractiveLoginForLockedProfile(inspection) {
   return Boolean(
     inspection &&
-      !inspection.reusable &&
-      inspection.hasBrowserProfile &&
-      inspection.cookieReadBlocked
+    !inspection.reusable &&
+    inspection.hasBrowserProfile &&
+    inspection.cookieReadBlocked
   );
 }
 
@@ -624,12 +625,14 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         emit('list:start', '正在解析携程链接与列表页候选', {
           desiredHotelCount: listFilters.desiredHotelCount,
           targetCount: listFilters.targetCount,
-          maxCandidatesPerPage: listFilters.maxCandidatesPerPage
+          maxCandidatesPerPage: listFilters.maxCandidatesPerPage,
+          maxListApiReplayConcurrency: resolveListApiReplayConcurrency(args, options)
         });
         const expandedInputs = await perf.runPhase('build_url', { taskId }, async () => {
           return expandCtripHotelInputs(args, effectiveTemplate, listFilters, {
             autoEdge,
-            edgeSession: buildEdgeSessionOptions(effectiveTemplate)
+            edgeSession: buildEdgeSessionOptions(effectiveTemplate),
+            maxListApiReplayConcurrency: resolveListApiReplayConcurrency(args, options)
           });
         });
         logListCandidateFilterDiagnostics(perf, expandedInputs);

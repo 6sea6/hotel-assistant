@@ -139,6 +139,168 @@ function buildListPageScrollExpression(options = {}) {
             }
             return fragments.join('\\n');
           };
+          const decodeJsonAttribute = (value) => {
+            const text = String(value || '').replace(/&quot;/g, '"').replace(/&#34;/g, '"').trim();
+            if (!text) return null;
+            try {
+              return JSON.parse(text);
+            } catch (_error) {
+              return null;
+            }
+          };
+          const readHotelIdFromObject = (value, depth = 0) => {
+            if (!value || typeof value !== 'object' || depth > 4) return '';
+            for (const key of ['hotelId', 'hotelID', 'hotelid', 'masterHotelId', 'masterHotelID', 'masterhotelid', 'hotelBasicId']) {
+              const text = String(value[key] || '').trim();
+              if (/^\\d{3,}$/.test(text)) return text;
+            }
+            for (const child of Object.values(value)) {
+              const id = readHotelIdFromObject(child, depth + 1);
+              if (id) return id;
+            }
+            return '';
+          };
+          const readHotelIdFromText = (value) => {
+            const text = String(value || '');
+            return (
+              (text.match(/hotelId["'=:\\s]+(\\d{3,})/i) || [])[1] ||
+              (text.match(/masterHotelId["'=:\\s]+(\\d{3,})/i) || [])[1] ||
+              (text.match(/hotelid["'=:\\s]+(\\d{3,})/i) || [])[1] ||
+              (text.match(/hotels\\/(\\d{3,})\\.html/i) || [])[1] ||
+              (text.match(/hoteldetail\\/(\\d{3,})\\.html/i) || [])[1] ||
+              ''
+            );
+          };
+          const readHotelIdFromElement = (element) => {
+            if (!element) return '';
+            const directAttrs = [
+              'data-hotelid',
+              'data-hotel-id',
+              'data-masterhotelid',
+              'data-master-hotel-id',
+              'data-offline-hotelid',
+              'data-offline-hotelId',
+              'hotelid',
+              'masterhotelid',
+              'href'
+            ];
+            for (const name of directAttrs) {
+              const value = element.getAttribute && element.getAttribute(name);
+              const textId = readHotelIdFromText(value);
+              if (textId) return textId;
+              const clean = String(value || '').trim();
+              if (/^\\d{3,}$/.test(clean)) return clean;
+            }
+            for (const name of ['data-exposure', 'data-ubt-key', 'data-dop', 'data-params']) {
+              const parsed = decodeJsonAttribute(element.getAttribute && element.getAttribute(name));
+              const jsonId = readHotelIdFromObject(parsed);
+              if (jsonId) return jsonId;
+            }
+            if (element.attributes) {
+              for (const attr of Array.from(element.attributes)) {
+                const attrId = readHotelIdFromText(attr && attr.value);
+                if (attrId) return attrId;
+                const parsed = decodeJsonAttribute(attr && attr.value);
+                const jsonId = readHotelIdFromObject(parsed);
+                if (jsonId) return jsonId;
+              }
+            }
+            return '';
+          };
+          const pickCandidateName = (element, text) => {
+            const selectors = [
+              '.hotelName',
+              '[class*="hotelName"]',
+              '[class*="hotel-name"]',
+              '[class*="hotelTitle"]',
+              '[class*="hotel-title"]',
+              '[class*="name"]',
+              'h2',
+              'h3',
+              'strong'
+            ];
+            for (const selector of selectors) {
+              const matched = element && element.querySelector && element.querySelector(selector);
+              const value = String(matched && (matched.innerText || matched.textContent) || '').trim();
+              if (/(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment)/i.test(value)) {
+                return value.slice(0, 100);
+              }
+            }
+            const match = String(text || '').match(/([\\u4e00-\\u9fa5A-Za-z0-9（）()·\\- ]{2,80}(?:酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment))/i);
+            return match ? match[1].trim() : '';
+          };
+          const parseCandidateScore = (text) => {
+            const match = String(text || '').match(/([0-9](?:\\.[0-9])?)\\s*(?:分|点评|好评|超棒|很好|不错|棒)/);
+            if (!match) return null;
+            const score = Number(match[1]);
+            return Number.isFinite(score) && score > 0 && score <= 5 ? score : null;
+          };
+          const collectCandidateData = () => {
+            const selector = [
+              'a[href*="/hotels/"]',
+              'a[href*="/hotel"]',
+              'a[href*="hotelId="]',
+              '[data-hotelid]',
+              '[data-hotel-id]',
+              '[data-masterhotelid]',
+              '[data-master-hotel-id]',
+              '[data-offline-hotelid]',
+              '[data-offline-hotelId]',
+              '[data-exposure*="hotel"]',
+              '[data-exposure*="Hotel"]',
+              '[data-ubt-key*="hotel"]',
+              '[data-ubt-key*="Hotel"]'
+            ].join(',');
+            const output = [];
+            const seenIds = new Set();
+            const startedAt = Date.now();
+            const isOverBudget = () => Date.now() - startedAt > 900;
+            for (const element of Array.from(document.querySelectorAll(selector)).slice(0, 700)) {
+              if (isOverBudget()) break;
+              let hotelId = readHotelIdFromElement(element);
+              let root = element;
+              for (let depth = 0; depth < 7 && root && root.parentElement; depth += 1) {
+                const parent = root.parentElement;
+                if (parent === document.body || parent === document.documentElement) break;
+                const text = parent.innerText || parent.textContent || '';
+                if (text.length > 20 && text.length <= 2600) {
+                  root = parent;
+                  hotelId = hotelId || readHotelIdFromElement(root);
+                  continue;
+                }
+                if (text.length > 2600) break;
+              }
+              hotelId = hotelId || readHotelIdFromText((root && root.outerHTML) || '');
+              if (!/^\\d{3,}$/.test(hotelId) || seenIds.has(hotelId)) {
+                continue;
+              }
+              seenIds.add(hotelId);
+              const href =
+                (element.getAttribute && element.getAttribute('href')) ||
+                (root && root.querySelector && root.querySelector('a[href]') && root.querySelector('a[href]').getAttribute('href')) ||
+                '';
+              const detailUrl = /hotel/i.test(href)
+                ? href
+                : 'https://hotels.ctrip.com/hotels/detail/?hotelId=' + hotelId;
+              const text = String((root && (root.innerText || root.textContent)) || '').replace(/\\s+/g, ' ').trim();
+              output.push({
+                hotelId,
+                masterHotelId: hotelId,
+                detailUrl,
+                hotelName: pickCandidateName(root || element, text),
+                commentScore: parseCandidateScore(text),
+                hotelTypeName: (text.match(/(酒店|宾馆|客栈|公寓|旅舍|民宿|青旅|度假村|Hotel|Inn|Hostel|Apartment)/i) || [])[1] || '',
+                source: 'edge-dom-candidate'
+              });
+              if (output.length >= 300) break;
+            }
+            return output;
+          };
+          const buildCandidateJsonScript = (candidates) => {
+            if (!Array.isArray(candidates) || !candidates.length) return '';
+            const json = JSON.stringify({ hotelList: candidates }).replace(/<\\/script/gi, '<\\\\/script');
+            return '<script type="application/json" data-source="edge-dom-candidates">' + json + '</script>';
+          };
           const isVisible = (element) => {
             if (!element || element === document.body || element === document.documentElement) {
               return true;
@@ -232,13 +394,17 @@ function buildListPageScrollExpression(options = {}) {
           await sleep(250);
           const nextHeight = getHeight();
           const nextCount = getCandidateCount();
+          const candidateData = collectCandidateData();
+          const candidateJsonScript = buildCandidateJsonScript(candidateData);
           const candidateHtml = collectCandidateHtml();
-          const html = ${options.includeFullEdgeHtml === true ? edgeHtmlExpression : 'candidateHtml'};
+          const baseHtml = ${options.includeFullEdgeHtml === true ? edgeHtmlExpression : 'candidateHtml'};
+          const html = [baseHtml, candidateJsonScript].filter(Boolean).join('\\n');
           return JSON.stringify({
             scrollHeight: nextHeight,
             candidateCount: nextCount,
             html,
             candidateHtml,
+            candidateDataCount: candidateData.length,
             fullHtmlIncluded: ${options.includeFullEdgeHtml === true ? 'true' : 'false'},
             scrollContainerCount: containers.length,
             scrollActions,

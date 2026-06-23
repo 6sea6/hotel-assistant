@@ -121,6 +121,7 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
       const replaySnapshot = await fetchListApiPagesFromHtmlFn(html, pageUrl, {
         desiredHotelCount: filters.desiredHotelCount,
         maxListApiReplayPages: options.maxListApiReplayPages,
+        maxListApiReplayConcurrency: options.maxListApiReplayConcurrency,
         headers: DESKTOP_HEADERS,
         cookieHeader: htmlPageCookies.get(pageUrl) || '',
         fetchImpl: options.fetchListApi || options.fetchImpl
@@ -214,7 +215,8 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
             },
             shouldStop: () => prefilter.selected.length >= filters.desiredHotelCount,
             desiredHotelCount: filters.desiredHotelCount,
-            maxListApiReplayPages: options.maxListApiReplayPages
+            maxListApiReplayPages: options.maxListApiReplayPages,
+            maxListApiReplayConcurrency: options.maxListApiReplayConcurrency
           })
         : {
             pages: [],

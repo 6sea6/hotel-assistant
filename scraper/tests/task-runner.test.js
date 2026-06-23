@@ -56,6 +56,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
     appendHotelsToStore: 0,
     appendedHotels: [],
     expandedArgs: [],
+    expandedOptions: [],
     order: [],
     scrape: 0,
     scrapeOptions: [],
@@ -90,8 +91,9 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
         hotelInputs.length > 1
           ? `模式=multi-detail，展开酒店=${hotelInputs.length}`
           : '模式=detail，展开酒店=1',
-      expandCtripHotelInputs: async (rawInput) => {
+      expandCtripHotelInputs: async (rawInput, _template, _filters, expandOptions = {}) => {
         calls.expandedArgs.push(rawInput);
+        calls.expandedOptions.push(expandOptions);
         return {
           inputMode: hotelInputs.length > 1 ? 'multi-detail' : 'detail',
           requestedUrls: hotelInputs.map((item) => item.url),
@@ -810,6 +812,56 @@ test('batch skips transit for items that have no eligible rooms to write', async
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('runHotelImportTask maps collection concurrency tiers to list API replay concurrency', async () => {
+  const cases = [
+    { batchConcurrency: 1, listApiReplayConcurrency: 2 },
+    { batchConcurrency: 2, listApiReplayConcurrency: 4 },
+    { batchConcurrency: 3, listApiReplayConcurrency: 6 }
+  ];
+
+  for (const item of cases) {
+    const taskRunnerPath = require.resolve('../src/task-runner');
+    delete require.cache[taskRunnerPath];
+
+    const tempDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), `hotel-task-runner-list-api-concurrency-${item.batchConcurrency}-`)
+    );
+    const latestRunPath = path.join(tempDir, 'latest-run.json');
+    const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir);
+
+    try {
+      const { runHotelImportTask } = require('../src/task-runner');
+      const events = [];
+      const result = await runHotelImportTask(
+        {
+          url: 'https://hotels.ctrip.com/hotels/list?city=2',
+          latestRun: latestRunPath,
+          'batch-concurrency': item.batchConcurrency,
+          'report-level': 'off'
+        },
+        {
+          workingDirectory: tempDir,
+          onEvent(event) {
+            events.push(event);
+          }
+        }
+      );
+
+      assert.equal(result.success, true);
+      assert.equal(
+        calls.expandedOptions[0].maxListApiReplayConcurrency,
+        item.listApiReplayConcurrency
+      );
+      const listStart = events.find((event) => event.type === 'list:start');
+      assert.ok(listStart);
+      assert.equal(listStart.details.maxListApiReplayConcurrency, item.listApiReplayConcurrency);
+    } finally {
+      clearModules([taskRunnerPath, ...mockedPaths]);
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   }
 });
 

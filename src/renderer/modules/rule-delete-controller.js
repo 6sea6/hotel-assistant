@@ -258,7 +258,7 @@ export async function confirmRuleDelete() {
   const candidates = getRuleDeleteCandidates(thresholdsResult.value, visibleHotels);
 
   if (candidates.length === 0) {
-    showNotification('没有命中规则的宾馆', 'info');
+    showNotification('没有命中规则的宾馆房型', 'info');
     updateRuleDeletePreview();
     return;
   }
@@ -296,7 +296,7 @@ export async function confirmRuleDelete() {
     markVisibleHotelsCacheDirty();
     requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     closeRuleDeleteModal(true);
-    showNotification(`成功删除 ${candidates.length} 个命中规则的宾馆`, 'success');
+    showNotification(`成功删除 ${candidates.length} 个命中规则的宾馆房型`, 'success');
   } catch (error) {
     console.error('规则删除失败:', error);
     if (previousHotels) {
