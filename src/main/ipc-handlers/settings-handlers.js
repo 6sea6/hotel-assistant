@@ -62,7 +62,7 @@ const OLD_HOTEL_CARD_VISIBLE_FIELDS_V2 = Object.freeze([
   'template'
 ]);
 
-function registerSettingsHandlers({ ipcMain, cache, services }) {
+function registerSettingsHandlers({ ipcMain, services }) {
   const { dataService, windowService } = services;
   const normalizeThemeSetting = (theme) => {
     return normalizeThemeKey(theme, APP_CONFIG.STORE_DEFAULTS.settings.theme);
@@ -169,7 +169,6 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
 
       const normalizedSettings = normalizeSettings(settings);
       store.set('settings', normalizedSettings);
-      cache.invalidate('settings');
 
       if (windowService) {
         if (settingKey === 'app_icon_path') {
@@ -248,7 +247,6 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
         settings.app_icon_path = persistedIcon.path;
         settings.app_icon_file_name = persistedIcon.fileName;
         store.set('settings', normalizeSettings(settings));
-        cache.invalidate('settings');
 
         return {
           success: true,
@@ -284,7 +282,6 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       settings.app_icon_file_name = '';
       appIconManager.removeManagedIcon();
       store.set('settings', normalizeSettings(settings));
-      cache.invalidate('settings');
 
       const applied = windowService.applyWindowIcon('');
       if (!applied.success) {
@@ -309,7 +306,6 @@ function registerSettingsHandlers({ ipcMain, cache, services }) {
       const defaultSettings = { ...APP_CONFIG.STORE_DEFAULTS.settings };
       appIconManager.removeManagedIcon();
       store.set('settings', normalizeSettings(defaultSettings));
-      cache.invalidate('settings');
 
       const applied = windowService.applyWindowIcon('');
       if (windowService) {

@@ -4,36 +4,22 @@ const { createServiceContainer } = require('./services');
 
 class IPCHandlerManager {
   constructor() {
-    this.cache = null;
     this.services = null;
   }
 
   registerAllHandlers() {
-    const { DataInvalidationTracker } = require('./utils');
-
-    if (!this.cache) {
-      this.cache = new DataInvalidationTracker();
-    }
-
     if (!this.services) {
-      this.services = createServiceContainer({ cache: this.cache });
-    } else {
-      this.services.cache = this.cache;
+      this.services = createServiceContainer();
     }
 
     const registrations = getHandlerRegistrations({
       ipcMain,
-      cache: this.cache,
       services: this.services
     });
 
     registrations.forEach(({ register, context }) => {
       register(context);
     });
-  }
-
-  getCache() {
-    return this.cache;
   }
 
   getServices() {

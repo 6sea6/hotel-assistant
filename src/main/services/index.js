@@ -29,9 +29,7 @@ function defaultDetectBundledScraperResources() {
 }
 
 function createServiceContainer({
-  cache,
   createAiService: createAiServiceOverride,
-  createBundleService: createBundleServiceOverride,
   detectBundledScraperResources = defaultDetectBundledScraperResources
 } = {}) {
   const dataService = createDataService();
@@ -40,13 +38,8 @@ function createServiceContainer({
     const factory = createAiServiceOverride || require('./ai-service').createAiService;
     return factory({ dataService, windowService });
   });
-  const bundleServiceSlot = createLazyService(() => {
-    const factory = createBundleServiceOverride || require('./bundle-service').createBundleService;
-    return factory();
-  });
 
   const services = {
-    cache,
     dataService,
     windowService,
     getAiService() {
@@ -54,12 +47,6 @@ function createServiceContainer({
     },
     hasAiService() {
       return aiServiceSlot.hasInstance();
-    },
-    getBundleService() {
-      return bundleServiceSlot.get();
-    },
-    hasBundleService() {
-      return bundleServiceSlot.hasInstance();
     },
     hasBundledScraperResources() {
       return Boolean(detectBundledScraperResources());
@@ -71,12 +58,6 @@ function createServiceContainer({
       enumerable: true,
       get() {
         return aiServiceSlot.get();
-      }
-    },
-    bundleService: {
-      enumerable: true,
-      get() {
-        return bundleServiceSlot.get();
       }
     }
   });

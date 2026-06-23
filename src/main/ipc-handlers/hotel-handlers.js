@@ -57,11 +57,10 @@ function validateHotelIdList(ids, error) {
 /**
  * @param {{
  *   ipcMain: Pick<import('electron').IpcMain, 'handle'>,
- *   cache: {invalidate: (key: string) => void},
  *   services: {dataService: {getStore: () => HotelStore}}
  * }} context
  */
-function registerHotelHandlers({ ipcMain, cache, services }) {
+function registerHotelHandlers({ ipcMain, services }) {
   const { dataService } = services;
   const getHotelRepo = () =>
     createHotelRepository({
@@ -78,7 +77,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
     if (validated.error) return validated.error;
 
     const newHotel = getHotelRepo().add(validated.payload);
-    cache.invalidate('hotels');
     logMainDebug('[hotel:add] 添加宾馆:', newHotel.name, 'ID:', newHotel.id);
     return newHotel;
   });
@@ -99,7 +97,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
 
     const updatedHotel = repo.update(validated.payload);
     if (updatedHotel) {
-      cache.invalidate('hotels');
       return updatedHotel;
     }
     return null;
@@ -121,7 +118,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
       return { success: false, error: '未找到要删除的宾馆' };
     }
 
-    cache.invalidate('hotels');
     return {
       success: true,
       deletedCount: result.deletedCount
@@ -144,7 +140,6 @@ function registerHotelHandlers({ ipcMain, cache, services }) {
       return { success: false, error: '未找到要删除的宾馆' };
     }
 
-    cache.invalidate('hotels');
     return {
       success: true,
       deletedCount: result.deletedCount

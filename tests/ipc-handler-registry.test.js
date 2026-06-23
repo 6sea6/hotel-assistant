@@ -16,7 +16,6 @@ test('IPC handler registry keeps a stable registration order', () => {
 test('IPC handler registry declares dependency shapes centrally', () => {
   const context = {
     ipcMain: { name: 'ipc' },
-    cache: { name: 'cache' },
     services: { name: 'services' }
   };
 

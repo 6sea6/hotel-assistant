@@ -34,14 +34,13 @@ const notifyRenderer = (mainWindow, channel, data) => {
 /**
  * @param {{
  *   ipcMain: Pick<import('electron').IpcMain, 'handle'>,
- *   cache: {invalidate: (key: string) => void},
  *   services: {
  *     dataService: {getStore: () => any},
  *     windowService?: {getMainWindow?: () => any}
  *   }
  * }} context
  */
-function registerTemplateHandlers({ ipcMain, cache, services }) {
+function registerTemplateHandlers({ ipcMain, services }) {
   const { dataService, windowService } = services;
   const getMainWindow = () => windowService?.getMainWindow?.() || null;
   const getRepositories = () => {
@@ -65,7 +64,6 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
 
     const { templateRepo } = getRepositories();
     const newTemplate = templateRepo.add(template);
-    cache.invalidate('templates');
     return newTemplate;
   });
 
@@ -81,7 +79,6 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
 
     const updatedTemplate = templateRepo.update(template);
     if (updatedTemplate) {
-      cache.invalidate('templates');
       return updatedTemplate;
     }
     return null;
@@ -104,10 +101,6 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       hotelRepo,
       templateId
     });
-    if (affectedHotelCount > 0) {
-      cache.invalidate('hotels');
-    }
-    cache.invalidate('templates');
     return {
       success: true,
       deletedCount: deleteResult.deletedCount,
@@ -146,7 +139,6 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       if (!syncedTemplate) {
         throw new Error('模板不存在');
       }
-      cache.invalidate('templates');
 
       logMainDebug('[模板同步] 模板已更新:', syncedTemplate.name);
       logMainDebug(
@@ -178,7 +170,6 @@ function registerTemplateHandlers({ ipcMain, cache, services }) {
       logMainDebug('[模板同步] 共更新了', updatedCount, '个酒店');
 
       if (updatedCount > 0) {
-        cache.invalidate('hotels');
         logMainDebug('[模板同步] 酒店数据已保存');
       }
 

@@ -74,16 +74,6 @@ function createIpcMain() {
   };
 }
 
-function createCache() {
-  const invalidated = [];
-  return {
-    invalidated,
-    invalidate(key) {
-      invalidated.push(key);
-    }
-  };
-}
-
 function createStore(initialData = {}) {
   const data = { ...initialData };
   const setCalls = [];
@@ -103,10 +93,8 @@ function createStore(initialData = {}) {
 
 function registerHandlers(register, store, extraServices = {}) {
   const ipcMain = createIpcMain();
-  const cache = createCache();
   register({
     ipcMain,
-    cache,
     services: {
       dataService: {
         getStore: () => store,
@@ -129,7 +117,7 @@ function registerHandlers(register, store, extraServices = {}) {
       ...extraServices
     }
   });
-  return { handlers: ipcMain.handlers, cache };
+  return { handlers: ipcMain.handlers };
 }
 
 function createChangePathDataService(currentDataFolder, options = {}) {
@@ -185,9 +173,9 @@ test('hotel handlers reject invalid renderer payloads before normalization', () 
   });
 });
 
-test('hotel add is silent by default while still invalidating hotel cache', () => {
+test('hotel add is silent by default while returning the created hotel', () => {
   const store = createStore({ hotels: [] });
-  const { handlers, cache } = registerHandlers(registerHotelHandlers, store);
+  const { handlers } = registerHandlers(registerHotelHandlers, store);
   const originalLog = console.log;
   const logs = [];
   console.log = (...args) => logs.push(args);
@@ -199,7 +187,7 @@ test('hotel add is silent by default while still invalidating hotel cache', () =
     });
 
     assert.equal(result.name, '新增酒店');
-    assert.ok(cache.invalidated.includes('hotels'));
+    assert.ok(result.id);
     assert.deepEqual(logs, []);
   } finally {
     console.log = originalLog;
@@ -430,7 +418,7 @@ test('data:changePath migrates data and keeps old folder when user declines dele
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
 
   const { calls, dataService } = createChangePathDataService(currentDataFolder);
-  const { handlers, cache } = registerHandlers(registerDataHandlers, createStore(), {
+  const { handlers } = registerHandlers(registerDataHandlers, createStore(), {
     dataService
   });
   dialogState.open = { canceled: false, filePaths: [selectedDir] };
@@ -453,7 +441,6 @@ test('data:changePath migrates data and keeps old folder when user declines dele
   const migratedFolderName = fs.readdirSync(selectedDir)[0];
   assert.equal(fs.existsSync(path.join(selectedDir, migratedFolderName, 'hotel-data.json')), true);
   assert.equal(fs.existsSync(currentDataFolder), true);
-  assert.deepEqual(cache.invalidated, ['']);
   assert.equal(dialogState.messageBoxCalls.at(-1).title, '迁移完成');
 });
 
@@ -492,7 +479,7 @@ test('data:changePath returns a safe error result when migration fails', async (
   const { dataService } = createChangePathDataService(currentDataFolder, {
     throwOnReinitialize: true
   });
-  const { handlers, cache } = registerHandlers(registerDataHandlers, createStore(), {
+  const { handlers } = registerHandlers(registerDataHandlers, createStore(), {
     dataService
   });
   dialogState.open = { canceled: false, filePaths: [selectedDir] };
@@ -502,6 +489,5 @@ test('data:changePath returns a safe error result when migration fails', async (
   const result = await handlers['data:changePath'](createEvent());
 
   assert.deepEqual(result, { success: false, error: 'reload failed' });
-  assert.deepEqual(cache.invalidated, []);
   assert.equal(dialogState.messageBoxCalls.length, 0);
 });

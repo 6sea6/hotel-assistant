@@ -10,23 +10,6 @@ const {
   writePointerDataFolder
 } = requireSharedCompareAppModule('data-folder.js');
 
-// 主进程数据变更标记。实际读取缓存位于 preload 的 cachedInvoke。
-class DataInvalidationTracker {
-  constructor() {
-    this.revision = 0;
-    this.lastInvalidatedKey = '';
-  }
-
-  invalidate(key = '') {
-    this.revision += 1;
-    this.lastInvalidatedKey = String(key || '');
-  }
-
-  getRevision() {
-    return this.revision;
-  }
-}
-
 // 数据文件夹管理
 class DataFolderManager {
   constructor() {
@@ -146,15 +129,6 @@ class DataFolderManager {
   }
 }
 
-// 通知渲染进程的工具函数
-const notifyRenderer = (mainWindow, channel, data) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(channel, data);
-  }
-};
-
 module.exports = {
-  DataInvalidationTracker,
-  DataFolderManager,
-  notifyRenderer
+  DataFolderManager
 };

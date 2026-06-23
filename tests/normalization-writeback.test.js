@@ -58,12 +58,6 @@ function createIpcMain() {
   };
 }
 
-function createCache() {
-  return {
-    invalidate() {}
-  };
-}
-
 function createTrustedIpcEvent() {
   return {
     senderFrame: { url: 'file:///trusted/index.html' },
@@ -75,7 +69,6 @@ function registerHandler(register, store, extraServices = {}) {
   const ipcMain = createIpcMain();
   register({
     ipcMain,
-    cache: createCache(),
     services: {
       dataService: { getStore: () => store },
       ...extraServices

@@ -29,14 +29,13 @@ const {
 /**
  * @param {{
  *   ipcMain: {handle: (channel: string, handler: Function) => void},
- *   cache: {invalidate: (key: string) => void},
  *   services: {
  *     dataService: {getStore: () => any, getDataFolderManager: () => any, reinitializeStore: (folder: string) => void},
  *     windowService?: any
  *   }
  * }} context
  */
-function registerDataHandlers({ ipcMain, cache, services }) {
+function registerDataHandlers({ ipcMain, services }) {
   const { dataService, windowService } = services;
   const getMainWindow = () => windowService?.getMainWindow?.() || null;
 
@@ -117,7 +116,6 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         resetHotelRepositoryCache(store);
         store.set('templates', finalPayload.templates);
         store.set('settings', finalPayload.settings);
-        cache.invalidate('');
         if (windowService) {
           windowService.applyThemeAppearance(finalPayload.settings.theme);
           windowService.applyWindowIcon(finalPayload.settings.app_icon_path || '');
@@ -261,9 +259,6 @@ function registerDataHandlers({ ipcMain, cache, services }) {
         targetDataFolder: newDataFolder
       });
       resetHotelRepositoryCache(currentStore);
-
-      // 清除缓存
-      cache.invalidate('');
 
       // 询问是否删除旧文件夹
       const deleteOld = dialog.showMessageBoxSync(mainWindow, {

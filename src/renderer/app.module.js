@@ -472,11 +472,6 @@ function setupStaticFormListeners() {
   addEvent('ctripScore', 'blur', (event) => {
     if (event.target instanceof HTMLInputElement) formatScoreOnBlur(event.target);
   });
-  addEvent('ruleDeletePrice', 'input', updateRuleDeletePreview);
-  addEvent('ruleDeleteCtripScore', 'input', updateRuleDeletePreview);
-  addEvent('ruleDeleteSubwayDistance', 'input', updateRuleDeletePreview);
-  addEvent('ruleDeleteTransportTime', 'input', updateRuleDeletePreview);
-  addEvent('ruleDeleteProtectFavorite', 'change', updateRuleDeletePreview);
   state.staticFormEventsBound = true;
 }
 
