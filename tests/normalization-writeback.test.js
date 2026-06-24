@@ -156,7 +156,7 @@ test('template normalization still fills defaults and repairs ids', () => {
   assert.equal(new Set(ids).size, templates.length);
   assert.equal(templates[0].name, '武汉');
   assert.equal(templates[0].destination, '江汉路');
-  assert.equal(templates[0].room_count, 3);
+  assert.equal(templates[0].room_count, 4);
   assert.equal(templates[1].room_count, 2);
   assert.ok(store.setCalls.some((call) => call.key === 'templates'));
 });

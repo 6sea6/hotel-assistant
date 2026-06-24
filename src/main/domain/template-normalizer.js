@@ -27,7 +27,7 @@ function normalizeTemplateRoomCount(value) {
     return null;
   }
 
-  return Math.max(1, Math.min(3, parsed));
+  return Math.max(1, Math.min(4, parsed));
 }
 
 /**

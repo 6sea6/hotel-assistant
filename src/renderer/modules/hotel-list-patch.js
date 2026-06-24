@@ -46,22 +46,6 @@ function findRenderedHotelNode(container, id) {
   return getRenderedHotelNodes(container).find((node) => idsEqual(node.dataset.id, idKey)) || null;
 }
 
-function updateRenderedRankLabels(container) {
-  const nodes = getRenderedHotelNodes(container);
-  nodes.forEach((node, index) => {
-    const rank = index + 1;
-    const isTop3 = rank <= 3;
-    const rankElement =
-      state.viewMode === 'list'
-        ? node.querySelector('.rank-badge')
-        : node.querySelector('.hotel-rank');
-    if (!rankElement) return;
-
-    rankElement.textContent = `#${rank}`;
-    rankElement.classList.toggle('top3', isTop3);
-  });
-}
-
 function hasFavoriteFilterActive() {
   return state.currentFilters.favorite !== undefined && state.currentFilters.favorite !== '';
 }
@@ -74,6 +58,10 @@ function hasFavoriteFilterActive() {
 export function patchHotelCards(changedIds, options = {}) {
   const container = $('hotelList');
   if (!container || !Array.isArray(changedIds) || changedIds.length === 0) {
+    return false;
+  }
+
+  if (options.reason === 'hotel-delete') {
     return false;
   }
 
@@ -99,31 +87,6 @@ export function patchHotelCards(changedIds, options = {}) {
   const renderedNodes = getRenderedHotelNodes(container);
   if (renderedNodes.length !== sortedHotels.length) {
     return false;
-  }
-
-  if (options.reason === 'hotel-delete') {
-    let removedAny = false;
-    for (const id of changedIds) {
-      const existingNode = findRenderedHotelNode(container, id);
-      if (existingNode) {
-        existingNode.remove();
-        state.renderedHotelNodeMap?.delete?.(getSelectionKey(id));
-        removedAny = true;
-      }
-    }
-
-    const nextNodes = getRenderedHotelNodes(container);
-    if (nextNodes.length !== sortedHotels.length) {
-      return false;
-    }
-
-    if (removedAny) {
-      bumpHotelListRenderVersion();
-    }
-    updateRenderedRankLabels(container);
-    syncSelectAllCheckboxState();
-    resetBatchDeleteConfirmation({ count: state.selectedHotels.size });
-    return true;
   }
 
   const patchPlan = [];

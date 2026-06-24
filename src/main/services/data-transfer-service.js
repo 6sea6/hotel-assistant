@@ -528,19 +528,9 @@ function buildAppendImportPayload(snapshot, importedPayload) {
 }
 
 module.exports = {
-  EXPORT_SCHEMA_VERSION,
   buildAppendImportPayload,
   buildExportPayload,
-  buildHotelDuplicateKey,
   buildReplaceImportPayload,
-  buildTemplateDuplicateKey,
-  buildTemplateInfoFromTemplate,
-  normalizeComparableText,
   normalizeImportedPayload,
-  normalizeImportedSettings,
-  processImportedHotels,
-  processImportedTemplates,
-  redactSettingsForExport,
-  resolveImportedHotelTemplate,
   restoreSnapshot
 };

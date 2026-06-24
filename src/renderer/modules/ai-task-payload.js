@@ -12,6 +12,7 @@ const { normalizeCollectBatchConcurrency, normalizeCollectBrowser } =
  * @typedef {import('../../shared/contracts').AiTaskPayload} AiTaskPayload
  * @typedef {import('../../shared/contracts').AiTaskQueueItem} AiTaskQueueItem
  * @typedef {import('../../shared/contracts').CtripUrlFilterSettings} CtripUrlFilterSettings
+ * @typedef {import('../../shared/contracts').TemplateRecord} TemplateRecord
  */
 
 export function getSubmittedUrls() {
@@ -150,6 +151,84 @@ function parsePriceMaxSetting(value) {
   return parseIntegerSetting(text, { min: 0 });
 }
 
+function parseDateOnlyMs(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const ms = Date.UTC(year, month - 1, day);
+  const date = new Date(ms);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return ms;
+}
+
+/**
+ * @param {TemplateRecord|null|undefined} template
+ * @returns {number|null}
+ */
+export function getTemplateStayDays(template) {
+  const checkInMs = parseDateOnlyMs(template && template.check_in_date);
+  const checkOutMs = parseDateOnlyMs(template && template.check_out_date);
+  if (checkInMs === null || checkOutMs === null || checkOutMs <= checkInMs) {
+    return null;
+  }
+  const days = Math.round((checkOutMs - checkInMs) / 86400000);
+  return days > 0 ? days : null;
+}
+
+function multiplyPriceByFactor(value, factor) {
+  return typeof value === 'number' && Number.isFinite(value) ? value * factor : value;
+}
+
+/**
+ * @param {TemplateRecord|null|undefined} template
+ * @returns {number|null}
+ */
+function getTemplateRoomCount(template) {
+  const roomCount = parseOptionalNumber(template && template.room_count, {
+    integer: true,
+    min: 1
+  });
+  return roomCount && roomCount > 0 ? roomCount : null;
+}
+
+/**
+ * @param {TemplateRecord|null|undefined} template
+ * @returns {number|null}
+ */
+function getTemplateStayPriceMultiplier(template) {
+  const days = getTemplateStayDays(template);
+  const roomCount = getTemplateRoomCount(template);
+  return days && roomCount ? days * roomCount : null;
+}
+
+/**
+ * 前筛界面输入的是每日人均价；携程 URL 价格筛选仍接收入住总价。
+ *
+ * @param {CtripUrlFilterSettings} filters
+ * @param {TemplateRecord|null|undefined} template
+ * @returns {CtripUrlFilterSettings}
+ */
+export function convertPerPersonDailyPriceFiltersToStayTotal(filters = {}, template = null) {
+  const multiplier = getTemplateStayPriceMultiplier(template);
+  if (!multiplier) {
+    return { ...filters };
+  }
+
+  return {
+    ...filters,
+    priceMin: multiplyPriceByFactor(filters.priceMin, multiplier),
+    priceMax: multiplyPriceByFactor(filters.priceMax, multiplier)
+  };
+}
+
 /**
  * @param {CtripUrlFilterSettings} [filters]
  * @returns {CtripUrlFilterSettings}
@@ -196,12 +275,8 @@ function omitUndefinedFields(payload) {
   );
 }
 
-function hasActiveCtripUrlFilterSettings() {
-  return Object.keys(readCtripUrlFilterSettings({ activeOnly: true })).length > 0;
-}
-
 /**
- * @param {{activeOnly?: boolean}} [options]
+ * @param {{activeOnly?: boolean, template?: TemplateRecord|null}} [options]
  * @returns {CtripUrlFilterSettings}
  */
 export function readCtripUrlFilterSettings(options = {}) {
@@ -233,8 +308,9 @@ export function readCtripUrlFilterSettings(options = {}) {
     roomFeatures: parseSelectionSetting(settings.aiCtripRoomFeatures),
     featureThemes: parseSelectionSetting(settings.aiCtripFeatureThemes)
   };
+  const resolvedFilters = convertPerPersonDailyPriceFiltersToStayTotal(filters, options.template);
 
-  return options.activeOnly ? compactActiveCtripUrlFilters(filters) : filters;
+  return options.activeOnly ? compactActiveCtripUrlFilters(resolvedFilters) : resolvedFilters;
 }
 
 function applyChoiceButtonsToDom(settingKey, values = []) {
@@ -286,60 +362,7 @@ function applyCtripUrlFilterSettingsToDom() {
   applyChoiceButtonsToDom('aiCtripFeatureThemes', settings.aiCtripFeatureThemes);
 }
 
-async function persistCtripUrlFilterSettingsFromParsed(parsed) {
-  const known = parsed && parsed.knownSettings ? parsed.knownSettings : {};
-  const detected = new Set(
-    Array.isArray(parsed && parsed.detectedKnownFilterKeys) ? parsed.detectedKnownFilterKeys : []
-  );
-  if (!detected.size) {
-    applyCtripUrlFilterSettingsToDom();
-    return;
-  }
-  if (hasActiveCtripUrlFilterSettings()) {
-    applyCtripUrlFilterSettingsToDom();
-    return;
-  }
-
-  const updates = {};
-  if (detected.has('priceMin')) updates.aiCtripPriceMin = known.priceMin ?? '';
-  if (detected.has('priceMax')) updates.aiCtripPriceMax = known.priceMax ?? '';
-  if (detected.has('starLevels'))
-    updates.aiCtripStarLevels = Array.isArray(known.starLevels) ? known.starLevels : [];
-  if (detected.has('sortMode')) updates.aiCtripSortMode = known.sortMode || '';
-  if (detected.has('freeCancel')) updates.aiCtripFreeCancel = Boolean(known.freeCancel);
-  if (detected.has('reviewCountMin')) updates.aiCtripReviewCountMin = known.reviewCountMin ?? '';
-  if (detected.has('ctripScoreMin')) updates.aiCtripScoreMin = known.ctripScoreMin ?? '';
-  if (detected.has('accommodationTypeMode')) {
-    updates.aiCtripAccommodationTypeMode = known.accommodationTypeMode || 'include';
-  }
-  if (detected.has('accommodationTypes')) {
-    updates.aiCtripAccommodationTypes = Array.isArray(known.accommodationTypes)
-      ? known.accommodationTypes
-      : [];
-  }
-  if (detected.has('roomTypes')) {
-    updates.aiCtripRoomTypes = Array.isArray(known.roomTypes) ? known.roomTypes : [];
-  }
-  if (detected.has('roomFeatures')) {
-    updates.aiCtripRoomFeatures = Array.isArray(known.roomFeatures) ? known.roomFeatures : [];
-  }
-  if (detected.has('featureThemes')) {
-    updates.aiCtripFeatureThemes = Array.isArray(known.featureThemes) ? known.featureThemes : [];
-  }
-
-  const entries = Object.entries(updates);
-  const changed = entries.filter(
-    ([key, value]) => JSON.stringify(state.settings[key] ?? '') !== JSON.stringify(value)
-  );
-  if (!changed.length) {
-    applyCtripUrlFilterSettingsToDom();
-    return;
-  }
-
-  await Promise.all(changed.map(([key, value]) => window.electronAPI.setSetting(key, value)));
-  entries.forEach(([key, value]) => {
-    state.settings[key] = value;
-  });
+function keepCtripUrlFilterSettingsFromDom() {
   applyCtripUrlFilterSettingsToDom();
 }
 
@@ -359,7 +382,7 @@ export async function syncCtripListUrlSettingsFromInput() {
 
   try {
     const parsed = await window.electronAPI.ai.parseCtripListUrl(url);
-    await persistCtripUrlFilterSettingsFromParsed(parsed);
+    keepCtripUrlFilterSettingsFromDom();
     return parsed;
   } catch (error) {
     console.warn('解析携程列表页 URL 前筛失败:', error);
@@ -368,7 +391,7 @@ export async function syncCtripListUrlSettingsFromInput() {
 }
 
 /**
- * @param {{activeOnly?: boolean, mode?: string}} [options]
+ * @param {{activeOnly?: boolean, mode?: string, template?: TemplateRecord|null}} [options]
  * @returns {Promise<string>}
  */
 export async function syncAiCtripListUrlFromSettings(options = {}) {
@@ -382,7 +405,8 @@ export async function syncAiCtripListUrlFromSettings(options = {}) {
     const nextUrl = await window.electronAPI.ai.buildCtripListUrl({
       baseUrl: url,
       settings: readCtripUrlFilterSettings({
-        activeOnly: options.activeOnly || options.mode === 'activeOnly'
+        activeOnly: options.activeOnly || options.mode === 'activeOnly',
+        template: options.template
       })
     });
     if (nextUrl && nextUrl !== url) {
@@ -452,6 +476,9 @@ export function readCollectBrowser() {
 export function buildTaskPayload(task) {
   const listFilters =
     task.listFilters && typeof task.listFilters === 'object' ? task.listFilters : {};
+  const listUrlFilters =
+    task.listUrlFilters ||
+    readCtripUrlFilterSettings({ activeOnly: true, template: task.template });
   const inputMode = task.inputMode === 'address' ? 'address' : 'url';
   return omitUndefinedFields({
     templateId: task.templateId,
@@ -460,23 +487,21 @@ export function buildTaskPayload(task) {
     addressQuery: inputMode === 'address' ? task.addressQuery : undefined,
     url: inputMode === 'address' ? undefined : task.url,
     listFilters,
-    listUrlFilters: task.listUrlFilters || readCtripUrlFilterSettings({ activeOnly: true }),
+    listUrlFilters,
     desiredHotelCount: listFilters.desiredHotelCount,
     amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
-    priceMin: task.listUrlFilters ? task.listUrlFilters.priceMin : undefined,
-    priceMax: task.listUrlFilters ? task.listUrlFilters.priceMax : undefined,
-    starLevels: task.listUrlFilters ? task.listUrlFilters.starLevels : undefined,
-    sortMode: task.listUrlFilters ? task.listUrlFilters.sortMode : undefined,
-    freeCancel: task.listUrlFilters ? task.listUrlFilters.freeCancel : undefined,
-    reviewCountMin: task.listUrlFilters ? task.listUrlFilters.reviewCountMin : undefined,
-    ctripScoreMin: task.listUrlFilters ? task.listUrlFilters.ctripScoreMin : undefined,
-    accommodationTypeMode: task.listUrlFilters
-      ? task.listUrlFilters.accommodationTypeMode
-      : undefined,
-    accommodationTypes: task.listUrlFilters ? task.listUrlFilters.accommodationTypes : undefined,
-    roomTypes: task.listUrlFilters ? task.listUrlFilters.roomTypes : undefined,
-    roomFeatures: task.listUrlFilters ? task.listUrlFilters.roomFeatures : undefined,
-    featureThemes: task.listUrlFilters ? task.listUrlFilters.featureThemes : undefined,
+    priceMin: listUrlFilters ? listUrlFilters.priceMin : undefined,
+    priceMax: listUrlFilters ? listUrlFilters.priceMax : undefined,
+    starLevels: listUrlFilters ? listUrlFilters.starLevels : undefined,
+    sortMode: listUrlFilters ? listUrlFilters.sortMode : undefined,
+    freeCancel: listUrlFilters ? listUrlFilters.freeCancel : undefined,
+    reviewCountMin: listUrlFilters ? listUrlFilters.reviewCountMin : undefined,
+    ctripScoreMin: listUrlFilters ? listUrlFilters.ctripScoreMin : undefined,
+    accommodationTypeMode: listUrlFilters ? listUrlFilters.accommodationTypeMode : undefined,
+    accommodationTypes: listUrlFilters ? listUrlFilters.accommodationTypes : undefined,
+    roomTypes: listUrlFilters ? listUrlFilters.roomTypes : undefined,
+    roomFeatures: listUrlFilters ? listUrlFilters.roomFeatures : undefined,
+    featureThemes: listUrlFilters ? listUrlFilters.featureThemes : undefined,
     enableCollectPerfLog: Boolean(state.settings.enableCollectPerfLog),
     collectBrowser: readCollectBrowser(),
     batchConcurrency: readCollectBatchConcurrency()

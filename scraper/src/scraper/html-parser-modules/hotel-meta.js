@@ -81,12 +81,13 @@ function extractHotelDiamondLevelFromHtml(html) {
   const source = String(html || '');
   const $ = cheerio.load(source);
   const ariaLabel = pickFirst(
+    normalizeText($('[class*="hotelLevel"][aria-label*="out of 5"]').first().attr('aria-label')),
     normalizeText($('[class*="hotelLevel"][aria-label*="diamonds"]').first().attr('aria-label')),
     normalizeText($('[aria-label*="out of 5 diamonds"]').first().attr('aria-label')),
     normalizeText($('[aria-label*="out of 5 diamond"]').first().attr('aria-label'))
   );
   const ariaLevel = normalizeDiamondLevel(
-    extractFirstMatch(ariaLabel, /([1-5](?:\.\d+)?)\s*out of\s*5\s*diamonds?/i)
+    extractFirstMatch(ariaLabel, /([1-5](?:\.\d+)?)\s*out of\s*5\s*(?:diamonds?|rating)/i)
   );
   if (ariaLevel !== null) {
     return ariaLevel;
@@ -95,7 +96,7 @@ function extractHotelDiamondLevelFromHtml(html) {
   const levelBlock =
     source.match(/<span[^>]+class=["'][^"']*hotelLevel[^"']*["'][^>]*>[\s\S]{0,1500}?<\/span>/i)?.[0] ||
     '';
-  const iconCount = (levelBlock.match(/ic_new_diamond/g) || []).length;
+  const iconCount = (levelBlock.match(/ic_new_(?:diamond|circle)/g) || []).length;
   return normalizeDiamondLevel(iconCount);
 }
 

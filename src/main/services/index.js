@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const { createDataService } = require('./data-service');
 const { createWindowService } = require('./window-service');
 
@@ -19,18 +17,8 @@ function createLazyService(factory) {
   };
 }
 
-function defaultDetectBundledScraperResources() {
-  const resourcesPath = process.resourcesPath || '';
-  if (!resourcesPath) {
-    return false;
-  }
-
-  return fs.existsSync(path.join(resourcesPath, 'scraper', 'src', 'cli.js'));
-}
-
 function createServiceContainer({
-  createAiService: createAiServiceOverride,
-  detectBundledScraperResources = defaultDetectBundledScraperResources
+  createAiService: createAiServiceOverride
 } = {}) {
   const dataService = createDataService();
   const windowService = createWindowService();
@@ -47,9 +35,6 @@ function createServiceContainer({
     },
     hasAiService() {
       return aiServiceSlot.hasInstance();
-    },
-    hasBundledScraperResources() {
-      return Boolean(detectBundledScraperResources());
     }
   };
 

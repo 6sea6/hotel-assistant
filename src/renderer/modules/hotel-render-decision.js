@@ -22,6 +22,7 @@ const FULL_RERENDER_REASONS = new Set([
   'filter-change',
   'sort-change',
   'hotel-add',
+  'hotel-delete',
   'batch-delete',
   'template-sync',
   'view-mode-change',
@@ -31,7 +32,7 @@ const FULL_RERENDER_REASONS = new Set([
   'fallback'
 ]);
 
-const PATCHABLE_REASONS = new Set(['favorite', 'hotel-update', 'hotel-delete']);
+const PATCHABLE_REASONS = new Set(['favorite', 'hotel-update']);
 
 /**
  * @param {string|null|undefined} reason

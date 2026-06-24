@@ -1017,6 +1017,34 @@ test('Ctrip list URL reverse sync does not overwrite saved filters with pasted U
   assert.equal(elements.get('aiCtripPriceMax').value, 'max');
 });
 
+test('Ctrip list URL reverse sync does not import pasted known filters when settings are empty', async () => {
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=15~Range*15*900~2400,16~5*16*5,17~6*17*6&locale=zh-CN';
+  const { elements, setCalls } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMin: '',
+    aiCtripPriceMax: '',
+    aiCtripStarLevels: [],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 20
+  };
+
+  await module.syncCtripListUrlSettingsFromInput();
+
+  assert.equal(state.settings.aiCtripPriceMin, '');
+  assert.equal(state.settings.aiCtripPriceMax, '');
+  assert.deepEqual(state.settings.aiCtripStarLevels, []);
+  assert.equal(state.settings.aiCtripSortMode, '');
+  assert.deepEqual(setCalls, []);
+  assert.equal(elements.get('aiCtripPriceMin').value, '');
+  assert.equal(elements.get('aiCtripPriceMax').value, '');
+  assert.equal(elements.get('aiCtripSortMode').value, '');
+});
+
 test('active Ctrip URL filters are merged into list URL without dropping unknown filters', async () => {
   const inputUrl =
     'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
@@ -1034,7 +1062,7 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
   };
 
   const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true });
-  await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
+  await module.syncAiCtripListUrlFromSettings();
   const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
 
   assert.deepEqual(activeFilters, {
@@ -1045,6 +1073,77 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
   assert.ok(parsed.listFilterParts.includes('29~1*29*1~3*2'));
   assert.ok(parsed.listFilterParts.includes('15~Range*15*50~200'));
   assert.ok(parsed.listFilterParts.includes('16~4*16*4'));
+});
+
+test('active Ctrip URL price filters convert per-person daily price to stay total by template days and room count', async () => {
+  const inputUrl =
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  const template = {
+    id: 'tpl-1',
+    name: '三晚模板',
+    check_in_date: '2026-06-01',
+    check_out_date: '2026-06-04',
+    room_count: 2
+  };
+  state.templates = [template];
+  state.settings = {
+    aiCtripPriceMin: 60,
+    aiCtripPriceMax: 300,
+    aiCtripStarLevels: [],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 10
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+
+  const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true, template });
+  await module.syncAiCtripListUrlFromSettings({ activeOnly: true, template });
+  const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
+
+  assert.deepEqual(activeFilters, {
+    priceMin: 360,
+    priceMax: 1800
+  });
+  assert.ok(parsed.listFilterParts.includes('15~Range*15*360~1800'));
+});
+
+test('active Ctrip URL price max keeps max when converting per-person daily price', async () => {
+  const inputUrl = 'https://hotels.ctrip.com/hotels/list?cityId=477&locale=zh-CN';
+  const { elements } = installAiAssistantDom(inputUrl);
+  const { module, state } = await loadAiAssistantModules();
+  const template = {
+    id: 'tpl-1',
+    name: '三晚模板',
+    check_in_date: '2026-06-01',
+    check_out_date: '2026-06-04',
+    room_count: 2
+  };
+  state.templates = [template];
+  state.settings = {
+    aiCtripPriceMin: 60,
+    aiCtripPriceMax: 'max',
+    aiCtripStarLevels: [],
+    aiCtripSortMode: '',
+    aiCtripFreeCancel: false,
+    aiCtripReviewCountMin: '',
+    aiCtripScoreMin: '',
+    aiListDesiredHotelCount: 10
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+
+  const activeFilters = module.readCtripUrlFilterSettings({ activeOnly: true, template });
+  await module.syncAiCtripListUrlFromSettings({ template });
+  const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
+
+  assert.deepEqual(activeFilters, {
+    priceMin: 360,
+    priceMax: 'max'
+  });
+  assert.ok(parsed.listFilterParts.includes('15~Range*15*360~max'));
 });
 
 test('active Ctrip list URL filters include accommodation, room and theme selections', async () => {
@@ -1171,9 +1270,9 @@ test('list prefilter save reads accommodation mode from selected DOM control', a
   assert.equal(state.settings.aiCtripAccommodationTypeMode, 'exclude');
 });
 
-test('active-only Ctrip URL sync preserves pasted known filters when app settings are empty', async () => {
+test('Ctrip URL sync clears pasted known filters when app prefilters are empty', async () => {
   const inputUrl =
-    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,17~6*17*6&locale=zh-CN';
+    'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2,15~Range*15*900~2400,16~5*16*5,17~6*17*6,23~10*23*10,25~7*25*500,6~4*6*4,75~TAG_495*75*495,4~2*4*2,81~1188*81*1188,1~771*1*771&locale=zh-CN';
   const { elements } = installAiAssistantDom(inputUrl);
   const { module, state } = await loadAiAssistantModules();
   state.settings = {
@@ -1184,15 +1283,34 @@ test('active-only Ctrip URL sync preserves pasted known filters when app setting
     aiCtripFreeCancel: false,
     aiCtripReviewCountMin: '',
     aiCtripScoreMin: '',
+    aiCtripAccommodationTypeMode: 'include',
+    aiCtripAccommodationTypes: [],
+    aiCtripRoomTypes: [],
+    aiCtripRoomFeatures: [],
+    aiCtripFeatureThemes: [],
     aiListDesiredHotelCount: 10
   };
 
-  await module.syncAiCtripListUrlFromSettings({ activeOnly: true });
+  await module.syncAiCtripListUrlFromSettings();
   const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
 
   assert.deepEqual(module.readCtripUrlFilterSettings({ activeOnly: true }), {});
   assert.ok(parsed.listFilterParts.includes('29~1*29*1~3*2'));
-  assert.ok(parsed.listFilterParts.includes('17~6*17*6'));
+  assert.deepEqual(parsed.detectedKnownFilterKeys, []);
+  for (const oldFilter of [
+    '15~Range*15*900~2400',
+    '16~5*16*5',
+    '17~6*17*6',
+    '23~10*23*10',
+    '25~7*25*500',
+    '6~4*6*4',
+    '75~TAG_495*75*495',
+    '4~2*4*2',
+    '81~1188*81*1188',
+    '1~771*1*771'
+  ]) {
+    assert.equal(parsed.listFilterParts.includes(oldFilter), false);
+  }
 });
 
 test('cancelled collection only shows one cancellation notification', async () => {
@@ -1782,6 +1900,69 @@ test('AI collect task auto-detects plain text as address query with active prefi
   assert.equal(elements.get('aiHotelUrlInput').value, '');
 });
 
+test('AI collect task sends per-person daily list prefilter prices as stay total prices', async () => {
+  const { elements } = installAiAssistantDom('国家会展中心');
+  const { module, state } = await loadAiAssistantModules();
+  let capturedPayload = null;
+
+  state.templates = [
+    {
+      id: 'tpl-1',
+      name: '上海三晚模板',
+      check_in_date: '2026-06-01',
+      check_out_date: '2026-06-04',
+      room_count: 2
+    }
+  ];
+  state.settings = {
+    aiListDesiredHotelCount: '5',
+    aiCtripPriceMin: 60,
+    aiCtripPriceMax: 300
+  };
+  state.aiTaskQueue = [];
+  state.aiTaskQueueCounter = 0;
+  state.aiSelectedQueueTaskId = '';
+  state.aiQueueSelectionPinned = false;
+  state.aiTaskInProgress = false;
+  state.aiTaskEvents = [];
+  state.aiTaskConsole = {
+    submitted: false,
+    template: null,
+    templateLabel: '',
+    hotelUrl: '',
+    startedAt: '',
+    endedAt: '',
+    result: null,
+    collectResult: null,
+    error: null,
+    reply: ''
+  };
+  elements.get('aiTemplateSelect').value = 'tpl-1';
+  global.window.electronAPI.ai.startTask = async (payload) => {
+    capturedPayload = payload;
+    return {
+      message: '采集任务完成',
+      collectResult: {
+        success: true,
+        hotelName: '测试酒店',
+        eligibleCount: 0,
+        writeResult: null
+      },
+      taskStatus: {}
+    };
+  };
+
+  await module.enqueueAiCollectTask();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(capturedPayload.listUrlFilters, {
+    priceMin: 360,
+    priceMax: 1800
+  });
+  assert.equal(capturedPayload.priceMin, 360);
+  assert.equal(capturedPayload.priceMax, 1800);
+});
+
 test('AI collect task auto-detects Ctrip URL inside mixed text as URL input', async () => {
   const inputUrl =
     '请采集 https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01 外滩';
@@ -2234,7 +2415,13 @@ test('list prefilter controls live in a dedicated assistant modal', () => {
   assert.match(currentTaskHeaderHtml, /open-list-prefilter-settings/);
   assert.match(currentTaskHeaderHtml, /前筛设置/);
   assert.match(prefilterHtml, /列表页前筛/);
+  assert.match(prefilterHtml, /每日人均价格下限/);
+  assert.match(prefilterHtml, /每日人均价格上限/);
+  assert.doesNotMatch(prefilterHtml, /日均价格下限/);
+  assert.doesNotMatch(prefilterHtml, /日均价格上限/);
   assert.doesNotMatch(prefilterHtml, /携程前筛/);
+  assert.doesNotMatch(prefilterHtml, /携程价格下限/);
+  assert.doesNotMatch(prefilterHtml, /携程价格上限/);
   assert.doesNotMatch(prefilterHtml, /list-prefilter-card/);
   assert.doesNotMatch(prefilterHtml, /list-prefilter-section-header/);
   assert.match(prefilterHtml, /aiCtripPriceMin/);

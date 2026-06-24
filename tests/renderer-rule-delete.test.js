@@ -154,27 +154,28 @@ test('rule delete ctrip score threshold includes only hotels below threshold', a
   );
 });
 
-test('rule delete price threshold uses daily price instead of total price', async () => {
+test('rule delete price threshold uses daily per-person price instead of total price', async () => {
   const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
 
   const candidates = getRuleDeleteCandidates(
     {
-      price: 500,
+      price: 250,
       ctripScore: null,
       subwayDistance: null,
       transportTime: null
     },
     [
-      { id: 1, total_price: 1200, daily_price: 400 },
-      { id: 2, total_price: 900, daily_price: 550 },
-      { id: 3, total_price: 520, daily_price: null },
-      { id: 4, total_price: null, daily_price: 501 }
+      { id: 1, total_price: 1200, daily_price: 600, room_count: 3 },
+      { id: 2, total_price: 900, daily_price: 600, room_count: 2 },
+      { id: 3, total_price: 520, daily_price: null, room_count: 2 },
+      { id: 4, total_price: null, daily_price: 251 },
+      { id: 5, total_price: 800, daily_price: 600, room_count: 'bad' }
     ]
   );
 
   assert.deepEqual(
     candidates.map((hotel) => hotel.id),
-    [2, 4]
+    [2, 4, 5]
   );
 });
 
@@ -189,9 +190,9 @@ test('rule delete protects favorite hotels by default', async () => {
       transportTime: null
     },
     [
-      { id: 1, daily_price: 650, is_favorite: 1 },
-      { id: 2, daily_price: 650, is_favorite: 0 },
-      { id: 3, daily_price: 650 }
+      { id: 1, daily_price: 1200, room_count: 2, is_favorite: 1 },
+      { id: 2, daily_price: 1200, room_count: 2, is_favorite: 0 },
+      { id: 3, daily_price: 1200, room_count: 2 }
     ]
   );
 
@@ -213,8 +214,8 @@ test('rule delete can include favorite hotels when protection is disabled', asyn
       protectFavorite: false
     },
     [
-      { id: 1, daily_price: 650, is_favorite: 1 },
-      { id: 2, daily_price: 650, is_favorite: 0 }
+      { id: 1, daily_price: 1200, room_count: 2, is_favorite: 1 },
+      { id: 2, daily_price: 1200, room_count: 2, is_favorite: 0 }
     ]
   );
 

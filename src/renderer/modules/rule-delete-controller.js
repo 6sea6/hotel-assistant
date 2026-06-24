@@ -88,7 +88,7 @@ function getRuleDeleteThresholds() {
     return result;
   };
 
-  const price = parseThreshold(getValue('ruleDeletePrice'), '日均价格阈值');
+  const price = parseThreshold(getValue('ruleDeletePrice'), '每日人均价格阈值');
   if (price.error) return { error: price.error };
 
   const ctripScore = parseScoreThreshold(getValue('ruleDeleteCtripScore'));
@@ -113,6 +113,21 @@ function getRuleDeleteThresholds() {
 
 function hasRuleThreshold(value) {
   return value !== null && value !== undefined;
+}
+
+/**
+ * @param {import('../../shared/contracts').NormalizedHotelRecord} hotel
+ * @returns {number|null}
+ */
+function getDailyPerPersonPrice(hotel) {
+  const dailyPrice = Number(hotel.daily_price);
+  if (!Number.isFinite(dailyPrice) || dailyPrice <= 0) {
+    return null;
+  }
+
+  const roomCount = Number(hotel.room_count);
+  const safeRoomCount = Number.isFinite(roomCount) && roomCount > 0 ? roomCount : 1;
+  return dailyPrice / safeRoomCount;
 }
 
 export function isSubwayDistanceRuleMatched(subwayDistance, threshold) {
@@ -159,15 +174,15 @@ export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCar
       return false;
     }
 
-    const dailyPrice = Number(hotel.daily_price);
+    const dailyPerPersonPrice = getDailyPerPersonPrice(hotel);
     const ctripScore = Number(hotel.ctrip_score);
     const subwayDistance = extractDistanceNumber(hotel.subway_distance);
     const transportTime = extractTimeNumber(hotel.transport_time);
 
     return (
       (hasRuleThreshold(thresholds.price) &&
-        Number.isFinite(dailyPrice) &&
-        dailyPrice > thresholds.price) ||
+        dailyPerPersonPrice !== null &&
+        dailyPerPersonPrice > thresholds.price) ||
       isCtripScoreRuleMatched(ctripScore, thresholds.ctripScore) ||
       isSubwayDistanceRuleMatched(subwayDistance, thresholds.subwayDistance) ||
       (hasRuleThreshold(thresholds.transportTime) &&

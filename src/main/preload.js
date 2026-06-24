@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Keep this literal here because sandboxed preload cannot require local project modules.
 const APP_INFO = Object.freeze({
   name: '宾馆比较助手',
-  version: '8.9.2',
+  version: '8.9.3',
   releaseDate: '2026-06-22',
   author: 'Sea'
 });

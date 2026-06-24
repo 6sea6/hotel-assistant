@@ -40,7 +40,7 @@ test('template repository getAll repairs missing and duplicate IDs and writes ba
   assert.equal(new Set(ids).size, templates.length);
   assert.equal(templates[0].name, '武汉');
   assert.equal(templates[0].destination, '江汉路');
-  assert.equal(templates[0].room_count, 3);
+  assert.equal(templates[0].room_count, 4);
   assert.equal(templates[1].room_count, 2);
   assert.ok(store.setCalls.some((call) => call.key === 'templates'));
 });
@@ -69,7 +69,7 @@ test('template repository update returns updated template or null when missing',
   const missing = repo.update({ id: 404, name: '不存在' });
 
   assert.equal(updated.name, '新模板');
-  assert.equal(updated.room_count, 3);
+  assert.equal(updated.room_count, 4);
   assert.equal(missing, null);
 });
 
@@ -98,5 +98,5 @@ test('template repository replaceAll normalizes and persists templates', () => {
   repo.replaceAll([{ id: 1, name: ' 模板 ', destination: ' 目的地 ', room_count: 10 }]);
 
   assert.deepEqual(store.get('templates')[0].name, '模板');
-  assert.equal(store.get('templates')[0].room_count, 3);
+  assert.equal(store.get('templates')[0].room_count, 4);
 });

@@ -188,7 +188,7 @@ const TEMPLATE_FIELDS = [
     key: 'room_count',
     label: '入住人数',
     type: 'number',
-    description: '模板人数（当前采集仅支持 1-3）'
+    description: '模板人数（当前采集支持 1-4）'
   },
   { key: 'created_at', label: '创建时间', type: 'ISO datetime', description: '模板创建时间' }
 ];
@@ -213,7 +213,7 @@ const TEMPLATE_INFO_FIELDS = [
     key: 'room_count',
     label: '入住人数',
     type: 'number',
-    description: '来源模板人数（当前采集仅支持 1-3）'
+    description: '来源模板人数（当前采集支持 1-4）'
   }
 ];
 

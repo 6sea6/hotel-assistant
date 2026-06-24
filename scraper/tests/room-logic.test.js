@@ -487,3 +487,45 @@ test('buildRoomSelectionDiagnostics records rejected and deduped room reasons', 
   );
   assert.equal(diagnostics.selectionLogs[3].action, 'deduped');
 });
+
+test('selectMatchingRooms accepts exact four-person template rooms', () => {
+  const roomBlocks = [
+    {
+      title: '三人房',
+      standard_title: '三床房',
+      original_title: '三人房',
+      occupancy: 3,
+      price: 300,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '四人家庭房',
+      standard_title: '家庭房',
+      original_title: '四人家庭房',
+      occupancy: 4,
+      price: 420,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '五人套房',
+      standard_title: '家庭房',
+      original_title: '五人套房',
+      occupancy: 5,
+      price: 520,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    }
+  ];
+
+  const rooms = selectMatchingRooms(roomBlocks, { room_count: 4, room_type: '家庭房' });
+
+  assert.deepEqual(
+    rooms.map((room) => room.title),
+    ['四人家庭房']
+  );
+});

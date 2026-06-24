@@ -25,7 +25,7 @@ test('template normalizer trims fields and normalizes ID and dates', () => {
 test('template normalizer defaults and clamps room_count', () => {
   assert.equal(normalizeTemplatePayload({ name: '默认' }).room_count, 2);
   assert.equal(normalizeTemplatePayload({ name: '小于下限', room_count: 0 }).room_count, 1);
-  assert.equal(normalizeTemplatePayload({ name: '大于上限', room_count: 9 }).room_count, 3);
+  assert.equal(normalizeTemplatePayload({ name: '大于上限', room_count: 9 }).room_count, 4);
 });
 
 test('template normalizer preserves existing created_at when payload omits it', () => {

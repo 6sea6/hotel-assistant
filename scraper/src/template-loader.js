@@ -175,10 +175,8 @@ function validateTemplate(template, options = {}) {
     throw new Error(`模板缺少必填字段: ${missing.join(', ')}`);
   }
 
-  if (template.room_count > 3) {
-    throw new Error(
-      '当前采集仅支持 1-3 人模板；如需保留 4 人房，请使用 3 人模板并开启“3人模板时额外保留4人房”。'
-    );
+  if (template.room_count > 4) {
+    throw new Error('当前采集仅支持 1-4 人模板。');
   }
 }
 

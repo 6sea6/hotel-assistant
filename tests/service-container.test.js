@@ -11,7 +11,6 @@ test('service container wires stable main-process service façades', () => {
   assert.equal(typeof services.dataService.getDataFolderManager, 'function');
   assert.equal(typeof services.getAiService, 'function');
   assert.equal(typeof services.hasAiService, 'function');
-  assert.equal(typeof services.hasBundledScraperResources, 'function');
   assert.equal(typeof services.windowService.createWindow, 'function');
   assert.equal(typeof services.windowService.getMainWindow, 'function');
 });
@@ -27,15 +26,11 @@ test('service container lazily creates AI service', () => {
         getProviderConfig() {},
         startTask() {}
       };
-    },
-    detectBundledScraperResources() {
-      return true;
     }
   });
 
   assert.equal(aiCreateCount, 0);
   assert.equal(services.hasAiService(), false);
-  assert.equal(services.hasBundledScraperResources(), true);
 
   const aiService = services.getAiService();
   assert.equal(aiCreateCount, 1);

@@ -251,6 +251,17 @@ test('hotel edit form keeps dates after prices and ctrip star after score', () =
   assert.ok(starIndex > scoreIndex, 'ctrip star level should follow ctrip score');
 });
 
+test('hotel and template room count selects support four people', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const hotelRoomCount = html.match(/<select id="roomCount"[\s\S]*?<\/select>/);
+  const templateRoomCount = html.match(/<select id="templateRoomCount"[\s\S]*?<\/select>/);
+
+  assert.ok(hotelRoomCount, 'hotel room count select should exist');
+  assert.ok(templateRoomCount, 'template room count select should exist');
+  assert.match(hotelRoomCount[0], /<option value="4">四人<\/option>/);
+  assert.match(templateRoomCount[0], /<option value="4">四人<\/option>/);
+});
+
 test('rule delete protects favorite hotels by default in the modal UI', () => {
   const html = readProjectFile('src/renderer/index.html');
   const footerMatch = html.match(

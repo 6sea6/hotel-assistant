@@ -54,6 +54,18 @@ test('extractHotelDiamondLevelFromHtml falls back to diamond icon count', () => 
   assert.equal(extractHotelDiamondLevelFromHtml(html), 3);
 });
 
+test('extractHotelDiamondLevelFromHtml reads Ctrip rating circle labels', () => {
+  const html = `
+    <span class="hotelLevel_hotelLevel__mhh3v hotelLevel_hotelLevelCtrip__yaWUT"
+      aria-label="2 out of 5 rating" role="img">
+      <i aria-hidden="true" class="smarticon u-icon u-icon-ic_new_circle"></i>
+      <i aria-hidden="true" class="smarticon u-icon u-icon-ic_new_circle"></i>
+    </span>
+  `;
+
+  assert.equal(extractHotelDiamondLevelFromHtml(html), 2);
+});
+
 test('findRoomBlocksFromStructuredText extracts mixed-bed advanced twin room from DOM-style snippet', () => {
   const blocks = findRoomBlocksFromStructuredText(
     '高级双床间 房型摘要 无早餐 立即确认 在线付 今日价格 ¥530 1张双人床及1张单人床 有窗 禁烟 28-30平方米 6-7层 WiFi免费'

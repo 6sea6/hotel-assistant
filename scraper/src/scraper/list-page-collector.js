@@ -16,7 +16,6 @@ const {
 function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
 }
-
 async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}, options = {}) {
   const totalStartedAt = Date.now();
   const filters = normalizeListPageFilterOptions(rawFilters);
@@ -49,7 +48,6 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
   let prefilter = filterListPageCandidates(candidates, filters);
   let previousSelectedCount = 0;
   let staleSelectedRounds = 0;
-
   for (const pageUrl of pageUrls) {
     const pageStartedAt = Date.now();
     try {

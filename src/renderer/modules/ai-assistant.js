@@ -723,7 +723,7 @@ export async function enqueueAiCollectTask() {
   }
 
   const listFilters = readListFilterForm();
-  const listUrlFilters = readCtripUrlFilterSettings({ activeOnly: true });
+  const listUrlFilters = readCtripUrlFilterSettings({ activeOnly: true, template });
   const submittedInput = detectSubmittedTaskInput();
   let task = null;
   if (submittedInput.inputMode === 'empty') {
@@ -736,7 +736,7 @@ export async function enqueueAiCollectTask() {
       addressQuery: submittedInput.addressQuery
     });
   } else {
-    await syncAiCtripListUrlFromSettings({ activeOnly: true });
+    await syncAiCtripListUrlFromSettings({ template });
     const url = getSubmittedUrl();
     if (!url) {
       showNotification('请粘贴携程酒店详情页或列表页链接', 'warning');

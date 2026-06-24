@@ -20,7 +20,7 @@
     </li>
     <li>
       <strong>前筛设置：</strong>采集助手"前筛设置"中可配置携程 URL
-      前筛：价格、星级、排序、免费取消、点评数、评分档位、住宿类型、房型、客房特色、特色主题；住宿类型会按当前"包含所选/排除所选"按钮状态保存，未知携程筛选片段会保留，不会被程序清空
+      前筛：每日人均价格、星级、排序、免费取消、点评数、评分档位、住宿类型、房型、客房特色、特色主题；每日人均价格会按模板入住天数和 room_count 换算成携程 URL 使用的总价区间，住宿类型会按当前"包含所选/排除所选"按钮状态保存，未知携程筛选片段会保留，不会被程序清空
     </li>
     <li>
       <strong>目标数量：</strong
@@ -77,6 +77,10 @@
     <li>
       <strong>模板列表：</strong
       >每个模板会显示目的地、入住日期、离店日期和房间人数，方便快速核对行程范围
+    </li>
+    <li>
+      <strong>房间人数：</strong
+      >模板和手动新增宾馆均支持选择 1-4 人；4 人模板采集时会直接匹配携程显示可住 4 人的房型
     </li>
     <li><strong>应用模板：</strong>添加宾馆时选择模板，自动填充预设信息</li>
     <li><strong>模板关联：</strong>宾馆只会使用你显式选择或写入的模板，不再根据日期自动猜测模板</li>
@@ -195,7 +199,7 @@
 <div class="manual-section">
   <h3><span class="app-icon app-icon-info" aria-hidden="true"></span> 关于应用</h3>
   <ul>
-    <li><strong>版本：</strong><span id="manualVersionText">v8.9.2</span></li>
+    <li><strong>版本：</strong><span id="manualVersionText">v8.9.3</span></li>
     <li><strong>作者：</strong>Sea</li>
     <li><strong>感谢：</strong>Trae、GitHub Copilot、Codex</li>
     <li>
