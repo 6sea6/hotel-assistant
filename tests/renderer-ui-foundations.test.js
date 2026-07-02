@@ -276,6 +276,26 @@ test('rule delete protects favorite hotels by default in the modal UI', () => {
   );
 });
 
+test('rule delete modal includes template deletion selector', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const modalMatch = html.match(
+    /<template data-modal-template="ruleDeleteModal">([\s\S]*?)<\/template>/
+  );
+
+  assert.ok(modalMatch, 'rule delete modal should exist');
+  assert.match(modalMatch[1], /<label for="ruleDeleteTemplate">选择模板删除<\/label>/);
+  assert.match(
+    modalMatch[1],
+    /<select id="ruleDeleteTemplate" class="input" data-custom-select="true">/
+  );
+  assert.match(modalMatch[1], /<option value="">不按模板删除<\/option>/);
+  assert.ok(
+    modalMatch[1].indexOf('ruleDeleteTransportTime') <
+      modalMatch[1].indexOf('ruleDeleteTemplate'),
+    'template deletion selector should appear below threshold inputs'
+  );
+});
+
 test('modal layering uses z-index tokens without inline overrides', () => {
   const modalCss = readStyleFile('components/modal-form.css');
   const uiUtils = readProjectFile('src/renderer/modules/ui-utils.js');

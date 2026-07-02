@@ -86,6 +86,10 @@ function isRetryableUncollectedResult(childResult) {
   }
 
   const snapshot = childResult.pageSnapshot || {};
+  if (snapshot.login_required) {
+    return false;
+  }
+
   const candidateCount = Math.max(
     0,
     Number(snapshot.room_candidates_count || 0),

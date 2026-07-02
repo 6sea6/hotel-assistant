@@ -17,6 +17,23 @@ function hasLockedPriceSignal(result = {}) {
   );
 }
 
+function getLoginRequiredSignal(result = {}) {
+  const pageSnapshot = getPageSnapshot(result);
+  if (!pageSnapshot || typeof pageSnapshot !== 'object' || !pageSnapshot.login_required) {
+    return {
+      detected: false,
+      reason: ''
+    };
+  }
+
+  return {
+    detected: true,
+    reason:
+      pageSnapshot.login_reason ||
+      '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
+  };
+}
+
 function getVisibleLoginRetryNeed(result = {}) {
   if (!result || result.success !== true) {
     return {
@@ -26,24 +43,22 @@ function getVisibleLoginRetryNeed(result = {}) {
   }
 
   const pageSnapshot = getPageSnapshot(result) || {};
+  const loginRequired = getLoginRequiredSignal(result);
+  if (loginRequired.detected) {
+    return {
+      needed: true,
+      reason: loginRequired.reason
+    };
+  }
+
   const totalPriceMissing =
     result.totalPrice === null || result.totalPrice === undefined || result.totalPrice === '';
-  const roomPricesMissing = !Array.isArray(result.roomPrices) || result.roomPrices.length === 0;
-  const candidatesCount = Number(pageSnapshot.room_candidates_count || 0);
-  const visiblePriceMissing = candidatesCount > 0 && pageSnapshot.room_price_visible === false;
   const lockedPrice = hasLockedPriceSignal(result);
 
   if (lockedPrice && totalPriceMissing) {
     return {
       needed: true,
       reason: '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
-    };
-  }
-
-  if (totalPriceMissing && (visiblePriceMissing || (roomPricesMissing && candidatesCount > 0))) {
-    return {
-      needed: true,
-      reason: '已找到房型信息，但未采集到有效价格，携程可能要求重新登录后才显示价格。'
     };
   }
 
@@ -65,6 +80,7 @@ function buildLoginRetrySummary(previousResult = {}, retryNeed = {}) {
 
 module.exports = {
   buildLoginRetrySummary,
+  getLoginRequiredSignal,
   getPageSnapshot,
   getVisibleLoginRetryNeed,
   hasLockedPriceSignal

@@ -20,6 +20,7 @@ const {
   parseChatCompletionMessage
 } = require('../src/main/ai/provider-client');
 const {
+  assertSafeWriteResult,
   buildScraperArgs,
   createWriteRollbackSnapshot,
   getVisibleLoginRetryNeed,
@@ -1289,7 +1290,23 @@ test('direct AI task cancellation emits cancel status instead of task error', as
   );
 });
 
-test('AI scraper retry detector asks for visible login when Ctrip price is locked or missing', () => {
+test('AI scraper retry detector asks for visible login only when Ctrip price is locked', () => {
+  const loginRequiredWithPrice = getVisibleLoginRetryNeed({
+    success: true,
+    totalPrice: 166,
+    roomPrices: [166],
+    pageSnapshot: {
+      login_required: true,
+      login_reason: '检测到携程页面显示“登录看低价/解锁优惠”。',
+      room_candidates_count: 3,
+      room_price_visible: true,
+      sources: []
+    }
+  });
+
+  assert.equal(loginRequiredWithPrice.needed, true);
+  assert.match(loginRequiredWithPrice.reason, /登录看低价/);
+
   const locked = getVisibleLoginRetryNeed({
     success: true,
     totalPrice: null,
@@ -1316,8 +1333,7 @@ test('AI scraper retry detector asks for visible login when Ctrip price is locke
     }
   });
 
-  assert.equal(missingPrice.needed, true);
-  assert.match(missingPrice.reason, /未采集到有效价格/);
+  assert.equal(missingPrice.needed, false);
 
   const priced = getVisibleLoginRetryNeed({
     success: true,
@@ -1331,4 +1347,19 @@ test('AI scraper retry detector asks for visible login when Ctrip price is locke
   });
 
   assert.equal(priced.needed, false);
+});
+
+test('AI scraper write guard rejects login-required results even when price exists', () => {
+  const safety = assertSafeWriteResult({
+    success: true,
+    eligibleCount: 2,
+    totalPrice: 166,
+    pageSnapshot: {
+      login_required: true,
+      login_reason: '检测到携程页面显示“登录看低价/解锁优惠”。'
+    }
+  });
+
+  assert.equal(safety.ok, false);
+  assert.match(safety.reason, /登录看低价/);
 });

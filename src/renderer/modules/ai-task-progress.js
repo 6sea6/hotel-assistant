@@ -1,4 +1,4 @@
-import { isRecord } from './ai-task-events.js';
+import { isRecord, isSoftCtripLoginPromptEvent } from './ai-task-events.js';
 
 /**
  * Pure result/write/progress helpers for the AI task console.
@@ -226,12 +226,29 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
   const itemStatus = new Map();
   let total = 0;
   let effectiveConcurrency = 0;
+  let waitingForLoginRetry = false;
 
   for (const event of events || []) {
+    const type = String(event && event.type ? event.type : '');
+    if (type === 'task:done' || type === 'task:error' || type === 'task:cancel') {
+      waitingForLoginRetry = false;
+    }
+    if (type === 'edge:login-required' && !isSoftCtripLoginPromptEvent(event)) {
+      itemStatus.clear();
+      waitingForLoginRetry = true;
+      continue;
+    }
+    if (type === 'scrape:retry') {
+      itemStatus.clear();
+      waitingForLoginRetry = true;
+      continue;
+    }
+
     const parsed = parseBatchProgressEvent(event);
     if (!parsed.type.startsWith('batch:')) {
       continue;
     }
+    waitingForLoginRetry = false;
     if (Number.isFinite(parsed.total) && parsed.total > total) {
       total = parsed.total;
     }
@@ -258,8 +275,11 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
 
   const completed = [...itemStatus.values()].filter((status) => status === 'completed').length;
   const rawRunning = [...itemStatus.values()].filter((status) => status === 'running').length;
-  const running =
+  let running =
     effectiveConcurrency > 0 ? Math.min(rawRunning, effectiveConcurrency) : rawRunning;
+  if (waitingForLoginRetry && completed === 0 && running === 0) {
+    running = Math.min(total, 1);
+  }
   const pending = Math.max(0, total - completed - running);
 
   return {

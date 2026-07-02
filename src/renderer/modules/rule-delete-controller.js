@@ -3,13 +3,14 @@
  */
 
 import { state, setHotels, markVisibleHotelsCacheDirty } from './state.js';
-import { $, getValue, getSelectionKey, iconHtml } from './dom-helpers.js';
+import { $, getValue, getSelectionKey, iconHtml, idsEqual } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
   setModalActive,
   resetActionButtonConfirmation,
   startActionButtonConfirmation
 } from './ui-utils.js';
+import { refreshCustomSelect } from './custom-select.js';
 import { applyFiltersToHotels, extractDistanceNumber, extractTimeNumber } from './hotel-filters.js';
 import { requestHotelListRender } from './hotel-list-render-orchestrator.js';
 
@@ -19,6 +20,7 @@ let ruleDeleteInProgress = false;
 /**
  * @typedef {HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement} RuleDeleteFormValueElement
  * @typedef {object} RuleDeleteThresholds
+ * @property {string|null} templateId
  * @property {number|null} price
  * @property {number|null} ctripScore
  * @property {number|null} subwayDistance
@@ -50,6 +52,26 @@ function resetRuleDeleteConfirmation() {
 
 function getCurrentCardHotels() {
   return applyFiltersToHotels(state.hotels, state.currentFilters);
+}
+
+function renderRuleDeleteTemplateOptions() {
+  const select = /** @type {HTMLSelectElement|null} */ ($('ruleDeleteTemplate'));
+  if (!select) return;
+
+  select.innerHTML = '<option value="">不按模板删除</option>';
+  const templates = Array.isArray(state.templates) ? state.templates : [];
+  for (const template of templates) {
+    const templateId = template && template.id;
+    if (templateId === null || templateId === undefined || templateId === '') {
+      continue;
+    }
+    const option = document.createElement('option');
+    option.value = String(templateId);
+    option.textContent = String(template.name || `模板 ${templateId}`);
+    select.appendChild(option);
+  }
+  select.value = '';
+  refreshCustomSelect(select, { auto: true });
 }
 
 /**
@@ -102,6 +124,7 @@ function getRuleDeleteThresholds() {
 
   return {
     value: {
+      templateId: getValue('ruleDeleteTemplate').trim() || null,
       price: price.value,
       ctripScore: ctripScore.value,
       subwayDistance: subwayDistance.value,
@@ -128,6 +151,24 @@ function getDailyPerPersonPrice(hotel) {
   const roomCount = Number(hotel.room_count);
   const safeRoomCount = Number.isFinite(roomCount) && roomCount > 0 ? roomCount : 1;
   return dailyPrice / safeRoomCount;
+}
+
+/**
+ * @param {import('../../shared/contracts').NormalizedHotelRecord} hotel
+ * @param {string|null} templateId
+ * @returns {boolean}
+ */
+function isHotelTemplateRuleMatched(hotel, templateId) {
+  if (!templateId) {
+    return false;
+  }
+
+  const hotelTemplateId = hotel.template_id ?? hotel.template_info?.id;
+  return (
+    hotelTemplateId !== null &&
+    hotelTemplateId !== undefined &&
+    idsEqual(hotelTemplateId, templateId)
+  );
 }
 
 export function isSubwayDistanceRuleMatched(subwayDistance, threshold) {
@@ -158,6 +199,7 @@ export function isCtripScoreRuleMatched(score, threshold) {
  */
 export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCardHotels()) {
   const hasActiveRule =
+    Boolean(thresholds.templateId) ||
     hasRuleThreshold(thresholds.price) ||
     hasRuleThreshold(thresholds.ctripScore) ||
     hasRuleThreshold(thresholds.subwayDistance) ||
@@ -180,6 +222,7 @@ export function getRuleDeleteCandidates(thresholds, sourceHotels = getCurrentCar
     const transportTime = extractTimeNumber(hotel.transport_time);
 
     return (
+      isHotelTemplateRuleMatched(hotel, thresholds.templateId || null) ||
       (hasRuleThreshold(thresholds.price) &&
         dailyPerPersonPrice !== null &&
         dailyPerPersonPrice > thresholds.price) ||
@@ -230,12 +273,15 @@ export function openRuleDeleteModal() {
   }
 
   setModalActive(RULE_DELETE_MODAL_ID, true);
+  renderRuleDeleteTemplateOptions();
 
+  const templateInput = getFormValueElement('ruleDeleteTemplate');
   const priceInput = getFormValueElement('ruleDeletePrice');
   const scoreInput = getFormValueElement('ruleDeleteCtripScore');
   const subwayInput = getFormValueElement('ruleDeleteSubwayDistance');
   const transportInput = getFormValueElement('ruleDeleteTransportTime');
   const protectFavoriteInput = $('ruleDeleteProtectFavorite');
+  if (templateInput) templateInput.value = '';
   if (priceInput) priceInput.value = '';
   if (scoreInput) scoreInput.value = '';
   if (subwayInput) subwayInput.value = '';

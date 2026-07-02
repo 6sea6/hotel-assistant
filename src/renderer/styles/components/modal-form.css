@@ -165,6 +165,19 @@ body.modal-open .modal.active {
   gap: 12px;
 }
 
+.rule-delete-body .form-row {
+  row-gap: 10px;
+  margin-bottom: 8px;
+}
+
+.rule-delete-body .form-group {
+  margin-bottom: 8px;
+}
+
+.rule-delete-body .form-group label {
+  margin-bottom: 6px;
+}
+
 .rule-delete-summary {
   margin-top: 4px;
   padding: 14px 16px;

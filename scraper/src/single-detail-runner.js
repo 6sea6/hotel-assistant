@@ -22,6 +22,10 @@ const {
 } = require('./task-context');
 const { writeSingleHotelRecords } = require('./task-writeback');
 
+function isScrapedLoginRequired(scraped = {}) {
+  return Boolean(scraped && scraped.page_snapshot && scraped.page_snapshot.login_required);
+}
+
 class SingleDetailRunner {
   createPreparedScrapeState(context) {
     const {
@@ -108,7 +112,9 @@ class SingleDetailRunner {
 
     assertNotCancelled(signal);
     const hasEligibleScrapedRooms =
-      Array.isArray(scraped.eligible_rooms) && scraped.eligible_rooms.length > 0;
+      !isScrapedLoginRequired(scraped) &&
+      Array.isArray(scraped.eligible_rooms) &&
+      scraped.eligible_rooms.length > 0;
     const skipTransitBecauseNoEligibleRooms = Boolean(isBatchItem && !hasEligibleScrapedRooms);
     const skipTransit = Boolean(
       args.skipTransit || args['skip-transit'] || skipTransitBecauseNoEligibleRooms
@@ -175,12 +181,9 @@ class SingleDetailRunner {
       'parse_data',
       { url: itemTemplate.ctrip_url },
       async () => {
-        const nextEligibleRoomRecords = buildEligibleRoomRecords(
-          itemTemplate,
-          scraped,
-          transit,
-          matchedTemplate
-        );
+        const nextEligibleRoomRecords = isScrapedLoginRequired(scraped)
+          ? []
+          : buildEligibleRoomRecords(itemTemplate, scraped, transit, matchedTemplate);
         const nextHotelRecord =
           nextEligibleRoomRecords[0] ||
           buildHotelRecord(itemTemplate, scraped, transit, matchedTemplate);
@@ -212,6 +215,7 @@ class SingleDetailRunner {
           preferredOutputPath ||
             path.join(outputDir, `${slugify(hotelRecord.name || 'hotel')}.json`)
         );
+    const loginRequired = isScrapedLoginRequired(scraped);
     const savedHtmlFiles =
       scraped.page_snapshot && Array.isArray(scraped.page_snapshot.saved_html_files)
         ? scraped.page_snapshot.saved_html_files
@@ -321,8 +325,11 @@ class SingleDetailRunner {
       eligibleRoomTypes: eligibleRoomSummaries,
       roomType: hotelRecord.room_type,
       roomOccupancy: scraped.room ? (scraped.room.occupancy ?? null) : null,
-      roomPrices: scraped.room && Array.isArray(scraped.room.prices) ? scraped.room.prices : [],
-      totalPrice: hotelRecord.total_price,
+      roomPrices:
+        !loginRequired && scraped.room && Array.isArray(scraped.room.prices)
+          ? scraped.room.prices
+          : [],
+      totalPrice: loginRequired ? null : hotelRecord.total_price,
       ctripScore: hotelRecord.ctrip_score,
       distance: hotelRecord.distance,
       subwayDistance: hotelRecord.subway_distance,

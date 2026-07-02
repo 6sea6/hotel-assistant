@@ -189,7 +189,8 @@ function installScraperMocks(state = {}) {
             clickedCount: 2,
             scrollCount: 4,
             containerCount: 1
-          }
+          },
+          ...(state.edgeCaptureExtra || {})
         };
       }
     })
@@ -488,6 +489,71 @@ test('scrapeCtripHotel passes login prompt event callback into Edge capture', as
           }
         }
       ]);
+    }
+  );
+});
+
+test('scrapeCtripHotel exposes Edge login-required state in page snapshot', async () => {
+  await withScraper(
+    {
+      edgeCaptureExtra: {
+        loginRequired: true,
+        loginReason: '检测到携程页面显示“登录看低价/解锁优惠”。',
+        loginStage: 'edge_page_ready'
+      }
+    },
+    async (scrapeCtripHotel) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=8',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'parallel_edge',
+          perf: createPerfRecorder([])
+        }
+      );
+
+      assert.equal(result.room.title, 'Edge大床房');
+      assert.equal(result.page_snapshot.login_required, true);
+      assert.match(result.page_snapshot.login_reason, /登录看低价/);
+      assert.equal(result.page_snapshot.login_stage, 'edge_page_ready');
+      const edgeSource = result.page_snapshot.sources.find((source) => source.source === 'edge-cdp');
+      assert.equal(edgeSource.login_required, true);
+    }
+  );
+});
+
+test('scrapeCtripHotel treats Edge locked-price rooms as login-required even with raw prices', async () => {
+  const pricedEdgeRoom = makeRoom('Edge原始价格房', 166, 'edge-cdp-raw');
+  const lockedEdgeRoom = {
+    ...makeRoom('Edge登录看低价房', null, 'edge-cdp'),
+    price_locked: true
+  };
+
+  await withScraper(
+    {
+      edgeCaptureExtra: {
+        roomBlocks: [pricedEdgeRoom, lockedEdgeRoom],
+        selectedRoom: pricedEdgeRoom
+      }
+    },
+    async (scrapeCtripHotel) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=10',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'parallel_edge',
+          perf: createPerfRecorder([])
+        }
+      );
+
+      assert.equal(result.room.title, 'Edge原始价格房');
+      assert.equal(result.page_snapshot.login_required, true);
+      assert.match(result.page_snapshot.login_reason, /登录看低价/);
+      assert.equal(result.page_snapshot.login_stage, 'edge_room_candidates');
+      const edgeSource = result.page_snapshot.sources.find((source) => source.source === 'edge-cdp');
+      assert.equal(edgeSource.login_required, true);
     }
   );
 });

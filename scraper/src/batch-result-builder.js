@@ -11,6 +11,9 @@ function summarizeSnapshotSources(pageSnapshot = {}) {
           room_candidates_count: source.room_candidates_count ?? 0,
           room_price_visible: Boolean(source.room_price_visible),
           locked_price_detected: Boolean(source.locked_price_detected),
+          login_required: Boolean(source.login_required),
+          login_reason: source.login_reason || '',
+          login_stage: source.login_stage || '',
           tracked_url_count: source.tracked_url_count ?? 0,
           attempt_count: source.attempt_count ?? 0,
           spider_error_codes: Array.isArray(source.spider_error_codes)
@@ -41,6 +44,15 @@ function deriveUncollectedHotelReason(childResult = {}) {
     return {
       reason: 'collection_failed',
       detail: childResult.error || '详情采集任务失败。'
+    };
+  }
+
+  if (pageSnapshot.login_required) {
+    return {
+      reason: 'login_required',
+      detail:
+        pageSnapshot.login_reason ||
+        '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
     };
   }
 
@@ -108,6 +120,9 @@ function buildUncollectedHotelPerfRecord({ index, hotelInput = {}, childResult =
     selected_room_type: childResult.roomType || '',
     selected_room_source: pageSnapshot.selected_room_source || '',
     selected_room_price_locked: Boolean(pageSnapshot.selected_room_price_locked),
+    login_required: Boolean(pageSnapshot.login_required),
+    login_reason: pageSnapshot.login_reason || '',
+    login_stage: pageSnapshot.login_stage || '',
     room_price_visible: Boolean(pageSnapshot.room_price_visible),
     room_candidates_count: pageSnapshot.room_candidates_count ?? 0,
     raw_room_candidates_count: pageSnapshot.raw_room_candidates_count ?? 0,
@@ -130,6 +145,9 @@ function buildUncollectedHotelPerfRecord({ index, hotelInput = {}, childResult =
       source: source.source,
       room_candidates_count: source.room_candidates_count,
       room_price_visible: source.room_price_visible,
+      login_required: source.login_required,
+      login_reason: source.login_reason,
+      login_stage: source.login_stage,
       tracked_url_count: source.tracked_url_count,
       error: source.error
     })),

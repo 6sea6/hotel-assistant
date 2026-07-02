@@ -24,16 +24,128 @@ const {
 const { refreshExistingCtripHotels, runRefreshHotelBatch } = require('./refresh-runner');
 const { buildLoginRetrySummary, getVisibleLoginRetryNeed } = require('./ctrip-login-retry');
 
-async function runCollectTask(scraperPath, input, workDir, context) {
+const LOGIN_REQUIRED_ABORT_CODE = 'CTRIP_LOGIN_REQUIRED_ABORT';
+
+function isHardLoginRequiredEvent(event = {}) {
+  if (!event || event.type !== 'edge:login-required') {
+    return false;
+  }
+
+  const details = event.details && typeof event.details === 'object' ? event.details : {};
+  if (details.actionRequired === false) {
+    return false;
+  }
+
+  const text = [details.reason, details.instruction, event.message].filter(Boolean).join(' ');
+  if (/未检测到可复用的携程登录资料|首次采集需要登录/.test(text)) {
+    return false;
+  }
+
+  return (
+    details.actionRequired === true ||
+    /登录看低价|解锁优惠|登录后才能查看价格|登录后才能查看房价|当前采集浏览器登录态可能无效/.test(
+      text
+    )
+  );
+}
+
+function createLoginRequiredAbortError(event = {}) {
+  const error = new Error('检测到携程登录态失效，已中断当前采集以便重新登录。');
+  error.name = 'AbortError';
+  error.code = LOGIN_REQUIRED_ABORT_CODE;
+  error.loginEvent = event;
+  return error;
+}
+
+function buildRetryNeedFromLoginEvent(event = {}) {
+  const details = event.details && typeof event.details === 'object' ? event.details : {};
+  return {
+    needed: true,
+    reason:
+      details.reason ||
+      event.message ||
+      '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
+  };
+}
+
+function buildLoginInterruptedCollectResult(event = {}) {
+  const retryNeed = buildRetryNeedFromLoginEvent(event);
+  return {
+    success: false,
+    abortedForLoginRequired: true,
+    retryNeed,
+    loginRequiredEvent: event,
+    totalPrice: null,
+    eligibleCount: 0,
+    roomPrices: [],
+    pageSnapshot: {
+      login_required: true,
+      login_reason: retryNeed.reason,
+      login_stage: 'during_collect'
+    }
+  };
+}
+
+async function runCollectTask(scraperPath, input, workDir, context, options = {}) {
   const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
-  return runHotelImportTask(buildScraperArgs(input, workDir), {
-    workingDirectory: workDir,
-    taskId: context.taskId,
-    signal: context.signal,
-    onEvent: context.onEvent,
-    perfLogEnabled: Boolean(input.enableCollectPerfLog),
-    perfLogDir: resolveRootPerfLogDir()
-  });
+  const abortOnLoginRequired = Boolean(options.abortOnLoginRequired);
+  let loginRequiredEvent = null;
+  let signal = context.signal;
+  let cleanup = () => {};
+  let onEvent = context.onEvent;
+
+  if (abortOnLoginRequired && typeof AbortController === 'function') {
+    const controller = new AbortController();
+    signal = controller.signal;
+    const parentSignal = context.signal || null;
+    if (parentSignal) {
+      const abortFromParent = () => {
+        if (!controller.signal.aborted) {
+          controller.abort(parentSignal.reason || new Error('任务已取消'));
+        }
+      };
+      if (parentSignal.aborted) {
+        abortFromParent();
+      } else if (typeof parentSignal.addEventListener === 'function') {
+        parentSignal.addEventListener('abort', abortFromParent, { once: true });
+        cleanup = () => parentSignal.removeEventListener('abort', abortFromParent);
+      }
+    }
+
+    onEvent = (event) => {
+      if (!loginRequiredEvent && isHardLoginRequiredEvent(event)) {
+        loginRequiredEvent = event;
+        if (typeof context.onEvent === 'function') {
+          context.onEvent(event);
+        }
+        if (!controller.signal.aborted) {
+          controller.abort(createLoginRequiredAbortError(event));
+        }
+        return;
+      }
+      if (typeof context.onEvent === 'function') {
+        context.onEvent(event);
+      }
+    };
+  }
+
+  try {
+    return await runHotelImportTask(buildScraperArgs(input, workDir), {
+      workingDirectory: workDir,
+      taskId: context.taskId,
+      signal,
+      onEvent,
+      perfLogEnabled: Boolean(input.enableCollectPerfLog),
+      perfLogDir: resolveRootPerfLogDir()
+    });
+  } catch (error) {
+    if (loginRequiredEvent && !(context.signal && context.signal.aborted)) {
+      return buildLoginInterruptedCollectResult(loginRequiredEvent);
+    }
+    throw error;
+  } finally {
+    cleanup();
+  }
 }
 
 async function runApplyTask(scraperPath, outputPath, workDir, context, options = {}) {
@@ -135,16 +247,22 @@ async function collectAndWriteCtripHotel(input, context = {}) {
 
     try {
       assertNotCancelled(context.signal);
-      let collectResult = await runCollectTask(scraperPath, input, workDir, context);
+      let collectResult = await runCollectTask(scraperPath, input, workDir, context, {
+        abortOnLoginRequired: true
+      });
       assertNotCancelled(context.signal);
-      const retryNeed = getVisibleLoginRetryNeed(collectResult);
+      const retryNeed = collectResult.abortedForLoginRequired
+        ? collectResult.retryNeed || buildRetryNeedFromLoginEvent(collectResult.loginRequiredEvent)
+        : getVisibleLoginRetryNeed(collectResult);
 
       if (retryNeed.needed && !(collectResult.loginRetry && collectResult.loginRetry.attempted)) {
-        emitScraperEvent(context, 'edge:login-required', '需要重新登录携程后继续采集', {
-          reason: retryNeed.reason,
-          instruction:
-            '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
-        });
+        if (!collectResult.abortedForLoginRequired) {
+          emitScraperEvent(context, 'edge:login-required', '需要重新登录携程后继续采集', {
+            reason: retryNeed.reason,
+            instruction:
+              '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
+          });
+        }
         emitScraperEvent(context, 'edge:login-window', '已打开浏览器登录窗口，等待你完成登录', {
           instruction: '登录完成后请关闭浏览器窗口；关闭后程序会继续采集，不需要重新发送链接。'
         });

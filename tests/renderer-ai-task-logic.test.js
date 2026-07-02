@@ -133,6 +133,67 @@ test('ai-task-progress: buildProgressStats caps stale running items by effective
   );
 });
 
+test('ai-task-progress: login retry resets completed first-pass batch stats', async () => {
+  const { progress } = await loadAiTaskLogicModules();
+  const doneEvents = Array.from({ length: 44 }, (_item, index) => ({
+    type: 'batch:item-done',
+    message: `第 ${index + 1}/44 家酒店采集完成`,
+    details: { index: index + 1, total: 44 }
+  }));
+
+  assert.deepEqual(
+    progress.buildProgressStats([
+      {
+        type: 'batch:start',
+        details: {
+          summary: '模式=list，输入URL=1，展开酒店=44',
+          effectiveConcurrency: 3
+        }
+      },
+      ...doneEvents,
+      {
+        type: 'edge:login-required',
+        message: '需要重新登录携程后继续采集',
+        details: {
+          instruction: '程序会打开一个可见浏览器窗口。请在窗口中登录携程。'
+        }
+      },
+      {
+        type: 'edge:login-window',
+        message: '已打开浏览器登录窗口，等待你完成登录'
+      }
+    ]),
+    {
+      total: 44,
+      completed: 0,
+      running: 1,
+      pending: 43
+    }
+  );
+});
+
+test('ai-task-progress: soft Ctrip login prompt does not reset batch stats', async () => {
+  const { progress } = await loadAiTaskLogicModules();
+
+  assert.deepEqual(
+    progress.buildProgressStats([
+      { type: 'batch:item-done', message: '第 1/2 家酒店采集完成', details: { index: 1, total: 2 } },
+      { type: 'batch:item-done', message: '第 2/2 家酒店采集完成', details: { index: 2, total: 2 } },
+      {
+        type: 'edge:login-required',
+        message: '检测到携程登录提示，采集仍会继续尝试',
+        details: { actionRequired: false }
+      }
+    ]),
+    {
+      total: 2,
+      completed: 2,
+      running: 0,
+      pending: 0
+    }
+  );
+});
+
 test('ai-task-progress: getRefreshCurrentStepKey stays on refresh until summary/write', async () => {
   const { progress } = await loadAiTaskLogicModules();
 

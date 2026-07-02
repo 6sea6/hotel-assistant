@@ -707,6 +707,125 @@ test('reportLevel off batch skips item reports and can still write app data', as
   }
 });
 
+test('batch treats login-required priced candidates as uncollected and does not write them', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-login-required-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=normal',
+      hotelId: 'normal',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=locked',
+      hotelId: 'locked',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => ({
+      hotel_name: hotelInput.hotelId === 'locked' ? '登录锁定酒店' : '正常酒店',
+      address: `地址${hotelInput.hotelId}`,
+      ctrip_score: 4.8,
+      geo: { location: '114.1,30.1' },
+      room: {
+        title: '大床房',
+        price: hotelInput.hotelId === 'locked' ? 166 : 188,
+        prices: [188],
+        occupancy: 2
+      },
+      room_candidates: [{ title: '大床房', price: 188 }],
+      raw_room_candidates: [{ title: '大床房', price: 188, raw: true }],
+      eligible_rooms: [
+        {
+          title: '大床房',
+          price: hotelInput.hotelId === 'locked' ? 166 : 188,
+          occupancy: 2
+        }
+      ],
+      room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+      page_snapshot: {
+        source_url: hotelInput.url,
+        saved_html_files: [],
+        room_candidates_count: 1,
+        room_price_visible: true,
+        login_required: hotelInput.hotelId === 'locked',
+        login_reason:
+          hotelInput.hotelId === 'locked'
+            ? '检测到携程页面显示“登录看低价/解锁优惠”。'
+            : '',
+        login_stage: hotelInput.hotelId === 'locked' ? 'edge_room_candidates' : '',
+        capture_method: 'html_then_edge_cdp',
+        wait_reason: hotelInput.hotelId === 'locked' ? 'missing_price' : '',
+        sources: [
+          {
+            source: 'edge-cdp',
+            room_candidates_count: 1,
+            room_price_visible: true,
+            login_required: hotelInput.hotelId === 'locked'
+          }
+        ]
+      },
+      performance: {
+        totalMs: 3,
+        htmlMs: 1,
+        directReplayMs: 0,
+        edgeCaptureMs: 0,
+        waitDataMs: 1
+      }
+    })
+  });
+
+  try {
+    const records = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'write-app-data': true,
+        'unsafe-allow-unreviewed-write': true,
+        'auto-edge': true
+      },
+      {
+        workingDirectory: tempDir,
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(calls.scrape, 2);
+    assert.equal(calls.appendHotelsToStore, 1);
+    assert.equal(calls.appendedHotels[0].length, 1);
+    assert.equal(calls.appendedHotels[0][0].name, '正常酒店');
+    assert.equal(result.eligibleCount, 1);
+    assert.equal(result.items.find((item) => item.hotelId === 'locked').eligibleCount, 0);
+    assert.equal(result.items.find((item) => item.hotelId === 'locked').totalPrice, null);
+    assert.equal(
+      result.items.find((item) => item.hotelId === 'locked').pageSnapshot.login_required,
+      true
+    );
+
+    const uncollected = records.find((record) => record.event === 'uncollected_hotel');
+    assert.ok(uncollected);
+    assert.equal(uncollected.hotelId, 'locked');
+    assert.equal(uncollected.uncollected_reason, 'login_required');
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('batch skips transit for items that have no eligible rooms to write', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];

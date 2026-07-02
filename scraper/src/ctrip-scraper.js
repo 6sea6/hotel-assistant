@@ -209,6 +209,43 @@ function normalizeSettleStats(settleStats = null) {
   };
 }
 
+function getEdgeLoginRequiredFields(fallbackCapture = null) {
+  if (!fallbackCapture || typeof fallbackCapture !== 'object') {
+    return {
+      loginRequired: false,
+      loginReason: '',
+      loginStage: ''
+    };
+  }
+
+  if (fallbackCapture.loginRequired) {
+    return {
+      loginRequired: true,
+      loginReason:
+        fallbackCapture.loginReason ||
+        '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。',
+      loginStage: fallbackCapture.loginStage || ''
+    };
+  }
+
+  const hasLockedPriceRoom =
+    Array.isArray(fallbackCapture.roomBlocks) &&
+    fallbackCapture.roomBlocks.some((room) => room && room.price_locked);
+  if (hasLockedPriceRoom) {
+    return {
+      loginRequired: true,
+      loginReason: '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。',
+      loginStage: 'edge_room_candidates'
+    };
+  }
+
+  return {
+    loginRequired: false,
+    loginReason: '',
+    loginStage: ''
+  };
+}
+
 function buildScrapeQualityFields({
   selectedRoom,
   normalizedRoomBlocks,
@@ -237,6 +274,7 @@ function buildScrapeQualityFields({
     ])
   ];
   const settleStats = normalizeSettleStats(fallbackCapture && fallbackCapture.settleStats);
+  const loginFields = getEdgeLoginRequiredFields(fallbackCapture);
 
   return {
     selected_room_source: selectedRoom ? selectedRoom.source || '' : '',
@@ -258,6 +296,9 @@ function buildScrapeQualityFields({
     html_edge_parallel_used: Boolean(htmlEdgeParallelUsed),
     edge_started_before_html_done: Boolean(edgeStartedBeforeHtmlDone),
     edge_waited_for_settle: Boolean(fallbackCapture && fallbackCapture.edgeWaitedForSettle),
+    login_required: loginFields.loginRequired,
+    login_reason: loginFields.loginReason,
+    login_stage: loginFields.loginStage,
     settle_total_ms: settleStats.totalMs,
     settle_clicked_count: settleStats.clickedCount,
     settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount,
@@ -838,6 +879,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
     edgeStartedBeforeHtmlDone,
     warnings
   });
+  const edgeLoginFields = getEdgeLoginRequiredFields(fallbackCapture);
   perf.event('detail_quality', {
     phase: 'task_total',
     status: selectedRoom ? 'success' : 'failed',
@@ -908,6 +950,9 @@ async function scrapeCtripHotel(url, template, options = {}) {
                   ),
                   tracked_urls: fallbackCapture.trackedUrls,
                   spider_error_codes: fallbackCapture.spiderErrorCodes || [],
+                  login_required: edgeLoginFields.loginRequired,
+                  login_reason: edgeLoginFields.loginReason,
+                  login_stage: edgeLoginFields.loginStage,
                   error: fallbackCapture.error || ''
                 }
               ]

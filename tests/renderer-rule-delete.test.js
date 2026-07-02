@@ -32,6 +32,7 @@ async function loadRuleDeleteModule() {
       export const $ = () => null;
       export const getValue = () => '';
       export const getSelectionKey = (id) => String(id);
+      export const idsEqual = (left, right) => String(left) === String(right);
       export const iconHtml = () => '';
       `,
       'utf-8'
@@ -48,6 +49,11 @@ async function loadRuleDeleteModule() {
       export function resetActionButtonConfirmation() {}
       export function startActionButtonConfirmation() {}
       `,
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(tempRoot, 'custom-select.js'),
+      'export function refreshCustomSelect() {}\n',
       'utf-8'
     );
     fs.writeFileSync(
@@ -151,6 +157,33 @@ test('rule delete ctrip score threshold includes only hotels below threshold', a
   assert.deepEqual(
     candidates.map((hotel) => hotel.id),
     [3]
+  );
+});
+
+test('rule delete template selection includes hotels linked to the selected template', async () => {
+  const { getRuleDeleteCandidates } = await loadRuleDeleteModule();
+
+  const candidates = getRuleDeleteCandidates(
+    {
+      templateId: 'tpl-1',
+      price: null,
+      ctripScore: null,
+      subwayDistance: null,
+      transportTime: null
+    },
+    [
+      { id: 1, template_id: 'tpl-1' },
+      { id: 2, template_id: 'tpl-2' },
+      { id: 3, template_info: { id: 'tpl-1', name: '模板一' } },
+      { id: 4, template_id: 'tpl-1', is_favorite: 1 },
+      { id: 5, template_info: { id: 'tpl-3', name: '模板三' } },
+      { id: 6, template_id: null, template_info: null }
+    ]
+  );
+
+  assert.deepEqual(
+    candidates.map((hotel) => hotel.id),
+    [1, 3]
   );
 });
 

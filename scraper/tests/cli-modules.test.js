@@ -5,6 +5,10 @@ const os = require('os');
 const path = require('path');
 
 const { buildPageSnapshotSummary, buildRunSummary } = require('../src/cli/run-summary');
+const {
+  buildUncollectedHotelPerfRecord,
+  deriveUncollectedHotelReason
+} = require('../src/batch-result-builder');
 const { classifyWriteCancelPolicy, shouldSkipHotelWrite } = require('../src/cli/write-policy');
 const {
   hasCtripLoginCookieSignal,
@@ -45,6 +49,9 @@ test('buildPageSnapshotSummary keeps only compact fields needed for latest-run',
     room_price_visible: true,
     selected_room_source: 'edge-cdp',
     selected_room_price_locked: false,
+    login_required: true,
+    login_reason: '检测到携程页面显示“登录看低价/解锁优惠”。',
+    login_stage: 'edge_page_ready',
     saved_html_files: ['a.html', 'b.html'],
     sources: [
       {
@@ -52,6 +59,9 @@ test('buildPageSnapshotSummary keeps only compact fields needed for latest-run',
         room_candidates_count: 3,
         room_price_visible: false,
         locked_price_detected: true,
+        login_required: true,
+        login_reason: '检测到携程页面显示“登录看低价/解锁优惠”。',
+        login_stage: 'edge_page_ready',
         tracked_urls: ['u1', 'u2'],
         attempts: ['a1'],
         spider_error_codes: [203]
@@ -64,6 +74,48 @@ test('buildPageSnapshotSummary keeps only compact fields needed for latest-run',
   assert.equal(summary.sources[0].tracked_url_count, 2);
   assert.equal(summary.sources[0].attempt_count, 1);
   assert.deepEqual(summary.sources[0].spider_error_codes, [203]);
+  assert.equal(summary.login_required, true);
+  assert.equal(summary.login_stage, 'edge_page_ready');
+  assert.equal(summary.sources[0].login_required, true);
+});
+
+test('batch uncollected reason marks login-required results before missing-price fallback', () => {
+  const childResult = {
+    success: true,
+    eligibleCount: 0,
+    totalPrice: 166,
+    pageSnapshot: {
+      login_required: true,
+      login_reason: '检测到携程页面显示“登录看低价/解锁优惠”。',
+      login_stage: 'edge_page_ready',
+      room_candidates_count: 3,
+      raw_room_candidates_count: 3,
+      room_price_visible: true,
+      sources: [
+        {
+          source: 'edge-cdp',
+          room_candidates_count: 3,
+          room_price_visible: true,
+          login_required: true,
+          login_reason: '检测到携程页面显示“登录看低价/解锁优惠”。',
+          login_stage: 'edge_page_ready'
+        }
+      ]
+    }
+  };
+
+  const reason = deriveUncollectedHotelReason(childResult);
+  assert.equal(reason.reason, 'login_required');
+  assert.match(reason.detail, /登录看低价/);
+
+  const record = buildUncollectedHotelPerfRecord({
+    index: 1,
+    childResult,
+    durationMs: 1200
+  });
+  assert.equal(record.uncollected_reason, 'login_required');
+  assert.equal(record.login_required, true);
+  assert.equal(record.source_summary[0].login_required, true);
 });
 
 test('buildRunSummary preserves runtime result fields and nests page summary', () => {

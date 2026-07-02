@@ -383,7 +383,7 @@ function handleDelegatedChange(event) {
     return;
   }
 
-  if (target.id === 'ruleDeleteProtectFavorite') {
+  if (target.id === 'ruleDeleteProtectFavorite' || target.id === 'ruleDeleteTemplate') {
     updateRuleDeletePreview();
     return;
   }

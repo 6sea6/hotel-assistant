@@ -89,6 +89,21 @@ function emitEdgeEvent(options = {}, type, message, details = {}) {
   options.onEvent(type, message, details);
 }
 
+function buildLoginPromptResultFields(loginPromptDetection = {}, roomBlocks = []) {
+  const hasLockedPriceRoom = Array.isArray(roomBlocks)
+    ? roomBlocks.some((room) => room && room.price_locked)
+    : false;
+  const loginRequired = Boolean(loginPromptDetection.detected || hasLockedPriceRoom);
+  return {
+    loginRequired,
+    loginReason: loginRequired
+      ? loginPromptDetection.reason ||
+        '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
+      : '',
+    loginStage: loginRequired ? loginPromptDetection.stage || 'edge_room_candidates' : ''
+  };
+}
+
 async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions = {}, options = {}) {
   const perf = options.perf || createNoopPerf();
   const captureMethod = options.captureMethod || 'html_then_edge_cdp';
@@ -139,6 +154,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   let settleStats = null;
   let edgeParseStats = null;
   let loginPromptNotified = false;
+  const loginPromptDetection = {
+    detected: false,
+    reason: '',
+    stage: ''
+  };
   const signal = options.signal || null;
   const notifyLoginPromptIfDetected = async (stage) => {
     if (loginPromptNotified || !connection || !sessionId) {
@@ -149,14 +169,18 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       if (!detection.detected) {
         return;
       }
+      loginPromptDetection.detected = true;
+      loginPromptDetection.reason =
+        detection.reason || '检测到携程页面显示“登录看低价/解锁优惠”。';
+      loginPromptDetection.stage = stage || '';
       loginPromptNotified = true;
-      emitEdgeEvent(options, 'edge:login-required', '检测到携程登录提示，采集仍会继续尝试', {
-        reason: detection.reason,
+      emitEdgeEvent(options, 'edge:login-required', '检测到携程登录提示，需要重新登录后继续采集', {
+        reason: loginPromptDetection.reason,
         stage,
         url,
-        actionRequired: false,
+        actionRequired: true,
         instruction:
-          '当前采集浏览器登录态可能无效；请在采集浏览器中登录携程后重新采集。'
+          '当前采集浏览器登录态可能无效；请在可见浏览器中登录携程后继续。'
       });
       perf.event('edge_login_prompt_detected', {
         phase: stage,
@@ -318,6 +342,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         spiderErrorCodes: [...spiderErrorCodes],
         edgeWaitedForSettle: Boolean(settleStats),
         settleStats,
+        ...buildLoginPromptResultFields(loginPromptDetection, mergedBlocks),
         error:
           spiderErrorCodes.size > 0
             ? `edge-cdp fallback blocked by anti-spider code(s): ${[...spiderErrorCodes].join(', ')}`
@@ -332,6 +357,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       spiderErrorCodes: [...spiderErrorCodes],
       edgeWaitedForSettle: Boolean(settleStats),
       settleStats,
+      ...buildLoginPromptResultFields(loginPromptDetection, mergedBlocks),
       error: ''
     };
   } catch (error) {
@@ -345,6 +371,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       spiderErrorCodes: [],
       edgeWaitedForSettle: Boolean(settleStats),
       settleStats,
+      ...buildLoginPromptResultFields(loginPromptDetection),
       error: error && error.message ? error.message : 'edge-cdp fallback failed with unknown error'
     };
   } finally {
