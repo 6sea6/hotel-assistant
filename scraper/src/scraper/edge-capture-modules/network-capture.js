@@ -160,38 +160,52 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     stage: ''
   };
   const signal = options.signal || null;
-  const notifyLoginPromptIfDetected = async (stage) => {
+  const markLoginPromptDetected = ({ stage = '', reason = '' } = {}) => {
+    if (loginPromptNotified) {
+      return false;
+    }
+    loginPromptDetection.detected = true;
+    loginPromptDetection.reason =
+      reason || '检测到携程页面显示“登录看低价/解锁优惠”。';
+    loginPromptDetection.stage = stage || '';
+    loginPromptNotified = true;
+    emitEdgeEvent(options, 'edge:login-required', '检测到携程价格访问受限，需要可见浏览器确认后继续采集', {
+      reason: loginPromptDetection.reason,
+      stage,
+      url,
+      actionRequired: true,
+      instruction:
+        '当前采集浏览器可能未登录或遇到携程验证；请在可见浏览器中确认已登录且酒店页能看到价格后继续。'
+    });
+    perf.event('edge_login_prompt_detected', {
+      phase: stage,
+      status: 'warning',
+      url,
+      captureMethod,
+      targetMode,
+      waitReason: 'login_prompt_detected'
+    });
+    return true;
+  };
+  const notifyLoginPromptIfDetected = async (stage, detectionOptions = {}) => {
     if (loginPromptNotified || !connection || !sessionId) {
-      return;
+      return false;
     }
     try {
-      const detection = await detectCtripLoginPromptInSession(connection, sessionId, { signal });
-      if (!detection.detected) {
-        return;
-      }
-      loginPromptDetection.detected = true;
-      loginPromptDetection.reason =
-        detection.reason || '检测到携程页面显示“登录看低价/解锁优惠”。';
-      loginPromptDetection.stage = stage || '';
-      loginPromptNotified = true;
-      emitEdgeEvent(options, 'edge:login-required', '检测到携程登录提示，需要重新登录后继续采集', {
-        reason: loginPromptDetection.reason,
-        stage,
-        url,
-        actionRequired: true,
-        instruction:
-          '当前采集浏览器登录态可能无效；请在可见浏览器中登录携程后继续。'
+      const detection = await detectCtripLoginPromptInSession(connection, sessionId, {
+        signal,
+        ...detectionOptions
       });
-      perf.event('edge_login_prompt_detected', {
-        phase: stage,
-        status: 'warning',
-        url,
-        captureMethod,
-        targetMode,
-        waitReason: 'login_prompt_detected'
+      if (!detection.detected) {
+        return false;
+      }
+      return markLoginPromptDetected({
+        stage,
+        reason: detection.reason || '检测到携程页面显示“登录看低价/解锁优惠”。'
       });
     } catch (_error) {
       // Login prompt detection is best-effort and must not affect collection.
+      return false;
     }
   };
   try {
@@ -294,6 +308,18 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     edgeParseStats = targetCaptureResult.edgeParseStats;
     roomApiDebugIndex = targetCaptureResult.roomApiDebugIndex;
 
+    const matchingOptions = options.matchingOptions || {};
+    const edgeFastPathComplete = isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions);
+    if (spiderErrorCodes.has(203) && !edgeFastPathComplete) {
+      const detectedLogin = await notifyLoginPromptIfDetected('edge_antispider_203');
+      if (!detectedLogin) {
+        markLoginPromptDetected({
+          stage: 'edge_account_risk_control_203',
+          reason:
+            '携程房价接口返回 203。若可见浏览器已确认登录但房型仍没有价格，说明当前账号或访问环境被携程风控；将继续使用稳定浏览器资料，请暂停采集并人工确认账号恢复后再试。'
+        });
+      }
+    }
     // Always run DOM extraction (works for both reused and new tabs), but keep it best-effort
     // once room API data has already produced candidates.
     const apiCaptureComplete = Boolean(

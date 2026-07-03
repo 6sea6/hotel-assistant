@@ -86,6 +86,35 @@ function buildLoginInterruptedCollectResult(event = {}) {
   };
 }
 
+function getLoginRetryUrl(input = {}, collectResult = {}) {
+  const loginEvent = collectResult.loginRequiredEvent || {};
+  const eventDetails =
+    loginEvent.details && typeof loginEvent.details === 'object' ? loginEvent.details : {};
+  const eventUrl = String(eventDetails.url || '').trim();
+  if (eventUrl && isCtripHotelUrl(eventUrl)) {
+    return eventUrl;
+  }
+
+  const pageSnapshot = collectResult.pageSnapshot || collectResult.page_snapshot || {};
+  const snapshotUrl = String(pageSnapshot.source_url || pageSnapshot.sourceUrl || '').trim();
+  if (snapshotUrl && isCtripHotelUrl(snapshotUrl)) {
+    return snapshotUrl;
+  }
+
+  const inputUrls = getCtripHotelInputUrls(input);
+  return inputUrls[0] || 'https://hotels.ctrip.com/';
+}
+
+function getManagedEdgeProfilePath(workDir) {
+  const stateDir = path.resolve(workDir, 'state');
+  const profilePath = path.resolve(stateDir, 'edge-profile');
+  const normalizedStateDir = stateDir.endsWith(path.sep) ? stateDir : `${stateDir}${path.sep}`;
+  if (!profilePath.startsWith(normalizedStateDir)) {
+    throw new Error('采集浏览器资料目录不在工作目录下。');
+  }
+  return profilePath;
+}
+
 async function runCollectTask(scraperPath, input, workDir, context, options = {}) {
   const { runHotelImportTask } = await loadScraperModule(scraperPath, 'task-runner.js');
   const abortOnLoginRequired = Boolean(options.abortOnLoginRequired);
@@ -256,15 +285,19 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         : getVisibleLoginRetryNeed(collectResult);
 
       if (retryNeed.needed && !(collectResult.loginRetry && collectResult.loginRetry.attempted)) {
+        const loginRetryUrl = getLoginRetryUrl(input, collectResult);
+        const edgeProfilePath = getManagedEdgeProfilePath(workDir);
         if (!collectResult.abortedForLoginRequired) {
-          emitScraperEvent(context, 'edge:login-required', '需要重新登录携程后继续采集', {
+          emitScraperEvent(context, 'edge:login-required', '需要确认携程登录或完成验证后继续采集', {
             reason: retryNeed.reason,
             instruction:
-              '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，采集会自动重试一次。'
+              '程序会打开出问题的携程酒店页。请确认页面已登录且能看到具体房价，必要时完成携程验证，然后关闭窗口，采集会自动重试一次。'
           });
         }
-        emitScraperEvent(context, 'edge:login-window', '已打开浏览器登录窗口，等待你完成登录', {
-          instruction: '登录完成后请关闭浏览器窗口；关闭后程序会继续采集，不需要重新发送链接。'
+        emitScraperEvent(context, 'edge:login-window', '已打开浏览器确认窗口，等待你确认登录或完成验证', {
+          url: loginRetryUrl,
+          instruction:
+            '请在打开的酒店页确认能看到具体房价；确认后关闭浏览器窗口，程序会继续采集，不需要重新发送链接。'
         });
 
         assertNotCancelled(context.signal);
@@ -273,11 +306,11 @@ async function collectAndWriteCtripHotel(input, context = {}) {
           'cli/auto-edge.js'
         );
         const loginPrepResult = await runInteractiveEdgeLoginPrep({
-          userDataDir: path.join(workDir, 'state', 'edge-profile'),
+          userDataDir: edgeProfilePath,
           profileDirectory: 'Default',
           browserPreference: input.collectBrowser,
           port: 9222,
-          url: input.url || 'https://hotels.ctrip.com/'
+          url: loginRetryUrl
         });
         assertNotCancelled(context.signal);
 
@@ -299,7 +332,9 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         emitScraperEvent(context, 'scrape:retry', '正在使用新的携程登录态重新采集酒店页面');
 
         const previousCollectResult = collectResult;
-        collectResult = await runCollectTask(scraperPath, input, workDir, context);
+        collectResult = await runCollectTask(scraperPath, input, workDir, context, {
+          abortOnLoginRequired: true
+        });
         assertNotCancelled(context.signal);
         collectResult.loginRetry = buildLoginRetrySummary(previousCollectResult, retryNeed);
       }

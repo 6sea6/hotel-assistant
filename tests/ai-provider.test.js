@@ -1363,3 +1363,18 @@ test('AI scraper write guard rejects login-required results even when price exis
   assert.equal(safety.ok, false);
   assert.match(safety.reason, /登录看低价/);
 });
+
+test('AI scraper write guard preserves login-required reason for aborted results', () => {
+  const safety = assertSafeWriteResult({
+    success: false,
+    error: '任务已取消',
+    pageSnapshot: {
+      login_required: true,
+      login_reason:
+        '携程房价接口返回 203。若可见浏览器已确认登录但房型仍没有价格，说明当前账号或访问环境被携程风控；将继续使用稳定浏览器资料，请暂停采集并人工确认账号恢复后再试。'
+    }
+  });
+
+  assert.equal(safety.ok, false);
+  assert.match(safety.reason, /203|风控|稳定浏览器资料/);
+});

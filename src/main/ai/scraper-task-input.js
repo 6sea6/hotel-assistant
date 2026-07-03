@@ -148,20 +148,20 @@ function buildScraperArgs(input, workDir) {
 }
 
 function assertSafeWriteResult(result) {
-  if (!result || result.success !== true) {
-    return {
-      ok: false,
-      reason: result && result.error ? result.error : '采集失败，未写入。'
-    };
-  }
-
-  const pageSnapshot = result.pageSnapshot || result.page_snapshot || {};
+  const pageSnapshot = result ? result.pageSnapshot || result.page_snapshot || {} : {};
   if (pageSnapshot && pageSnapshot.login_required) {
     return {
       ok: false,
       reason:
         pageSnapshot.login_reason ||
         '检测到携程页面显示“登录看低价/解锁优惠”，请重新登录携程后再采集，未写入。'
+    };
+  }
+
+  if (!result || result.success !== true) {
+    return {
+      ok: false,
+      reason: result && result.error ? result.error : '采集失败，未写入。'
     };
   }
 

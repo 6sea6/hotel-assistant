@@ -99,7 +99,7 @@ function isRetryableUncollectedResult(childResult) {
     return false;
   }
 
-  if (snapshot.room_price_visible && /no_eligible_rooms/i.test(snapshot.wait_reason || '')) {
+  if (snapshot.room_price_visible) {
     return false;
   }
 

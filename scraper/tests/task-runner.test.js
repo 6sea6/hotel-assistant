@@ -875,7 +875,7 @@ test('batch skips transit for items that have no eligible rooms to write', async
           eligible_room_count: hasEligibleRoom ? 1 : 0,
           room_price_visible: true,
           capture_method: 'html_only',
-          wait_reason: hasEligibleRoom ? '' : 'no_eligible_rooms'
+          wait_reason: hasEligibleRoom ? '' : 'missing_price'
         },
         performance: { totalMs: 3, htmlMs: 1, directReplayMs: 0, edgeCaptureMs: 0, waitDataMs: 1 }
       };
