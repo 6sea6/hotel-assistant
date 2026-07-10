@@ -12,7 +12,8 @@ const {
   withTimeout
 } = require('../src/scraper/edge-capture-modules/response-body-reader');
 const {
-  buildResponseEntryDiagnostics
+  buildResponseEntryDiagnostics,
+  parseEdgeNetworkResponses
 } = require('../src/scraper/edge-capture-modules/response-parser');
 const {
   buildEdgeDomExtractExpression,
@@ -119,11 +120,50 @@ test('response parser diagnostics counts room, non-room, duplicate, and unique U
   assert.equal(diagnostics.duplicateResponseUrlCount, 1);
 });
 
+test('response parser applies a global body read budget before non-room responses', async () => {
+  const requestMeta = new Map([
+    [
+      'room',
+      {
+        url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
+        cachedBody: JSON.stringify({ data: { hotelRoomList: [] } })
+      }
+    ],
+    [
+      'analytics',
+      {
+        url: 'https://example.test/log.json'
+      }
+    ]
+  ]);
+  const connection = {
+    send: async () => {
+      throw new Error('non-room body should not be read after budget is exhausted');
+    }
+  };
+  const roomBlocks = [];
+  const spiderErrorCodes = new Set();
+
+  const stats = await parseEdgeNetworkResponses({
+    connection,
+    sessionId: 'session-1',
+    requestMeta,
+    template: {},
+    roomBlocks,
+    spiderErrorCodes,
+    responseBodyReadBudgetMs: 0
+  });
+
+  assert.equal(stats.roomResponseBodyReadCount, 1);
+  assert.equal(stats.nonRoomResponseBodyReadCount, 0);
+  assert.equal(stats.responseBodyReadBudgetSkippedCount, 1);
+  assert.equal(stats.responseParseStoppedReason, 'response_body_read_budget');
+});
+
 test('login detection identifies Ctrip login prompts without matching normal room text', () => {
   assert.equal(detectCtripLoginPromptFromText('扫码登录 手机号登录 登录后查看低价').detected, true);
   assert.equal(
-    detectCtripLoginPromptFromText('首页 立即登录 会员中心', { allowGenericLogin: false })
-      .detected,
+    detectCtripLoginPromptFromText('首页 立即登录 会员中心', { allowGenericLogin: false }).detected,
     false
   );
   assert.equal(

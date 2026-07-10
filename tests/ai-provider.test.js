@@ -636,6 +636,13 @@ test('scraper runner maps batch concurrency to scraper arguments', () => {
 
   assert.equal(args.browser, '360');
   assert.equal(args['batch-concurrency'], 3);
+  assert.equal(args['detail-start-interval-ms'], 2000);
+  assert.equal(args['warmup-hotel-count'], 3);
+  assert.equal(args['max-list-api-replay-concurrency'], 2);
+  assert.equal(args['list-candidate-cache-ttl-ms'], 15 * 60 * 1000);
+  assert.equal(args['direct-room-replay'], false);
+  assert.equal(args['include-mobile-html'], false);
+  assert.equal(args['risk-control-retries'], 0);
 
   const addressArgs = buildScraperArgs(
     {
@@ -1052,6 +1059,70 @@ test('refresh hotel batch runner honors bounded concurrency and writes once afte
   assert.equal(events.find((event) => event.type === 'refresh:write').details.scope, 'final');
 });
 
+test('refresh hotel batch runner writes cleared hotel groups even without new rooms', async () => {
+  const events = [];
+  const writes = [];
+
+  const result = await runRefreshHotelBatch({
+    hotelUrls: [
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=895608',
+      'https://hotels.ctrip.com/hotels/detail/?hotelId=2'
+    ],
+    requestedConcurrency: 1,
+    emit(type, message, details) {
+      events.push({ type, message, details });
+    },
+    processHotel: async ({ url, index }) => {
+      if (index === 1) {
+        return {
+          hotelName: '恒夏酒店',
+          url,
+          status: 'cleared',
+          updatedHotels: [],
+          updatedRoomTypeCount: 0,
+          deletedRoomTypeCount: 1,
+          deleteExistingGroup: true,
+          existingHotels: [
+            {
+              name: '恒夏酒店',
+              website: url,
+              room_type: '家庭房'
+            }
+          ],
+          clearReason: '当前日期不接受预订'
+        };
+      }
+      return {
+        hotelName: '酒店二',
+        url,
+        status: 'skipped',
+        updatedHotels: [],
+        updatedRoomTypeCount: 0,
+        deletedRoomTypeCount: 0,
+        skipReason: '采集未返回有效房型数据'
+      };
+    },
+    writeHotels: async (hotels, context) => {
+      writes.push({ hotels, context });
+      return [{ operation: 'deleted-group', deletedCount: 1 }];
+    }
+  });
+
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0].hotels, []);
+  assert.equal(writes[0].context.clearedItems.length, 1);
+  assert.equal(result.updatedHotelCount, 1);
+  assert.equal(result.updatedRoomTypeCount, 0);
+  assert.equal(result.deletedRoomTypeCount, 1);
+  assert.equal(result.skippedHotelCount, 1);
+  assert.equal(events.filter((event) => event.type === 'refresh:item-done').length, 1);
+  assert.equal(events.filter((event) => event.type === 'refresh:item-skipped').length, 1);
+  assert.equal(
+    events.find((event) => event.type === 'refresh:item-done').details.status,
+    'cleared'
+  );
+});
+
 test('refresh hotel batch runner caps concurrency at three like normal collection', async () => {
   let activeRefreshes = 0;
   let maxActiveRefreshes = 0;
@@ -1122,6 +1193,59 @@ test('refresh hotel batch runner stays serial when requested concurrency is one'
   assert.equal(maxActiveRefreshes, 1);
   assert.equal(result.requestedConcurrency, 1);
   assert.equal(result.effectiveConcurrency, 1);
+  assert.equal(result.updatedHotelCount, 2);
+});
+
+test('refresh prepared detail batch uses the adaptive scheduler for every hotel', async () => {
+  const starts = [];
+  const outcomes = [];
+  const detailScheduler = {
+    async beforeStart(meta) {
+      starts.push(meta.index);
+    },
+    recordOutcome(_result, meta) {
+      outcomes.push(meta.index);
+      return { circuit_open: false };
+    },
+    recordError() {
+      throw new Error('scheduler should not record an error on the success path');
+    }
+  };
+
+  const result = await runRefreshHotelBatch({
+    hotelUrls: ['url-1', 'url-2'],
+    requestedConcurrency: 2,
+    detailScheduler,
+    emit() {},
+    runPreparedDetails: async ({ items, createDetailContext, mapPreparedResult }) => {
+      for (let zeroBasedIndex = 0; zeroBasedIndex < items.length; zeroBasedIndex += 1) {
+        const index = zeroBasedIndex + 1;
+        const prepared = await createDetailContext({
+          item: items[zeroBasedIndex],
+          zeroBasedIndex,
+          index,
+          total: items.length,
+          worker: { id: index }
+        });
+        await mapPreparedResult({
+          preparedResult: { result: { totalPrice: 188, pageSnapshot: {} } },
+          meta: prepared.meta
+        });
+      }
+    },
+    createDetailContext: async () => ({ context: {} }),
+    mapPreparedResult: async ({ url, index }) => ({
+      hotelName: `酒店${index}`,
+      url,
+      status: 'updated',
+      updatedHotels: [{ name: `酒店${index}`, room_type: '大床房' }],
+      updatedRoomTypeCount: 1
+    }),
+    writeHotels: async () => ({ batchMode: true, appliedCount: 2 })
+  });
+
+  assert.deepEqual(starts, [1, 2]);
+  assert.deepEqual(outcomes, [1, 2]);
   assert.equal(result.updatedHotelCount, 2);
 });
 

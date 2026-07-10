@@ -1,5 +1,5 @@
-const { buildRunSummary, writeLatestRunFile } = require('./cli/run-summary');
-const { cleanupOutputArtifacts, writeJsonFile } = require('./utils');
+const { buildRunSummary, writeLatestRunFileAsync } = require('./cli/run-summary');
+const { cleanupOutputArtifacts, writeJsonFileAsync } = require('./utils');
 const { durationSince, shouldCleanupOutputArtifactsForRun } = require('./task-context');
 const { writeBatchHotelRecords } = require('./task-writeback');
 
@@ -120,14 +120,14 @@ async function cleanupBatchArtifacts({
   return cleanupResult;
 }
 
-function writeBatchReportArtifact({
+async function writeBatchReportArtifact({
   batchPerf,
   outputPath,
   outputPayload,
   performance,
   reportLevel,
   allHotels,
-  writeJsonFileImpl = writeJsonFile
+  writeJsonFileImpl = writeJsonFileAsync
 }) {
   const outputWriteStartedAt = Date.now();
   const writeReportPhase = batchPerf.phase('write_report', {
@@ -135,7 +135,7 @@ function writeBatchReportArtifact({
     reportLevel
   });
   const isFullReport = reportLevel === 'full';
-  const measure = writeJsonFileImpl(outputPath, outputPayload, {
+  const measure = await writeJsonFileImpl(outputPath, outputPayload, {
     pretty: isFullReport,
     measure: true
   });
@@ -157,7 +157,7 @@ function writeBatchReportArtifact({
 
 async function writeBatchLatestRunSummary({ batchPerf, latestRunPath, result, allHotels }) {
   await batchPerf.runPhase('write_latest_run', { hotelCount: allHotels.length }, async () => {
-    writeLatestRunFile(
+    await writeLatestRunFileAsync(
       latestRunPath,
       buildRunSummary({
         ...result,

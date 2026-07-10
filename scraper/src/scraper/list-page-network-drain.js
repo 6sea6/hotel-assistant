@@ -2,7 +2,7 @@ const { evaluateInSession } = require('./cdp-utils');
 
 const LIST_API_ENDPOINT = 'https://m.ctrip.com/restapi/soa2/34951/fetchHotelList';
 const DEFAULT_MAX_LIST_API_REPLAY_PAGES = 60;
-const DEFAULT_LIST_API_REPLAY_CONCURRENCY = 6;
+const DEFAULT_LIST_API_REPLAY_CONCURRENCY = 2;
 
 function normalizeMaxReplayPages(desiredCount, explicitMaxReplayPages) {
   const explicit = Number(explicitMaxReplayPages);
@@ -19,25 +19,7 @@ function normalizeReplayConcurrency(value) {
   if (!Number.isFinite(number) || number <= 0) {
     return DEFAULT_LIST_API_REPLAY_CONCURRENCY;
   }
-  return Math.min(8, Math.max(1, Math.trunc(number)));
-}
-
-async function mapWithConcurrency(items, concurrency, fn) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await fn(items[index], index);
-      }
-    })
-  );
-
-  return results;
+  return Math.min(DEFAULT_LIST_API_REPLAY_CONCURRENCY, Math.max(1, Math.trunc(number)));
 }
 
 function isCtripListNetworkResponse(url) {
@@ -267,7 +249,8 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
   }
 
   const maxReplayPages = normalizeMaxReplayPages(desiredCount, options.maxListApiReplayPages);
-  const initiallyShownIds = [...new Set(readHotelIds(initData && initData.hotelList))];
+  const replayConcurrency = normalizeReplayConcurrency(options.maxListApiReplayConcurrency);
+  const seenIds = new Set(readHotelIds(initData && initData.hotelList));
   const basePageIndex =
     Number(
       (request.paging && request.paging.pageIndex) ||
@@ -293,19 +276,26 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
     headers.cookie = options.cookieHeader;
   }
 
-  const pageIndexes = Array.from(
-    { length: maxReplayPages },
-    (_, index) => basePageIndex + index + 1
-  );
-  const replayConcurrency = normalizeReplayConcurrency(options.maxListApiReplayConcurrency);
-  const allResponses = await mapWithConcurrency(
-    pageIndexes,
-    replayConcurrency,
-    async (pageIndex) => {
+  const responses = [];
+  const pageIndexes = [];
+  const finalPageIndex = basePageIndex + maxReplayPages;
+  let nextPageIndex = basePageIndex + 1;
+  let stopped = seenIds.size >= desiredCount;
+  const runWorker = async () => {
+    while (!stopped) {
+      if (seenIds.size >= desiredCount) {
+        stopped = true;
+        return;
+      }
+      const pageIndex = nextPageIndex;
+      nextPageIndex += 1;
+      if (pageIndex > finalPageIndex) {
+        return;
+      }
       const body = applyListPageIndex(request, pageIndex, pageSize);
       body.hotelIdFilter = {
         ...(body.hotelIdFilter || {}),
-        hotelAldyShown: initiallyShownIds
+        hotelAldyShown: Array.from(seenIds)
       };
 
       const response = await fetchImpl(LIST_API_ENDPOINT, {
@@ -316,12 +306,19 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
       });
       const data = await response.json().catch(() => null);
       const ids = readHotelIds(data);
-      return { pageIndex, status: response.status, data, ids };
+      ids.forEach((id) => seenIds.add(id));
+      responses.push({ pageIndex, status: response.status, data });
+      pageIndexes.push(pageIndex);
+      if (!ids.length) {
+        stopped = true;
+      }
     }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(replayConcurrency, maxReplayPages) }, () => runWorker())
   );
-  const firstEmptyIndex = allResponses.findIndex((response) => !response.ids.length);
-  const responses =
-    firstEmptyIndex >= 0 ? allResponses.slice(0, firstEmptyIndex + 1) : allResponses;
+  responses.sort((left, right) => left.pageIndex - right.pageIndex);
+  pageIndexes.sort((left, right) => left - right);
 
   const scripts = responses
     .filter((response) => response && response.data)
@@ -332,7 +329,7 @@ async function fetchListApiPagesFromHtml(html, listUrl, options = {}) {
   return {
     count: scripts.length,
     html: scripts.join('\n'),
-    pageIndexes: responses.map((response) => response.pageIndex),
+    pageIndexes,
     error: ''
   };
 }
@@ -434,7 +431,7 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       result.error = 'missing_init_list_request';
       return JSON.stringify(result);
     }
-    const initiallyShownIds = Array.from(new Set(readHotelIds(initData && initData.hotelList)));
+    const seenIds = new Set(readHotelIds(initData && initData.hotelList));
     const basePageIndex = Number(
       (request.paging && request.paging.pageIndex) ||
       request.pageIndex ||
@@ -448,52 +445,55 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
       10
     ) || 10;
 
-    const pageIndexes = Array.from({ length: maxReplayPages }, (_, index) => basePageIndex + index + 1);
-    const mapWithConcurrency = async (items, concurrency, fn) => {
-      const results = new Array(items.length);
-      let nextIndex = 0;
-      const workerCount = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
-      await Promise.all(Array.from({ length: workerCount }, async () => {
-        while (nextIndex < items.length) {
-          const index = nextIndex;
-          nextIndex += 1;
-          results[index] = await fn(items[index], index);
+    const finalPageIndex = basePageIndex + maxReplayPages;
+    let nextPageIndex = basePageIndex + 1;
+    let stopped = seenIds.size >= targetCount;
+    const runWorker = async () => {
+      while (!stopped) {
+        if (seenIds.size >= targetCount) {
+          stopped = true;
+          return;
         }
-      }));
-      return results;
-    };
-    const responses = await mapWithConcurrency(pageIndexes, replayConcurrency, async (pageIndex) => {
-      const body = JSON.parse(JSON.stringify(request));
-      if (body.paging && typeof body.paging === 'object') {
-        body.paging = { ...body.paging, pageIndex, pageSize };
-      } else if (Object.prototype.hasOwnProperty.call(body, 'pageIndex')) {
-        body.pageIndex = pageIndex;
-        body.pageSize = body.pageSize || pageSize;
-      } else {
-        body.paging = { pageIndex, pageSize };
+        const pageIndex = nextPageIndex;
+        nextPageIndex += 1;
+        if (pageIndex > finalPageIndex) return;
+        const body = JSON.parse(JSON.stringify(request));
+        if (body.paging && typeof body.paging === 'object') {
+          body.paging = { ...body.paging, pageIndex, pageSize };
+        } else if (Object.prototype.hasOwnProperty.call(body, 'pageIndex')) {
+          body.pageIndex = pageIndex;
+          body.pageSize = body.pageSize || pageSize;
+        } else {
+          body.paging = { pageIndex, pageSize };
+        }
+        body.hotelIdFilter = {
+          ...(body.hotelIdFilter || {}),
+          hotelAldyShown: Array.from(seenIds)
+        };
+        body.head = { ...(body.head || {}), isSSR: false };
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'content-type': 'application/json;charset=UTF-8'
+          },
+          body: JSON.stringify(body)
+        });
+        const data = await response.json().catch(() => null);
+        const ids = readHotelIds(data);
+        ids.forEach((id) => seenIds.add(id));
+        result.responses.push({ pageIndex, status: response.status, data });
+        result.pageIndexes.push(pageIndex);
+        if (!ids.length) stopped = true;
       }
-      body.hotelIdFilter = {
-        ...(body.hotelIdFilter || {}),
-        hotelAldyShown: initiallyShownIds
-      };
-      body.head = { ...(body.head || {}), isSSR: false };
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          accept: 'application/json, text/plain, */*',
-          'content-type': 'application/json;charset=UTF-8'
-        },
-        body: JSON.stringify(body)
-      });
-      const data = await response.json().catch(() => null);
-      const ids = readHotelIds(data);
-      return { pageIndex, status: response.status, data, ids };
-    });
-    const firstEmptyIndex = responses.findIndex((response) => !response.ids.length);
-    const keptResponses = firstEmptyIndex >= 0 ? responses.slice(0, firstEmptyIndex + 1) : responses;
-    result.responses.push(...keptResponses.map(({ pageIndex, status, data }) => ({ pageIndex, status, data })));
-    result.pageIndexes.push(...keptResponses.map((response) => response.pageIndex));
+    };
+    await Promise.all(Array.from(
+      { length: Math.min(replayConcurrency, maxReplayPages) },
+      () => runWorker()
+    ));
+    result.responses.sort((left, right) => left.pageIndex - right.pageIndex);
+    result.pageIndexes.sort((left, right) => left - right);
     return JSON.stringify(result);
   })()`;
 
@@ -530,6 +530,7 @@ async function fetchListApiPagesInEdgeSession(connection, sessionId, options = {
 }
 
 module.exports = {
+  DEFAULT_LIST_API_REPLAY_CONCURRENCY,
   drainListNetworkResponses,
   extractObjectAfterMarker,
   fetchListApiPagesFromHtml,

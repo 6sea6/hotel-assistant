@@ -97,3 +97,18 @@ test('big-bed versus twin alternatives still stay ambiguous when twin signals ar
     ROOM_TYPES.BIG_BED_OR_TWIN
   );
 });
+
+test('tatami and parent-child room titles map to FAMILY (regression for hotelId=441585)', () => {
+  assert.equal(
+    deriveRoomTypeFromFallbackSignals({ title: '榻榻米亲子房', bedText: '榻榻米亲子房' }),
+    ROOM_TYPES.FAMILY
+  );
+  assert.equal(
+    deriveRoomTypeFromFallbackSignals({ title: '榻榻米房', bedText: '榻榻米房' }),
+    ROOM_TYPES.FAMILY
+  );
+  assert.equal(
+    deriveRoomTypeFromFallbackSignals({ title: '豪华亲子间', bedText: '豪华亲子间' }),
+    ROOM_TYPES.FAMILY
+  );
+});

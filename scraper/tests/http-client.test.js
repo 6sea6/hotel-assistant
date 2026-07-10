@@ -2,7 +2,13 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const test = require('node:test');
 
-const { HttpClientError, get, mergeCookieHeader, mergeHeaders } = require('../src/http-client');
+const {
+  DEFAULT_RETRIES,
+  HttpClientError,
+  get,
+  mergeCookieHeader,
+  mergeHeaders
+} = require('../src/http-client');
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -63,6 +69,37 @@ test('get applies params, timeout and retry/backoff wrapper through axios', asyn
 
     assert.equal(requestCount, 2);
     assert.deepEqual(response.data, { ok: true, keyword: '武汉' });
+  } finally {
+    await close(server);
+  }
+});
+
+test('get retries two transient failures by default with bounded backoff', async () => {
+  let requestCount = 0;
+  const server = http.createServer((_req, res) => {
+    requestCount += 1;
+    if (requestCount <= 2) {
+      res.writeHead(429, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'rate limited' }));
+      return;
+    }
+
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  });
+
+  const port = await listen(server);
+  try {
+    const response = await get(`http://127.0.0.1:${port}/limited`, {
+      timeoutMs: 1000,
+      retryDelayMs: 1,
+      rateLimitRetryDelayMs: 1,
+      retryMaxDelayMs: 2
+    });
+
+    assert.equal(DEFAULT_RETRIES, 2);
+    assert.equal(requestCount, 3);
+    assert.deepEqual(response.data, { ok: true });
   } finally {
     await close(server);
   }

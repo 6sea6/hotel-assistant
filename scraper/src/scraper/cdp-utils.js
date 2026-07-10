@@ -47,6 +47,7 @@ function normalizeEdgeSessionOptions(options = {}) {
     profileDirectory: normalizeText(options.profileDirectory || ''),
     debuggerUrl: normalizeText(options.debuggerUrl || ''),
     debuggingPort: toNumber(options.debuggingPort),
+    targetId: normalizeText(options.targetId || options.edgeTargetId || ''),
     headless: options.headless !== false,
     browserPreference:
       normalizeBrowserPreference(

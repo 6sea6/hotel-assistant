@@ -43,7 +43,7 @@ function isHardLoginRequiredEvent(event = {}) {
 
   return (
     details.actionRequired === true ||
-    /登录看低价|解锁优惠|登录后才能查看价格|登录后才能查看房价|当前采集浏览器登录态可能无效/.test(
+    /登录看低价|解锁优惠|登录后才能查看价格|登录后才能查看房价|当前采集浏览器登录态可能无效|携程房价接口返回\s*203|错误码\s*203|风控|反爬/.test(
       text
     )
   );
@@ -294,11 +294,16 @@ async function collectAndWriteCtripHotel(input, context = {}) {
               '程序会打开出问题的携程酒店页。请确认页面已登录且能看到具体房价，必要时完成携程验证，然后关闭窗口，采集会自动重试一次。'
           });
         }
-        emitScraperEvent(context, 'edge:login-window', '已打开浏览器确认窗口，等待你确认登录或完成验证', {
-          url: loginRetryUrl,
-          instruction:
-            '请在打开的酒店页确认能看到具体房价；确认后关闭浏览器窗口，程序会继续采集，不需要重新发送链接。'
-        });
+        emitScraperEvent(
+          context,
+          'edge:login-window',
+          '已打开浏览器确认窗口，等待你确认登录或完成验证',
+          {
+            url: loginRetryUrl,
+            instruction:
+              '请在打开的酒店页确认能看到具体房价；确认后关闭浏览器窗口，程序会继续采集，不需要重新发送链接。'
+          }
+        );
 
         assertNotCancelled(context.signal);
         const { runInteractiveEdgeLoginPrep } = await loadScraperModule(

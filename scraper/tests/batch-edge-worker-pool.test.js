@@ -52,41 +52,86 @@ test('batch edge worker profile copy classifies locked cookie copy errors', () =
   assert.match(describeLockedEdgeProfileCopyError(error), /Cookies/);
 });
 
-test('batch edge worker pool launches separate debugging ports and cleans cloned profiles', async (t) => {
+test('batch edge worker profile clone can copy asynchronously', async () => {
+  clearPoolModules();
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-edge-worker-async-copy-'));
+  const sourceProfile = path.join(tempRoot, 'edge-profile');
+  fs.mkdirSync(path.join(sourceProfile, 'Default', 'Network'), { recursive: true });
+  fs.writeFileSync(path.join(sourceProfile, 'Default', 'Network', 'Cookies'), 'login-cookie');
+  fs.mkdirSync(path.join(sourceProfile, 'Default', 'Cache'), { recursive: true });
+  fs.writeFileSync(path.join(sourceProfile, 'Default', 'Cache', 'entry'), 'cache');
+
+  try {
+    const {
+      cleanupBatchEdgeWorkerProfileClones,
+      prepareBatchEdgeWorkerProfileClonesAsync
+    } = require('../src/batch-edge-worker-pool');
+    const clones = await prepareBatchEdgeWorkerProfileClonesAsync({
+      effectiveTemplate: {
+        edge_user_data_dir: sourceProfile,
+        edge_profile_directory: 'Default'
+      },
+      concurrency: 2,
+      existingWorkerCount: 1
+    });
+
+    assert.equal(clones.length, 1);
+    assert.equal(
+      fs.readFileSync(path.join(clones[0], 'Default', 'Network', 'Cookies'), 'utf8'),
+      'login-cookie'
+    );
+    assert.equal(fs.existsSync(path.join(clones[0], 'Default', 'Cache', 'entry')), false);
+    cleanupBatchEdgeWorkerProfileClones(clones);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    clearPoolModules();
+  }
+});
+
+test('batch edge worker pool reuses one browser with persistent worker targets', async (t) => {
   clearPoolModules();
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-edge-worker-pool-'));
   const sourceProfile = path.join(tempRoot, 'edge-profile');
   fs.mkdirSync(path.join(sourceProfile, 'Default'), { recursive: true });
   fs.writeFileSync(path.join(sourceProfile, 'Default', 'Cookies'), 'login', 'utf8');
-  fs.mkdirSync(path.join(sourceProfile, 'Default', 'Cache', 'Cache_Data'), { recursive: true });
-  fs.writeFileSync(
-    path.join(sourceProfile, 'Default', 'Cache', 'Cache_Data', 'locked-cache-entry'),
-    'cache',
-    'utf8'
-  );
-  fs.mkdirSync(path.join(sourceProfile, 'Default', 'Code Cache', 'js'), { recursive: true });
-  fs.writeFileSync(path.join(sourceProfile, 'Default', 'Code Cache', 'js', 'cache'), 'cache');
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
     Module._load = originalLoad;
     clearPoolModules();
   });
 
-  const launched = [];
-  const closedPids = [];
+  const createdTargets = [];
+  const closedTargets = [];
+  let connectionClosed = false;
   Module._load = function loadWithAutoEdgeStub(request, parent, isMain) {
     if (request === './cli/auto-edge' || request.endsWith('/cli/auto-edge')) {
       return {
-        launchAndWaitForEdge: async (options = {}) => {
-          launched.push(options);
-          return {
-            pid: Number(options.port) + 5000,
-            port: Number(options.port)
-          };
+        launchAndWaitForEdge: async () => {
+          throw new Error('shared browser pool must not launch cloned browser processes');
         },
-        closeAutoEdge(pid) {
-          closedPids.push(pid);
-        }
+        closeAutoEdge() {}
+      };
+    }
+    if (request === './scraper/cdp-utils' || request.endsWith('/scraper/cdp-utils')) {
+      return {
+        waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+        connectToDebugger: async () => ({
+          async send(method, params = {}) {
+            if (method === 'Target.createTarget') {
+              const targetId = `worker-target-${createdTargets.length + 1}`;
+              createdTargets.push(targetId);
+              return { targetId };
+            }
+            if (method === 'Target.closeTarget') {
+              closedTargets.push(params.targetId);
+              return { success: true };
+            }
+            return {};
+          },
+          async close() {
+            connectionClosed = true;
+          }
+        })
       };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -100,44 +145,35 @@ test('batch edge worker pool launches separate debugging ports and cleans cloned
       edge_profile_directory: 'Default',
       edge_headless: true
     },
-    concurrency: 2
+    concurrency: 3,
+    existingWorker: {
+      pid: 1234,
+      port: 9222,
+      browserName: 'Edge'
+    }
   });
 
-  assert.equal(pool.workers.length, 2);
-  assert.equal(new Set(pool.workers.map((worker) => worker.port)).size, 2);
-  assert.ok(pool.workers.every((worker) => worker.userDataDir !== sourceProfile));
-  assert.ok(launched.every((item) => item.userDataDir !== sourceProfile));
+  assert.equal(pool.workers.length, 3);
+  assert.equal(pool.sharedBrowser, true);
   assert.deepEqual(
-    launched.map((item) => item.timeoutMs),
-    [30000, 30000]
+    pool.workers.map((worker) => worker.port),
+    [9222, 9222, 9222]
   );
-  assert.equal(fs.existsSync(path.join(pool.workers[0].userDataDir, 'Default', 'Cookies')), true);
-  assert.equal(fs.existsSync(path.join(pool.workers[1].userDataDir, 'Default', 'Cookies')), true);
-  assert.equal(
-    fs.existsSync(path.join(pool.workers[0].userDataDir, 'Default', 'Cache', 'Cache_Data')),
-    false
-  );
-  assert.equal(
-    fs.existsSync(path.join(pool.workers[1].userDataDir, 'Default', 'Code Cache')),
-    false
-  );
+  assert.ok(pool.workers.every((worker) => worker.userDataDir === sourceProfile));
+  assert.equal(new Set(pool.workers.map((worker) => worker.targetId)).size, 3);
   assert.deepEqual(
-    launched.map((item) => item.profileDirectory),
-    ['Default', 'Default']
+    pool.workers.map((worker) => worker.effectiveTemplate.edge_target_id),
+    createdTargets
   );
 
   await pool.close();
 
-  assert.deepEqual(
-    closedPids.sort((left, right) => left - right),
-    pool.workers.map((worker) => worker.pid).sort((left, right) => left - right)
-  );
-  assert.equal(fs.existsSync(pool.workers[0].userDataDir), false);
-  assert.equal(fs.existsSync(pool.workers[1].userDataDir), false);
+  assert.deepEqual(closedTargets.sort(), createdTargets.sort());
+  assert.equal(connectionClosed, true);
   assert.equal(fs.existsSync(sourceProfile), true);
 });
 
-test('batch edge worker pool can use profiles cloned before the source profile is locked', async (t) => {
+test('batch edge worker pool does not copy a locked source profile when sharing tabs', async (t) => {
   clearPoolModules();
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-edge-worker-pool-prepared-'));
   const sourceProfile = path.join(tempRoot, 'edge-profile');
@@ -153,44 +189,35 @@ test('batch edge worker pool can use profiles cloned before the source profile i
     clearPoolModules();
   });
 
-  const launched = [];
-  const closedPids = [];
+  let targetCounter = 0;
   Module._load = function loadWithAutoEdgeStub(request, parent, isMain) {
     if (request === './cli/auto-edge' || request.endsWith('/cli/auto-edge')) {
       return {
-        launchAndWaitForEdge: async (options = {}) => {
-          launched.push(options);
-          return {
-            pid: Number(options.port) + 5000,
-            port: Number(options.port)
-          };
+        launchAndWaitForEdge: async () => {
+          throw new Error('must not launch a cloned profile');
         },
-        closeAutoEdge(pid) {
-          closedPids.push(pid);
-        }
+        closeAutoEdge() {}
+      };
+    }
+    if (request === './scraper/cdp-utils' || request.endsWith('/scraper/cdp-utils')) {
+      return {
+        waitForDebuggerEndpoint: async () => 'ws://edge.test/devtools/browser',
+        connectToDebugger: async () => ({
+          async send(method) {
+            if (method === 'Target.createTarget') {
+              targetCounter += 1;
+              return { targetId: `target-${targetCounter}` };
+            }
+            return {};
+          },
+          async close() {}
+        })
       };
     }
     return originalLoad.call(this, request, parent, isMain);
   };
 
-  const {
-    createBatchEdgeWorkerPool,
-    prepareBatchEdgeWorkerProfileClones
-  } = require('../src/batch-edge-worker-pool');
-  const preparedUserDataDirs = prepareBatchEdgeWorkerProfileClones({
-    effectiveTemplate: {
-      edge_user_data_dir: sourceProfile,
-      edge_profile_directory: 'Default'
-    },
-    concurrency: 2,
-    existingWorkerCount: 1
-  });
-
-  assert.equal(preparedUserDataDirs.length, 1);
-  assert.equal(
-    fs.readFileSync(path.join(preparedUserDataDirs[0], 'Default', 'Network', 'Cookies'), 'utf8'),
-    'login-cookie'
-  );
+  const { createBatchEdgeWorkerPool } = require('../src/batch-edge-worker-pool');
 
   const originalCpSync = fs.cpSync;
   fs.cpSync = () => {
@@ -211,22 +238,14 @@ test('batch edge worker pool can use profiles cloned before the source profile i
     existingWorker: {
       pid: 1234,
       port: 9222
-    },
-    preparedUserDataDirs
+    }
   });
 
   assert.equal(pool.workers.length, 2);
-  assert.equal(pool.workers[0].userDataDir, sourceProfile);
-  assert.equal(pool.workers[0].shouldClose, false);
-  assert.equal(pool.workers[1].userDataDir, preparedUserDataDirs[0]);
-  assert.deepEqual(
-    launched.map((item) => item.userDataDir),
-    preparedUserDataDirs
-  );
+  assert.ok(pool.workers.every((worker) => worker.userDataDir === sourceProfile));
+  assert.ok(pool.workers.every((worker) => worker.shouldClose === false));
 
   await pool.close();
 
-  assert.deepEqual(closedPids, [pool.workers[1].pid]);
-  assert.equal(fs.existsSync(preparedUserDataDirs[0]), false);
   assert.equal(fs.existsSync(sourceProfile), true);
 });

@@ -340,8 +340,7 @@ test('settleRoomListInEdgeSession skips split main scroll followup after room AP
     evaluateInSession: async (_connection, _sessionId, expression) => {
       expressions.push(expression);
       const isMainProbe =
-        expression.includes('const startIndex = 0;') &&
-        expression.includes('const endIndex = 2;');
+        expression.includes('const startIndex = 0;') && expression.includes('const endIndex = 2;');
       return JSON.stringify({
         clickedCount: 0,
         scrollCount: isMainProbe ? 3 : 1,
@@ -379,16 +378,14 @@ test('settleRoomListInEdgeSession skips split main scroll followup after room AP
     assert.equal(
       expressions.some(
         (expression) =>
-          expression.includes('const startIndex = 0;') &&
-          expression.includes('const endIndex = 2;')
+          expression.includes('const startIndex = 0;') && expression.includes('const endIndex = 2;')
       ),
       true
     );
     assert.equal(
       expressions.some(
         (expression) =>
-          expression.includes('const startIndex = 3;') &&
-          expression.includes('const endIndex = 6;')
+          expression.includes('const startIndex = 3;') && expression.includes('const endIndex = 6;')
       ),
       false
     );
@@ -412,11 +409,9 @@ test('settleRoomListInEdgeSession runs split main scroll followup while room API
     evaluateInSession: async (_connection, _sessionId, expression) => {
       expressions.push(expression);
       const isMainProbe =
-        expression.includes('const startIndex = 0;') &&
-        expression.includes('const endIndex = 2;');
+        expression.includes('const startIndex = 0;') && expression.includes('const endIndex = 2;');
       const isMainFollowup =
-        expression.includes('const startIndex = 3;') &&
-        expression.includes('const endIndex = 6;');
+        expression.includes('const startIndex = 3;') && expression.includes('const endIndex = 6;');
       return JSON.stringify({
         clickedCount: 0,
         scrollCount: isMainProbe ? 3 : isMainFollowup ? 4 : 1,
@@ -448,16 +443,14 @@ test('settleRoomListInEdgeSession runs split main scroll followup while room API
     assert.equal(
       expressions.some(
         (expression) =>
-          expression.includes('const startIndex = 0;') &&
-          expression.includes('const endIndex = 2;')
+          expression.includes('const startIndex = 0;') && expression.includes('const endIndex = 2;')
       ),
       true
     );
     assert.equal(
       expressions.some(
         (expression) =>
-          expression.includes('const startIndex = 3;') &&
-          expression.includes('const endIndex = 6;')
+          expression.includes('const startIndex = 3;') && expression.includes('const endIndex = 6;')
       ),
       true
     );
@@ -795,6 +788,9 @@ test('edge settle retries once after transient execution context destruction', a
       isTransientEdgeExecutionContextError(new Error('Execution context was destroyed.')),
       true
     );
+    assert.equal(isTransientEdgeExecutionContextError(new Error('Target detached')), true);
+    assert.equal(isTransientEdgeExecutionContextError(new Error('Session not found')), true);
+    assert.equal(isTransientEdgeExecutionContextError(new Error('Target closed')), true);
     assert.equal(settleAttempts, 2);
     assert.equal(waitCalls.length, 1);
     assert.equal(waitCalls[0].navigateSignal.reason, 'retry_after_settle_context_destroyed');
@@ -2691,6 +2687,63 @@ test('edge DOM extract skips full-page evaluation before API success', async () 
   }
 });
 
+test('edge DOM extract can scan unavailable booking text before API success', async () => {
+  let evaluateCalls = 0;
+  let evaluatedExpression = '';
+  const cdpUtilsPath = installMock('../src/scraper/cdp-utils', {
+    evaluateInSession: async (_connection, _sessionId, expression) => {
+      evaluateCalls += 1;
+      evaluatedExpression = expression;
+      return JSON.stringify({
+        bodyText: '选择房间 该酒店在所选日期不接受预订，请选择其他日期',
+        bodyHtml: '',
+        snippets: [],
+        snapshots: []
+      });
+    },
+    createCdpAbortError: (method) => {
+      const error = new Error(`CDP ${method} aborted`);
+      error.name = 'AbortError';
+      return error;
+    }
+  });
+  const debugPath = installMock('../src/scraper/edge-capture-modules/debug', {
+    writeEdgeDebugArtifact() {}
+  });
+  const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
+  clearModules([networkCapturePath]);
+
+  try {
+    const {
+      extractEdgeDomRoomCandidates
+    } = require('../src/scraper/edge-capture-modules/network-capture');
+    const records = [];
+    const roomBlocks = [];
+    const stats = await extractEdgeDomRoomCandidates({
+      connection: {},
+      sessionId: 'session-1',
+      url: 'https://example.test/hotel',
+      captureMethod: 'html_then_edge_cdp',
+      targetMode: 'reuse',
+      trackedUrls: new Set(),
+      debugHotelId: '895608',
+      roomBlocks,
+      perf: createPerfRecorder(records),
+      enableAvailabilityScan: true
+    });
+
+    assert.equal(evaluateCalls, 1);
+    assert.equal(evaluatedExpression.includes('querySelectorAll'), false);
+    assert.equal(roomBlocks.length, 0);
+    assert.equal(stats.bookingUnavailable, true);
+    assert.equal(stats.bookingUnavailableReason, '当前日期不接受预订');
+    const phaseRecord = records.find((record) => record.phase === 'edge_dom_extract');
+    assert.equal(phaseRecord.booking_unavailable_detected, true);
+  } finally {
+    clearModules([networkCapturePath, cdpUtilsPath, debugPath]);
+  }
+});
+
 test('edge response parse times out stuck response body reads instead of hanging task', async () => {
   const networkCapturePath = require.resolve('../src/scraper/edge-capture-modules/network-capture');
   clearModules([networkCapturePath]);
@@ -2785,8 +2838,7 @@ test('edge network wait count prefers room-related responses without dropping pa
   assert.equal(typeof waitForEdgePageReadyAfterNavigate, 'function');
   assert.equal(detectCtripLoginPromptFromText('扫码登录 手机号登录 登录后查看低价').detected, true);
   assert.equal(
-    detectCtripLoginPromptFromText('首页 立即登录 会员中心', { allowGenericLogin: false })
-      .detected,
+    detectCtripLoginPromptFromText('首页 立即登录 会员中心', { allowGenericLogin: false }).detected,
     false
   );
   assert.equal(

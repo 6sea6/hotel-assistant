@@ -1075,7 +1075,7 @@ test('active Ctrip URL filters are merged into list URL without dropping unknown
   assert.ok(parsed.listFilterParts.includes('16~4*16*4'));
 });
 
-test('active Ctrip URL price filters convert per-person daily price to stay total by template days and room count', async () => {
+test('active Ctrip URL price filters convert per-person daily price to nightly per-room price by room count only', async () => {
   const inputUrl =
     'https://hotels.ctrip.com/hotels/list?cityId=477&listFilters=29~1*29*1~3*2&locale=zh-CN';
   const { elements } = installAiAssistantDom(inputUrl);
@@ -1105,10 +1105,10 @@ test('active Ctrip URL price filters convert per-person daily price to stay tota
   const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
 
   assert.deepEqual(activeFilters, {
-    priceMin: 360,
-    priceMax: 1800
+    priceMin: 120,
+    priceMax: 600
   });
-  assert.ok(parsed.listFilterParts.includes('15~Range*15*360~1800'));
+  assert.ok(parsed.listFilterParts.includes('15~Range*15*120~600'));
 });
 
 test('active Ctrip URL price max keeps max when converting per-person daily price', async () => {
@@ -1140,10 +1140,10 @@ test('active Ctrip URL price max keeps max when converting per-person daily pric
   const parsed = parseCtripListUrl(elements.get('aiHotelUrlInput').value);
 
   assert.deepEqual(activeFilters, {
-    priceMin: 360,
+    priceMin: 120,
     priceMax: 'max'
   });
-  assert.ok(parsed.listFilterParts.includes('15~Range*15*360~max'));
+  assert.ok(parsed.listFilterParts.includes('15~Range*15*120~max'));
 });
 
 test('active Ctrip list URL filters include accommodation, room and theme selections', async () => {
@@ -1956,11 +1956,11 @@ test('AI collect task sends per-person daily list prefilter prices as stay total
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(capturedPayload.listUrlFilters, {
-    priceMin: 360,
-    priceMax: 1800
+    priceMin: 120,
+    priceMax: 600
   });
-  assert.equal(capturedPayload.priceMin, 360);
-  assert.equal(capturedPayload.priceMax, 1800);
+  assert.equal(capturedPayload.priceMin, 120);
+  assert.equal(capturedPayload.priceMax, 600);
 });
 
 test('AI collect task auto-detects Ctrip URL inside mixed text as URL input', async () => {
@@ -2190,7 +2190,7 @@ test('AI collect task rerun reuses address query instead of requiring the input 
   );
 });
 
-test('AI collect task falls back unsupported saved batch concurrency to default three', async () => {
+test('AI collect task falls back unsupported saved batch concurrency to default maximum three', async () => {
   const inputUrl = 'https://hotels.ctrip.com/hotels/detail/?hotelId=1001&checkIn=2026-06-01';
   const { elements } = installAiAssistantDom(inputUrl);
   const { module, state } = await loadAiAssistantModules();

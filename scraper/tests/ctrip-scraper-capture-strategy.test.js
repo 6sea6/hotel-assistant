@@ -236,9 +236,65 @@ test('captureStrategy auto keeps the old HTML-first decision path', async () => 
       );
 
       assert.equal(calls.edge, 0);
+      assert.equal(calls.fetchHtml, 1);
       assert.equal(edgeStartedBeforeHtmlDone, false);
       assert.equal(result.room.title, 'HTML大床房');
       assert.equal(result.page_snapshot.capture_strategy, 'auto');
+    }
+  );
+});
+
+test('mobile HTML and direct room replay are disabled by default', async () => {
+  await withScraper(
+    {
+      htmlRoom: makeRoom('HTML无价房', null, 'desktop'),
+      edgeFails: true
+    },
+    async (scrapeCtripHotel, calls) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=11',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'auto',
+          perf: createPerfRecorder([])
+        }
+      );
+
+      assert.equal(calls.fetchHtml, 1);
+      assert.equal(calls.edge, 1);
+      assert.equal(calls.directReplay, 0);
+      assert.equal(result.page_snapshot.mobile_html_enabled, false);
+      assert.equal(result.page_snapshot.direct_room_replay_enabled, false);
+      assert.equal(result.page_snapshot.html_request_count, 1);
+      assert.equal(result.page_snapshot.direct_api_request_count, 0);
+    }
+  );
+});
+
+test('mobile HTML and direct room replay remain explicit single-hotel diagnostics', async () => {
+  await withScraper(
+    {
+      htmlRoom: makeRoom('HTML无价房', null, 'desktop'),
+      edgeFails: true
+    },
+    async (scrapeCtripHotel, calls) => {
+      const result = await scrapeCtripHotel(
+        'https://hotels.ctrip.com/hotels/detail/?hotelId=12',
+        {},
+        {
+          autoEdge: true,
+          captureStrategy: 'auto',
+          includeMobileHtml: true,
+          directRoomReplay: true,
+          perf: createPerfRecorder([])
+        }
+      );
+
+      assert.equal(calls.fetchHtml, 2);
+      assert.equal(calls.directReplay, 1);
+      assert.equal(result.page_snapshot.mobile_html_enabled, true);
+      assert.equal(result.page_snapshot.direct_room_replay_enabled, true);
     }
   );
 });
@@ -517,7 +573,9 @@ test('scrapeCtripHotel exposes Edge login-required state in page snapshot', asyn
       assert.equal(result.page_snapshot.login_required, true);
       assert.match(result.page_snapshot.login_reason, /登录看低价/);
       assert.equal(result.page_snapshot.login_stage, 'edge_page_ready');
-      const edgeSource = result.page_snapshot.sources.find((source) => source.source === 'edge-cdp');
+      const edgeSource = result.page_snapshot.sources.find(
+        (source) => source.source === 'edge-cdp'
+      );
       assert.equal(edgeSource.login_required, true);
     }
   );
@@ -552,7 +610,9 @@ test('scrapeCtripHotel treats Edge locked-price rooms as login-required even wit
       assert.equal(result.page_snapshot.login_required, true);
       assert.match(result.page_snapshot.login_reason, /登录看低价/);
       assert.equal(result.page_snapshot.login_stage, 'edge_room_candidates');
-      const edgeSource = result.page_snapshot.sources.find((source) => source.source === 'edge-cdp');
+      const edgeSource = result.page_snapshot.sources.find(
+        (source) => source.source === 'edge-cdp'
+      );
       assert.equal(edgeSource.login_required, true);
     }
   );

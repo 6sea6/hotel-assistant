@@ -1,7 +1,8 @@
 /**
  * ctrip-scraper.js — Coordinator module
  *
- * Orchestrates a three-layer scraping strategy (HTML → API replay → Edge CDP)
+ * Orchestrates desktop HTML and authenticated Edge CDP capture.
+ * Mobile HTML and direct room API replay are explicit single-hotel diagnostics only.
  * to extract hotel room data from Ctrip.  All low-level logic lives in the
  * submodules under ./scraper/.
  */
@@ -36,6 +37,7 @@ const {
   shouldPreferEdgeCapture,
   captureRoomCandidatesWithEdge
 } = require('./scraper/edge-capture');
+const { detectBookingUnavailableFromTexts } = require('./scraper/availability-detection');
 const { setup_perf_logger, PerfTimer } = require('./runtime/perf');
 
 function durationSince(startedAt) {
@@ -246,6 +248,33 @@ function getEdgeLoginRequiredFields(fallbackCapture = null) {
   };
 }
 
+function getBookingUnavailableFields({ parsedSources = [], fallbackCapture = null } = {}) {
+  if (fallbackCapture && fallbackCapture.bookingUnavailable) {
+    return {
+      bookingUnavailable: true,
+      bookingUnavailableReason: fallbackCapture.bookingUnavailableReason || '当前日期不可预订',
+      bookingUnavailableSource: 'edge-cdp'
+    };
+  }
+
+  const htmlDetection = detectBookingUnavailableFromTexts(
+    parsedSources.filter((item) => item && typeof item === 'object').map((item) => item.html)
+  );
+  if (htmlDetection.detected) {
+    return {
+      bookingUnavailable: true,
+      bookingUnavailableReason: htmlDetection.reason || '当前日期不可预订',
+      bookingUnavailableSource: 'html'
+    };
+  }
+
+  return {
+    bookingUnavailable: false,
+    bookingUnavailableReason: '',
+    bookingUnavailableSource: ''
+  };
+}
+
 function buildScrapeQualityFields({
   selectedRoom,
   normalizedRoomBlocks,
@@ -275,6 +304,7 @@ function buildScrapeQualityFields({
   ];
   const settleStats = normalizeSettleStats(fallbackCapture && fallbackCapture.settleStats);
   const loginFields = getEdgeLoginRequiredFields(fallbackCapture);
+  const unavailableFields = getBookingUnavailableFields({ parsedSources, fallbackCapture });
 
   return {
     selected_room_source: selectedRoom ? selectedRoom.source || '' : '',
@@ -299,6 +329,9 @@ function buildScrapeQualityFields({
     login_required: loginFields.loginRequired,
     login_reason: loginFields.loginReason,
     login_stage: loginFields.loginStage,
+    booking_unavailable: unavailableFields.bookingUnavailable,
+    booking_unavailable_reason: unavailableFields.bookingUnavailableReason,
+    booking_unavailable_source: unavailableFields.bookingUnavailableSource,
     settle_total_ms: settleStats.totalMs,
     settle_clicked_count: settleStats.clickedCount,
     settle_skipped_duplicate_click_count: settleStats.skippedDuplicateClickCount,
@@ -312,6 +345,7 @@ function buildScrapeQualityFields({
 async function runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }) {
   const sources = [];
   const htmlStartedAt = Date.now();
+  let htmlRequestCount = 0;
   await perf.runPhase('page_open', { url: desktopUrl }, async () => {
     if (options.htmlPath) {
       sources.push({
@@ -321,14 +355,25 @@ async function runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }
         cookieHeader: ''
       });
     } else {
+      const includeMobileHtml = options.includeMobileHtml === true;
       const [desktopPage, mobilePage] = await perf.runPhase(
         'goto_url',
-        { url: desktopUrl },
+        { url: desktopUrl, include_mobile_html: includeMobileHtml },
         async () =>
           Promise.all([
-            fetchHtml(desktopUrl, DESKTOP_HEADERS, { signal: options.signal || null }),
-            mobileUrl
-              ? fetchHtml(mobileUrl, MOBILE_HEADERS, { signal: options.signal || null })
+            fetchHtml(desktopUrl, DESKTOP_HEADERS, { signal: options.signal || null }).then(
+              (page) => {
+                htmlRequestCount += 1;
+                return page;
+              }
+            ),
+            includeMobileHtml && mobileUrl
+              ? fetchHtml(mobileUrl, MOBILE_HEADERS, { signal: options.signal || null }).then(
+                  (page) => {
+                    htmlRequestCount += 1;
+                    return page;
+                  }
+                )
               : Promise.resolve(null)
           ])
       );
@@ -394,7 +439,8 @@ async function runHtmlCapture({ desktopUrl, mobileUrl, template, options, perf }
     mergedRoomBlocks,
     normalizedRoomBlocks,
     selectedRoom: selectBestRoom(normalizedRoomBlocks, template, options.matchingOptions || {}),
-    htmlMs: durationSince(htmlStartedAt)
+    htmlMs: durationSince(htmlStartedAt),
+    htmlRequestCount
   };
 }
 
@@ -480,6 +526,7 @@ function applyHtmlResultToState(captureState, htmlResult) {
   captureState.normalizedRoomBlocks = htmlResult.normalizedRoomBlocks;
   captureState.selectedRoom = htmlResult.selectedRoom;
   captureState.performance.htmlMs = htmlResult.htmlMs;
+  captureState.performance.htmlRequestCount = Number(htmlResult.htmlRequestCount || 0);
 }
 
 function selectedRoomNeedsPrice(captureState) {
@@ -542,6 +589,7 @@ async function runEdgeSupplementStep(captureState, step) {
     captureStrategy: captureState.captureStrategy
   });
   captureState.fallbackCapture = edgeCapture.result;
+  captureState.performance.edgeNavigationCount += 1;
   captureState.performance.edgeCaptureMs += edgeCapture.elapsedMs;
   captureState.performance.waitDataMs += edgeCapture.elapsedMs;
   captureState.captureSteps.push('edge_cdp');
@@ -550,6 +598,9 @@ async function runEdgeSupplementStep(captureState, step) {
 }
 
 async function runApiReplayStep(captureState, step) {
+  if (captureState.options.directRoomReplay !== true) {
+    return null;
+  }
   if (!shouldRunSupplementStep(captureState, step)) {
     return null;
   }
@@ -584,6 +635,11 @@ async function runApiReplayStep(captureState, step) {
       )
   );
   captureState.performance.directReplayMs += durationSince(replayStartedAt);
+  captureState.performance.directApiRequestCount += Array.isArray(
+    captureState.directReplay && captureState.directReplay.attempts
+  )
+    ? captureState.directReplay.attempts.length
+    : 0;
   captureState.performance.waitDataMs += durationSince(replayStartedAt);
   captureState.captureSteps.push('api_replay');
   applyCaptureResultToState(captureState, captureState.directReplay);
@@ -647,7 +703,10 @@ async function scrapeCtripHotel(url, template, options = {}) {
     htmlMs: 0,
     directReplayMs: 0,
     edgeCaptureMs: 0,
-    waitDataMs: 0
+    waitDataMs: 0,
+    htmlRequestCount: 0,
+    edgeNavigationCount: 0,
+    directApiRequestCount: 0
   };
   const { desktopUrl, mobileUrl } = await perf.runPhase('build_url', { url }, async () => {
     const urlOverrides = buildUrlOverridesFromTemplate(template);
@@ -794,6 +853,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
 
         if (edgeOutcome.status === 'fulfilled') {
           fallbackCapture = edgeOutcome.value.result;
+          performance.edgeNavigationCount += 1;
           performance.edgeCaptureMs += edgeOutcome.value.elapsedMs;
           performance.waitDataMs += edgeOutcome.value.elapsedMs;
           captureSteps.push('edge_cdp');
@@ -879,6 +939,17 @@ async function scrapeCtripHotel(url, template, options = {}) {
     edgeStartedBeforeHtmlDone,
     warnings
   });
+  Object.assign(qualityFields, {
+    mobile_html_enabled: options.includeMobileHtml === true,
+    direct_room_replay_enabled: options.directRoomReplay === true,
+    html_request_count: performance.htmlRequestCount,
+    edge_navigation_count: performance.edgeNavigationCount,
+    direct_api_request_count: performance.directApiRequestCount,
+    primary_request_count:
+      performance.htmlRequestCount +
+      performance.edgeNavigationCount +
+      performance.directApiRequestCount
+  });
   const edgeLoginFields = getEdgeLoginRequiredFields(fallbackCapture);
   perf.event('detail_quality', {
     phase: 'task_total',
@@ -953,6 +1024,8 @@ async function scrapeCtripHotel(url, template, options = {}) {
                   login_required: edgeLoginFields.loginRequired,
                   login_reason: edgeLoginFields.loginReason,
                   login_stage: edgeLoginFields.loginStage,
+                  booking_unavailable: Boolean(fallbackCapture.bookingUnavailable),
+                  booking_unavailable_reason: fallbackCapture.bookingUnavailableReason || '',
                   error: fallbackCapture.error || ''
                 }
               ]

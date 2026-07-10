@@ -588,6 +588,28 @@ function mergeCtripFilters(existingFilters = [], settings = {}) {
 
 function buildCtripListUrl(baseUrl, settings = {}) {
   const parsed = new URL(String(baseUrl || '').trim());
+
+  // 携程列表页要求小写 checkin/checkout 才能让日期生效（驼峰会被忽略）。
+  // 如果 URL 用了驼峰 checkIn/checkOut，规范化为小写。
+  const checkInValue = parsed.searchParams.get('checkIn');
+  if (checkInValue) {
+    parsed.searchParams.delete('checkIn');
+    parsed.searchParams.set('checkin', checkInValue);
+  }
+  const checkOutValue = parsed.searchParams.get('checkOut');
+  if (checkOutValue) {
+    parsed.searchParams.delete('checkOut');
+    parsed.searchParams.set('checkout', checkOutValue);
+  }
+
+  // 补全列表页必要参数：flexType=1 和 fixedDate=0 让 listFilters 价格/星级等筛选生效。
+  if (!parsed.searchParams.has('flexType')) {
+    parsed.searchParams.set('flexType', '1');
+  }
+  if (!parsed.searchParams.has('fixedDate')) {
+    parsed.searchParams.set('fixedDate', '0');
+  }
+
   const existingFilters = splitListFilters(parsed.searchParams.get('listFilters') || '');
   const mergedFilters = mergeCtripFilters(existingFilters, settings);
 
@@ -597,7 +619,8 @@ function buildCtripListUrl(baseUrl, settings = {}) {
     parsed.searchParams.delete('listFilters');
   }
 
-  return parsed.toString();
+  // URL.toString() 会把 ~ 编码成 %7E，但携程 listFilters 用 ~ 做分隔符，需要还原。
+  return parsed.toString().replace(/%7E/gi, '~');
 }
 
 module.exports = {

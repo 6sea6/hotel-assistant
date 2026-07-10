@@ -1,11 +1,9 @@
-const {
-  evaluateInSession,
-  waitForSessionCondition
-} = require('../cdp-utils');
+const { evaluateInSession, waitForSessionCondition } = require('../cdp-utils');
 const { settleRoomListInEdgeSession } = require('./session-settle');
 const {
   EDGE_SETTLE_EVALUATE_TIMEOUT_MS,
   assertEdgeNotAborted,
+  getTransientEdgeRetryReason,
   isAbortLikeError,
   isTransientEdgeExecutionContextError,
   sleep
@@ -293,7 +291,7 @@ async function settleRoomListWithEdgeRetry({
       throw error;
     }
 
-    const retryReason = 'execution_context_destroyed';
+    const retryReason = getTransientEdgeRetryReason(error) || 'edge_transient_error';
     perf.event('edge_settle_retry', {
       phase: 'edge_settle_room_list',
       status: 'retry',
@@ -317,7 +315,10 @@ async function settleRoomListWithEdgeRetry({
       targetMode,
       navigateSignal: {
         ...(navigateSignal && typeof navigateSignal === 'object' ? navigateSignal : {}),
-        reason: 'retry_after_settle_context_destroyed'
+        reason:
+          retryReason === 'execution_context_destroyed'
+            ? 'retry_after_settle_context_destroyed'
+            : `retry_after_settle_${retryReason}`
       },
       signal
     });

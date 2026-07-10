@@ -76,6 +76,7 @@ function buildEdgeSessionOptions(effectiveTemplate = {}) {
     profileDirectory: effectiveTemplate.edge_profile_directory,
     debuggerUrl: effectiveTemplate.edge_debugger_url,
     debuggingPort: effectiveTemplate.edge_debugging_port,
+    targetId: effectiveTemplate.edge_target_id,
     headless: effectiveTemplate.edge_headless,
     browserPreference: effectiveTemplate.browser_preference
   };
@@ -132,7 +133,7 @@ function normalizeListApiReplayConcurrency(value, fallback = 2) {
   if (!Number.isFinite(number) || number <= 0) {
     return fallback;
   }
-  return Math.min(8, Math.max(1, Math.floor(number)));
+  return Math.min(2, Math.max(1, Math.floor(number)));
 }
 
 function resolveListApiReplayConcurrency(args = {}, options = {}) {
@@ -144,13 +145,6 @@ function resolveListApiReplayConcurrency(args = {}, options = {}) {
     return normalizeListApiReplayConcurrency(explicit, 2);
   }
 
-  const batchConcurrency = Math.min(3, Math.max(1, normalizeBatchConcurrency(args, options)));
-  if (batchConcurrency >= 3) {
-    return 6;
-  }
-  if (batchConcurrency === 2) {
-    return 4;
-  }
   return 2;
 }
 

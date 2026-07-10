@@ -9,7 +9,7 @@ const {
   cleanupOutputArtifacts,
   sanitizeSensitiveData,
   slugify,
-  writeJsonFile
+  writeJsonFileAsync
 } = require('./utils');
 const { setup_perf_logger, PerfTimer } = require('./runtime/perf');
 const {
@@ -21,6 +21,7 @@ const {
   shouldCleanupOutputArtifactsForRun
 } = require('./task-context');
 const { writeSingleHotelRecords } = require('./task-writeback');
+const { toBoolean } = require('./edge-runtime');
 
 function isScrapedLoginRequired(scraped = {}) {
   return Boolean(scraped && scraped.page_snapshot && scraped.page_snapshot.login_required);
@@ -28,13 +29,7 @@ function isScrapedLoginRequired(scraped = {}) {
 
 class SingleDetailRunner {
   createPreparedScrapeState(context) {
-    const {
-      taskId,
-      effectiveTemplate,
-      hotelInput,
-      perf = null,
-      pageIndex = null
-    } = context;
+    const { taskId, effectiveTemplate, hotelInput, perf = null, pageIndex = null } = context;
     const itemPerf = perf
       ? perf.child({
           taskId,
@@ -102,6 +97,8 @@ class SingleDetailRunner {
         args['edge-parallel-cancel-policy'] ||
         contextEdgeParallelCancelPolicy ||
         'none',
+      includeMobileHtml: toBoolean(args.includeMobileHtml ?? args['include-mobile-html'], false),
+      directRoomReplay: toBoolean(args.directRoomReplay ?? args['direct-room-replay'], false),
       onEvent: scrapeEventForwarder,
       perf: itemPerf.child({ url: itemTemplate.ctrip_url }),
       signal
@@ -282,7 +279,7 @@ class SingleDetailRunner {
         url: itemTemplate.ctrip_url,
         reportLevel
       });
-      const measure = writeJsonFile(outputPath, outputPayload, {
+      const measure = await writeJsonFileAsync(outputPath, outputPayload, {
         pretty: isFullReport,
         measure: true
       });

@@ -204,13 +204,13 @@ function getTemplateRoomCount(template) {
  * @returns {number|null}
  */
 function getTemplateStayPriceMultiplier(template) {
-  const days = getTemplateStayDays(template);
   const roomCount = getTemplateRoomCount(template);
-  return days && roomCount ? days * roomCount : null;
+  return roomCount || null;
 }
 
 /**
- * 前筛界面输入的是每日人均价；携程 URL 价格筛选仍接收入住总价。
+ * 前筛界面输入的是每日人均价；携程 URL 价格筛选接收每晚价格（日价）。
+ * 人均价需乘以 room_count 转换为每晚每间价，不再乘以天数。
  *
  * @param {CtripUrlFilterSettings} filters
  * @param {TemplateRecord|null|undefined} template

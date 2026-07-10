@@ -7,9 +7,8 @@ const {
     return error;
   }
 } = require('../cdp-utils');
-const {
-  buildSessionSettleStepExpression
-} = require('./session-settle-browser-script');
+const { buildSessionSettleStepExpression } = require('./session-settle-browser-script');
+const { getTransientEdgeRetryReason } = require('./edge-retry-policy');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -428,11 +427,7 @@ function buildMainScrollStepBody({
 }
 
 function getTransientSettleRetryReason(error) {
-  const message = error && error.message ? String(error.message) : String(error || '');
-  if (/Execution context was destroyed|Cannot find context with specified id/i.test(message)) {
-    return 'execution_context_destroyed';
-  }
-  return '';
+  return getTransientEdgeRetryReason(error);
 }
 
 async function runSettleStep({

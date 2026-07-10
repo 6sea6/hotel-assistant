@@ -26,6 +26,92 @@ const STALE_REFRESH_NOTE_PATTERNS = [
   /携程房型接口触发反爬限制/
 ];
 
+function countUniqueRoomTypes(hotels = []) {
+  const roomTypes = new Set(
+    (Array.isArray(hotels) ? hotels : [])
+      .map((hotel) => String((hotel && (hotel.room_type || hotel.original_room_type)) || '').trim())
+      .filter(Boolean)
+  );
+  return roomTypes.size || (Array.isArray(hotels) ? hotels.filter(Boolean).length : 0);
+}
+
+function hasSpiderRiskSignal(pageSnapshot = {}) {
+  const spiderCodes = Array.isArray(pageSnapshot.spider_error_codes)
+    ? pageSnapshot.spider_error_codes
+    : [];
+  if (spiderCodes.length > 0) {
+    return true;
+  }
+
+  return (Array.isArray(pageSnapshot.sources) ? pageSnapshot.sources : []).some((source) => {
+    if (!source || typeof source !== 'object') {
+      return false;
+    }
+    const sourceCodes = Array.isArray(source.spider_error_codes) ? source.spider_error_codes : [];
+    return sourceCodes.length > 0;
+  });
+}
+
+function getBookingUnavailableSignal(collectResult = {}) {
+  const pageSnapshot = collectResult && (collectResult.pageSnapshot || collectResult.page_snapshot);
+  if (!pageSnapshot || typeof pageSnapshot !== 'object' || !pageSnapshot.booking_unavailable) {
+    return {
+      detected: false,
+      reason: ''
+    };
+  }
+
+  return {
+    detected: true,
+    reason: pageSnapshot.booking_unavailable_reason || '当前日期不可预订'
+  };
+}
+
+function shouldClearExistingHotelsForUnavailableRefresh(collectResult = {}, retryNeed = {}) {
+  if (!collectResult || collectResult.success !== true || retryNeed.needed) {
+    return false;
+  }
+
+  const eligibleCount = Number(collectResult.eligibleCount);
+  if (!Number.isFinite(eligibleCount) || eligibleCount > 0) {
+    return false;
+  }
+
+  // 页面层（HTML/Edge DOM）确定性"不可预订"信号优先：直接清空，不被风控否决。
+  // 但需双保险约束：仅当确实无可见价格（room_price_visible=false）时才清空。
+  // 否则像 hotelId=441585 这种"有可见价格的榻榻米房型 + i18n 字典误判不可预订"
+  // 的酒店会被误删。真实"不接受预订"的酒店（如 hotelId=895608）页面无任何可见价格，
+  // room_price_visible=false，仍会正确清空。
+  const pageSnapshot = collectResult.pageSnapshot || collectResult.page_snapshot || {};
+  const hasVisiblePrice = Boolean(pageSnapshot.room_price_visible);
+  if (!hasVisiblePrice && getBookingUnavailableSignal(collectResult).detected) {
+    return true;
+  }
+
+  if (pageSnapshot.login_required || hasSpiderRiskSignal(pageSnapshot)) {
+    return false;
+  }
+
+  return false;
+}
+
+function buildUnavailableRefreshClearResult({ hotelName, url, existingHotels, reason }) {
+  return {
+    hotelName,
+    url,
+    status: 'cleared',
+    updatedHotels: [],
+    updatedRoomTypeCount: 0,
+    deletedRoomTypeCount: countUniqueRoomTypes(existingHotels),
+    skipReason: '',
+    error: '',
+    retryAfterLogin: false,
+    deleteExistingGroup: true,
+    existingHotels,
+    clearReason: reason || '当前日期不可预订'
+  };
+}
+
 function isStaleRefreshFailureNote(value) {
   const text = String(value || '').trim();
   return Boolean(text) && STALE_REFRESH_NOTE_PATTERNS.some((pattern) => pattern.test(text));
@@ -206,6 +292,15 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
     Number(collectResult.eligibleCount) <= 0
   ) {
     const retryNeed = getVisibleLoginRetryNeed(collectResult);
+    if (shouldClearExistingHotelsForUnavailableRefresh(collectResult, retryNeed)) {
+      const unavailable = getBookingUnavailableSignal(collectResult);
+      return buildUnavailableRefreshClearResult({
+        hotelName,
+        url,
+        existingHotels,
+        reason: unavailable.reason
+      });
+    }
     const skipReason =
       retryNeed.needed && retryNeed.reason
         ? retryNeed.reason
@@ -282,9 +377,12 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
 module.exports = {
   PRESERVED_FIELDS_ON_REFRESH,
   buildRefreshCollectArgs,
+  countUniqueRoomTypes,
   createRefreshDetailContextFactory,
   createRefreshItemEventEmitter,
+  getBookingUnavailableSignal,
   isStaleRefreshFailureNote,
   mapRefreshPreparedResult,
-  preserveRefreshFields
+  preserveRefreshFields,
+  shouldClearExistingHotelsForUnavailableRefresh
 };

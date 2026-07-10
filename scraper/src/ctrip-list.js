@@ -15,8 +15,87 @@ const { collectListPageCandidates } = require('./scraper/list-page-collector');
 const { normalizeListPageFilterOptions } = require('./scraper/list-page-parser');
 const { normalizeText } = require('./utils');
 
+const DEFAULT_LIST_CANDIDATE_CACHE_TTL_MS = 15 * 60 * 1000;
+const MAX_LIST_CANDIDATE_CACHE_ENTRIES = 32;
+const listCandidateCache = new Map();
+
 function durationSince(startedAt) {
   return Math.max(0, Date.now() - startedAt);
+}
+
+function cloneCacheValue(value) {
+  if (typeof globalThis.structuredClone === 'function') {
+    return globalThis.structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeListCacheTtlMs(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    return DEFAULT_LIST_CANDIDATE_CACHE_TTL_MS;
+  }
+  return Math.floor(number);
+}
+
+function normalizeListUrlForCache(listUrl) {
+  try {
+    const normalized = new URL(String(listUrl || ''));
+    normalized.hash = '';
+    normalized.searchParams.sort();
+    return normalized.toString();
+  } catch (_error) {
+    return String(listUrl || '').trim();
+  }
+}
+
+function buildListCandidateCacheKey(listUrl, template = {}, rawFilters = {}) {
+  return JSON.stringify({
+    listUrl: normalizeListUrlForCache(listUrl),
+    checkIn: template.check_in_date || template.checkIn || '',
+    checkOut: template.check_out_date || template.checkOut || '',
+    roomCount: Number(template.room_count || template.roomCount || 0),
+    filters: normalizeListPageFilterOptions(rawFilters)
+  });
+}
+
+function clearExpiredListCandidateCache(now = Date.now()) {
+  for (const [key, entry] of listCandidateCache.entries()) {
+    if (!entry || entry.expiresAt <= now) {
+      listCandidateCache.delete(key);
+    }
+  }
+}
+
+function clearListCandidateCache() {
+  listCandidateCache.clear();
+}
+
+function buildListCandidateCacheValue(result = {}) {
+  const selected = (Array.isArray(result.selected) ? result.selected : []).map((candidate) => ({
+    hotelId: candidate.hotelId || '',
+    hotelName: candidate.hotelName || candidate.name || '',
+    detailUrl: candidate.detailUrl || candidate.url || '',
+    url: candidate.detailUrl || candidate.url || '',
+    sourceOrder: Number(candidate.sourceOrder || 0),
+    source: candidate.source || ''
+  }));
+  return {
+    inputUrl: result.inputUrl || '',
+    pageUrls: [],
+    pages: [],
+    filters: result.filters || {},
+    candidates: selected,
+    totalCandidates: Number(result.totalCandidates || selected.length),
+    selected,
+    rejected: [],
+    detailUrls: selected.map((candidate) => candidate.detailUrl).filter(Boolean),
+    errors: [],
+    edgeFallbackUsed: Boolean(result.edgeFallbackUsed),
+    performance: {
+      totalMs: Number((result.performance && result.performance.totalMs) || 0)
+    }
+  };
 }
 
 async function collectHotelListCandidates(listUrl, template = {}, rawFilters = {}, options = {}) {
@@ -24,7 +103,48 @@ async function collectHotelListCandidates(listUrl, template = {}, rawFilters = {
     return options.collectListPageCandidates(listUrl, template, rawFilters, options);
   }
 
-  return collectListPageCandidates(listUrl, template, rawFilters, options);
+  const cacheTtlMs = normalizeListCacheTtlMs(options.listCandidateCacheTtlMs);
+  const cacheEnabled = options.listCandidateCache !== false && cacheTtlMs > 0;
+  const now = Date.now();
+  const cacheKey = buildListCandidateCacheKey(listUrl, template, rawFilters);
+  if (cacheEnabled) {
+    clearExpiredListCandidateCache(now);
+    const cached = listCandidateCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      const result = cloneCacheValue(cached.value);
+      result.performance = {
+        ...(result.performance || {}),
+        cacheHit: true,
+        cacheAgeMs: Math.max(0, now - cached.createdAt),
+        cacheTtlMs
+      };
+      return result;
+    }
+  }
+
+  const result = await collectListPageCandidates(listUrl, template, rawFilters, options);
+  if (
+    cacheEnabled &&
+    Array.isArray(result.selected) &&
+    result.selected.length > 0 &&
+    (!Array.isArray(result.errors) || result.errors.length === 0)
+  ) {
+    if (listCandidateCache.size >= MAX_LIST_CANDIDATE_CACHE_ENTRIES) {
+      listCandidateCache.delete(listCandidateCache.keys().next().value);
+    }
+    listCandidateCache.set(cacheKey, {
+      createdAt: now,
+      expiresAt: now + cacheTtlMs,
+      value: buildListCandidateCacheValue(result)
+    });
+  }
+  result.performance = {
+    ...(result.performance || {}),
+    cacheHit: false,
+    cacheAgeMs: 0,
+    cacheTtlMs
+  };
+  return result;
 }
 
 function buildDetailInput(url, template = {}, source = 'detail-input', listCandidate = null) {
@@ -257,7 +377,9 @@ function buildListResultsSummary(listResults = []) {
 }
 
 module.exports = {
+  DEFAULT_LIST_CANDIDATE_CACHE_TTL_MS,
   buildListResultsSummary,
+  clearListCandidateCache,
   describeExpandedInput,
   expandCtripHotelInputs,
   normalizeListFiltersFromArgs

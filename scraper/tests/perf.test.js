@@ -305,20 +305,25 @@ test('BatchStats summary exposes item percentiles, phase totals and slowest item
 test('direct API replay records internal phases without sensitive request data', async () => {
   await withEnv({ HOTEL_COLLECTOR_ENV: 'dev', ENABLE_PERF_LOG: '1' }, async () => {
     const apiReplayPath = require.resolve('../src/scraper/api-replay');
+    const requestedEndpoints = [];
     const httpClientPath = installMock('../src/http-client', {
-      post: async () => ({
-        data: {
+      post: async (endpoint) => {
+        requestedEndpoints.push(endpoint);
+        return {
           data: {
-            htlSpiderActionErrorCode: 203
+            data: {
+              htlSpiderActionErrorCode: 203
+            }
           }
-        }
-      })
+        };
+      }
     });
     delete require.cache[apiReplayPath];
 
     try {
       const { PerfTimer } = require('../src/runtime/perf');
       const records = [];
+      const backoffDelays = [];
       const perf = new PerfTimer(
         {
           enabled: true,
@@ -345,14 +350,27 @@ test('direct API replay records internal phases without sensitive request data',
             cookieHeader: 'SESSION=secret-cookie'
           }
         ],
-        { perf }
+        {
+          perf,
+          riskControl203Delay: async (delayMs) => {
+            backoffDelays.push(delayMs);
+          }
+        }
       );
 
       assert.equal(result.selectedRoom, null);
       assert.deepEqual(result.spiderErrorCodes, [203]);
+      assert.equal(result.attempts.length, 1);
+      assert.equal(requestedEndpoints.length, 1);
+      assert.match(requestedEndpoints[0], /\/33278\/getHotelRoomList/);
+      assert.equal(backoffDelays.length, 0);
       assert.ok(records.some((record) => record.phase === 'api_replay_build_context'));
       assert.ok(records.some((record) => record.phase === 'api_replay_build_variants'));
       assert.ok(records.some((record) => record.phase === 'api_replay_request'));
+      assert.equal(
+        records.some((record) => record.event === 'api_replay_203_short_backoff'),
+        false
+      );
       assert.ok(records.some((record) => record.phase === 'api_replay_total'));
       const requestRecord = records.find((record) => record.phase === 'api_replay_request');
       assert.equal(requestRecord.variant_name, 'plain-1');

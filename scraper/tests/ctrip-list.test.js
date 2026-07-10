@@ -682,7 +682,8 @@ test('fetchListApiPagesInEdgeSession scales replay pages for large list targets'
   });
 
   assert.match(evaluatedExpression, /const maxReplayPages = 31/);
-  assert.match(evaluatedExpression, /const replayConcurrency = 6/);
+  assert.match(evaluatedExpression, /const replayConcurrency = 2/);
+  assert.match(evaluatedExpression, /Promise\.all/);
 });
 
 test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async () => {
@@ -706,6 +707,8 @@ test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async 
   const escapedInitRequest = JSON.stringify(initRequest).replace(/"/g, '\\"');
   const html = `<script>self.__next_f=[["x","\\\"initListData\\\":${escapedInitData},\\\"initListRequest\\\":${escapedInitRequest}"]]</script>`;
   const requests = [];
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
 
   const result = await fetchListApiPagesFromHtml(
     html,
@@ -714,6 +717,10 @@ test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async 
       desiredHotelCount: 20,
       maxListApiReplayPages: 2,
       fetchImpl: async (_endpoint, options) => {
+        activeRequests += 1;
+        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+        await new Promise((resolve) => setImmediate(resolve));
+        activeRequests -= 1;
         const body = JSON.parse(options.body);
         requests.push(body);
         const pageIndex = body.paging.pageIndex;
@@ -744,15 +751,81 @@ test('fetchListApiPagesFromHtml replays escaped Ctrip init list request', async 
   );
 
   assert.equal(result.count, 2);
+  assert.equal(maxActiveRequests, 2);
   assert.deepEqual(result.pageIndexes, [2, 3]);
   assert.deepEqual(
     requests.map((request) => request.paging.pageIndex),
     [2, 3]
   );
   assert.deepEqual(requests[0].hotelIdFilter.hotelAldyShown, ['1001']);
-  assert.deepEqual(requests[1].hotelIdFilter.hotelAldyShown, ['1001']);
+  assert.ok(requests.every((request) => request.hotelIdFilter.hotelAldyShown.includes('1001')));
   assert.match(result.html, /html-list-api-replay/);
   assert.match(result.html, /静态接口酒店 2/);
+});
+
+test('fetchListApiPagesFromHtml stops after bounded in-flight pages observe an empty page', async () => {
+  const initData = {
+    hotelList: [
+      {
+        hotelInfo: {
+          summary: { hotelId: '1001', masterHotelId: '1001' },
+          nameInfo: { name: '第一页酒店' }
+        }
+      }
+    ],
+    pagingInfo: { pageIndex: 1, pageSize: 10 }
+  };
+  const initRequest = {
+    hotelIdFilter: { hotelAldyShown: [] },
+    paging: { pageIndex: 1, pageSize: 10 }
+  };
+  const html = `<script>window.__INITIAL_DATA__={"initListData":${JSON.stringify(initData)},"initListRequest":${JSON.stringify(initRequest)}}</script>`;
+  const requests = [];
+
+  const result = await fetchListApiPagesFromHtml(
+    html,
+    'https://hotels.ctrip.com/hotels/list?cityId=2',
+    {
+      desiredHotelCount: 50,
+      maxListApiReplayPages: 5,
+      fetchImpl: async (_endpoint, options) => {
+        const body = JSON.parse(options.body);
+        requests.push(body);
+        const pageIndex = body.paging.pageIndex;
+        assert.ok(pageIndex <= 4, 'only bounded in-flight work may pass the first empty page');
+        return {
+          status: 200,
+          async json() {
+            return {
+              data: {
+                hotelList:
+                  pageIndex === 2
+                    ? [
+                        {
+                          hotelInfo: {
+                            summary: {
+                              hotelId: '9002',
+                              masterHotelId: '9002'
+                            },
+                            nameInfo: { name: '第二页酒店' }
+                          }
+                        }
+                      ]
+                    : []
+              }
+            };
+          }
+        };
+      }
+    }
+  );
+
+  const requestedPageIndexes = requests.map((request) => request.paging.pageIndex);
+  assert.deepEqual(requestedPageIndexes.slice(0, 2), [2, 3]);
+  assert.ok(requestedPageIndexes.length <= 3);
+  assert.ok(Math.max(...requestedPageIndexes) <= 4);
+  assert.ok(requests.every((request) => request.hotelIdFilter.hotelAldyShown.includes('1001')));
+  assert.deepEqual(result.pageIndexes, requestedPageIndexes);
 });
 
 test('fetchListApiPagesFromHtml replays enough pages for a 300-hotel target', async () => {

@@ -14,6 +14,8 @@ function summarizeSnapshotSources(pageSnapshot = {}) {
           login_required: Boolean(source.login_required),
           login_reason: source.login_reason || '',
           login_stage: source.login_stage || '',
+          booking_unavailable: Boolean(source.booking_unavailable),
+          booking_unavailable_reason: source.booking_unavailable_reason || '',
           tracked_url_count: source.tracked_url_count ?? 0,
           attempt_count: source.attempt_count ?? 0,
           spider_error_codes: Array.isArray(source.spider_error_codes)
@@ -39,6 +41,9 @@ function deriveUncollectedHotelReason(childResult = {}) {
   const roomCandidateCount = Number(pageSnapshot.room_candidates_count || 0);
   const rawRoomCandidateCount = Number(pageSnapshot.raw_room_candidates_count || 0);
   const roomPriceVisible = Boolean(pageSnapshot.room_price_visible);
+  const sourcePriceVisible = sources.some(
+    (source) => source.room_price_visible && !source.login_required
+  );
 
   if (childResult.success === false) {
     return {
@@ -53,6 +58,20 @@ function deriveUncollectedHotelReason(childResult = {}) {
       detail:
         pageSnapshot.login_reason ||
         '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
+    };
+  }
+
+  if (pageSnapshot.booking_unavailable) {
+    return {
+      reason: 'booking_unavailable',
+      detail: pageSnapshot.booking_unavailable_reason || '当前日期不可预订。'
+    };
+  }
+
+  if (roomCandidateCount > 0 && (roomPriceVisible || sourcePriceVisible)) {
+    return {
+      reason: 'no_eligible_rooms',
+      detail: '已采到有价格房型，但没有房型满足当前模板和写入规则。'
     };
   }
 
@@ -74,13 +93,6 @@ function deriveUncollectedHotelReason(childResult = {}) {
     return {
       reason: 'missing_price',
       detail: sourceErrors[0] || '已识别房型，但没有采到可见价格。'
-    };
-  }
-
-  if (roomPriceVisible && roomCandidateCount > 0) {
-    return {
-      reason: 'no_eligible_rooms',
-      detail: '已采到有价格房型，但没有房型满足当前模板和写入规则。'
     };
   }
 
@@ -106,6 +118,9 @@ function buildUncollectedHotelPerfRecord({ index, hotelInput = {}, childResult =
   const pageSnapshot = childResult.pageSnapshot || {};
   const reason = deriveUncollectedHotelReason(childResult);
   const sources = summarizeSnapshotSources(pageSnapshot);
+  const sourcePriceVisible = sources.some(
+    (source) => source.room_price_visible && !source.login_required
+  );
 
   return {
     index,
@@ -123,7 +138,10 @@ function buildUncollectedHotelPerfRecord({ index, hotelInput = {}, childResult =
     login_required: Boolean(pageSnapshot.login_required),
     login_reason: pageSnapshot.login_reason || '',
     login_stage: pageSnapshot.login_stage || '',
-    room_price_visible: Boolean(pageSnapshot.room_price_visible),
+    booking_unavailable: Boolean(pageSnapshot.booking_unavailable),
+    booking_unavailable_reason: pageSnapshot.booking_unavailable_reason || '',
+    booking_unavailable_source: pageSnapshot.booking_unavailable_source || '',
+    room_price_visible: Boolean(pageSnapshot.room_price_visible || sourcePriceVisible),
     room_candidates_count: pageSnapshot.room_candidates_count ?? 0,
     raw_room_candidates_count: pageSnapshot.raw_room_candidates_count ?? 0,
     eligible_room_count: pageSnapshot.eligible_room_count ?? eligibleCount,
@@ -148,6 +166,8 @@ function buildUncollectedHotelPerfRecord({ index, hotelInput = {}, childResult =
       login_required: source.login_required,
       login_reason: source.login_reason,
       login_stage: source.login_stage,
+      booking_unavailable: source.booking_unavailable,
+      booking_unavailable_reason: source.booking_unavailable_reason,
       tracked_url_count: source.tracked_url_count,
       error: source.error
     })),

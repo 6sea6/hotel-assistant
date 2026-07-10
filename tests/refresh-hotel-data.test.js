@@ -868,7 +868,7 @@ test('scraper-runner: refresh item collection bypasses full task runner overhead
   );
 });
 
-test('scraper-runner: refresh prepares cloned Edge profiles before launching concurrent workers', () => {
+test('scraper-runner: refresh creates shared Edge targets without cloning profiles', () => {
   const code = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'main', 'ai', 'refresh-runner.js'),
     'utf8'
@@ -877,16 +877,19 @@ test('scraper-runner: refresh prepares cloned Edge profiles before launching con
   const refreshEnd = code.indexOf('module.exports', refreshStart);
   assert.ok(refreshStart > 0, 'Should find refreshExistingCtripHotels function');
   const fnBody = code.substring(refreshStart, refreshEnd);
-  const cloneIndex = fnBody.indexOf('prepareBatchEdgeWorkerProfileClones');
   const launchIndex = fnBody.indexOf('launchAndWaitForEdge({');
   const poolIndex = fnBody.indexOf('createBatchEdgeWorkerPool({');
 
-  assert.ok(cloneIndex > 0, 'Refresh should prepare cloned Edge profiles');
-  assert.ok(launchIndex > cloneIndex, 'Refresh should clone profiles before launching Edge');
-  assert.ok(
-    fnBody.includes('preparedUserDataDirs: preparedEdgeWorkerProfileDirs'),
-    'Refresh should pass prepared clones into the worker pool'
+  assert.equal(
+    fnBody.includes('prepareBatchEdgeWorkerProfileClones'),
+    false,
+    'Refresh should not copy the logged-in profile'
   );
+  assert.ok(
+    fnBody.includes('existingWorker: primaryWorker') && fnBody.includes('preparedUserDataDirs: []'),
+    'Refresh should create worker targets in the primary Edge process'
+  );
+  assert.ok(launchIndex > 0, 'Refresh should launch one primary Edge process');
   assert.ok(poolIndex > launchIndex, 'Refresh should create the worker pool after primary Edge');
 });
 

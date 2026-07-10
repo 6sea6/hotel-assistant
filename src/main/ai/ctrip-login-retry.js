@@ -43,6 +43,13 @@ function getVisibleLoginRetryNeed(result = {}) {
   }
 
   const pageSnapshot = getPageSnapshot(result) || {};
+  if (pageSnapshot.booking_unavailable) {
+    return {
+      needed: false,
+      reason: ''
+    };
+  }
+
   const loginRequired = getLoginRequiredSignal(result);
   if (loginRequired.detected) {
     return {
@@ -59,6 +66,23 @@ function getVisibleLoginRetryNeed(result = {}) {
     return {
       needed: true,
       reason: '检测到携程页面显示“登录看低价/解锁优惠”，当前登录态可能已失效。'
+    };
+  }
+
+  const sources = Array.isArray(pageSnapshot.sources) ? pageSnapshot.sources : [];
+  const roomCandidateCount = Number(pageSnapshot.room_candidates_count || 0);
+  const hasRoomCandidates =
+    roomCandidateCount > 0 ||
+    sources.some((source) => source && Number(source.room_candidates_count || 0) > 0);
+  const roomPriceVisible =
+    Boolean(pageSnapshot.room_price_visible) ||
+    sources.some((source) => source && source.room_price_visible && !source.login_required);
+  const hasNoEligibleResult =
+    Number.isFinite(Number(result.eligibleCount)) && Number(result.eligibleCount) <= 0;
+  if (totalPriceMissing && hasNoEligibleResult && hasRoomCandidates && !roomPriceVisible) {
+    return {
+      needed: true,
+      reason: '已找到房型信息，但未采集到有效价格；请重新登录携程后重试。'
     };
   }
 

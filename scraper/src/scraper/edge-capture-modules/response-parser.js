@@ -14,6 +14,7 @@ const { assertEdgeNotAborted, isAbortLikeError } = require('./edge-retry-policy'
 
 const EDGE_RESPONSE_PARSE_MAX_MS = 12000;
 const EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET = 8;
+const EDGE_RESPONSE_BODY_READ_BUDGET_MS = 8000;
 
 function isRawFallbackCandidate(candidate) {
   return candidate && String(candidate.source || '') === 'edge-cdp-raw';
@@ -44,10 +45,7 @@ function pruneRawFallbackCandidatesAfterStructuredPrice(roomBlocks) {
   return removedCount;
 }
 
-function shouldUseEdgeRawTextFallback({
-  isRoomResponse,
-  structuredCandidates
-}) {
+function shouldUseEdgeRawTextFallback({ isRoomResponse, structuredCandidates }) {
   if (!isRoomResponse) {
     return true;
   }
@@ -142,7 +140,8 @@ async function parseEdgeNetworkResponses({
   matchingOptions = {},
   signal = null,
   responseParseMaxMs = EDGE_RESPONSE_PARSE_MAX_MS,
-  nonRoomResponseBodyTimeoutBudget = EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET
+  nonRoomResponseBodyTimeoutBudget = EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET,
+  responseBodyReadBudgetMs = EDGE_RESPONSE_BODY_READ_BUDGET_MS
 }) {
   const startedAt = Date.now();
   const maxElapsedMs =
@@ -153,6 +152,10 @@ async function parseEdgeNetworkResponses({
     Number.isFinite(nonRoomResponseBodyTimeoutBudget) && nonRoomResponseBodyTimeoutBudget >= 0
       ? nonRoomResponseBodyTimeoutBudget
       : EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET;
+  const bodyReadBudgetMs =
+    Number.isFinite(responseBodyReadBudgetMs) && responseBodyReadBudgetMs >= 0
+      ? responseBodyReadBudgetMs
+      : EDGE_RESPONSE_BODY_READ_BUDGET_MS;
   const entries = getPrioritizedEdgeResponseEntries(requestMeta);
   const readPlan = buildEdgeResponseReadPlan(entries);
   const entryDiagnostics = buildResponseEntryDiagnostics(entries);
@@ -170,6 +173,8 @@ async function parseEdgeNetworkResponses({
     responseBodyTimeoutCount: 0,
     responseBodyReadCount: 0,
     responseBodyReadElapsedMs: 0,
+    responseBodyReadBudgetMs: bodyReadBudgetMs,
+    responseBodyReadBudgetSkippedCount: 0,
     responseBodyReadMaxMs: 0,
     responseBodyTotalBytes: 0,
     responseBodyMaxBytes: 0,
@@ -227,6 +232,13 @@ async function parseEdgeNetworkResponses({
       }
       if (isRoomResponse) {
         attemptedRoomResponseUrls.add(roomResponseUrl);
+      }
+      if (!isRoomResponse && stats.responseBodyReadElapsedMs >= bodyReadBudgetMs) {
+        const skippedCount = readPlan.length - entryIndex;
+        stats.responseBodyReadBudgetSkippedCount += skippedCount;
+        stats.skippedResponseCount += skippedCount;
+        stats.responseParseStoppedReason = 'response_body_read_budget';
+        break;
       }
       if (
         !isRoomResponse &&
@@ -384,6 +396,7 @@ async function parseEdgeNetworkResponses({
 module.exports = {
   EDGE_RESPONSE_PARSE_MAX_MS,
   EDGE_NON_ROOM_RESPONSE_TIMEOUT_BUDGET,
+  EDGE_RESPONSE_BODY_READ_BUDGET_MS,
   shouldUseEdgeRawTextFallback,
   isEdgeRoomFastPathComplete,
   buildResponseEntryDiagnostics,

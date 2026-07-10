@@ -153,6 +153,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
   let shouldCloseTarget = false;
   let settleStats = null;
   let edgeParseStats = null;
+  let domExtractResult = null;
   let loginPromptNotified = false;
   const loginPromptDetection = {
     detected: false,
@@ -165,18 +166,22 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       return false;
     }
     loginPromptDetection.detected = true;
-    loginPromptDetection.reason =
-      reason || '检测到携程页面显示“登录看低价/解锁优惠”。';
+    loginPromptDetection.reason = reason || '检测到携程页面显示“登录看低价/解锁优惠”。';
     loginPromptDetection.stage = stage || '';
     loginPromptNotified = true;
-    emitEdgeEvent(options, 'edge:login-required', '检测到携程价格访问受限，需要可见浏览器确认后继续采集', {
-      reason: loginPromptDetection.reason,
-      stage,
-      url,
-      actionRequired: true,
-      instruction:
-        '当前采集浏览器可能未登录或遇到携程验证；请在可见浏览器中确认已登录且酒店页能看到价格后继续。'
-    });
+    emitEdgeEvent(
+      options,
+      'edge:login-required',
+      '检测到携程价格访问受限，需要可见浏览器确认后继续采集',
+      {
+        reason: loginPromptDetection.reason,
+        stage,
+        url,
+        actionRequired: true,
+        instruction:
+          '当前采集浏览器可能未登录或遇到携程验证；请在可见浏览器中确认已登录且酒店页能看到价格后继续。'
+      }
+    );
     perf.event('edge_login_prompt_detected', {
       phase: stage,
       status: 'warning',
@@ -225,11 +230,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     connection = connectedSession.connection;
     userDataDir = connectedSession.userDataDir;
     shouldCleanupUserDataDir = connectedSession.shouldCleanupUserDataDir;
-
     const targetSession = await acquireEdgeTarget({
       connection,
       url,
       captureMethod,
+      preferredTargetId: sessionOptions.targetId,
       perf,
       signal
     });
@@ -241,18 +246,15 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     if (targetSession.errorResult) {
       return targetSession.errorResult;
     }
-
     const networkTracker = createEdgeNetworkResponseTracker({ connection, sessionId, signal });
     const { requestMeta, roomRequestMeta, trackedUrls } = networkTracker;
     const roomBlocks = [];
     const spiderErrorCodes = new Set();
     const debugHotelId = parseHotelIdFromUrl(url) || 'hotel';
     let roomApiDebugIndex = 0;
-
     await connection.send('Page.enable', {}, sessionId, buildCdpSendOptions(signal));
     await connection.send('Network.enable', {}, sessionId, buildCdpSendOptions(signal));
     await connection.send('Runtime.enable', {}, sessionId, buildCdpSendOptions(signal));
-
     const staticResourceBlockPhase = perf.phase('edge_static_resource_block', {
       url,
       captureMethod,
@@ -274,6 +276,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       error_message: staticResourceBlockResult.errorMessage || ''
     });
 
+    const reusedTarget = targetMode === 'reused-match' || targetMode === 'reused-worker';
     const targetCaptureResult = await runEdgeTargetCapture({
       perf,
       connection,
@@ -296,13 +299,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       onSettleStats: (nextSettleStats) => {
         settleStats = nextSettleStats;
       },
-      cacheDisabled: targetMode !== 'reused-match',
-      navigateSignalTimeoutMs: targetMode === 'reused-match' ? 15000 : 12000,
-      trackedLogLabel: targetMode === 'reused-match' ? 'tracked URLs' : 'new-tab tracked URLs',
-      preNavigateLogMessage:
-        targetMode === 'reused-match'
-          ? `[edge-cdp] reusing matched tab and navigating: ${targetInitialUrl || 'about:blank'} -> ${url}`
-          : ''
+      cacheDisabled: !reusedTarget,
+      navigateSignalTimeoutMs: reusedTarget ? 15000 : 12000,
+      trackedLogLabel: reusedTarget ? 'tracked URLs' : 'new-tab tracked URLs',
+      preNavigateLogMessage: reusedTarget
+        ? `[edge-cdp] reusing matched tab and navigating: ${targetInitialUrl || 'about:blank'} -> ${url}`
+        : ''
     });
     settleStats = targetCaptureResult.settleStats;
     edgeParseStats = targetCaptureResult.edgeParseStats;
@@ -328,7 +330,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       edgeParseStats.fastPathComplete &&
       isEdgeRoomFastPathComplete(roomBlocks, template)
     );
-    await extractEdgeDomRoomCandidates({
+    domExtractResult = await extractEdgeDomRoomCandidates({
       connection,
       sessionId,
       url,
@@ -339,7 +341,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       roomBlocks,
       perf,
       signal,
-      apiCaptureComplete
+      apiCaptureComplete,
+      enableAvailabilityScan: true
     });
 
     const { mergedBlocks, selectedRoom } = await perf.runPhase(
@@ -368,6 +371,9 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         spiderErrorCodes: [...spiderErrorCodes],
         edgeWaitedForSettle: Boolean(settleStats),
         settleStats,
+        bookingUnavailable: Boolean(domExtractResult && domExtractResult.bookingUnavailable),
+        bookingUnavailableReason:
+          (domExtractResult && domExtractResult.bookingUnavailableReason) || '',
         ...buildLoginPromptResultFields(loginPromptDetection, mergedBlocks),
         error:
           spiderErrorCodes.size > 0
@@ -383,6 +389,9 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       spiderErrorCodes: [...spiderErrorCodes],
       edgeWaitedForSettle: Boolean(settleStats),
       settleStats,
+      bookingUnavailable: Boolean(domExtractResult && domExtractResult.bookingUnavailable),
+      bookingUnavailableReason:
+        (domExtractResult && domExtractResult.bookingUnavailableReason) || '',
       ...buildLoginPromptResultFields(loginPromptDetection, mergedBlocks),
       error: ''
     };
@@ -397,6 +406,9 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       spiderErrorCodes: [],
       edgeWaitedForSettle: Boolean(settleStats),
       settleStats,
+      bookingUnavailable: Boolean(domExtractResult && domExtractResult.bookingUnavailable),
+      bookingUnavailableReason:
+        (domExtractResult && domExtractResult.bookingUnavailableReason) || '',
       ...buildLoginPromptResultFields(loginPromptDetection),
       error: error && error.message ? error.message : 'edge-cdp fallback failed with unknown error'
     };

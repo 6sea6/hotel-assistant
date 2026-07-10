@@ -9,6 +9,7 @@ const {
   buildEdgeDomExtractExpression,
   buildLightweightEdgeDomExtractExpression
 } = require('./dom-extract-browser-script');
+const { detectBookingUnavailableFromTexts } = require('../availability-detection');
 const { writeEdgeDebugArtifact } = require('./debug');
 const { isAbortLikeError } = require('./edge-retry-policy');
 
@@ -52,6 +53,22 @@ function collectRoomCandidatesFromDomPayload(payload) {
       source: candidate.source || 'edge-dom'
     }))
   );
+}
+
+function detectBookingUnavailableFromDomPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return {
+      detected: false,
+      reason: ''
+    };
+  }
+
+  return detectBookingUnavailableFromTexts([
+    payload.bodyText,
+    payload.bodyHtml,
+    ...(Array.isArray(payload.snippets) ? payload.snippets : []),
+    ...(Array.isArray(payload.snapshots) ? payload.snapshots : [])
+  ]);
 }
 
 function createNoopPerf() {
@@ -109,7 +126,8 @@ async function extractEdgeDomRoomCandidates({
   perf,
   signal,
   apiCaptureComplete = false,
-  enableDomSupplement = false
+  enableDomSupplement = false,
+  enableAvailabilityScan = false
 }) {
   const safePerf = perf || createNoopPerf();
   const candidateList = Array.isArray(roomBlocks) ? roomBlocks : [];
@@ -132,7 +150,7 @@ async function extractEdgeDomRoomCandidates({
     room_candidates_before: beforeDomCount
   });
 
-  if (!apiCaptureComplete) {
+  if (!apiCaptureComplete && !enableAvailabilityScan) {
     domPhase.end('skipped', {
       roomCandidatesCount: 0,
       dom_extract_mode: domExtractMode,
@@ -153,6 +171,75 @@ async function extractEdgeDomRoomCandidates({
       skipped: true,
       skipReason: 'api_capture_incomplete'
     };
+  }
+
+  if (!apiCaptureComplete && enableAvailabilityScan) {
+    try {
+      const domPayloadResult = await evaluateInSession(
+        connection,
+        sessionId,
+        buildLightweightEdgeDomExtractExpression(),
+        {
+          timeoutMs: EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS,
+          signal
+        }
+      );
+      const domPayload =
+        typeof domPayloadResult === 'string' ? safeJsonParse(domPayloadResult) : domPayloadResult;
+      writeEdgeDebugArtifact(`${debugHotelId}-dom-availability-payload.json`, domPayload);
+      const unavailable = detectBookingUnavailableFromDomPayload(domPayload);
+      domPhase.end(unavailable.detected ? 'success' : 'skipped', {
+        roomCandidatesCount: 0,
+        dom_extract_mode: domExtractMode,
+        dom_extract_api_complete: false,
+        dom_extract_availability_scan: true,
+        dom_extract_candidates_suppressed: true,
+        dom_extract_skip_reason: unavailable.detected ? '' : 'api_capture_incomplete',
+        dom_extract_timeout_ms: EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS,
+        room_candidates_before: beforeDomCount,
+        room_candidates_after: beforeDomCount,
+        dom_extract_timed_out: false,
+        booking_unavailable_detected: Boolean(unavailable.detected),
+        booking_unavailable_reason: unavailable.reason || ''
+      });
+      return {
+        roomCandidatesCount: 0,
+        roomCandidatesBefore: beforeDomCount,
+        roomCandidatesAfter: beforeDomCount,
+        timeoutMs: EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS,
+        timedOut: false,
+        skipped: true,
+        skipReason: unavailable.detected ? 'booking_unavailable_detected' : 'api_capture_incomplete',
+        bookingUnavailable: Boolean(unavailable.detected),
+        bookingUnavailableReason: unavailable.reason || ''
+      };
+    } catch (error) {
+      const timedOut = isEdgeDomExtractTimeoutError(error);
+      domPhase.error(error, {
+        dom_extract_mode: domExtractMode,
+        dom_extract_api_complete: false,
+        dom_extract_availability_scan: true,
+        dom_extract_timeout_ms: EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS,
+        room_candidates_before: beforeDomCount,
+        room_candidates_after: beforeDomCount,
+        dom_extract_timed_out: timedOut
+      });
+      if (isAbortLikeError(error)) {
+        throw error;
+      }
+      return {
+        roomCandidatesCount: 0,
+        roomCandidatesBefore: beforeDomCount,
+        roomCandidatesAfter: beforeDomCount,
+        timeoutMs: EDGE_DOM_EXTRACT_FAST_TIMEOUT_MS,
+        timedOut,
+        skipped: true,
+        skipReason: 'api_capture_incomplete',
+        bookingUnavailable: false,
+        bookingUnavailableReason: '',
+        error: error && error.message ? error.message : String(error || '')
+      };
+    }
   }
 
   if (!enableDomSupplement) {
@@ -193,6 +280,7 @@ async function extractEdgeDomRoomCandidates({
     const domPayload =
       typeof domPayloadResult === 'string' ? safeJsonParse(domPayloadResult) : domPayloadResult;
     writeEdgeDebugArtifact(`${debugHotelId}-dom-payload.json`, domPayload);
+    const unavailable = detectBookingUnavailableFromDomPayload(domPayload);
     const candidates = apiCaptureComplete ? collectRoomCandidatesFromDomPayload(domPayload) : [];
     candidateList.push(...candidates);
     domPhase.end('success', {
@@ -203,14 +291,18 @@ async function extractEdgeDomRoomCandidates({
       dom_extract_timeout_ms: timeoutMs,
       room_candidates_before: beforeDomCount,
       room_candidates_after: candidateList.length,
-      dom_extract_timed_out: false
+      dom_extract_timed_out: false,
+      booking_unavailable_detected: Boolean(unavailable.detected),
+      booking_unavailable_reason: unavailable.reason || ''
     });
     return {
       roomCandidatesCount: candidateList.length - beforeDomCount,
       roomCandidatesBefore: beforeDomCount,
       roomCandidatesAfter: candidateList.length,
       timeoutMs,
-      timedOut: false
+      timedOut: false,
+      bookingUnavailable: Boolean(unavailable.detected),
+      bookingUnavailableReason: unavailable.reason || ''
     };
   } catch (error) {
     const timedOut = isEdgeDomExtractTimeoutError(error);
@@ -245,6 +337,7 @@ async function extractEdgeDomRoomCandidates({
 module.exports = {
   collectRoomCandidatesFromDomPayload,
   createNoopPerf,
+  detectBookingUnavailableFromDomPayload,
   extractEdgeDomRoomCandidates,
   getEdgeDomExtractTimeoutMs
 };

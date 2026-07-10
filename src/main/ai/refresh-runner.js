@@ -23,6 +23,7 @@ const {
 } = require('./refresh-item-context');
 
 const MAX_REFRESH_BATCH_CONCURRENCY = 3;
+const CTRIP_RISK_CONTROL_ABORT_CODE = 'CTRIP_RISK_CONTROL_203_ABORT';
 
 function normalizeRefreshBatchConcurrency(value) {
   const concurrency = Number(value);
@@ -30,6 +31,18 @@ function normalizeRefreshBatchConcurrency(value) {
     return 1;
   }
   return Math.min(concurrency, MAX_REFRESH_BATCH_CONCURRENCY);
+}
+
+function createRefreshRiskControlAbortError(reason = '') {
+  const error = new Error(reason || '检测到携程 203/风控，已停止剩余更新任务。');
+  error.name = 'AbortError';
+  error.code = CTRIP_RISK_CONTROL_ABORT_CODE;
+  error.reason = reason || '';
+  return error;
+}
+
+function isRefreshAppliedStatus(status) {
+  return status === 'updated' || status === 'cleared';
 }
 
 function loadEmbeddedBoundedWorkerRunner() {
@@ -103,7 +116,10 @@ function normalizeRefreshItemResult(result = {}, fallback = {}) {
     deletedRoomTypeCount: Number(result.deletedRoomTypeCount || 0),
     skipReason: result.skipReason || '',
     error: result.error || '',
-    retryAfterLogin: Boolean(result.retryAfterLogin)
+    retryAfterLogin: Boolean(result.retryAfterLogin),
+    deleteExistingGroup: Boolean(result.deleteExistingGroup),
+    existingHotels: Array.isArray(result.existingHotels) ? result.existingHotels : [],
+    clearReason: result.clearReason || ''
   };
 }
 
@@ -116,7 +132,8 @@ function toPublicRefreshItem(item = {}) {
     deletedRoomTypeCount: Number(item.deletedRoomTypeCount || 0),
     skipReason: item.skipReason || '',
     error: item.error || '',
-    retryAfterLogin: Boolean(item.retryAfterLogin)
+    retryAfterLogin: Boolean(item.retryAfterLogin),
+    clearReason: item.clearReason || ''
   };
 }
 
@@ -147,8 +164,8 @@ function mergeRefreshBatchResults(firstPass = {}, retryPass = {}) {
     }
   }
 
-  const updatedItems = mergedItems.filter((item) => item.status === 'updated');
-  const skippedItems = mergedItems.filter((item) => item.status !== 'updated');
+  const updatedItems = mergedItems.filter((item) => isRefreshAppliedStatus(item.status));
+  const skippedItems = mergedItems.filter((item) => !isRefreshAppliedStatus(item.status));
 
   return {
     ...firstPass,
@@ -168,10 +185,7 @@ function mergeRefreshBatchResults(firstPass = {}, retryPass = {}) {
       ...(Array.isArray(firstPass.updatedHotels) ? firstPass.updatedHotels : []),
       ...(Array.isArray(retryPass.updatedHotels) ? retryPass.updatedHotels : [])
     ],
-    rawWriteResult: combineRefreshWriteResults(
-      firstPass.rawWriteResult,
-      retryPass.rawWriteResult
-    )
+    rawWriteResult: combineRefreshWriteResults(firstPass.rawWriteResult, retryPass.rawWriteResult)
   };
 }
 
@@ -188,7 +202,8 @@ async function runRefreshHotelBatch({
   getEffectiveConcurrency = null,
   runPreparedDetails = null,
   createDetailContext = null,
-  mapPreparedResult = null
+  mapPreparedResult = null,
+  detailScheduler = null
 } = {}) {
   const urls = Array.isArray(hotelUrls) ? hotelUrls : [];
   const totalHotelCount = urls.length;
@@ -254,6 +269,19 @@ async function runRefreshHotelBatch({
           deletedRoomTypeCount: item.deletedRoomTypeCount
         })
       );
+    } else if (item.status === 'cleared') {
+      emit(
+        'refresh:item-done',
+        `已删除 ${item.hotelName || meta.hotelName || meta.url}：${item.deletedRoomTypeCount} 种旧房型`,
+        buildRefreshItemDetails({
+          ...meta.detailsBase,
+          hotelName: item.hotelName || meta.hotelName,
+          status: 'cleared',
+          roomTypeCount: item.updatedRoomTypeCount,
+          deletedRoomTypeCount: item.deletedRoomTypeCount,
+          reason: item.clearReason || '当前日期不可预订'
+        })
+      );
     } else {
       const reason = item.skipReason || item.error || '采集未返回有效房型数据';
       emit(
@@ -315,30 +343,61 @@ async function runRefreshHotelBatch({
       maxConcurrency: effectiveConcurrency,
       signal,
       createDetailContext: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
+        let schedulerStarted = false;
+        if (detailScheduler) {
+          await detailScheduler.beforeStart({ index, total, signal });
+          schedulerStarted = true;
+        }
         const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
         emitItemStart(meta);
-        const preparedContext = await createDetailContext({
-          url,
-          index,
-          total,
-          hotelName: meta.hotelName,
-          worker
-        });
+        let preparedContext = null;
+        try {
+          preparedContext = await createDetailContext({
+            url,
+            index,
+            total,
+            hotelName: meta.hotelName,
+            worker
+          });
+        } catch (error) {
+          if (schedulerStarted) {
+            detailScheduler.recordError(error, { index, total });
+          }
+          throw error;
+        }
+        const schedulerMeta = {
+          schedulerStarted,
+          schedulerRecorded: false
+        };
         if (preparedContext && Object.prototype.hasOwnProperty.call(preparedContext, 'context')) {
           return {
             context: preparedContext.context,
             meta: {
               ...meta,
-              ...(preparedContext.meta || {})
+              ...(preparedContext.meta || {}),
+              ...schedulerMeta
             }
           };
         }
         return {
           context: preparedContext,
-          meta
+          meta: {
+            ...meta,
+            ...schedulerMeta
+          }
         };
       },
       mapPreparedResult: async ({ preparedResult, meta }) => {
+        if (detailScheduler) {
+          const schedulerSnapshot = detailScheduler.recordOutcome(preparedResult.result || {}, {
+            index: meta.index,
+            total: meta.total
+          });
+          meta.schedulerRecorded = true;
+          if (schedulerSnapshot && schedulerSnapshot.circuit_open) {
+            throw createRefreshRiskControlAbortError(schedulerSnapshot.circuit_reason);
+          }
+        }
         const rawResult = await mapPreparedResult({
           preparedResult,
           url: meta.url,
@@ -351,8 +410,11 @@ async function runRefreshHotelBatch({
         return storeRefreshItem(rawResult, meta);
       },
       mapDetailError: async ({ error, item: url, zeroBasedIndex, index, total, worker, meta }) => {
-        const safeMeta =
-          meta || buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+        const safeMeta = meta || buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+        if (detailScheduler && safeMeta.schedulerStarted && !safeMeta.schedulerRecorded) {
+          detailScheduler.recordError(error, { index, total });
+          safeMeta.schedulerRecorded = true;
+        }
         return storeRefreshError(error, safeMeta);
       }
     });
@@ -365,6 +427,12 @@ async function runRefreshHotelBatch({
       signal,
       runItem: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
         assertNotCancelled(signal);
+        let schedulerStarted = false;
+        let schedulerRecorded = false;
+        if (detailScheduler) {
+          await detailScheduler.beforeStart({ index, total, signal });
+          schedulerStarted = true;
+        }
         const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
         emitItemStart(meta);
 
@@ -376,8 +444,21 @@ async function runRefreshHotelBatch({
             hotelName: meta.hotelName,
             worker
           });
+          if (detailScheduler) {
+            const schedulerSnapshot = detailScheduler.recordOutcome(rawResult || {}, {
+              index,
+              total
+            });
+            schedulerRecorded = true;
+            if (schedulerSnapshot && schedulerSnapshot.circuit_open) {
+              throw createRefreshRiskControlAbortError(schedulerSnapshot.circuit_reason);
+            }
+          }
           return storeRefreshItem(rawResult, meta);
         } catch (error) {
+          if (detailScheduler && schedulerStarted && !schedulerRecorded) {
+            detailScheduler.recordError(error, { index, total });
+          }
           return storeRefreshError(error, meta);
         }
       }
@@ -385,8 +466,9 @@ async function runRefreshHotelBatch({
   }
 
   const internalItems = collectedItems.filter(Boolean);
-  const updatedItems = internalItems.filter((item) => item.status === 'updated');
-  const skippedItems = internalItems.filter((item) => item.status !== 'updated');
+  const updatedItems = internalItems.filter((item) => isRefreshAppliedStatus(item.status));
+  const skippedItems = internalItems.filter((item) => !isRefreshAppliedStatus(item.status));
+  const clearedItems = updatedItems.filter((item) => item.deleteExistingGroup);
   const updatedHotels = updatedHotelBatches.flatMap((hotels) =>
     Array.isArray(hotels) ? hotels : []
   );
@@ -400,7 +482,7 @@ async function runRefreshHotelBatch({
   );
   let rawWriteResult = null;
 
-  if (updatedHotels.length > 0 && typeof writeHotels === 'function') {
+  if ((updatedHotels.length > 0 || clearedItems.length > 0) && typeof writeHotels === 'function') {
     emit('refresh:write', `正在写入 ${updatedItems.length} 家宾馆的更新结果`, {
       scope: 'final',
       total: totalHotelCount,
@@ -414,7 +496,8 @@ async function runRefreshHotelBatch({
     rawWriteResult = await writeHotels(updatedHotels, {
       updatedItems,
       skippedItems,
-      updatedHotels
+      updatedHotels,
+      clearedItems
     });
   }
 
@@ -520,6 +603,10 @@ async function refreshExistingCtripHotels(input, context = {}) {
         'prepared-detail-batch-collector.js'
       );
       const { createScrapeEventForwarder } = await loadScraperModule(scraperPath, 'task-events.js');
+      const { AdaptiveDetailScheduler } = await loadScraperModule(
+        scraperPath,
+        'adaptive-detail-scheduler.js'
+      );
       const { applyMatchedTemplate, mergeTemplateWithArgs, validateTemplate } =
         await loadScraperModule(scraperPath, 'template-loader.js');
       const { normalizePlaceName } = await loadScraperModule(scraperPath, 'utils.js');
@@ -541,6 +628,13 @@ async function refreshExistingCtripHotels(input, context = {}) {
           workerContexts,
           effectiveConcurrency: edgeEffectiveConcurrency
         } = edgeSession;
+        const createDetailScheduler = (maxConcurrency) =>
+          new AdaptiveDetailScheduler({
+            maxConcurrency,
+            detailStartIntervalMs: input.detailStartIntervalMs ?? 2000,
+            degradedStartIntervalMs: input.degradedStartIntervalMs ?? 3000,
+            warmupHotelCount: input.warmupHotelCount ?? 3
+          });
 
         emit('edge:login-done', '浏览器登录态已准备完成', {
           requestedConcurrency,
@@ -573,10 +667,31 @@ async function refreshExistingCtripHotels(input, context = {}) {
           const firstHotel = existingHotels[0] || {};
           return firstHotel.name || '';
         };
-        const writeRefreshHotels = (hotels) =>
-          hotelMerge.appendHotelsToStore(hotels, {
-            overwriteExistingGroup: true
-          });
+        const writeRefreshHotels = (hotels, writeContext = {}) => {
+          const writeResults = [];
+          if (Array.isArray(hotels) && hotels.length > 0) {
+            writeResults.push(
+              hotelMerge.appendHotelsToStore(hotels, {
+                overwriteExistingGroup: true
+              })
+            );
+          }
+
+          const clearedItems = Array.isArray(writeContext.clearedItems)
+            ? writeContext.clearedItems
+            : [];
+          const clearGroups = clearedItems
+            .map((item) => (Array.isArray(item.existingHotels) ? item.existingHotels : []))
+            .filter((group) => group.length > 0);
+          if (
+            clearGroups.length > 0 &&
+            typeof hotelMerge.removeHotelGroupsFromStore === 'function'
+          ) {
+            writeResults.push(hotelMerge.removeHotelGroupsFromStore(clearGroups));
+          }
+
+          return combineRefreshWriteResults(...writeResults);
+        };
 
         let batchResult = await runRefreshHotelBatch({
           hotelUrls,
@@ -593,7 +708,8 @@ async function refreshExistingCtripHotels(input, context = {}) {
             assertNotCancelled(context.signal);
             return mapRefreshPreparedResult(args);
           },
-          writeHotels: writeRefreshHotels
+          writeHotels: writeRefreshHotels,
+          detailScheduler: createDetailScheduler(edgeEffectiveConcurrency)
         });
 
         const loginRetryUrls = batchResult.items
@@ -692,7 +808,8 @@ async function refreshExistingCtripHotels(input, context = {}) {
               assertNotCancelled(context.signal);
               return mapRefreshPreparedResult(args);
             },
-            writeHotels: writeRefreshHotels
+            writeHotels: writeRefreshHotels,
+            detailScheduler: createDetailScheduler(retryEdgeEffectiveConcurrency)
           });
           batchResult = mergeRefreshBatchResults(batchResult, retryBatchResult);
         }
@@ -741,7 +858,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
             skippedCount: skippedHotelCount,
             operations: rawWriteResult || [],
             items: items.map((item) => ({
-              skipped: item.status !== 'updated',
+              skipped: !isRefreshAppliedStatus(item.status),
               reason: item.skipReason || ''
             }))
           }
@@ -781,12 +898,10 @@ async function createManagedRefreshEdgeWorkerSession({
     scraperPath,
     'cli/auto-edge.js'
   );
-  const {
-    createBatchEdgeWorkerPool,
-    cleanupBatchEdgeWorkerProfileClones,
-    findAvailablePort,
-    prepareBatchEdgeWorkerProfileClones
-  } = await loadScraperModule(scraperPath, 'batch-edge-worker-pool.js');
+  const { createBatchEdgeWorkerPool, findAvailablePort } = await loadScraperModule(
+    scraperPath,
+    'batch-edge-worker-pool.js'
+  );
   const autoEdgeRuntime = resolveAutoEdgeRuntime({
     userDataDir: baseEdgeTemplate.edge_user_data_dir,
     profileDirectory: baseEdgeTemplate.edge_profile_directory,
@@ -807,7 +922,6 @@ async function createManagedRefreshEdgeWorkerSession({
   let primaryEdgeProcess = null;
   let edgeWorkerPool = null;
   let workerContexts = [];
-  let preparedEdgeWorkerProfileDirs = [];
   let closed = false;
 
   const close = async () => {
@@ -823,19 +937,10 @@ async function createManagedRefreshEdgeWorkerSession({
       if (primaryEdgePid) {
         closeAutoEdge(primaryEdgePid, primaryEdgeProcess);
       }
-      cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
     }
   };
 
   try {
-    if (plannedEffectiveConcurrency > 1) {
-      preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
-        effectiveTemplate: baseEdgeTemplate,
-        concurrency: plannedEffectiveConcurrency,
-        existingWorkerCount: 1
-      });
-    }
-
     const baseEdgeDebuggingPort =
       typeof findAvailablePort === 'function' ? await findAvailablePort() : 9222;
     baseEdgeTemplate.edge_debugging_port = baseEdgeDebuggingPort;
@@ -878,7 +983,7 @@ async function createManagedRefreshEdgeWorkerSession({
           },
           concurrency: plannedEffectiveConcurrency,
           existingWorker: primaryWorker,
-          preparedUserDataDirs: preparedEdgeWorkerProfileDirs
+          preparedUserDataDirs: []
         });
         workerContexts =
           edgeWorkerPool && Array.isArray(edgeWorkerPool.workers)

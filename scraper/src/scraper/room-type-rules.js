@@ -207,6 +207,11 @@ function deriveRoomTypeFromFallbackSignals({ title, bedText }) {
   if (/家庭房/.test(normalizedTitle)) {
     return ROOM_TYPES.FAMILY;
   }
+  // 榻榻米/亲子房型：携程归类为亲子/多人入住，映射为家庭房。
+  // 与 dom-extract-browser-script.js、room-block-parser.js 的房型识别正则保持一致。
+  if (/榻榻米|亲子房|亲子间/.test(normalizedTitle)) {
+    return ROOM_TYPES.FAMILY;
+  }
   if (
     /沙发床/.test(normalizedBedText) &&
     /(?:大床|特大床|双床|双人床|单人床|小床)/.test(normalizedBedText)

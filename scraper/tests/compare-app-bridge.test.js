@@ -345,6 +345,67 @@ test(
 );
 
 test(
+  'removeHotelGroupsFromStore deletes the matched grouped hotel',
+  withBridge(async ({ bridge }) => {
+    const hotelMerge = require('../src/compare-app/hotel-merge');
+
+    bridge.appendHotelsToStore(
+      [
+        {
+          name: '恒夏酒店',
+          website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=895608',
+          check_in_date: '2026-07-30',
+          check_out_date: '2026-08-02',
+          template_id: 1781720825694,
+          room_type: '家庭房',
+          original_room_type: '经济家庭房',
+          total_price: 745
+        },
+        {
+          name: '恒夏酒店',
+          website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=895608',
+          check_in_date: '2026-07-30',
+          check_out_date: '2026-08-02',
+          template_id: 1781720825694,
+          room_type: '双床房',
+          original_room_type: '标准房',
+          total_price: 666
+        },
+        {
+          name: '其他酒店',
+          website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=2',
+          check_in_date: '2026-07-30',
+          check_out_date: '2026-08-02',
+          template_id: 1781720825694,
+          room_type: '大床房',
+          total_price: 500
+        }
+      ],
+      { replaceExistingGroup: true }
+    );
+
+    const results = hotelMerge.removeHotelGroupsFromStore([
+      [
+        {
+          name: '恒夏酒店',
+          website: 'https://hotels.ctrip.com/hotels/detail/?hotelId=895608',
+          check_in_date: '2026-07-30',
+          check_out_date: '2026-08-02',
+          template_id: 1781720825694
+        }
+      ]
+    ]);
+    const store = bridge.loadCompareAppStore();
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].operation, 'deleted-group');
+    assert.equal(results[0].deletedCount, 2);
+    assert.equal(store.hotels.length, 1);
+    assert.equal(store.hotels[0].shared.name, '其他酒店');
+  })
+);
+
+test(
   'pointer file overrides default compare app data folder',
   withBridge(async ({ appDataRoot, tempRoot, bridge }) => {
     const customDataFolder = path.join(tempRoot, 'custom-data-folder');

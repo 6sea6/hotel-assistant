@@ -11,6 +11,13 @@ const {
   extractRoomReplayContext
 } = require('./structured-extractor');
 
+const RISK_CONTROL_203_BACKOFF_MIN_MS = 800;
+const RISK_CONTROL_203_BACKOFF_MAX_MS = 1000;
+// 首次 203 即跳过该酒店所有剩余 variant。
+// 之前 RISK_CONTROL_203_CONSECUTIVE_LIMIT=2 需要连续2次203才break，且 catch 块会重置计数器，
+// 导致网络异常（超时/断连，也是风控表现）后继续打、放大风控。10家酒店批量场景下全灭。
+const RISK_CONTROL_203_CONSECUTIVE_LIMIT = 1;
+
 function extractSpiderErrorCode(payload) {
   const code = toNumber(payload && payload.data && payload.data.htlSpiderActionErrorCode);
   return code !== null ? code : null;
@@ -274,6 +281,82 @@ function assertNotAborted(signal) {
   }
 }
 
+function normalizeDelayMs(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    return fallback;
+  }
+
+  return Math.floor(number);
+}
+
+function resolveRiskControl203BackoffMs(options = {}) {
+  const explicit = options.riskControl203BackoffMs ?? options.riskControlShortBackoffMs;
+  if (explicit !== null && explicit !== undefined && explicit !== '') {
+    return normalizeDelayMs(explicit, RISK_CONTROL_203_BACKOFF_MIN_MS);
+  }
+
+  const range = Array.isArray(options.riskControl203BackoffRangeMs)
+    ? options.riskControl203BackoffRangeMs
+    : [];
+  const min = normalizeDelayMs(range[0], RISK_CONTROL_203_BACKOFF_MIN_MS);
+  const max = Math.max(min, normalizeDelayMs(range[1], RISK_CONTROL_203_BACKOFF_MAX_MS));
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function delayWithSignal(delayMs, signal = null) {
+  const ms = normalizeDelayMs(delayMs, 0);
+  if (ms <= 0) {
+    assertNotAborted(signal);
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let timeout = null;
+    const cleanup = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+      if (signal && typeof signal.removeEventListener === 'function') {
+        signal.removeEventListener('abort', onAbort);
+      }
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+
+    if (signal && signal.aborted) {
+      onAbort();
+      return;
+    }
+
+    timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    if (signal && typeof signal.addEventListener === 'function') {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+async function backoffAfterFirstRiskControl203(options = {}, perf = createNoopPerf()) {
+  const delayMs = resolveRiskControl203BackoffMs(options);
+  perf.event('api_replay_203_short_backoff', {
+    delay_ms: delayMs,
+    delay_min_ms: RISK_CONTROL_203_BACKOFF_MIN_MS,
+    delay_max_ms: RISK_CONTROL_203_BACKOFF_MAX_MS
+  });
+  const delayFn =
+    typeof options.riskControl203Delay === 'function'
+      ? options.riskControl203Delay
+      : delayWithSignal;
+  await delayFn(delayMs, options.signal || null);
+  assertNotAborted(options.signal);
+}
+
 function isAbortLikeError(error, signal = null) {
   const message = error && error.message ? error.message : String(error || '');
   return Boolean(
@@ -324,6 +407,7 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
       buildRoomListRequestVariants(context)
     );
     const blockedVariantGroups = new Set();
+    let consecutiveSpider203Count = 0;
 
     for (const variant of variants) {
       assertNotAborted(options.signal);
@@ -381,11 +465,20 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
         });
 
         if (spiderErrorCode === 203 && roomBlocks.length === 0) {
+          consecutiveSpider203Count += 1;
           blockedVariantGroups.add(variantGroup);
-          if (blockedVariantGroups.size >= 2) {
+          if (consecutiveSpider203Count >= RISK_CONTROL_203_CONSECUTIVE_LIMIT) {
+            // 首次 203 即 break：已被风控，继续打剩余 variant 只会加重风控、拖慢整体采集。
+            // 该酒店走 skipped / 兜底逻辑，比继续打更安全。
             break;
           }
+          await backoffAfterFirstRiskControl203(options, perf);
           continue;
+        }
+        // 注意：此处不再无条件重置 consecutiveSpider203Count。
+        // 只有拿到数据（roomBlocks 非空）时才重置，避免"203→超时→203"交替时计数被清零。
+        if (roomBlocks.length > 0) {
+          consecutiveSpider203Count = 0;
         }
 
         if (selectedRoom) {
@@ -411,6 +504,8 @@ async function captureRoomCandidatesDirect(url, template, parsedSources, options
         if (isAbortLikeError(error, options.signal)) {
           throw createAbortError();
         }
+        // 不重置 consecutiveSpider203Count：网络异常（超时/断连）也可能是风控的表现，
+        // 重置会导致"203→网络异常→203"交替时计数被清零、早停失效、继续打加重风控。
         attempts.push({
           endpoint: variant.endpoint,
           variant: variant.variantName,

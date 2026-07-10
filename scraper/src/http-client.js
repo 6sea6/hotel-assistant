@@ -3,8 +3,10 @@ const https = require('https');
 const axios = require('axios');
 
 const DEFAULT_TIMEOUT_MS = 30000;
-const DEFAULT_RETRIES = 1;
-const DEFAULT_RETRY_DELAY_MS = 250;
+const DEFAULT_RETRIES = 2;
+const DEFAULT_RETRY_DELAY_MS = 400;
+const DEFAULT_RETRY_MAX_DELAY_MS = 2000;
+const DEFAULT_RATE_LIMIT_RETRY_DELAY_MS = 1000;
 const SENSITIVE_KEY_PATTERN =
   /(authorization|cookie|token|api[-_]?key|apikey|secret|password|key)$/i;
 const KEEP_ALIVE_HTTP_AGENT = new http.Agent({
@@ -29,6 +31,7 @@ class HttpClientError extends Error {
     this.status = details.status;
     this.code = details.code;
     this.retryable = Boolean(details.retryable);
+    this.retryAfterMs = details.retryAfterMs;
     this.cause = details.cause;
     this.responseSnippet = details.responseSnippet;
   }
@@ -114,6 +117,33 @@ function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function parseRetryAfterMs(headers = {}) {
+  const retryAfterEntry = getHeaderEntry(headers, 'retry-after');
+  if (!retryAfterEntry || retryAfterEntry.value === undefined || retryAfterEntry.value === null) {
+    return null;
+  }
+
+  const rawValue = Array.isArray(retryAfterEntry.value)
+    ? retryAfterEntry.value[0]
+    : retryAfterEntry.value;
+  const text = String(rawValue || '').trim();
+  if (!text) {
+    return null;
+  }
+
+  const seconds = Number(text);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.floor(seconds * 1000);
+  }
+
+  const timestamp = Date.parse(text);
+  if (!Number.isNaN(timestamp)) {
+    return Math.max(0, timestamp - Date.now());
+  }
+
+  return null;
 }
 
 function redactValue(value) {
@@ -230,6 +260,7 @@ function normalizeHttpError(error, context = {}) {
   const status = error && error.response ? error.response.status : undefined;
   const code = error && error.code;
   const retryable = isRetryableAxiosError(error);
+  const retryAfterMs = error && error.response ? parseRetryAfterMs(error.response.headers) : null;
   const statusText = status ? `HTTP ${status}` : '';
   const reason = (error && error.message) || 'request failed';
   const suffix = [statusText, reason].filter(Boolean).join(': ');
@@ -240,9 +271,30 @@ function normalizeHttpError(error, context = {}) {
     status,
     code,
     retryable,
+    retryAfterMs,
     cause: sanitizeErrorCause(error),
     responseSnippet: stringifySnippet(error && error.response && error.response.data)
   });
+}
+
+function calculateRetryDelayMs(error, attempt, options = {}) {
+  const baseDelayMs = Math.max(0, Number(options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS));
+  const maxDelayMs = Math.max(0, Number(options.retryMaxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS));
+  const rateLimitDelayMs = Math.max(
+    baseDelayMs,
+    Number(options.rateLimitRetryDelayMs ?? DEFAULT_RATE_LIMIT_RETRY_DELAY_MS)
+  );
+  const retryAfterMs =
+    error && Number.isFinite(error.retryAfterMs) && error.retryAfterMs >= 0
+      ? error.retryAfterMs
+      : null;
+  if (retryAfterMs !== null) {
+    return Math.min(maxDelayMs, retryAfterMs);
+  }
+
+  const status = Number(error && error.status);
+  const startingDelayMs = status === 429 ? rateLimitDelayMs : baseDelayMs;
+  return Math.min(maxDelayMs, startingDelayMs * 2 ** attempt);
 }
 
 function toAxiosResponseType(responseType) {
@@ -287,7 +339,6 @@ function buildAxiosConfig(config = {}) {
 async function request(config = {}) {
   const axiosConfig = buildAxiosConfig(config);
   const retries = Math.max(0, Number(config.retries ?? DEFAULT_RETRIES));
-  const retryDelayMs = Math.max(0, Number(config.retryDelayMs || DEFAULT_RETRY_DELAY_MS));
   let lastError = null;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -310,7 +361,7 @@ async function request(config = {}) {
         throw normalizedError;
       }
 
-      await delay(retryDelayMs * 2 ** attempt);
+      await delay(calculateRetryDelayMs(normalizedError, attempt, config));
     }
   }
 
@@ -336,9 +387,12 @@ function post(url, data, options = {}) {
 
 module.exports = {
   DEFAULT_RETRIES,
+  DEFAULT_RATE_LIMIT_RETRY_DELAY_MS,
   DEFAULT_RETRY_DELAY_MS,
+  DEFAULT_RETRY_MAX_DELAY_MS,
   DEFAULT_TIMEOUT_MS,
   HttpClientError,
+  calculateRetryDelayMs,
   get,
   mergeCookieHeader,
   mergeHeaders,

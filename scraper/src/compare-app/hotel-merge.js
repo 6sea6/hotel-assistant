@@ -294,6 +294,70 @@ function overwriteHotelsToStore(hotelRecords, options = {}) {
   return results;
 }
 
+function getFirstHotelFromGroupReference(reference) {
+  if (!reference) {
+    return null;
+  }
+
+  if (Array.isArray(reference)) {
+    return reference.find(isPlainObject) || null;
+  }
+
+  if (isGroupedHotelEntry(reference)) {
+    return expandStoredHotels([reference])[0] || null;
+  }
+
+  if (isPlainObject(reference) && Array.isArray(reference.hotels)) {
+    return reference.hotels.find(isPlainObject) || null;
+  }
+
+  if (isPlainObject(reference) && isPlainObject(reference.firstHotel)) {
+    return reference.firstHotel;
+  }
+
+  return isPlainObject(reference) ? reference : null;
+}
+
+function removeHotelGroupsFromStore(groupReferences, options = {}) {
+  const references = (Array.isArray(groupReferences) ? groupReferences : [groupReferences])
+    .map((reference) => sanitizeHotelRecordForStore(getFirstHotelFromGroupReference(reference)))
+    .filter(isPlainObject);
+  if (references.length === 0) {
+    return [];
+  }
+
+  const store = loadCompareAppStore(options);
+  const groupedHotels = compactHotels(getExpandedHotels(store));
+  const storePath = getCompareAppStorePath(options);
+  const results = [];
+
+  for (const reference of references) {
+    const existingGroupIndex = findExistingHotelGroupIndex(groupedHotels, reference);
+    if (existingGroupIndex < 0) {
+      continue;
+    }
+
+    const removedGroup = groupedHotels.splice(existingGroupIndex, 1)[0];
+    const deletedCount = expandStoredHotels([removedGroup]).length;
+    results.push({
+      storePath,
+      totalHotels: expandStoredHotels(groupedHotels).length,
+      operation: 'deleted-group',
+      deletedCount,
+      hotelName: reference.name || '',
+      website: reference.website || '',
+      templateId: reference.template_id ?? ''
+    });
+  }
+
+  if (results.length > 0) {
+    store.hotels = groupedHotels;
+    saveCompareAppStore(store, options);
+  }
+
+  return results;
+}
+
 function appendHotelToStore(hotelRecord, options = {}) {
   const expandedHotelRecord = isGroupedHotelEntry(hotelRecord)
     ? expandStoredHotels([hotelRecord])[0] || null
@@ -373,5 +437,6 @@ module.exports = {
   appendHotelToStore,
   buildTemplateInfo,
   findTemplateInStore,
+  removeHotelGroupsFromStore,
   sanitizeHotelRecordForStore
 };

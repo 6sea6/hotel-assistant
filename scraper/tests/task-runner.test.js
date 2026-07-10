@@ -58,6 +58,7 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
     expandedArgs: [],
     expandedOptions: [],
     order: [],
+    edgeWorkerPool: 0,
     scrape: 0,
     scrapeOptions: [],
     transit: 0
@@ -150,6 +151,24 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
         options.autoEdgeMock && options.autoEdgeMock.runInteractiveEdgeLoginPrep
           ? options.autoEdgeMock.runInteractiveEdgeLoginPrep
           : async () => undefined
+    })
+  );
+  const realAdaptiveScheduler = require('../src/adaptive-detail-scheduler');
+  mockedPaths.push(
+    installMock('../src/adaptive-detail-scheduler', {
+      ...realAdaptiveScheduler,
+      AdaptiveDetailScheduler: class FastTestAdaptiveDetailScheduler
+        extends realAdaptiveScheduler.AdaptiveDetailScheduler
+      {
+        constructor(schedulerOptions = {}) {
+          super({
+            ...schedulerOptions,
+            detailStartIntervalMs: 0,
+            degradedStartIntervalMs: 0,
+            warmupHotelCount: 0
+          });
+        }
+      }
     })
   );
   mockedPaths.push(
@@ -264,6 +283,27 @@ function installFastModeTaskRunnerMocks(tempDir, options = {}) {
         room_count: 1
       }),
       validateTemplate: () => undefined
+    })
+  );
+  // installMock clears task-runner-related modules each time, so keep this
+  // dependency last to ensure the task runner observes the shared-tab pool.
+  mockedPaths.push(
+    installMock('../src/batch-edge-worker-pool', {
+      cleanupBatchEdgeWorkerProfileClones: () => undefined,
+      createBatchEdgeWorkerPool: async ({ effectiveTemplate = {}, concurrency = 1 } = {}) => {
+        calls.edgeWorkerPool += 1;
+        return {
+          workers: Array.from({ length: concurrency }, (_item, index) => ({
+            id: index + 1,
+            targetId: `test-worker-${index + 1}`,
+            effectiveTemplate: {
+              ...effectiveTemplate,
+              edge_target_id: `test-worker-${index + 1}`
+            }
+          })),
+          async close() {}
+        };
+      }
     })
   );
 
@@ -755,9 +795,7 @@ test('batch treats login-required priced candidates as uncollected and does not 
         room_price_visible: true,
         login_required: hotelInput.hotelId === 'locked',
         login_reason:
-          hotelInput.hotelId === 'locked'
-            ? '检测到携程页面显示“登录看低价/解锁优惠”。'
-            : '',
+          hotelInput.hotelId === 'locked' ? '检测到携程页面显示“登录看低价/解锁优惠”。' : '',
         login_stage: hotelInput.hotelId === 'locked' ? 'edge_room_candidates' : '',
         capture_method: 'html_then_edge_cdp',
         wait_reason: hotelInput.hotelId === 'locked' ? 'missing_price' : '',
@@ -820,6 +858,476 @@ test('batch treats login-required priced candidates as uncollected and does not 
     assert.ok(uncollected);
     assert.equal(uncollected.hotelId, 'locked');
     assert.equal(uncollected.uncollected_reason, 'login_required');
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch never retries the current hotel after the first Ctrip 203', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-203-recover-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=blocked-once',
+      hotelId: 'blocked-once',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=next-hotel',
+      hotelId: 'next-hotel',
+      source: 'detail-input'
+    }
+  ];
+  let blockedAttempts = 0;
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      const successfulRoom = {
+        title: '大床房',
+        price: hotelInput.hotelId === 'blocked-once' ? 388 : 288,
+        prices: [hotelInput.hotelId === 'blocked-once' ? 388 : 288],
+        occupancy: 2
+      };
+      if (hotelInput.hotelId === 'blocked-once') {
+        blockedAttempts += 1;
+        if (blockedAttempts === 1) {
+          return {
+            hotel_name: '冷却后恢复酒店',
+            address: '恢复地址',
+            ctrip_score: 4.8,
+            geo: { location: '114.1,30.1' },
+            room: null,
+            room_candidates: [],
+            raw_room_candidates: [],
+            eligible_rooms: [],
+            room_selection_diagnostics: { evaluations: [], eligibleRooms: [] },
+            page_snapshot: {
+              source_url: hotelInput.url,
+              saved_html_files: [],
+              room_candidates_count: 0,
+              raw_room_candidates_count: 0,
+              eligible_room_count: 0,
+              room_price_visible: false,
+              capture_method: 'edge_cdp_then_api_replay',
+              wait_reason: 'retry_after_edge_failed',
+              login_required: true,
+              login_reason: '携程房价接口返回 203，当前浏览器会话无法查看房价。',
+              login_stage: 'edge_account_risk_control_203',
+              spider_error_codes: [203],
+              sources: [
+                {
+                  source: 'direct-room-list-replay',
+                  room_candidates_count: 0,
+                  room_price_visible: false,
+                  spider_error_codes: [203],
+                  error: 'direct room-list replay blocked by anti-spider code(s): 203'
+                }
+              ]
+            },
+            performance: {
+              totalMs: 3,
+              htmlMs: 1,
+              directReplayMs: 1,
+              edgeCaptureMs: 2,
+              waitDataMs: 1
+            }
+          };
+        }
+      }
+
+      return {
+        hotel_name: hotelInput.hotelId === 'blocked-once' ? '冷却后恢复酒店' : '后续酒店',
+        address: '正常地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: successfulRoom,
+        room_candidates: [{ ...successfulRoom }],
+        raw_room_candidates: [{ ...successfulRoom, raw: true }],
+        eligible_rooms: [{ ...successfulRoom }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          raw_room_candidates_count: 1,
+          eligible_room_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_then_edge_cdp',
+          wait_reason: '',
+          spider_error_codes: []
+        },
+        performance: {
+          totalMs: 3,
+          htmlMs: 1,
+          directReplayMs: 0,
+          edgeCaptureMs: 1,
+          waitDataMs: 1
+        }
+      };
+    }
+  });
+
+  try {
+    const records = [];
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    await assert.rejects(
+      runHotelImportTask(
+        {
+          url: hotelInputs.map((item) => item.url),
+          latestRun: latestRunPath,
+          'report-level': 'off',
+          'auto-edge': true,
+          'risk-control-retry-delay-ms': 1
+        },
+        {
+          workingDirectory: tempDir,
+          onEvent(event) {
+            events.push(event);
+          },
+          perfLogger: {
+            enabled: true,
+            write(record) {
+              records.push(record);
+              return record;
+            }
+          }
+        }
+      ),
+      /203|风控/
+    );
+
+    assert.deepEqual(
+      calls.order.filter((item) => item.startsWith('scrape:')),
+      ['scrape:blocked-once']
+    );
+    assert.equal(blockedAttempts, 1);
+    assert.equal(
+      events.some((event) => event.type === 'batch:risk-cooldown'),
+      false
+    );
+    assert.equal(
+      events.some((event) => event.type === 'batch:risk-retry'),
+      false
+    );
+    assert.equal(
+      records.some((record) => record.event === 'batch_risk_control_cooldown'),
+      false
+    );
+    assert.ok(records.some((record) => record.event === 'batch_risk_control_abort'));
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch treats direct replay 203 as no eligible rooms when Edge already saw prices', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-203-no-eligible-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=edge-priced-no-match',
+      hotelId: 'edge-priced-no-match',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=next-hotel',
+      hotelId: 'next-hotel',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      if (hotelInput.hotelId === 'edge-priced-no-match') {
+        return {
+          hotel_name: '页面有价格但无匹配酒店',
+          address: '规则不匹配地址',
+          ctrip_score: 4.6,
+          geo: { location: '114.1,30.1' },
+          room: null,
+          room_candidates: [{ title: '四人家庭房', price: null, occupancy: 4 }],
+          raw_room_candidates: [{ title: '四人家庭房', price: null, occupancy: 4 }],
+          eligible_rooms: [],
+          room_selection_diagnostics: {
+            evaluations: [{ action: 'rejected' }],
+            eligibleRooms: []
+          },
+          page_snapshot: {
+            source_url: hotelInput.url,
+            saved_html_files: [],
+            room_candidates_count: 1,
+            raw_room_candidates_count: 1,
+            eligible_room_count: 0,
+            room_price_visible: false,
+            capture_method: 'edge_cdp_then_api_replay',
+            wait_reason: 'retry_after_edge_failed',
+            edge_fallback_used: true,
+            api_replay_used: true,
+            login_required: false,
+            login_reason: '',
+            login_stage: '',
+            spider_error_codes: [203],
+            sources: [
+              {
+                source: 'direct-room-list-replay',
+                room_candidates_count: 0,
+                room_price_visible: false,
+                spider_error_codes: [203],
+                error: 'direct room-list replay blocked by anti-spider code(s): 203'
+              },
+              {
+                source: 'edge-cdp',
+                room_candidates_count: 4,
+                room_price_visible: true,
+                login_required: false,
+                login_reason: '',
+                login_stage: '',
+                spider_error_codes: [],
+                error:
+                  'edge-cdp fallback captured network responses but did not find a matching priced room'
+              }
+            ]
+          },
+          performance: {
+            totalMs: 3,
+            htmlMs: 1,
+            directReplayMs: 1,
+            edgeCaptureMs: 2,
+            waitDataMs: 1
+          }
+        };
+      }
+
+      return {
+        hotel_name: '后续酒店',
+        address: '正常地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: { title: '大床房', price: 288, prices: [288], occupancy: 2 },
+        room_candidates: [{ title: '大床房', price: 288 }],
+        raw_room_candidates: [{ title: '大床房', price: 288, raw: true }],
+        eligible_rooms: [{ title: '大床房', price: 288, occupancy: 2 }],
+        room_selection_diagnostics: { evaluations: [{ action: 'selected' }], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 1,
+          raw_room_candidates_count: 1,
+          eligible_room_count: 1,
+          room_price_visible: true,
+          capture_method: 'html_then_edge_cdp',
+          wait_reason: '',
+          spider_error_codes: []
+        },
+        performance: {
+          totalMs: 3,
+          htmlMs: 1,
+          directReplayMs: 0,
+          edgeCaptureMs: 1,
+          waitDataMs: 1
+        }
+      };
+    }
+  });
+
+  try {
+    const records = [];
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    const result = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'auto-edge': true,
+        'risk-control-retry-delay-ms': 1
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent(event) {
+          events.push(event);
+        },
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
+          }
+        }
+      }
+    );
+
+    assert.equal(result.success, true);
+    assert.equal(result.batchMode, true);
+    assert.equal(result.items.length, 2);
+    assert.deepEqual(
+      calls.order.filter((item) => item.startsWith('scrape:')),
+      ['scrape:edge-priced-no-match', 'scrape:next-hotel']
+    );
+    assert.equal(calls.transit, 1);
+    assert.equal(result.items[0].eligibleCount, 0);
+    assert.equal(result.items[0].totalPrice, null);
+    assert.equal(
+      events.some((event) => event.type === 'batch:risk-cooldown'),
+      false
+    );
+    assert.equal(
+      events.some((event) => event.type === 'batch:risk-retry'),
+      false
+    );
+    assert.equal(
+      records.some((record) => record.event === 'batch_risk_control_cooldown'),
+      false
+    );
+    assert.equal(
+      records.some((record) => record.event === 'batch_risk_control_abort'),
+      false
+    );
+
+    const uncollected = records.find((record) => record.event === 'uncollected_hotel');
+    assert.ok(uncollected);
+    assert.equal(uncollected.hotelId, 'edge-priced-no-match');
+    assert.equal(uncollected.uncollected_reason, 'no_eligible_rooms');
+    assert.equal(uncollected.room_price_visible, true);
+    assert.match(uncollected.uncollected_reason_detail, /没有房型满足当前模板/);
+  } finally {
+    clearModules([taskRunnerPath, ...mockedPaths]);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('batch disables Ctrip 203 retries by default', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/batch-orchestrator.js'), 'utf8');
+
+  assert.match(source, /const DEFAULT_RISK_CONTROL_RETRY_COUNT = 0;/);
+});
+
+test('batch aborts remaining hotels immediately when Ctrip 203 appears', async () => {
+  const taskRunnerPath = require.resolve('../src/task-runner');
+  delete require.cache[taskRunnerPath];
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-task-runner-203-abort-'));
+  const latestRunPath = path.join(tempDir, 'latest-run.json');
+  const hotelInputs = [
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=blocked',
+      hotelId: 'blocked',
+      source: 'detail-input'
+    },
+    {
+      url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=should-not-run',
+      hotelId: 'should-not-run',
+      source: 'detail-input'
+    }
+  ];
+  const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
+    hotelInputs,
+    scrapeResultForHotelInput: (hotelInput) => {
+      assert.equal(hotelInput.hotelId, 'blocked');
+      return {
+        hotel_name: '风控酒店',
+        address: '风控地址',
+        ctrip_score: 4.8,
+        geo: { location: '114.1,30.1' },
+        room: null,
+        room_candidates: [],
+        raw_room_candidates: [],
+        eligible_rooms: [],
+        room_selection_diagnostics: { evaluations: [], eligibleRooms: [] },
+        page_snapshot: {
+          source_url: hotelInput.url,
+          saved_html_files: [],
+          room_candidates_count: 0,
+          raw_room_candidates_count: 0,
+          eligible_room_count: 0,
+          room_price_visible: false,
+          capture_method: 'edge_cdp_then_api_replay',
+          wait_reason: 'retry_after_edge_failed',
+          login_required: true,
+          login_reason: '携程房价接口返回 203，当前浏览器会话无法查看房价。',
+          login_stage: 'edge_account_risk_control_203',
+          spider_error_codes: [203],
+          sources: [
+            {
+              source: 'edge-cdp',
+              room_candidates_count: 0,
+              room_price_visible: false,
+              login_required: true,
+              login_reason: '携程房价接口返回 203，当前浏览器会话无法查看房价。',
+              login_stage: 'edge_account_risk_control_203',
+              spider_error_codes: [203]
+            }
+          ]
+        },
+        performance: {
+          totalMs: 3,
+          htmlMs: 1,
+          directReplayMs: 0,
+          edgeCaptureMs: 2,
+          waitDataMs: 1
+        }
+      };
+    }
+  });
+
+  try {
+    const records = [];
+    const events = [];
+    const { runHotelImportTask } = require('../src/task-runner');
+    await assert.rejects(
+      runHotelImportTask(
+        {
+          url: hotelInputs.map((item) => item.url),
+          latestRun: latestRunPath,
+          'report-level': 'off',
+          'auto-edge': true,
+          'risk-control-retry-delay-ms': 1
+        },
+        {
+          workingDirectory: tempDir,
+          onEvent(event) {
+            events.push(event);
+          },
+          perfLogger: {
+            enabled: true,
+            write(record) {
+              records.push(record);
+              return record;
+            }
+          }
+        }
+      ),
+      /203|风控|blocked/
+    );
+
+    assert.equal(calls.scrape, 1);
+    assert.deepEqual(
+      calls.order.filter((item) => item.startsWith('scrape:')),
+      ['scrape:blocked']
+    );
+    assert.equal(calls.transit, 0);
+    assert.equal(
+      events.some((event) => event.type === 'batch:risk-cooldown'),
+      false
+    );
+    assert.equal(
+      events.some((event) => event.type === 'batch:risk-retry'),
+      false
+    );
+    assert.equal(
+      records.some((record) => record.event === 'batch_risk_control_cooldown'),
+      false
+    );
+    assert.ok(events.some((event) => event.type === 'batch:aborted'));
+    assert.ok(records.some((record) => record.event === 'batch_risk_control_abort'));
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -937,8 +1445,8 @@ test('batch skips transit for items that have no eligible rooms to write', async
 test('runHotelImportTask maps collection concurrency tiers to list API replay concurrency', async () => {
   const cases = [
     { batchConcurrency: 1, listApiReplayConcurrency: 2 },
-    { batchConcurrency: 2, listApiReplayConcurrency: 4 },
-    { batchConcurrency: 3, listApiReplayConcurrency: 6 }
+    { batchConcurrency: 2, listApiReplayConcurrency: 2 },
+    { batchConcurrency: 3, listApiReplayConcurrency: 2 }
   ];
 
   for (const item of cases) {
@@ -1261,7 +1769,7 @@ test('auto-edge single detail does not prepare unused batch browser profiles', a
   }
 });
 
-test('auto-edge profile preparation is capped to effective worker limit', async () => {
+test('auto-edge shared-tab pool is capped to effective worker limit without profile copies', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1335,18 +1843,17 @@ test('auto-edge profile preparation is capped to effective worker limit', async 
     assert.equal(result.success, true);
     assert.equal(result.performance.concurrency, 4);
     assert.equal(result.performance.effectiveConcurrency, 3);
-    assert.equal(preparedCalls.length, 1);
-    assert.equal(preparedCalls[0].concurrency, 3);
+    assert.equal(preparedCalls.length, 0);
     assert.equal(poolCalls.length, 1);
     assert.equal(poolCalls[0].concurrency, 3);
-    assert.deepEqual(poolCalls[0].preparedUserDataDirs, ['profile-worker-2', 'profile-worker-3']);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, []);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
-test('auto-edge locked worker profile preparation falls back to sequential batch', async () => {
+test('auto-edge shared tabs avoid locked profile copies and keep bounded parallelism', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1361,30 +1868,25 @@ test('auto-edge locked worker profile preparation falls back to sequential batch
   const preparedCalls = [];
   const poolCalls = [];
   const events = [];
-  const lockedError = Object.assign(
-    new Error(
-      "EBUSY: resource busy or locked, copyfile 'state/edge-profile/Default/Network/Cookies'"
-    ),
-    {
-      code: 'EBUSY',
-      syscall: 'copyfile',
-      path: path.join('state', 'edge-profile', 'Default', 'Network', 'Cookies')
-    }
-  );
-
   mockedPaths.push(
     installMock('../src/batch-edge-worker-pool', {
       cleanupBatchEdgeWorkerProfileClones: () => undefined,
-      describeLockedEdgeProfileCopyError: (error) =>
-        `浏览器登录资料正在被 Edge 占用：${error.path}；本次已改为单浏览器顺序采集。`,
-      isLockedEdgeProfileCopyError: (error) => error && error.code === 'EBUSY',
       prepareBatchEdgeWorkerProfileClones: (params) => {
         preparedCalls.push(params);
-        throw lockedError;
+        throw new Error('shared tab mode must not copy a locked profile');
       },
-      createBatchEdgeWorkerPool: async () => {
-        poolCalls.push({});
-        throw new Error('locked profile fallback should not create a batch Edge worker pool');
+      createBatchEdgeWorkerPool: async ({ effectiveTemplate, concurrency, existingWorker }) => {
+        poolCalls.push({ concurrency, existingWorker });
+        return {
+          workers: Array.from({ length: concurrency }, (_item, index) => ({
+            effectiveTemplate: {
+              ...effectiveTemplate,
+              edge_debugging_port: existingWorker.port,
+              edge_target_id: `locked-shared-target-${index + 1}`
+            }
+          })),
+          close: async () => undefined
+        };
       }
     })
   );
@@ -1406,20 +1908,23 @@ test('auto-edge locked worker profile preparation falls back to sequential batch
     );
 
     assert.equal(result.success, true);
-    assert.equal(preparedCalls.length, 1);
-    assert.equal(poolCalls.length, 0);
+    assert.equal(preparedCalls.length, 0);
+    assert.equal(poolCalls.length, 1);
+    assert.equal(poolCalls[0].concurrency, 3);
     assert.equal(result.performance.concurrency, 3);
-    assert.equal(result.performance.effectiveConcurrency, 1);
-    assert.equal(result.performance.parallelRequestedButDisabled, true);
-    assert.match(result.performance.parallelDisabledReason, /单浏览器顺序采集/);
-    assert.ok(events.some((event) => event.type === 'edge:parallel-disabled'));
+    assert.equal(result.performance.effectiveConcurrency, 3);
+    assert.equal(result.performance.parallelRequestedButDisabled, false);
+    assert.equal(
+      events.some((event) => event.type === 'edge:parallel-disabled'),
+      false
+    );
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
-test('list input over max concurrency prepares capped batch Edge workers immediately', async () => {
+test('list input over max concurrency creates a capped shared-tab pool immediately', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1483,12 +1988,11 @@ test('list input over max concurrency prepares capped batch Edge workers immedia
     assert.equal(result.success, true);
     assert.equal(result.performance.concurrency, 6);
     assert.equal(result.performance.effectiveConcurrency, 3);
-    assert.equal(preparedCalls.length, 1);
-    assert.equal(preparedCalls[0].concurrency, 3);
+    assert.equal(preparedCalls.length, 0);
     assert.equal(poolCalls.length, 1);
     assert.equal(poolCalls[0].concurrency, 3);
     assert.notEqual(poolCalls[0].existingWorker, null);
-    assert.deepEqual(poolCalls[0].preparedUserDataDirs, ['profile-worker-2', 'profile-worker-3']);
+    assert.deepEqual(poolCalls[0].preparedUserDataDirs, []);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1836,7 +2340,7 @@ test('batch report writer propagates report failures before latest-run is writte
   };
 
   try {
-    assert.throws(
+    await assert.rejects(
       () =>
         writeBatchReportArtifact({
           batchPerf,
@@ -1845,7 +2349,7 @@ test('batch report writer propagates report failures before latest-run is writte
           performance: {},
           reportLevel: 'normal',
           allHotels: [],
-          writeJsonFileImpl: () => {
+          writeJsonFileImpl: async () => {
             throw new Error('report disk failure');
           }
         }),
@@ -1991,7 +2495,7 @@ test('batch continues after one detail item fails', async () => {
   }
 });
 
-test('batch retries uncollected priced-room misses and keeps the retry result', async () => {
+test('batch does not retry a soft Edge no-price signal', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -2078,14 +2582,13 @@ test('batch retries uncollected priced-room misses and keeps the retry result', 
       }
     );
 
-    assert.equal(calls.scrape, 3);
-    assert.equal(attempts.get('retry-miss'), 2);
-    assert.equal(result.eligibleCount, 2);
+    assert.equal(calls.scrape, 2);
+    assert.equal(attempts.get('retry-miss'), 1);
+    assert.equal(result.eligibleCount, 1);
     assert.deepEqual(
       result.items.map((item) => item.eligibleCount),
-      [1, 1]
+      [1, 0]
     );
-    assert.equal(result.items[1].totalPrice, 266);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -2743,7 +3246,7 @@ test('batch explicit captureStrategy is preserved when auto-edge is enabled', as
   }
 });
 
-test('batch auto-edge concurrency assigns separate worker debugging ports', async () => {
+test('batch auto-edge concurrency shares one debugging port across persistent worker targets', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -2764,10 +3267,12 @@ test('batch auto-edge concurrency assigns separate worker debugging ports', asyn
   let activeScrapes = 0;
   let maxActiveScrapes = 0;
   const observedPorts = [];
+  const observedTargetIds = [];
   const { calls, mockedPaths } = installFastModeTaskRunnerMocks(tempDir, {
     hotelInputs,
     onScrapeOptions: (scrapeOptions) => {
       observedPorts.push(scrapeOptions.edgeSession && scrapeOptions.edgeSession.debuggingPort);
+      observedTargetIds.push(scrapeOptions.edgeSession && scrapeOptions.edgeSession.targetId);
     },
     scrapeResultForHotelInput: async (hotelInput) => {
       activeScrapes += 1;
@@ -2816,7 +3321,8 @@ test('batch auto-edge concurrency assigns separate worker debugging ports', asyn
     assert.equal(result.success, true);
     assert.equal(result.performance.effectiveConcurrency, 2);
     assert.equal(maxActiveScrapes, 2);
-    assert.equal(new Set(observedPorts).size, 2);
+    assert.equal(new Set(observedPorts).size, 1);
+    assert.equal(new Set(observedTargetIds).size, 2);
     assert.ok(calls.order.some((item) => item.startsWith('close-edge:')));
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);

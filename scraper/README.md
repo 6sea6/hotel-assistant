@@ -65,7 +65,7 @@ node src/cli.js --urls "粘贴多条携程详情页/列表页链接" --templateN
 
 已识别的携程前筛包括价格、星级、排序、免费取消、点评数、评分档位、住宿类型、房型、客房特色和特色主题；未识别的 `listFilters` 片段会原样保留，避免破坏携程页面上的品牌、商圈、行政区等筛选。应用内前筛的价格输入为每日人均价格，提交前会按模板入住天数和 room_count 换算成携程 URL 使用的总价区间。应用内列表过滤只保留目标采集数量；房型、价格、取消规则、窗户和人数规则仍在详情页阶段复核。
 
-携程列表页不是传统分页页面，不要通过拼接 `pageIndex`、`page` 或 `start` 参数来补页。候选不足时，当前链路会在 Edge 登录态页面内复用携程自身的 `initListRequest` 调用 `fetchHotelList`，把懒加载接口返回的酒店补进候选池，然后仍然走原有详情页采集。排查“设置采 N 家但实际少于 N 家”时，优先看列表展开摘要和性能日志中的 `listApiResponseCount`、`listApiPageIndexes`、`listApiError`，不要先改详情页房型筛选规则。如果携程列表页真实没有解析到可进入详情页的候选，应用层会按空结果完成并提示“未筛选到宾馆”，不再把这种情况报成采集异常。
+携程列表页不是传统分页页面，不要通过拼接 `pageIndex`、`page` 或 `start` 参数来补页。候选不足时，当前链路会复用携程自身的 `initListRequest` 调用 `fetchHotelList`，以最多 2 个在途请求补充候选；达到目标唯一酒店数后停止。相同标准化查询的候选详情 URL 会缓存 15 分钟，但房价不会缓存。排查“设置采 N 家但实际少于 N 家”时，优先看列表展开摘要和性能日志中的 `listApiResponseCount`、`listApiPageIndexes`、`listApiError`，不要先改详情页房型筛选规则。如果携程列表页真实没有解析到可进入详情页的候选，应用层会按空结果完成并提示“未筛选到宾馆”，不再把这种情况报成采集异常。
 
 ```bash
 node src/cli.js --url "携程列表页链接" --templateName 模板名 --targetCount 5 --auto-edge --edge-user-data-dir ./state/edge-profile --edge-profile-directory Default --edge-debugging-port 9222
@@ -78,6 +78,8 @@ node src/cli.js --url "携程列表页链接" --templateName 模板名 --priceMi
 ```
 
 `--auto-edge` 会自动在后台隐藏启动 Edge、等待调试端口就绪、执行采集、采集完成后关闭 Edge，不再把网页弹到前台影响当前电脑使用。首次使用如果还没有可复用的 Edge profile，会先自动打开一次可见 Edge 窗口让你登录携程；登录完成后关闭窗口，当前任务再继续后台采集。默认优先用 hidden/headless 会话；只有排障或主动重登时，才需要单独运行可见的 `edge-session.js --login`。如果某家酒店疑似必须在登录态的可见窗口里手动打开后，目标房型价格才会真正显示出来，不要只在后台盲重试；改为先用可见窗口重试一次并确认目标房型价格已在页面上显示，再继续采集。
+
+批量详情采集默认最大并发为 3，但会先串行预热 3 家，任意两个详情页启动至少间隔 2 秒。最近 10 家出现 2 家“页面并非不可预订、但 Edge 没有价格”时，调度器会降到最大并发 2、启动间隔 3 秒；连续 10 家正常后恢复。批量任务只启动一个登录 Edge 进程，并在其中创建最多 3 个持久标签页，共享 cookie、设备和会话状态。第一次检测到 203/风控会立即停止分发新酒店且不自动重试。
 
 应用内“更新数据”复用正常详情页采集脚本刷新已有携程链接的房型与价格，默认跳过高德交通计算，不会重算并覆盖已有距离、地铁和公交字段。
 
@@ -196,27 +198,25 @@ node src/cli.js --url "携程链接" --templateName "模板名" \
 
 ## 技术约束
 
-### 抓取流程（三层兜底）
+### 抓取流程
 
 ```
-默认：HTML 解析 (desktop/mobile)
-  → API 重放 (direct-room-list-replay)
-    → Edge-CDP (captureRoomCandidatesWithEdge)
+默认：desktop HTML 解析
+  → Edge-CDP (captureRoomCandidatesWithEdge，启用 Edge 会话时)
 
-显式启用 Edge 会话时：HTML 解析 (desktop/mobile)
-  → Edge-CDP (captureRoomCandidatesWithEdge)
-    → API 重放 (仅在 Edge 仍未拿到带价房型时才补试)
+单酒店显式诊断：可追加 --include-mobile-html true
+  或 --direct-room-replay true，分别启用移动 HTML / Node 房价接口重放
 ```
 
 列表页流程先走 `HTML/embedded JSON` 解析，尽量从页面内嵌数据结构中提取酒店候选；如果候选不足且启用了 Edge 登录态，会用 Edge-CDP 打开列表页、滚动等待渲染后取回 HTML 再走同一解析器。列表页解析只负责产出详情页 URL 和前筛诊断，详情页价格、房型、交通、复核和写回仍走原单酒店链路。
 
-列表页 Edge 兜底包括两类数据源：渲染后的 DOM/HTML 快照，以及页面上下文里的携程 `fetchHotelList` 懒加载接口响应。后者必须在 Edge 页面内发起，以复用携程页面当前上下文、cookie 和初始化请求体；不要在 Node 侧裸 POST 这个接口，也不要把列表页补采逻辑改成硬编码 CSS 选择器。
+列表页 Edge 兜底包括两类数据源：渲染后的 DOM/HTML 快照，以及页面上下文里的携程 `fetchHotelList` 懒加载接口响应。后者在 Edge 页面内发起时可复用携程页面当前上下文、cookie 和初始化请求体；补页并发上限为 2，不要把列表页补采逻辑改成硬编码 CSS 选择器。
 
-如果 HTML 已经拿到足够的带价合规房型，流程不会继续进入补抓。补抓阶段默认先走 direct replay；但在已经显式启用 Edge 会话的情况下，会优先走带登录态的 Edge-CDP，避免先撞更容易返回 203 的无登录 API。
+如果 desktop HTML 已经拿到足够的带价合规房型，流程不会继续进入 Edge。正常批量模式不会请求 mobile HTML，也不会执行 direct room API replay；两者仅保留为显式单酒店诊断选项。
 
 只有当前结果缺价或明显不完整时才进入下一层。见 `src/ctrip-scraper.js` 的 `scrapeCtripHotel` 函数。
 
-**重要**：携程对大量酒店会隐藏价格（显示"登录看低价"），前两层都是不带登录态的 HTTP 请求，**无法拿到被隐藏的价格**。只有 Edge-CDP 通过复用已登录的 Edge 浏览器标签页才能获取真实价格。
+**重要**：携程对大量酒店会隐藏价格（显示"登录看低价"），desktop HTML 不带登录态时无法拿到被隐藏的价格。只有 Edge-CDP 通过复用已登录的 Edge 浏览器标签页才能获取真实价格。
 
 ### edge-cdp 价格抓取
 
@@ -286,12 +286,12 @@ node src/cli.js --url "携程链接" --templateName "模板名" \
 
 按顺序看 `latest-run.json` 中 `pageSnapshot.sources`：
 
-1. **desktop/mobile** 源 `room_price_visible=false` → 正常，自动进入下一步
-2. **direct-room-list-replay** 源 `error` 含 "203" → 正常，自动进入 edge-cdp
-3. **edge-cdp** 源：
+1. **desktop** 源 `room_price_visible=false` → 正常，启用了 Edge 时进入下一步
+2. **edge-cdp** 源：
    - `room_candidates_count=0` → Edge 会话未成功捕获响应，检查 Edge 是否启动且调试端口可达
    - `room_price_visible=false` → 价格被锁定，需先改用可见 Edge 窗口手动打开酒店页，确认目标房型价格在登录态页面是否真实可见；可直接把采集命令加 `--edge-headless false`，或先运行 `node src/edge-session.js --login --userDataDir ./state/edge-profile --profileDirectory Default --port 9222 --url "携程链接"` 做人工验证
    - `room_price_visible=true` 但总价仍 null → 检查 `unwrapPriceValue()` 和 `extractStructuredRecordPrices()` 是否覆盖了携程返回的最新字段格式
+3. 只有显式诊断启用了对应开关时，才会出现 **mobile** 或 **direct-room-list-replay** 源；若 direct replay 返回 203，应立即结束诊断，不要批量重试。
 
 ### 价格提取函数
 

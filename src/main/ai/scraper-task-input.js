@@ -87,7 +87,14 @@ function buildScraperArgs(input, workDir) {
     'edge-profile-directory': 'Default',
     'edge-debugging-port': 9222,
     browser: normalizeCollectBrowser(input.collectBrowser),
-    latestRun: path.join(workDir, 'output', 'latest-run.json')
+    latestRun: path.join(workDir, 'output', 'latest-run.json'),
+    'detail-start-interval-ms': input.detailStartIntervalMs ?? 2000,
+    'warmup-hotel-count': input.warmupHotelCount ?? 3,
+    'max-list-api-replay-concurrency': input.maxListApiReplayConcurrency ?? 2,
+    'list-candidate-cache-ttl-ms': input.listCandidateCacheTtlMs ?? 15 * 60 * 1000,
+    'direct-room-replay': input.directRoomReplay ?? false,
+    'include-mobile-html': input.includeMobileHtml ?? false,
+    'risk-control-retries': input.riskControlRetries ?? 0
   };
 
   if (input.templateId !== null && input.templateId !== undefined && input.templateId !== '') {

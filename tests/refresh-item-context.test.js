@@ -264,6 +264,59 @@ test('refresh prepared result mapper skips instead of clearing existing prices w
   assert.equal(result.retryAfterLogin, true);
 });
 
+test('refresh prepared result mapper clears existing group when current dates are unavailable', async () => {
+  const existingHotels = [
+    {
+      name: '恒夏酒店（北外滩丹阳路地铁站店）',
+      room_type: '家庭房',
+      original_room_type: '经济家庭房',
+      daily_price: 249,
+      total_price: 745
+    },
+    {
+      name: '恒夏酒店（北外滩丹阳路地铁站店）',
+      room_type: '双床房',
+      original_room_type: '标准房',
+      daily_price: 222,
+      total_price: 666
+    }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        eligibleHotels: [],
+        pageSnapshot: {
+          room_candidates_count: 0,
+          raw_room_candidates_count: 0,
+          room_price_visible: false,
+          booking_unavailable: true,
+          booking_unavailable_reason: '当前日期不接受预订',
+          spider_error_codes: []
+        }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=895608',
+    hotelName: '恒夏酒店（北外滩丹阳路地铁站店）',
+    meta: {
+      refreshItem: {
+        existingHotels,
+        firstHotel: existingHotels[0]
+      }
+    }
+  });
+
+  assert.equal(result.status, 'cleared');
+  assert.equal(result.updatedRoomTypeCount, 0);
+  assert.equal(result.deletedRoomTypeCount, 2);
+  assert.equal(result.updatedHotels.length, 0);
+  assert.equal(result.deleteExistingGroup, true);
+  assert.equal(result.retryAfterLogin, false);
+  assert.equal(result.clearReason, '当前日期不接受预订');
+});
+
 test('refresh prepared result mapper keeps normal existing prices when current scrape has no prices', async () => {
   const existingHotels = [
     { name: '旧酒店', original_room_type: '大床房', daily_price: 580, total_price: 580 },
@@ -295,4 +348,80 @@ test('refresh prepared result mapper keeps normal existing prices when current s
   assert.equal(result.status, 'skipped');
   assert.equal(result.updatedHotels.length, 0);
   assert.equal(result.retryAfterLogin, true);
+});
+
+test('refresh prepared result mapper does NOT clear existing prices when booking_unavailable is set but room_price_visible is true (e.g. tatami room with i18n false-positive)', async () => {
+  const existingHotels = [
+    { name: '上海万信R酒店', original_room_type: '榻榻米亲子房', daily_price: 775, total_price: 2324 }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        eligibleHotels: [],
+        pageSnapshot: {
+          room_candidates_count: 20,
+          raw_room_candidates_count: 22,
+          room_price_visible: true,
+          booking_unavailable: true,
+          booking_unavailable_reason: '当前日期不接受预订',
+          booking_unavailable_source: 'html',
+          spider_error_codes: []
+        }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=441585',
+    hotelName: '上海万信R酒店',
+    meta: {
+      refreshItem: {
+        existingHotels,
+        firstHotel: existingHotels[0]
+      }
+    }
+  });
+
+  assert.equal(result.status, 'skipped');
+  assert.ok(!result.deleteExistingGroup);
+  assert.equal(result.updatedHotels.length, 0);
+  assert.equal(result.retryAfterLogin, false);
+});
+
+test('refresh prepared result mapper still clears when booking_unavailable=true and room_price_visible=false (real unbookable like 895608)', async () => {
+  const existingHotels = [
+    { name: '恒夏酒店', original_room_type: '家庭房', daily_price: 249, total_price: 745 }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        eligibleHotels: [],
+        pageSnapshot: {
+          room_candidates_count: 4,
+          raw_room_candidates_count: 6,
+          room_price_visible: false,
+          booking_unavailable: true,
+          booking_unavailable_reason: '当前日期不接受预订',
+          booking_unavailable_source: 'html',
+          spider_error_codes: [203]
+        }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=895608',
+    hotelName: '恒夏酒店',
+    meta: {
+      refreshItem: {
+        existingHotels,
+        firstHotel: existingHotels[0]
+      }
+    }
+  });
+
+  assert.equal(result.status, 'cleared');
+  assert.equal(result.deleteExistingGroup, true);
+  assert.equal(result.deletedRoomTypeCount, 1);
+  assert.equal(result.clearReason, '当前日期不接受预订');
 });

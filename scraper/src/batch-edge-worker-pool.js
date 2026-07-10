@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { closeAutoEdge, launchAndWaitForEdge } = require('./cli/auto-edge');
 const { resolveEdgeProfileDirectory, resolveEdgeUserDataDir } = require('./edge-runtime');
+const { connectToDebugger, waitForDebuggerEndpoint } = require('./scraper/cdp-utils');
 
 const BATCH_EDGE_WORKER_LAUNCH_TIMEOUT_MS = 30000;
 const EDGE_PROFILE_SKIP_DIR_NAMES = new Set([
@@ -62,6 +63,10 @@ function findAvailablePort() {
 
 function createTemporaryProfileDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ctrip-batch-edge-profile-'));
+}
+
+async function createTemporaryProfileDirAsync() {
+  return fs.promises.mkdtemp(path.join(os.tmpdir(), 'ctrip-batch-edge-profile-'));
 }
 
 function shouldCopyEdgeProfilePath(sourceRoot, sourcePath) {
@@ -125,6 +130,24 @@ function copyProfileForWorker(sourceDir) {
   }
 }
 
+async function copyProfileForWorkerAsync(sourceDir) {
+  const targetDir = await createTemporaryProfileDirAsync();
+  try {
+    if (sourceDir && fs.existsSync(sourceDir)) {
+      await fs.promises.cp(sourceDir, targetDir, {
+        recursive: true,
+        force: true,
+        errorOnExist: false,
+        filter: (sourcePath) => shouldCopyEdgeProfilePath(sourceDir, sourcePath)
+      });
+    }
+    return targetDir;
+  } catch (error) {
+    cleanupBatchEdgeWorkerProfileClones([targetDir]);
+    throw error;
+  }
+}
+
 function cleanupBatchEdgeWorkerProfileClones(profileDirs) {
   if (!Array.isArray(profileDirs)) {
     return;
@@ -165,19 +188,140 @@ function prepareBatchEdgeWorkerProfileClones({
   return profileDirs;
 }
 
+async function prepareBatchEdgeWorkerProfileClonesAsync({
+  effectiveTemplate = {},
+  concurrency = 1,
+  existingWorkerCount = 0
+} = {}) {
+  const cloneCount = Math.max(0, Number(concurrency || 1) - Number(existingWorkerCount || 0));
+  if (cloneCount <= 0) {
+    return [];
+  }
+
+  const sourceUserDataDir = resolveEdgeUserDataDir(effectiveTemplate.edge_user_data_dir);
+  const profileDirs = [];
+  try {
+    for (let index = 0; index < cloneCount; index += 1) {
+      profileDirs.push(await copyProfileForWorkerAsync(sourceUserDataDir));
+    }
+  } catch (error) {
+    cleanupBatchEdgeWorkerProfileClones(profileDirs);
+    throw error;
+  }
+  return profileDirs;
+}
+
 function buildWorkerTemplate(effectiveTemplate, worker) {
   return {
     ...effectiveTemplate,
     edge_user_data_dir: worker.userDataDir,
     edge_profile_directory: worker.profileDirectory,
     edge_debugging_port: worker.port,
-    edge_debugger_url: ''
+    edge_debugger_url: '',
+    edge_target_id: worker.targetId || ''
+  };
+}
+
+function getEdgeWebSocket() {
+  if (typeof globalThis.WebSocket === 'function') {
+    return globalThis.WebSocket;
+  }
+  try {
+    return require('ws');
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function createPersistentTarget(connection) {
+  try {
+    return await connection.send('Target.createTarget', {
+      url: 'about:blank',
+      hidden: true,
+      background: true
+    });
+  } catch (_error) {
+    return connection.send('Target.createTarget', { url: 'about:blank' });
+  }
+}
+
+async function createSharedBrowserWorkerPool({
+  effectiveTemplate = {},
+  concurrency = 1,
+  existingWorker
+}) {
+  const EdgeWebSocket = getEdgeWebSocket();
+  if (!EdgeWebSocket) {
+    throw new Error('无法创建共享 Edge 标签页：当前运行环境缺少 WebSocket 支持。');
+  }
+  const port = Number(existingWorker && existingWorker.port);
+  const debuggerUrl =
+    (existingWorker && existingWorker.debuggerUrl) || (await waitForDebuggerEndpoint(port, 5000));
+  const connection = await connectToDebugger(debuggerUrl, EdgeWebSocket);
+  const sourceUserDataDir = resolveEdgeUserDataDir(effectiveTemplate.edge_user_data_dir);
+  const profileDirectory = resolveEdgeProfileDirectory(effectiveTemplate.edge_profile_directory);
+  const workers = [];
+  const targetIds = [];
+
+  try {
+    for (let index = 0; index < concurrency; index += 1) {
+      const created = await createPersistentTarget(connection);
+      const targetId = created && created.targetId;
+      if (!targetId) {
+        throw new Error('共享 Edge 标签页创建失败：Target.createTarget 未返回 targetId。');
+      }
+      targetIds.push(targetId);
+      const worker = {
+        id: index + 1,
+        pid: existingWorker.pid || null,
+        port,
+        targetId,
+        userDataDir: sourceUserDataDir,
+        profileDirectory,
+        browserExecutable: existingWorker.browserExecutable || '',
+        browserName: existingWorker.browserName || '',
+        cleanupUserDataDir: false,
+        shouldClose: false,
+        sharedBrowser: true
+      };
+      worker.effectiveTemplate = buildWorkerTemplate(effectiveTemplate, worker);
+      workers.push(worker);
+    }
+  } catch (error) {
+    await Promise.all(
+      targetIds.map((targetId) =>
+        connection.send('Target.closeTarget', { targetId }).catch(() => undefined)
+      )
+    );
+    await connection.close().catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    workers,
+    targetIds,
+    sharedConnection: connection,
+    sharedBrowser: true,
+    close() {
+      return closeBatchEdgeWorkerPool(this);
+    }
   };
 }
 
 async function closeBatchEdgeWorkerPool(pool) {
   if (!pool || !Array.isArray(pool.workers)) {
     return;
+  }
+
+  if (pool.sharedConnection) {
+    await Promise.all(
+      (Array.isArray(pool.targetIds) ? pool.targetIds : [])
+        .filter(Boolean)
+        .map((targetId) =>
+          pool.sharedConnection.send('Target.closeTarget', { targetId }).catch(() => undefined)
+        )
+    );
+    await pool.sharedConnection.close().catch(() => undefined);
   }
 
   for (const worker of pool.workers) {
@@ -214,19 +358,11 @@ async function createBatchEdgeWorkerPool({
 
   try {
     if (existingWorker && existingWorker.port) {
-      const worker = {
-        id: 1,
-        pid: existingWorker.pid || null,
-        port: Number(existingWorker.port),
-        userDataDir: sourceUserDataDir,
-        profileDirectory,
-        browserExecutable: existingWorker.browserExecutable || '',
-        browserName: existingWorker.browserName || '',
-        cleanupUserDataDir: false,
-        shouldClose: false
-      };
-      worker.effectiveTemplate = buildWorkerTemplate(effectiveTemplate, worker);
-      workers.push(worker);
+      return createSharedBrowserWorkerPool({
+        effectiveTemplate,
+        concurrency,
+        existingWorker
+      });
     }
 
     let preparedUserDataDirIndex = 0;
@@ -234,7 +370,7 @@ async function createBatchEdgeWorkerPool({
       let userDataDir = preparedUserDataDirs[preparedUserDataDirIndex];
       preparedUserDataDirIndex += 1;
       if (!userDataDir) {
-        userDataDir = copyProfileForWorker(sourceUserDataDir);
+        userDataDir = await copyProfileForWorkerAsync(sourceUserDataDir);
       }
       const port = await findAvailablePort();
       try {
@@ -285,5 +421,6 @@ module.exports = {
   findAvailablePort,
   isLockedEdgeProfileCopyError,
   prepareBatchEdgeWorkerProfileClones,
+  prepareBatchEdgeWorkerProfileClonesAsync,
   shouldCopyEdgeProfilePath
 };

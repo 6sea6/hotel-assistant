@@ -49,6 +49,13 @@ function printHelp() {
   --skip-report             等价于 --report-level off，不生成采集报告和大 JSON 输出
   --no-output-report        等价于 --report-level off，不生成采集报告和大 JSON 输出
   --capture-strategy <策略>  采集策略：auto/html_first/parallel_edge/edge_full，默认 auto
+  --detail-start-interval-ms <毫秒>  批量详情页全局启动间隔，默认 2000
+  --warmup-hotel-count <数量>       批量开始时串行预热酒店数，默认 3
+  --max-list-api-replay-concurrency <数量>  列表接口补页最大并发，最高 2
+  --list-candidate-cache-ttl-ms <毫秒>      列表候选缓存时间，默认 900000
+  --direct-room-replay <true|false> 单酒店诊断时允许 Node 房价接口重放，默认 false
+  --include-mobile-html <true|false> 单酒店诊断时额外请求移动 HTML，默认 false
+  --risk-control-retries <数量>     203 风控自动重试次数，默认 0
   --html <路径>             使用本地保存的携程 HTML 文件而不是直接联网抓取
   --apply-output <路径>     复核通过后，将输出 JSON 安全回写到比较助手（通过桥接层处理 grouped/shared+rooms 结构）
   --save-html              联网抓取时额外保存原始 HTML 快照

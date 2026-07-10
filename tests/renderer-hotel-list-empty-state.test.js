@@ -120,7 +120,10 @@ async function loadHotelListModule() {
     `
   );
   writeFile(path.join(tempRoot, 'actions.js'), 'export const actions = {};\n');
-  writeFile(path.join(tempRoot, 'custom-select.js'), 'export function refreshCustomSelects() {}\n');
+  writeFile(
+    path.join(tempRoot, 'custom-select.js'),
+    'export function refreshCustomSelects() {}\nexport function refreshCustomSelect() {}\n'
+  );
   writeFile(
     path.join(tempRoot, 'hotel-card-fields.js'),
     `

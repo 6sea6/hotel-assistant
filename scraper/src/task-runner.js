@@ -7,7 +7,6 @@ const {
   expandCtripHotelInputs,
   normalizeListFiltersFromArgs
 } = require('./ctrip-list');
-const { classifyCtripHotelUrl, extractCtripUrlsFromInput } = require('./ctrip-url');
 const {
   closeAutoEdge,
   hasReusableEdgeProfile,
@@ -20,7 +19,8 @@ const { applyReviewedOutput } = require('./cli/reviewed-output');
 const {
   DEFAULT_LATEST_RUN_PATH,
   buildRunSummary,
-  writeLatestRunFile
+  writeLatestRunFile,
+  writeLatestRunFileAsync
 } = require('./cli/run-summary');
 const { resolveCtripListUrlFromAddress } = require('./scraper/list-page-address-search');
 const {
@@ -49,15 +49,7 @@ const {
 const { createScrapeEventForwarder, createTaskEmitter } = require('./task-events');
 const { runPreparedSingleDetailImport } = require('./single-detail-runner');
 const { runBatchHotelImportTask } = require('./batch-orchestrator');
-const {
-  cleanupBatchEdgeWorkerProfileClones,
-  describeLockedEdgeProfileCopyError,
-  isLockedEdgeProfileCopyError,
-  prepareBatchEdgeWorkerProfileClones
-} = require('./batch-edge-worker-pool');
 const { buildBatchOutputPayload } = require('./batch-result-builder');
-
-const MAX_AUTO_EDGE_PREPARED_WORKERS = 3;
 
 function getReusableEdgeProfileInspection(userDataDir, profileDirectory) {
   if (typeof inspectReusableEdgeProfile === 'function') {
@@ -194,73 +186,8 @@ function normalizePositiveInteger(value, fallback = null) {
   return Math.max(1, Math.trunc(numberValue));
 }
 
-function summarizeKnownCtripInputUrls(args = {}, template = {}) {
-  if (normalizeText(args.addressQuery || args['address-query'])) {
-    return {
-      urlCount: 0,
-      detailCount: 0,
-      listCount: 0
-    };
-  }
-  const inputUrls = extractCtripUrlsFromInput({
-    ...args,
-    url: args.url || args.ctrip_url || args['ctrip-url'] || template.ctrip_url
-  });
-  const urls = inputUrls.length ? inputUrls : template.ctrip_url ? [template.ctrip_url] : [];
-  const summary = {
-    urlCount: urls.length,
-    detailCount: 0,
-    listCount: 0
-  };
-
-  for (const url of urls) {
-    const classification = classifyCtripHotelUrl(url);
-    if (classification.type === 'detail') {
-      summary.detailCount += 1;
-    } else if (classification.type === 'list') {
-      summary.listCount += 1;
-    }
-  }
-
-  return summary;
-}
-
 function getAddressQueryFromArgs(args = {}) {
   return normalizeText(args.addressQuery || args['address-query']);
-}
-
-function resolvePreparedEdgeWorkerConcurrency(
-  args = {},
-  options = {},
-  template = {},
-  listFilters = {}
-) {
-  const requestedConcurrency = normalizeBatchConcurrency(args, options);
-  if (requestedConcurrency <= 1) {
-    return 1;
-  }
-
-  const optionMaxConcurrency = normalizePositiveInteger(options.maxConcurrency);
-  const maxPreparedWorkers = optionMaxConcurrency
-    ? Math.min(optionMaxConcurrency, MAX_AUTO_EDGE_PREPARED_WORKERS)
-    : MAX_AUTO_EDGE_PREPARED_WORKERS;
-  let preparedConcurrency = Math.min(requestedConcurrency, maxPreparedWorkers);
-  const inputSummary = summarizeKnownCtripInputUrls(args, template);
-
-  if (inputSummary.urlCount > 0 && inputSummary.listCount <= 0) {
-    preparedConcurrency = Math.min(preparedConcurrency, inputSummary.detailCount);
-  } else if (inputSummary.listCount > 0) {
-    const targetCount = normalizePositiveInteger(
-      listFilters.desiredHotelCount || listFilters.targetCount,
-      0
-    );
-    const estimatedExpandedCount = inputSummary.detailCount + targetCount;
-    if (estimatedExpandedCount > 0) {
-      preparedConcurrency = Math.min(preparedConcurrency, estimatedExpandedCount);
-    }
-  }
-
-  return Math.max(1, preparedConcurrency);
 }
 
 function buildListTargetShortfallWarning(expandedInputs = {}) {
@@ -492,7 +419,6 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       const listFilters = normalizeListFiltersFromArgs(args);
       let autoEdgeProcess = null;
       let autoEdgePid = null;
-      let preparedEdgeWorkerProfileDirs = [];
       let edgeParallelDisabledReason = '';
       const autoEdge = Boolean(args['auto-edge']);
       const autoEdgeRuntime = autoEdge
@@ -549,39 +475,6 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           });
 
           const edgeResult = await perf.runPhase('browser_launch', { taskId }, async () => {
-            const preparedWorkerConcurrency = resolvePreparedEdgeWorkerConcurrency(
-              args,
-              options,
-              effectiveTemplate,
-              listFilters
-            );
-            if (preparedWorkerConcurrency > 1) {
-              try {
-                preparedEdgeWorkerProfileDirs = prepareBatchEdgeWorkerProfileClones({
-                  effectiveTemplate,
-                  concurrency: preparedWorkerConcurrency,
-                  existingWorkerCount: 1
-                });
-              } catch (error) {
-                if (!isLockedEdgeProfileCopyError(error)) {
-                  throw error;
-                }
-                edgeParallelDisabledReason = describeLockedEdgeProfileCopyError(error);
-                preparedEdgeWorkerProfileDirs = [];
-                emit('edge:parallel-disabled', edgeParallelDisabledReason, {
-                  reason: edgeParallelDisabledReason,
-                  error: error && error.message ? error.message : String(error)
-                });
-                perf.event('edge_parallel_disabled', {
-                  phase: 'browser_launch',
-                  status: 'fallback_serial',
-                  reason: edgeParallelDisabledReason,
-                  error_type: error && error.name ? error.name : 'Error',
-                  error_code: error && error.code ? error.code : '',
-                  error_message: error && error.message ? error.message : String(error)
-                });
-              }
-            }
             return launchAndWaitForEdge({
               userDataDir: effectiveTemplate.edge_user_data_dir,
               profileDirectory: effectiveTemplate.edge_profile_directory,
@@ -632,7 +525,9 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           return expandCtripHotelInputs(args, effectiveTemplate, listFilters, {
             autoEdge,
             edgeSession: buildEdgeSessionOptions(effectiveTemplate),
-            maxListApiReplayConcurrency: resolveListApiReplayConcurrency(args, options)
+            maxListApiReplayConcurrency: resolveListApiReplayConcurrency(args, options),
+            listCandidateCacheTtlMs:
+              args.listCandidateCacheTtlMs ?? args['list-candidate-cache-ttl-ms'] ?? 15 * 60 * 1000
           });
         });
         logListCandidateFilterDiagnostics(perf, expandedInputs);
@@ -687,7 +582,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
               emptyListResult: true
             });
             await perf.runPhase('write_latest_run', { taskId, hotelCount: 0 }, async () => {
-              writeLatestRunFile(latestRunPath, buildRunSummary(result));
+              await writeLatestRunFileAsync(latestRunPath, buildRunSummary(result));
             });
             emit('task:done', result.emptyReason, {
               inputMode: result.inputMode,
@@ -738,7 +633,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             perf,
             reportLevel,
             scrapeEventForwarder,
-            preparedEdgeWorkerProfileDirs,
+            preparedEdgeWorkerProfileDirs: [],
             edgeParallelDisabledReason,
             existingEdgeWorker:
               autoEdge && autoEdgePid && normalizeBatchConcurrency(args, options) > 1
@@ -784,7 +679,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           'write_latest_run',
           { taskId, hotelCount: result.eligibleCount },
           async () => {
-            writeLatestRunFile(
+            await writeLatestRunFileAsync(
               latestRunPath,
               buildRunSummary({
                 ...result,
@@ -805,7 +700,6 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             closeAutoEdge(autoEdgePid, autoEdgeProcess);
           });
         }
-        cleanupBatchEdgeWorkerProfileClones(preparedEdgeWorkerProfileDirs);
       }
     })
   );

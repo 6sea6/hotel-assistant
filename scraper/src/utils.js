@@ -32,6 +32,10 @@ function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
+async function ensureDirAsync(dirPath) {
+  await fs.promises.mkdir(dirPath, { recursive: true });
+}
+
 function readJsonFile(filePath, fallback = null) {
   if (!filePath || !fs.existsSync(filePath)) {
     return fallback;
@@ -61,6 +65,31 @@ function writeJsonFile(filePath, content, options = {}) {
   }
 
   fs.writeFileSync(filePath, JSON.stringify(content, null, space), 'utf-8');
+  return null;
+}
+
+async function writeJsonFileAsync(filePath, content, options = {}) {
+  await ensureDirAsync(path.dirname(filePath));
+  const pretty = options.pretty !== false;
+  const space = pretty ? 2 : undefined;
+
+  const stringifyStart = Date.now();
+  const json = JSON.stringify(content, null, space);
+  const stringifyMs = Date.now() - stringifyStart;
+  const writeStart = Date.now();
+  await fs.promises.writeFile(filePath, json, 'utf-8');
+  const writeMs = Date.now() - writeStart;
+
+  if (options.measure) {
+    const bytes = Buffer.byteLength(json, 'utf-8');
+    if (options.maxBytesWarning && bytes > options.maxBytesWarning) {
+      console.warn(
+        `[writeJsonFileAsync] ${filePath} is ${(bytes / 1024).toFixed(1)}KB, exceeds ${(options.maxBytesWarning / 1024).toFixed(1)}KB warning threshold`
+      );
+    }
+    return { bytes, stringifyMs, writeMs, totalMs: stringifyMs + writeMs };
+  }
+
   return null;
 }
 
@@ -385,6 +414,7 @@ module.exports = {
   createTimestampId,
   differenceInDays,
   ensureDir,
+  ensureDirAsync,
   extractCityName,
   extractFirstMatch,
   includesNormalizedPlace,
@@ -400,5 +430,6 @@ module.exports = {
   slugify,
   toNumber,
   toStringNumber,
-  writeJsonFile
+  writeJsonFile,
+  writeJsonFileAsync
 };

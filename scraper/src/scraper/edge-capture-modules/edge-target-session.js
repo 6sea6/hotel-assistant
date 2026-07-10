@@ -98,7 +98,14 @@ async function connectEdgeDebugger({
   return result;
 }
 
-async function acquireEdgeTarget({ connection, url, captureMethod, perf, signal = null }) {
+async function acquireEdgeTarget({
+  connection,
+  url,
+  captureMethod,
+  preferredTargetId = '',
+  perf,
+  signal = null
+}) {
   let targetId = '';
   let sessionId = '';
   let targetMode = 'create';
@@ -108,35 +115,64 @@ async function acquireEdgeTarget({ connection, url, captureMethod, perf, signal 
   const targetPhase = perf.phase('edge_target', { url, captureMethod });
   try {
     assertEdgeNotAborted(signal, 'edge_target');
+    if (preferredTargetId) {
+      targetId = preferredTargetId;
+      targetMode = 'reused-worker';
+    }
     try {
-      const targetsResponse = await connection.send(
-        'Target.getTargets',
-        {},
-        '',
-        buildCdpSendOptions(signal, EDGE_CDP_COMMAND_TIMEOUT_MS)
-      );
-      const targets = (targetsResponse && targetsResponse.targetInfos) || [];
-      const matchingTarget = targets.find((target) => {
-        if (target.type !== 'page') return false;
-        if (!target.url) return false;
-        return isReusableEdgeHotelTarget(target.url, url);
-      });
-      if (matchingTarget) {
-        targetId = matchingTarget.targetId;
-        targetInitialUrl = matchingTarget.url || '';
-        targetMode = 'reused-match';
-      } else {
-        const blankTarget = targets.find(
-          (target) => target.type === 'page' && (!target.url || target.url === 'about:blank')
+      if (targetId) {
+        const targetsResponse = await connection.send(
+          'Target.getTargets',
+          {},
+          '',
+          buildCdpSendOptions(signal, EDGE_CDP_COMMAND_TIMEOUT_MS)
         );
-        if (blankTarget) {
-          targetId = blankTarget.targetId;
-          targetInitialUrl = blankTarget.url || '';
-          targetMode = 'reused-blank';
+        const preferredTarget = ((targetsResponse && targetsResponse.targetInfos) || []).find(
+          (target) => target.type === 'page' && target.targetId === targetId
+        );
+        if (!preferredTarget) {
+          targetId = '';
+          targetMode = 'create';
+        } else {
+          targetInitialUrl = preferredTarget.url || '';
+        }
+      }
+      if (targetId) {
+        // The batch worker owns this persistent target; skip generic target discovery.
+      } else {
+        const targetsResponse = await connection.send(
+          'Target.getTargets',
+          {},
+          '',
+          buildCdpSendOptions(signal, EDGE_CDP_COMMAND_TIMEOUT_MS)
+        );
+        const targets = (targetsResponse && targetsResponse.targetInfos) || [];
+        const matchingTarget = targets.find((target) => {
+          if (target.type !== 'page') return false;
+          if (!target.url) return false;
+          return isReusableEdgeHotelTarget(target.url, url);
+        });
+        if (matchingTarget) {
+          targetId = matchingTarget.targetId;
+          targetInitialUrl = matchingTarget.url || '';
+          targetMode = 'reused-match';
+        } else {
+          const blankTarget = targets.find(
+            (target) => target.type === 'page' && (!target.url || target.url === 'about:blank')
+          );
+          if (blankTarget) {
+            targetId = blankTarget.targetId;
+            targetInitialUrl = blankTarget.url || '';
+            targetMode = 'reused-blank';
+          }
         }
       }
     } catch (_error) {
-      // Listing targets is best effort; create a target below when needed.
+      // Listing targets is best effort; only fall back when the requested target cannot be used.
+      if (preferredTargetId) {
+        targetId = preferredTargetId;
+        targetMode = 'reused-worker';
+      }
     }
 
     if (!targetId) {

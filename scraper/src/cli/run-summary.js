@@ -1,5 +1,5 @@
 const path = require('path');
-const { writeJsonFile } = require('../utils');
+const { writeJsonFile, writeJsonFileAsync } = require('../utils');
 
 const DEFAULT_LATEST_RUN_PATH = path.resolve('output', 'latest-run.json');
 
@@ -38,6 +38,8 @@ function buildPageSnapshotSummary(pageSnapshot) {
       login_required: Boolean(source.login_required),
       login_reason: source.login_reason || '',
       login_stage: source.login_stage || '',
+      booking_unavailable: Boolean(source.booking_unavailable),
+      booking_unavailable_reason: source.booking_unavailable_reason || '',
       tracked_url_count: Array.isArray(source.tracked_urls) ? source.tracked_urls.length : 0,
       attempt_count: Array.isArray(source.attempts) ? source.attempts.length : 0,
       spider_error_codes: Array.isArray(source.spider_error_codes) ? source.spider_error_codes : [],
@@ -55,6 +57,9 @@ function buildPageSnapshotSummary(pageSnapshot) {
     login_required: Boolean(pageSnapshot.login_required),
     login_reason: pageSnapshot.login_reason || '',
     login_stage: pageSnapshot.login_stage || '',
+    booking_unavailable: Boolean(pageSnapshot.booking_unavailable),
+    booking_unavailable_reason: pageSnapshot.booking_unavailable_reason || '',
+    booking_unavailable_source: pageSnapshot.booking_unavailable_source || '',
     eligible_room_count: pageSnapshot.eligible_room_count ?? 0,
     raw_room_candidates_count: pageSnapshot.raw_room_candidates_count ?? 0,
     spider_error_codes: Array.isArray(pageSnapshot.spider_error_codes)
@@ -170,9 +175,14 @@ function writeLatestRunFile(latestRunPath, summary) {
   writeJsonFile(latestRunPath, summary, { pretty: false, measure: true });
 }
 
+async function writeLatestRunFileAsync(latestRunPath, summary) {
+  return writeJsonFileAsync(latestRunPath, summary, { pretty: false, measure: true });
+}
+
 module.exports = {
   DEFAULT_LATEST_RUN_PATH,
   buildPageSnapshotSummary,
   buildRunSummary,
-  writeLatestRunFile
+  writeLatestRunFile,
+  writeLatestRunFileAsync
 };
