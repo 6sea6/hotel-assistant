@@ -50,12 +50,12 @@
 
 .view-mode-option.is-active {
   background: var(--primary-color);
-  color: #ffffff;
+  color: var(--color-on-primary);
   box-shadow: 0 6px 14px color-mix(in srgb, var(--primary-color) 22%, transparent);
 }
 
 .view-mode-segmented:focus-visible {
-  outline: 2px solid var(--primary-color);
+  outline: 2px solid var(--focus-color);
   outline-offset: 2px;
   box-shadow: var(--focus-ring);
 }
@@ -80,4 +80,10 @@
 
 .btn-icon.is-refreshing span {
   animation: spin 0.9s linear infinite;
+}
+
+[data-theme='colorful-mode'] .view-mode-option.is-active {
+  background: var(--colorful-gradient-cool);
+  color: var(--color-on-primary);
+  box-shadow: var(--colorful-shadow-cool);
 }

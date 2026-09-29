@@ -17,8 +17,14 @@ test('shared theme config normalizes aliases and exposes window colors', () => {
   assert.equal(normalizeThemeKey('changing-mode'), 'colorful-mode');
   assert.equal(normalizeThemeKey('unknown-theme', 'totoro-blue'), 'totoro-blue');
   assert.equal(getThemeWindowBackground('oak-brown'), '#F8F0E9');
+  assert.equal(getThemeWindowBackground('pineapple-yellow'), '#FFFBE8');
+  assert.equal(getThemeTitleBarColor('pineapple-yellow'), '#F2CA45');
+  assert.equal(getThemeTitleBarSymbolColor('pineapple-yellow'), '#3D351C');
   assert.equal(getThemeTitleBarColor('grape-purple'), '#8A73D1');
   assert.equal(getThemeTitleBarSymbolColor('cloud-white'), '#5A5F66');
+  assert.equal(getThemeWindowBackground('colorful-mode'), '#F8FAFF');
+  assert.equal(getThemeTitleBarColor('colorful-mode'), '#8A78F2');
+  assert.equal(getThemeTitleBarSymbolColor('colorful-mode'), '#111827');
 });
 
 test('theme alias maps are defined only in the shared theme module', () => {

@@ -17,6 +17,9 @@ function detectCtripLoginPromptFromText(text = '', options = {}) {
     };
   }
 
+  if (/请完成(?:安全)?验证|请拖动滑块|访问过于频繁|异常访问|安全验证/.test(normalizedText)) {
+    return { detected: true, challenge: true, reason: '携程页面要求完成安全验证。' };
+  }
   if (PRICE_LOGIN_PATTERN.test(normalizedText)) {
     return {
       detected: true,

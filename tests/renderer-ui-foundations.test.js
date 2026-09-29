@@ -58,6 +58,11 @@ test('renderer tokens include semantic color typography spacing focus and motion
     '--ease-standard',
     '--transition-lift',
     '--duration-motion-reduced',
+    '--color-on-primary',
+    '--color-on-accent',
+    '--interactive-text-color',
+    '--modal-backdrop-color',
+    '--notification-shadow',
     '--z-notification'
   ].forEach((tokenName) => {
     assert.match(tokens, new RegExp(`${tokenName}\\s*:`), tokenName);
@@ -177,10 +182,10 @@ test('sort mode radio controls are custom painted for consistent theme colors', 
 
   assert.match(radioRule, /appearance:\s*none/);
   assert.match(radioRule, /-webkit-appearance:\s*none/);
-  assert.match(radioRule, /border:\s*2px solid var\(--primary-color\)/);
+  assert.match(radioRule, /border:\s*2px solid var\(--focus-color\)/);
   assert.match(radioRule, /background:\s*var\(--bg-primary\)/);
   assert.doesNotMatch(radioRule, /accent-color/);
-  assert.match(checkedRadioRule, /radial-gradient\(circle at center,\s*var\(--primary-color\)/);
+  assert.match(checkedRadioRule, /radial-gradient\(circle at center,\s*var\(--focus-color\)/);
   assert.match(checkedRadioRule, /var\(--bg-primary\)/);
 });
 
@@ -290,8 +295,7 @@ test('rule delete modal includes template deletion selector', () => {
   );
   assert.match(modalMatch[1], /<option value="">不按模板删除<\/option>/);
   assert.ok(
-    modalMatch[1].indexOf('ruleDeleteTransportTime') <
-      modalMatch[1].indexOf('ruleDeleteTemplate'),
+    modalMatch[1].indexOf('ruleDeleteTransportTime') < modalMatch[1].indexOf('ruleDeleteTemplate'),
     'template deletion selector should appear below threshold inputs'
   );
 });
@@ -314,7 +318,224 @@ test('modal overlay does not draw a divider between header and main content', ()
   assert.doesNotMatch(tokens, /--modal-divider-color\s*:/);
   assert.doesNotMatch(modalOverlay, /linear-gradient/);
   assert.doesNotMatch(modalOverlay, /--modal-divider-color/);
-  assert.match(modalOverlay, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.5\)/);
+  assert.match(modalOverlay, /background:\s*var\(--modal-backdrop-color\)/);
+});
+
+test('all static buttons declare a safe type and modal close buttons have labels', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const buttons = [...html.matchAll(/<button\b[\s\S]*?>/g)].map((match) => match[0]);
+  const modalCloseButtons = buttons.filter((button) => /\bmodal-close\b/.test(button));
+
+  assert.ok(buttons.length > 0);
+  buttons.forEach((button) => assert.match(button, /\btype="button"/));
+  modalCloseButtons.forEach((button) => assert.match(button, /\baria-label="[^"]+"/));
+});
+
+test('data export modal supports all, multi-template, and concrete room selection scopes', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const renderer = readProjectFile('src/renderer/modules/data-transfer-ui.js');
+  const preload = readProjectFile('src/main/preload.js');
+  const modalMatch = html.match(
+    /<template data-modal-template="dataExportModal">([\s\S]*?)<\/template>/
+  );
+
+  assert.ok(modalMatch, 'selective data export modal should exist');
+  ['all', 'templates', 'rooms'].forEach((mode) => {
+    assert.match(modalMatch[1], new RegExp(`name="dataExportScope" value="${mode}"`));
+  });
+  assert.match(modalMatch[1], /id="dataExportTemplateList"/);
+  assert.match(modalMatch[1], /id="dataExportRoomSearch"/);
+  assert.match(modalMatch[1], /id="dataExportRoomList"/);
+  assert.match(modalMatch[1], /role="status"\s+aria-live="polite"/);
+  assert.match(renderer, /window\.electronAPI\.exportData\(selection\)/);
+  assert.match(renderer, /state\.selectedHotels/);
+  assert.match(renderer, /sortHotels\(state\.hotels\.slice\(\), 'price_low'\)/);
+  assert.match(
+    preload,
+    /exportData:\s*\(selection\)\s*=>\s*ipcRenderer\.invoke\('data:export', selection\)/
+  );
+});
+
+test('all ten selectable themes keep action and topbar text at AA contrast', () => {
+  const tokensCss = readStyleFile('tokens.css');
+  const themesCss = readStyleFile('themes.css');
+  const html = readProjectFile('src/renderer/index.html');
+  const selectableThemes = [...html.matchAll(/name="themeOption"\s+value="([^"]+)"/g)].map(
+    (match) => match[1]
+  );
+
+  const parseVariables = (css) =>
+    Object.fromEntries(
+      [...css.matchAll(/--([\w-]+):\s*([^;]+);/g)].map((match) => [match[1], match[2].trim()])
+    );
+  const rootVariables = parseVariables(tokensCss);
+  const themeVariables = new Map();
+  for (const block of themesCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (/\]\s+\./.test(block[1])) continue;
+    const variables = parseVariables(block[2]);
+    for (const selector of block[1].matchAll(/\[data-theme='([^']+)'\]/g)) {
+      themeVariables.set(selector[1], variables);
+    }
+  }
+  const resolveCssValue = (rawValue, variables, seen = new Set()) =>
+    String(rawValue || '').replace(/var\(--([\w-]+)\)/g, (_match, variableName) => {
+      assert.ok(!seen.has(variableName), `circular variable ${variableName}`);
+      const nextSeen = new Set(seen);
+      nextSeen.add(variableName);
+      return resolveCssValue(
+        variables[variableName] ?? rootVariables[variableName],
+        variables,
+        nextSeen
+      );
+    });
+  const resolveVariable = (name, variables, seen = new Set()) => {
+    assert.ok(!seen.has(name), `circular variable ${name}`);
+    seen.add(name);
+    const value = variables[name] ?? rootVariables[name];
+    return resolveCssValue(value, variables, seen);
+  };
+  const luminance = (hex) => {
+    const channels = hex
+      .slice(1)
+      .match(/../g)
+      .map((channel) => Number.parseInt(channel, 16) / 255)
+      .map((channel) =>
+        channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+      );
+    return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+  };
+  const contrast = (first, second) => {
+    const firstLuminance = luminance(first);
+    const secondLuminance = luminance(second);
+    return (
+      (Math.max(firstLuminance, secondLuminance) + 0.05) /
+      (Math.min(firstLuminance, secondLuminance) + 0.05)
+    );
+  };
+  const assertContrast = (background, foreground, label) => {
+    const colors = [...background.matchAll(/#[0-9a-f]{6}/gi)].map((match) => match[0]);
+    assert.ok(colors.length > 0, `${label} background should expose colors`);
+    colors.forEach((color) => {
+      assert.ok(
+        contrast(color, foreground) >= 4.5,
+        `${label}: ${foreground} on ${color} must reach 4.5:1`
+      );
+    });
+  };
+
+  assert.equal(selectableThemes.length, 10);
+  for (const themeName of selectableThemes) {
+    const variables = themeVariables.get(themeName);
+    assert.ok(variables, `missing theme variables for ${themeName}`);
+    assertContrast(
+      resolveVariable('primary-color', variables),
+      resolveVariable('color-on-primary', variables),
+      `${themeName} primary`
+    );
+    assertContrast(
+      resolveVariable('accent-color', variables),
+      resolveVariable('color-on-accent', variables),
+      `${themeName} accent`
+    );
+    assertContrast(
+      resolveVariable('topbar-bg', variables),
+      resolveVariable('topbar-text', variables),
+      `${themeName} topbar`
+    );
+  }
+
+  for (const [backgroundName, foregroundName] of [
+    ['danger-color', 'color-on-danger'],
+    ['color-success', 'color-on-success'],
+    ['color-warning', 'color-warning-text'],
+    ['color-info', 'color-on-info'],
+    ['color-template-badge', 'color-on-template-badge'],
+    ['color-rank-top-from', 'color-on-rank-top'],
+    ['color-rank-top-to', 'color-on-rank-top']
+  ]) {
+    assertContrast(
+      resolveVariable(backgroundName, {}),
+      resolveVariable(foregroundName, {}),
+      backgroundName
+    );
+  }
+});
+
+test('theme picker renders a dedicated color swatch for every selectable theme', () => {
+  const html = readProjectFile('src/renderer/index.html');
+  const modalCss = readStyleFile('pages/app-modals.css');
+  const selectableThemes = [...html.matchAll(/name="themeOption"\s+value="([^"]+)"/g)].map(
+    (match) => match[1]
+  );
+
+  assert.equal(selectableThemes.length, 10);
+  selectableThemes.forEach((themeName) => {
+    assert.match(
+      modalCss,
+      new RegExp(`\\.theme-option:has\\(input\\[value='${themeName}'\\]\\)\\s*\\{`)
+    );
+  });
+  assert.match(modalCss, /background:\s*var\(--theme-swatch-fill\)/);
+  assert.match(modalCss, /--theme-swatch-fill:\s*linear-gradient\([^;]+#ff5fa2/i);
+});
+
+test('colorful theme uses distinct high-saturation gradients across the main hotel UI', () => {
+  const themes = readStyleFile('themes.css');
+  const appShell = readStyleFile('components/app-shell.css');
+  const viewControls = readStyleFile('components/view-controls.css');
+  const customSelect = readStyleFile('components/custom-select.css');
+  const modalForm = readStyleFile('components/modal-form.css');
+  const appModals = readStyleFile('pages/app-modals.css');
+  const hotelCards = readStyleFile('pages/hotel-cards.css');
+  const hotelTable = readStyleFile('pages/hotel-table.css');
+  const aiAssistant = readStyleFile('pages/ai-assistant.css');
+  const colorfulBlock = readCssRuleBlock(themes, "[data-theme='colorful-mode'] {");
+  const pinkBlock = readCssRuleBlock(themes, "[data-theme='diehard-pink']");
+
+  for (const [token, value] of [
+    ['colorful-pink', '#ff5fa2'],
+    ['colorful-orange', '#ff9f43'],
+    ['colorful-cyan', '#36c5f0'],
+    ['colorful-purple', '#8a78f2']
+  ]) {
+    assert.match(colorfulBlock, new RegExp(`--${token}:\\s*${value}`, 'i'));
+  }
+  for (const token of [
+    'colorful-gradient-rainbow',
+    'colorful-gradient-cool',
+    'colorful-gradient-warm'
+  ]) {
+    assert.match(colorfulBlock, new RegExp(`--${token}:\\s*linear-gradient`));
+  }
+
+  assert.doesNotMatch(colorfulBlock, /--primary-color:\s*#f38bb4/i);
+  assert.notEqual(
+    colorfulBlock.match(/--topbar-bg-strong:\s*([^;]+)/)?.[1],
+    pinkBlock.match(/--topbar-bg-strong:\s*([^;]+)/)?.[1]
+  );
+  assert.match(appShell, /\.btn-primary[\s\S]*?var\(--colorful-gradient-cool\)/);
+  assert.match(appShell, /\.btn-accent[\s\S]*?var\(--colorful-gradient-warm\)/);
+  assert.match(appShell, /\.filter-active-badge[\s\S]*?var\(--colorful-green\)/);
+  assert.match(
+    viewControls,
+    /\.view-mode-option\.is-active[\s\S]*?var\(--colorful-gradient-cool\)/
+  );
+  assert.match(
+    customSelect,
+    /\.custom-select-option\.is-selected[\s\S]*?var\(--colorful-gradient-cool\)/
+  );
+  assert.match(modalForm, /\.modal-content::before[\s\S]*?var\(--colorful-gradient-rainbow\)/);
+  assert.match(hotelCards, /\.hotel-card::before[\s\S]*?var\(--colorful-gradient-rainbow\)/);
+  assert.match(hotelCards, /\.hotel-card\.favorite::before[\s\S]*?var\(--colorful-gradient-warm\)/);
+  assert.match(hotelTable, /\.rank-badge[\s\S]*?var\(--colorful-gradient-cool\)/);
+  assert.match(appModals, /confirm-ranking-export[\s\S]*?var\(--colorful-gradient-warm\)/);
+  assert.doesNotMatch(aiAssistant, /--colorful-|colorful-mode/);
+});
+
+test('hotel list exposes busy state while scheduled rendering is in progress', () => {
+  const orchestrator = readProjectFile('src/renderer/modules/hotel-list-render-orchestrator.js');
+  assert.match(orchestrator, /setAttribute\('aria-busy', 'true'\)/);
+  assert.match(orchestrator, /setAttribute\('aria-busy', 'false'\)/);
 });
 
 test('default app window width keeps hotel card grid at three columns', () => {
@@ -326,6 +547,19 @@ test('default app window width keeps hotel card grid at three columns', () => {
   assert.match(
     modalCss,
     /@media\s*\(max-width:\s*1180px\)\s*{[\s\S]*?\.hotel-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*1fr\)/
+  );
+});
+
+test('minimum-width header keeps the title and all navigation entries on one row', () => {
+  const appShell = readStyleFile('components/app-shell.css');
+
+  assert.match(
+    appShell,
+    /@media\s*\(max-width:\s*1100px\)[\s\S]*?\.app-title\s*{[\s\S]*?white-space:\s*nowrap/
+  );
+  assert.match(
+    appShell,
+    /@media\s*\(max-width:\s*1100px\)[\s\S]*?\.app-header \.btn-secondary\s*{[\s\S]*?width:\s*100px/
   );
 });
 
@@ -684,6 +918,12 @@ test('modal activation applies dialog semantics traps focus and restores the tri
   const originalRequestAnimationFrame = global.requestAnimationFrame;
   const originalSetTimeout = global.setTimeout;
   const fakeDocument = new FakeDocument();
+  const appHeader = fakeDocument.createElement('header');
+  appHeader.className = 'app-header';
+  const appMain = fakeDocument.createElement('main');
+  appMain.className = 'app-main';
+  fakeDocument.body.appendChild(appHeader);
+  fakeDocument.body.appendChild(appMain);
   const { trigger, modal, content, title, closeButton, input } = createModalFixture(fakeDocument);
 
   global.document = fakeDocument;
@@ -710,6 +950,9 @@ test('modal activation applies dialog semantics traps focus and restores the tri
   assert.equal(modal.style.display, 'flex');
   assert.equal(modal.style.zIndex, undefined);
   assert.equal(fakeDocument.activeElement, closeButton);
+  assert.equal(appHeader.inert, true);
+  assert.equal(appMain.inert, true);
+  assert.equal(appMain.getAttribute('aria-hidden'), 'true');
 
   input.focus();
   let prevented = false;
@@ -739,6 +982,54 @@ test('modal activation applies dialog semantics traps focus and restores the tri
   setModalActive('settingsModal', false);
   assert.equal(fakeDocument.activeElement, trigger);
   assert.equal(modal.eventListeners.has('keydown'), false);
+  assert.equal(appHeader.inert, false);
+  assert.equal(appMain.inert, false);
+  assert.equal(appMain.getAttribute('aria-hidden'), null);
+});
+
+test('form feedback focuses invalid fields and busy buttons restore their content', async (t) => {
+  const originalDocument = global.document;
+  const originalWindow = global.window;
+  const fakeDocument = new FakeDocument();
+  const form = fakeDocument.createElement('form');
+  form.id = 'hotelForm';
+  const error = fakeDocument.createElement('p');
+  error.id = 'hotelFormError';
+  error.hidden = true;
+  const input = fakeDocument.createElement('input');
+  input.id = 'hotelName';
+  const button = fakeDocument.createElement('button');
+  button.innerHTML = '保存';
+  form.appendChild(error);
+  form.appendChild(input);
+  form.appendChild(button);
+  fakeDocument.body.appendChild(form);
+  global.document = fakeDocument;
+  global.window = { setTimeout: global.setTimeout, clearTimeout: global.clearTimeout };
+  t.after(() => {
+    global.document = originalDocument;
+    global.window = originalWindow;
+  });
+
+  const { showFormError, clearFormError, setActionButtonBusy } = await loadUiUtilsModule();
+  showFormError('hotelForm', '请填写宾馆名称。', input);
+  assert.equal(error.hidden, false);
+  assert.equal(error.textContent, '请填写宾馆名称。');
+  assert.equal(input.getAttribute('aria-invalid'), 'true');
+  assert.equal(fakeDocument.activeElement, input);
+
+  clearFormError('hotelForm');
+  assert.equal(error.hidden, true);
+  assert.equal(error.textContent, '');
+
+  setActionButtonBusy(button, true, { busyText: '正在保存…' });
+  assert.equal(button.disabled, true);
+  assert.equal(button.getAttribute('aria-busy'), 'true');
+  assert.equal(button.textContent, '正在保存…');
+  setActionButtonBusy(button, false);
+  assert.equal(button.disabled, false);
+  assert.equal(button.innerHTML, '保存');
+  assert.equal(button.getAttribute('aria-busy'), null);
 });
 
 test('notifications expose status semantics and a close control', async (t) => {

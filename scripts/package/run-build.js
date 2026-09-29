@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const readline = require('readline/promises');
@@ -10,7 +11,7 @@ const { removeIfExists, resolveWindowsCommand, runCommand } = require('./utils')
 
 function parseBuildOptions(argv = process.argv.slice(2), env = process.env) {
   const envAmapKeyMode = env.HOTEL_PACKAGE_AMAP_KEY_MODE || '';
-  let amapKeyMode = normalizeAmapKeyMode(envAmapKeyMode || 'embedded');
+  let amapKeyMode = normalizeAmapKeyMode(envAmapKeyMode || 'none');
   let hasExplicitAmapKeyMode = Boolean(envAmapKeyMode);
   let selectAmapKeyMode = false;
 
@@ -43,15 +44,36 @@ function parseBuildOptions(argv = process.argv.slice(2), env = process.env) {
   };
 }
 
-function runElectronBuilder({ projectRoot, configPath }) {
+function runElectronBuilder({ projectRoot, configPath, outputDir, maxAttempts = 2 }) {
   const electronBuilderCli = path.join(projectRoot, 'node_modules', 'electron-builder', 'cli.js');
-  runCommand(
-    process.execPath,
-    [electronBuilderCli, '--win', 'nsis', '--x64', '--publish', 'never', '--config', configPath],
-    {
-      cwd: projectRoot
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      runCommand(
+        process.execPath,
+        [
+          electronBuilderCli,
+          '--win',
+          'nsis',
+          '--x64',
+          '--publish',
+          'never',
+          '--config',
+          configPath
+        ],
+        {
+          cwd: projectRoot
+        }
+      );
+      return;
+    } catch (error) {
+      if (attempt >= maxAttempts) {
+        throw error;
+      }
+      console.warn(`electron-builder 第 ${attempt} 次运行失败，清理临时输出后重试...`);
+      removeIfExists(outputDir);
+      fs.mkdirSync(outputDir, { recursive: true });
     }
-  );
+  }
 }
 
 function copyFinalInstaller({ projectRoot, tempBuildDir, version, amapKeyMode }) {
@@ -102,7 +124,7 @@ function getAmapKeyModeLabel(amapKeyMode) {
   return normalizeAmapKeyMode(amapKeyMode) === 'none' ? '不含默认高德 Key' : '包含默认高德 Key';
 }
 
-async function selectAmapKeyMode(defaultMode = 'embedded', streams = {}) {
+async function selectAmapKeyMode(defaultMode = 'none', streams = {}) {
   const input = streams.input || process.stdin;
   const output = streams.output || process.stdout;
   const normalizedDefault = normalizeAmapKeyMode(defaultMode);
@@ -114,10 +136,10 @@ async function selectAmapKeyMode(defaultMode = 'embedded', streams = {}) {
   const rl = readline.createInterface({ input, output });
   try {
     output.write('\n请选择高德 API Key 打包模式：\n');
-    output.write('  1. 包含默认高德 Key\n');
-    output.write('  2. 不包含默认高德 Key\n');
+    output.write('  1. 不包含默认高德 Key（推荐公开发布）\n');
+    output.write('  2. 包含默认高德 Key\n');
     const answer = String(await rl.question('请输入 1 或 2（默认 1）：')).trim();
-    return answer === '2' ? 'none' : 'embedded';
+    return answer === '2' ? 'embedded' : 'none';
   } finally {
     rl.close();
   }
@@ -126,7 +148,7 @@ async function selectAmapKeyMode(defaultMode = 'embedded', streams = {}) {
 function printHeader(version, options = {}) {
   const divider = '='.repeat(48);
   console.log(divider);
-  console.log(`  宾馆比较终极版打包工具 v${version}`);
+  console.log(`  宾馆比较助手打包工具 v${version}`);
   console.log(`  高德 Key 模式：${getAmapKeyModeLabel(options.amapKeyMode)}`);
   console.log(divider);
   console.log('');
@@ -178,14 +200,72 @@ function syncAppInfo(projectRoot) {
   });
 }
 
-function createTempBuildDir(projectRoot) {
-  return fs.mkdtempSync(path.join(projectRoot, 'dist-verify-build-'));
+function isAsciiPath(targetPath) {
+  return [...String(targetPath || '')].every((char) => char.charCodeAt(0) <= 0x7f);
+}
+
+function getAsciiTempBaseDir(env = process.env) {
+  const systemDrive = env.SystemDrive || env.SYSTEMDRIVE || 'C:';
+  const candidates = [
+    os.tmpdir(),
+    env.PUBLIC && path.join(env.PUBLIC, 'HotelComparisonBuildTemp'),
+    path.join(systemDrive, 'Temp', 'HotelComparisonBuildTemp')
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (!isAsciiPath(resolved)) {
+      continue;
+    }
+    try {
+      fs.mkdirSync(resolved, { recursive: true });
+      fs.accessSync(resolved, fs.constants.W_OK);
+      return resolved;
+    } catch (_error) {
+      // Continue to the next ASCII-only writable location.
+    }
+  }
+
+  throw new Error('未找到可写的纯 ASCII 临时目录，无法安全运行 Windows 安装包构建');
+}
+
+function createTempBuildDir() {
+  return fs.mkdtempSync(path.join(getAsciiTempBaseDir(), 'hotel-comparison-output-'));
+}
+
+function createAsciiBuildWorkspace(projectRoot) {
+  const workspaceRoot = fs.mkdtempSync(path.join(getAsciiTempBaseDir(), 'hotel-comparison-build-'));
+  const projectAliasRoot = path.join(workspaceRoot, 'project');
+  const tempBuildDir = path.join(workspaceRoot, 'output');
+  const configDir = path.join(workspaceRoot, 'config');
+
+  fs.symlinkSync(projectRoot, projectAliasRoot, process.platform === 'win32' ? 'junction' : 'dir');
+  fs.mkdirSync(tempBuildDir, { recursive: true });
+  fs.mkdirSync(configDir, { recursive: true });
+
+  return {
+    workspaceRoot,
+    projectAliasRoot,
+    tempBuildDir,
+    configDir
+  };
+}
+
+function removeAsciiBuildWorkspace(workspace) {
+  if (!workspace) {
+    return;
+  }
+  if (workspace.projectAliasRoot && fs.existsSync(workspace.projectAliasRoot)) {
+    fs.unlinkSync(workspace.projectAliasRoot);
+  }
+  removeIfExists(workspace.workspaceRoot);
 }
 
 async function main() {
   const projectRoot = path.resolve(__dirname, '..', '..');
   const scraperDir = path.resolve(projectRoot, 'scraper');
-  const tempBuildDir = createTempBuildDir(projectRoot);
+  const buildWorkspace = createAsciiBuildWorkspace(projectRoot);
+  const { projectAliasRoot, tempBuildDir, configDir } = buildWorkspace;
   const buildOptions = parseBuildOptions();
 
   let preparedBundle = null;
@@ -209,18 +289,20 @@ async function main() {
     console.log('正在同步构建资源...');
     syncBuildAssets(projectRoot);
 
-    console.log('正在准备完整版采集模块资源...');
+    console.log('正在准备内置采集模块资源...');
     preparedBundle = prepareFullBundle({
       projectRoot,
       scraperDir,
-      amapKeyMode: buildOptions.amapKeyMode
+      amapKeyMode: buildOptions.amapKeyMode,
+      tempBaseDir: buildWorkspace.workspaceRoot
     });
 
     console.log('正在生成打包配置...');
     builderConfig = createBuilderConfig({
-      projectRoot,
+      projectRoot: projectAliasRoot,
       outputDir: tempBuildDir,
-      extraResources: preparedBundle.manifest.extraResources
+      extraResources: preparedBundle.manifest.extraResources,
+      configDir
     });
     useAsciiInstallerArtifactName({
       builderConfig,
@@ -229,8 +311,9 @@ async function main() {
 
     console.log('正在运行 electron-builder...');
     runElectronBuilder({
-      projectRoot,
-      configPath: builderConfig.configPath
+      projectRoot: projectAliasRoot,
+      configPath: builderConfig.configPath,
+      outputDir: tempBuildDir
     });
 
     console.log('正在校验安装包资源...');
@@ -262,12 +345,10 @@ async function main() {
     if (builderConfig && builderConfig.configPath) {
       removeIfExists(builderConfig.configPath);
     }
-    if (tempBuildDir) {
-      removeIfExists(tempBuildDir);
-    }
     if (preparedBundle && preparedBundle.bundleRoot) {
       removeIfExists(preparedBundle.bundleRoot);
     }
+    removeAsciiBuildWorkspace(buildWorkspace);
   }
 }
 
@@ -276,8 +357,12 @@ if (require.main === module) {
 }
 
 module.exports = {
+  createAsciiBuildWorkspace,
   createTempBuildDir,
   getAmapKeyModeLabel,
+  getAsciiTempBaseDir,
+  isAsciiPath,
   parseBuildOptions,
+  removeAsciiBuildWorkspace,
   selectAmapKeyMode
 };

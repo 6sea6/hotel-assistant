@@ -177,8 +177,16 @@ test('ai-task-progress: soft Ctrip login prompt does not reset batch stats', asy
 
   assert.deepEqual(
     progress.buildProgressStats([
-      { type: 'batch:item-done', message: '第 1/2 家酒店采集完成', details: { index: 1, total: 2 } },
-      { type: 'batch:item-done', message: '第 2/2 家酒店采集完成', details: { index: 2, total: 2 } },
+      {
+        type: 'batch:item-done',
+        message: '第 1/2 家酒店采集完成',
+        details: { index: 1, total: 2 }
+      },
+      {
+        type: 'batch:item-done',
+        message: '第 2/2 家酒店采集完成',
+        details: { index: 2, total: 2 }
+      },
       {
         type: 'edge:login-required',
         message: '检测到携程登录提示，采集仍会继续尝试',

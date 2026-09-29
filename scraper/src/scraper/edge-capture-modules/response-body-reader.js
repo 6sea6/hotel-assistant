@@ -62,6 +62,7 @@ async function readEdgeResponseBodyWithRetry({
       if (body) {
         return {
           body,
+          parsedPayload: responseBody.parsedPayload,
           retryCount,
           timeoutCount,
           elapsedMs: Date.now() - startedAt,
@@ -69,7 +70,7 @@ async function readEdgeResponseBodyWithRetry({
         };
       }
     } catch (error) {
-      if (isAbortLikeError(error)) {
+      if (error.accessIssue || isAbortLikeError(error)) {
         throw error;
       }
       lastError = error;

@@ -73,6 +73,8 @@ function buildPageSnapshotSummary(pageSnapshot) {
     desktop_room_count: pageSnapshot.desktop_room_count ?? 0,
     capture_method: pageSnapshot.capture_method || '',
     wait_reason: pageSnapshot.wait_reason || '',
+    capture_complete: pageSnapshot.capture_complete,
+    collected_at: pageSnapshot.collected_at || '',
     capture_strategy: pageSnapshot.capture_strategy || '',
     html_edge_parallel_used: Boolean(pageSnapshot.html_edge_parallel_used),
     edge_started_before_html_done: Boolean(pageSnapshot.edge_started_before_html_done),
@@ -91,6 +93,15 @@ function buildPageSnapshotSummary(pageSnapshot) {
 }
 
 function buildRunSummary(payload) {
+  if (payload.status === 'paused')
+    return {
+      success: false,
+      status: payload.status,
+      performance: payload.performance || null,
+      accessIssue: payload.accessIssue,
+      resumeTaskId: payload.resumeTaskId,
+      batchSummary: payload.batchSummary
+    };
   if (payload.reportLevel === 'off') {
     return {
       success: payload.success,

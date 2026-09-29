@@ -12,12 +12,7 @@ async function loadModules() {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'renderer-hotel-derived-'));
     const sourceDir = path.join(__dirname, '..', 'src', 'renderer', 'modules');
     fs.writeFileSync(path.join(tempRoot, 'package.json'), '{"type":"module"}\n', 'utf-8');
-    [
-      'hotel-derived.js',
-      'hotel-filters.js',
-      'dom-helpers.js',
-      'state.js'
-    ].forEach((fileName) => {
+    ['hotel-derived.js', 'hotel-filters.js', 'dom-helpers.js', 'state.js'].forEach((fileName) => {
       fs.copyFileSync(path.join(sourceDir, fileName), path.join(tempRoot, fileName));
     });
     moduleUrls = {
@@ -172,9 +167,27 @@ test('stripDerivedFieldsFromHotel returns hotel as-is when no _derived', async (
 test('applyFiltersToHotels produces same result with and without _derived', async () => {
   const { derived, filters } = await loadModules();
   const hotels = [
-    makeHotel({ id: 1, name: '酒店A', ctrip_score: 4.8, transport_time: '20分钟', subway_distance: '0.5' }),
-    makeHotel({ id: 2, name: '酒店B', ctrip_score: 3.5, transport_time: '45分钟', subway_distance: '2.0' }),
-    makeHotel({ id: 3, name: '酒店C', ctrip_score: 4.2, transport_time: '15分钟', subway_distance: '0.3' })
+    makeHotel({
+      id: 1,
+      name: '酒店A',
+      ctrip_score: 4.8,
+      transport_time: '20分钟',
+      subway_distance: '0.5'
+    }),
+    makeHotel({
+      id: 2,
+      name: '酒店B',
+      ctrip_score: 3.5,
+      transport_time: '45分钟',
+      subway_distance: '2.0'
+    }),
+    makeHotel({
+      id: 3,
+      name: '酒店C',
+      ctrip_score: 4.2,
+      transport_time: '15分钟',
+      subway_distance: '0.3'
+    })
   ];
   const hotelsWithDerived = derived.attachDerivedFields(hotels);
 
@@ -205,9 +218,43 @@ test('applyFiltersToHotels supports ctrip score 4.7 threshold', async () => {
     makeHotel({ id: 4, ctrip_score: null })
   ];
 
-  const filteredIds = filters.applyFiltersToHotels(hotels, { score: '4.7' }).map((hotel) => hotel.id);
+  const filteredIds = filters
+    .applyFiltersToHotels(hotels, { score: '4.7' })
+    .map((hotel) => hotel.id);
 
   assert.deepEqual(filteredIds, [1, 2]);
+});
+
+test('applyFiltersToHotels supports normalized partial hotel name matching', async () => {
+  const { derived, filters } = await loadModules();
+  const hotels = derived.attachDerivedFields([
+    makeHotel({ id: 1, name: '上海和平饭店' }),
+    makeHotel({ id: 2, name: '北京饭店' }),
+    makeHotel({ id: 3, name: '上海国际酒店' })
+  ]);
+
+  assert.deepEqual(
+    filters.applyFiltersToHotels(hotels, { name: '上海' }).map((hotel) => hotel.id),
+    [1, 3]
+  );
+  assert.deepEqual(
+    filters.applyFiltersToHotels(hotels, { name: ' 和平 ' }).map((hotel) => hotel.id),
+    [1]
+  );
+});
+
+test('getActiveHotelFilterCount ignores sorting and empty values', async () => {
+  const { filters } = await loadModules();
+  assert.equal(
+    filters.getActiveHotelFilterCount({
+      name: '上海',
+      score: '',
+      favorite: '0',
+      template: null,
+      sortMode: 'review_high'
+    }),
+    2
+  );
 });
 
 test('applyFiltersToHotels supports ctrip diamond level threshold', async () => {
@@ -252,9 +299,18 @@ test('sortHotels defaults invalid or empty sort mode to low price first', async 
     makeHotel({ id: 3, total_price: 500, ctrip_score: 4.2 })
   ];
 
-  assert.deepEqual(filters.sortHotels(hotels).map((hotel) => hotel.id), [2, 1, 3]);
-  assert.deepEqual(filters.sortHotels(hotels, '').map((hotel) => hotel.id), [2, 1, 3]);
-  assert.deepEqual(filters.sortHotels(hotels, 'unknown').map((hotel) => hotel.id), [2, 1, 3]);
+  assert.deepEqual(
+    filters.sortHotels(hotels).map((hotel) => hotel.id),
+    [2, 1, 3]
+  );
+  assert.deepEqual(
+    filters.sortHotels(hotels, '').map((hotel) => hotel.id),
+    [2, 1, 3]
+  );
+  assert.deepEqual(
+    filters.sortHotels(hotels, 'unknown').map((hotel) => hotel.id),
+    [2, 1, 3]
+  );
 });
 
 test('getVisibleHotelSummary produces same result with and without _derived', async () => {

@@ -36,7 +36,7 @@ export function createHotelListRow(hotel, index) {
 
   row.innerHTML = `
     <div class="table-col checkbox-col">
-      <input type="checkbox" data-action="toggle-selection" data-id="${hotelIdAttr}" ${isSelected ? 'checked' : ''}>
+      <input type="checkbox" data-action="toggle-selection" data-id="${hotelIdAttr}" aria-label="选择 ${escapeHtml(hotel.name)}" ${isSelected ? 'checked' : ''}>
     </div>
     <div class="table-col rank-col">
       <span class="rank-badge ${isTop3 ? 'top3' : ''}">#${rank}</span>
@@ -58,8 +58,8 @@ export function createHotelListRow(hotel, index) {
       ${hasTemplate ? `<span class="template-badge">${escapeHtml(template.name)}</span>` : '-'}
     </div>
     <div class="table-col actions-col">
-      <button class="btn btn-secondary btn-xs" data-action="edit" data-id="${hotelIdAttr}">编辑</button>
-      <button class="btn btn-secondary btn-xs" data-action="details" data-id="${hotelIdAttr}" title="更多">…</button>
+      <button type="button" class="btn btn-secondary btn-xs" data-action="edit" data-id="${hotelIdAttr}">编辑</button>
+      <button type="button" class="btn btn-secondary btn-xs" data-action="details" data-id="${hotelIdAttr}" title="更多" aria-label="查看 ${escapeHtml(hotel.name)} 的详情">…</button>
     </div>
   `;
 
@@ -123,7 +123,7 @@ export function renderHotelListView(
   header.className = 'hotel-table-header';
   header.innerHTML = `
     <div class="table-col checkbox-col">
-      <input type="checkbox" id="selectAll" data-action="toggle-select-all" ${isAllSelected ? 'checked' : ''}>
+      <input type="checkbox" id="selectAll" data-action="toggle-select-all" aria-label="选择当前全部宾馆" ${isAllSelected ? 'checked' : ''}>
     </div>
     <div class="table-col rank-col">排名</div>
     <div class="table-col name-col">宾馆名称</div>

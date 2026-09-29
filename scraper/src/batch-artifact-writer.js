@@ -24,7 +24,22 @@ function prepareBatchCollections({ itemResults = [], reportDisabled = false }) {
   const childResults = orderedItemResults
     .map((item) => item.childResult)
     .filter((childResult) => childResult);
-  const resultPayloads = orderedItemResults
+  const writableItems = orderedItemResults.filter((item) => {
+    const result = item.childResult || {};
+    const snapshot = result.pageSnapshot || item.childPayload?.scrape_debug?.page_snapshot || {};
+    const sources = [snapshot, ...(snapshot.sources || [])];
+    return (
+      !result.accessIssue &&
+      !result.resumedFromCheckpoint &&
+      result.success !== false &&
+      snapshot.capture_complete !== false &&
+      !snapshot.login_required &&
+      !sources.some((source) =>
+        (source.spider_error_codes || []).some((code) => Number(code) === 203)
+      )
+    );
+  });
+  const resultPayloads = writableItems
     .map((item) => item.childPayload)
     .filter((childPayload) => childPayload);
   const failedItems = orderedItemResults
@@ -40,7 +55,7 @@ function prepareBatchCollections({ itemResults = [], reportDisabled = false }) {
     .map((item) => item.performanceItem)
     .filter((performanceItem) => performanceItem);
   const itemMs = orderedItemResults.reduce((sum, item) => sum + Number(item.durationMs || 0), 0);
-  const allHotels = orderedItemResults.flatMap((item) => {
+  const allHotels = writableItems.flatMap((item) => {
     if (item.childResult && Array.isArray(item.childResult.eligibleHotels)) {
       return item.childResult.eligibleHotels;
     }

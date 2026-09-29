@@ -83,6 +83,8 @@ function buildScraperArgs(input, workDir) {
         ? input.listUrlFilters
         : undefined,
     'auto-edge': true,
+    'capture-strategy': 'browser_first',
+    'resume-task-id': input.resumeTaskId || '',
     'edge-user-data-dir': path.join(workDir, 'state', 'edge-profile'),
     'edge-profile-directory': 'Default',
     'edge-debugging-port': 9222,
@@ -128,6 +130,12 @@ function buildScraperArgs(input, workDir) {
   ) {
     args.amapKey = String(input.amapKey).trim();
   }
+  if (
+    Number.isFinite(Number(input.perPersonDailyPriceMax)) &&
+    Number(input.perPersonDailyPriceMax) > 0
+  ) {
+    args['per-person-daily-price-max'] = Number(input.perPersonDailyPriceMax);
+  }
   const batchConcurrency = normalizeBatchConcurrency(input.batchConcurrency);
   if (batchConcurrency > 1) {
     args['batch-concurrency'] = batchConcurrency;
@@ -156,6 +164,13 @@ function buildScraperArgs(input, workDir) {
 
 function assertSafeWriteResult(result) {
   const pageSnapshot = result ? result.pageSnapshot || result.page_snapshot || {} : {};
+  if (
+    result?.accessIssue ||
+    pageSnapshot.capture_complete === false ||
+    pageSnapshot.spider_error_codes?.includes(203) ||
+    pageSnapshot.sources?.some((source) => source.spider_error_codes?.includes(203))
+  )
+    return { ok: false, reason: '采集结果不完整或访问受限，保留已有价格，避免误删旧数据。' };
   if (pageSnapshot && pageSnapshot.login_required) {
     return {
       ok: false,
@@ -173,6 +188,30 @@ function assertSafeWriteResult(result) {
   }
 
   if (!Number.isFinite(Number(result.eligibleCount)) || Number(result.eligibleCount) <= 0) {
+    const priceFilter = result.postFilter || result.post_filter || {};
+    if (Number(priceFilter.removedCount || 0) > 0) {
+      const hasRiskSignal =
+        (Array.isArray(pageSnapshot.spider_error_codes) &&
+          pageSnapshot.spider_error_codes.length > 0) ||
+        (Array.isArray(pageSnapshot.sources) &&
+          pageSnapshot.sources.some(
+            (source) =>
+              source &&
+              Array.isArray(source.spider_error_codes) &&
+              source.spider_error_codes.length > 0
+          ));
+      if (hasRiskSignal || Number(priceFilter.keptCount || 0) > 0) {
+        return {
+          ok: false,
+          reason: '价格结果同时存在风控或不完整信号，为避免误删旧数据，本次已跳过回写。'
+        };
+      }
+      return {
+        ok: true,
+        reason: '',
+        deleteFilteredGroup: true
+      };
+    }
     return {
       ok: false,
       reason: '没有符合模板人数、价格和房型规则的候选房型，未写入。'

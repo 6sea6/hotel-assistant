@@ -975,31 +975,30 @@ test('batch never retries the current hotel after the first Ctrip 203', async ()
     const records = [];
     const events = [];
     const { runHotelImportTask } = require('../src/task-runner');
-    await assert.rejects(
-      runHotelImportTask(
-        {
-          url: hotelInputs.map((item) => item.url),
-          latestRun: latestRunPath,
-          'report-level': 'off',
-          'auto-edge': true,
-          'risk-control-retry-delay-ms': 1
+    const paused = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'auto-edge': true,
+        'risk-control-retry-delay-ms': 1
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent(event) {
+          events.push(event);
         },
-        {
-          workingDirectory: tempDir,
-          onEvent(event) {
-            events.push(event);
-          },
-          perfLogger: {
-            enabled: true,
-            write(record) {
-              records.push(record);
-              return record;
-            }
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
           }
         }
-      ),
-      /203|风控/
+      }
     );
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.accessIssue.kind, 'risk_control');
 
     assert.deepEqual(
       calls.order.filter((item) => item.startsWith('scrape:')),
@@ -1025,7 +1024,7 @@ test('batch never retries the current hotel after the first Ctrip 203', async ()
   }
 });
 
-test('batch treats direct replay 203 as no eligible rooms when Edge already saw prices', async () => {
+test('batch stops on 203 even when Edge already saw prices', async () => {
   const taskRunnerPath = require.resolve('../src/task-runner');
   delete require.cache[taskRunnerPath];
 
@@ -1142,7 +1141,7 @@ test('batch treats direct replay 203 as no eligible rooms when Edge already saw 
     const records = [];
     const events = [];
     const { runHotelImportTask } = require('../src/task-runner');
-    const result = await runHotelImportTask(
+    const paused = await runHotelImportTask(
       {
         url: hotelInputs.map((item) => item.url),
         latestRun: latestRunPath,
@@ -1164,40 +1163,14 @@ test('batch treats direct replay 203 as no eligible rooms when Edge already saw 
         }
       }
     );
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.accessIssue.kind, 'risk_control');
 
-    assert.equal(result.success, true);
-    assert.equal(result.batchMode, true);
-    assert.equal(result.items.length, 2);
     assert.deepEqual(
       calls.order.filter((item) => item.startsWith('scrape:')),
-      ['scrape:edge-priced-no-match', 'scrape:next-hotel']
+      ['scrape:edge-priced-no-match']
     );
-    assert.equal(calls.transit, 1);
-    assert.equal(result.items[0].eligibleCount, 0);
-    assert.equal(result.items[0].totalPrice, null);
-    assert.equal(
-      events.some((event) => event.type === 'batch:risk-cooldown'),
-      false
-    );
-    assert.equal(
-      events.some((event) => event.type === 'batch:risk-retry'),
-      false
-    );
-    assert.equal(
-      records.some((record) => record.event === 'batch_risk_control_cooldown'),
-      false
-    );
-    assert.equal(
-      records.some((record) => record.event === 'batch_risk_control_abort'),
-      false
-    );
-
-    const uncollected = records.find((record) => record.event === 'uncollected_hotel');
-    assert.ok(uncollected);
-    assert.equal(uncollected.hotelId, 'edge-priced-no-match');
-    assert.equal(uncollected.uncollected_reason, 'no_eligible_rooms');
-    assert.equal(uncollected.room_price_visible, true);
-    assert.match(uncollected.uncollected_reason_detail, /没有房型满足当前模板/);
+    assert.equal(calls.transit, 0);
   } finally {
     clearModules([taskRunnerPath, ...mockedPaths]);
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1282,31 +1255,30 @@ test('batch aborts remaining hotels immediately when Ctrip 203 appears', async (
     const records = [];
     const events = [];
     const { runHotelImportTask } = require('../src/task-runner');
-    await assert.rejects(
-      runHotelImportTask(
-        {
-          url: hotelInputs.map((item) => item.url),
-          latestRun: latestRunPath,
-          'report-level': 'off',
-          'auto-edge': true,
-          'risk-control-retry-delay-ms': 1
+    const paused = await runHotelImportTask(
+      {
+        url: hotelInputs.map((item) => item.url),
+        latestRun: latestRunPath,
+        'report-level': 'off',
+        'auto-edge': true,
+        'risk-control-retry-delay-ms': 1
+      },
+      {
+        workingDirectory: tempDir,
+        onEvent(event) {
+          events.push(event);
         },
-        {
-          workingDirectory: tempDir,
-          onEvent(event) {
-            events.push(event);
-          },
-          perfLogger: {
-            enabled: true,
-            write(record) {
-              records.push(record);
-              return record;
-            }
+        perfLogger: {
+          enabled: true,
+          write(record) {
+            records.push(record);
+            return record;
           }
         }
-      ),
-      /203|风控|blocked/
+      }
     );
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.accessIssue.kind, 'risk_control');
 
     assert.equal(calls.scrape, 1);
     assert.deepEqual(
@@ -2018,7 +1990,7 @@ test('auto-edge login prep emits done only after Ctrip login is confirmed', asyn
   try {
     const events = [];
     const { runHotelImportTask } = require('../src/task-runner');
-    await runHotelImportTask(
+    const paused = await runHotelImportTask(
       {
         url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=login-unconfirmed',
         latestRun: latestRunPath,
@@ -2030,6 +2002,8 @@ test('auto-edge login prep emits done only after Ctrip login is confirmed', asyn
         onEvent: (event) => events.push(event)
       }
     );
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.accessIssue.kind, 'login_required');
 
     assert.ok(events.some((event) => event.type === 'edge:login-required'));
     assert.ok(events.some((event) => event.type === 'edge:login-unconfirmed'));
@@ -3186,7 +3160,7 @@ test('batch auto-edge lets detail items use default capture strategy unless expl
     assert.equal(calls.scrapeOptions.length, 2);
     assert.deepEqual(
       calls.scrapeOptions.map((item) => item.captureStrategy),
-      [null, null]
+      ['browser_first', 'browser_first']
     );
     assert.deepEqual(
       calls.scrapeOptions.map((item) => item.edgeParallelCancelPolicy),

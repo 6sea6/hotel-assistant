@@ -1,4 +1,4 @@
-const { Menu, dialog } = require('electron');
+const { Menu, app, dialog } = require('electron');
 const { APP_CONFIG } = require('./config');
 
 class MenuManager {
@@ -7,6 +7,12 @@ class MenuManager {
   }
 
   createMenu() {
+    const developmentViewItems = app.isPackaged
+      ? []
+      : [
+          { label: '强制重新加载', accelerator: 'CmdOrCtrl+Shift+R', role: 'forceReload' },
+          { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' }
+        ];
     const template = [
       {
         label: '文件',
@@ -53,14 +59,13 @@ class MenuManager {
         label: '视图',
         submenu: [
           { label: '重新加载', accelerator: 'CmdOrCtrl+R', role: 'reload' },
-          { label: '强制重新加载', accelerator: 'CmdOrCtrl+Shift+R', role: 'forceReload' },
+          ...developmentViewItems,
           { type: 'separator' },
           { label: '实际大小', accelerator: 'CmdOrCtrl+0', role: 'resetZoom' },
           { label: '放大', accelerator: 'CmdOrCtrl+Plus', role: 'zoomIn' },
           { label: '缩小', accelerator: 'CmdOrCtrl+-', role: 'zoomOut' },
           { type: 'separator' },
-          { label: '全屏', accelerator: 'F11', role: 'togglefullscreen' },
-          { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' }
+          { label: '全屏', accelerator: 'F11', role: 'togglefullscreen' }
         ]
       },
       {
@@ -82,7 +87,7 @@ class MenuManager {
                   type: 'info',
                   title: `关于${APP_CONFIG.NAME}`,
                   message: `${APP_CONFIG.NAME} v${APP_CONFIG.VERSION}`,
-                  detail: `更新时间: ${APP_CONFIG.RELEASE_DATE}\n作者: ${APP_CONFIG.AUTHOR}\n\n感谢: Trae、GitHub Copilot、Codex\n特别感谢: Asagiri、墨离、六便士\n\n一个现代化的宾馆比较工具。`
+                  detail: `发布日期：${APP_CONFIG.RELEASE_DATE}\n作者：${APP_CONFIG.AUTHOR}\n\n感谢：Trae、GitHub Copilot、Codex\n特别感谢：Asagiri、墨离、六便士\n\n一款本地运行的宾馆信息整理与比较工具。`
                 });
               }
             }

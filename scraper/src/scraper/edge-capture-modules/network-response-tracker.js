@@ -5,11 +5,16 @@ const { readEdgeResponseBodyWithRetry } = require('./response-body-reader');
 const ROOM_RESPONSE_PREFETCH_TIMEOUT_MS = 2500;
 const ROOM_RESPONSE_PREFETCH_MAX_ATTEMPTS = 2;
 
-function createEdgeNetworkResponseTracker({ connection = null, sessionId = '', signal = null } = {}) {
+function createEdgeNetworkResponseTracker({
+  connection = null,
+  sessionId = '',
+  signal = null
+} = {}) {
   const requestMeta = new Map();
   const roomRequestMeta = new Map();
   const trackedUrls = new Set();
   const finishedRequestIds = new Set();
+  const navigationRequestIds = new Set();
   let removeListener = null;
 
   const prefetchRoomResponseBody = (requestId, meta) => {
@@ -61,6 +66,7 @@ function createEdgeNetworkResponseTracker({ connection = null, sessionId = '', s
     const response = params.response || {};
     const requestId = params.requestId;
     const responseUrl = response.url;
+    if (navigationRequestIds.size && !navigationRequestIds.has(requestId)) return;
     if (!requestId || !responseUrl) {
       return;
     }
@@ -96,6 +102,16 @@ function createEdgeNetworkResponseTracker({ connection = null, sessionId = '', s
   };
 
   const handleNetworkEvent = (message = {}) => {
+    if (message.sessionId === sessionId && message.method === 'Network.requestWillBeSent') {
+      const { requestId, request } = message.params || {};
+      navigationRequestIds.add(requestId);
+      if (isRoomListNetworkResponse(request?.url || '')) {
+        const meta = { url: request.url, mimeType: '', pending: true };
+        requestMeta.set(requestId, meta);
+        roomRequestMeta.set(requestId, meta);
+        trackedUrls.add(request.url);
+      }
+    }
     handleResponseReceived(message);
     handleLoadingFinished(message);
   };
@@ -138,9 +154,7 @@ function createEdgeNetworkResponseTracker({ connection = null, sessionId = '', s
       return [...trackedUrls];
     },
     getPendingBodyReadPromises() {
-      return [...requestMeta.values()]
-        .map((meta) => meta && meta.bodyReadPromise)
-        .filter(Boolean);
+      return [...requestMeta.values()].map((meta) => meta && meta.bodyReadPromise).filter(Boolean);
     },
     waitForPendingBodyReads() {
       return Promise.allSettled(this.getPendingBodyReadPromises());

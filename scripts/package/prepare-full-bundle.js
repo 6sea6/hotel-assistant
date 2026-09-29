@@ -126,7 +126,16 @@ const VENDOR_PRUNE_EXTENSIONS = new Set([
 ]);
 
 const VENDOR_RUNTIME_PRUNE_DIRS = new Map([
-  ['axios', [path.join('dist', 'browser'), path.join('dist', 'esm')]],
+  [
+    'axios',
+    [
+      'lib',
+      path.join('dist', 'browser'),
+      path.join('dist', 'esm'),
+      path.join('dist', 'axios.js'),
+      path.join('dist', 'axios.min.js')
+    ]
+  ],
   ['cheerio', [path.join('dist', 'browser'), path.join('dist', 'esm')]],
   ['cheerio-select', [path.join('lib', 'esm')]],
   ['css-select', [path.join('lib', 'esm')]],
@@ -135,9 +144,20 @@ const VENDOR_RUNTIME_PRUNE_DIRS = new Map([
   ['domelementtype', [path.join('lib', 'esm')]],
   ['domhandler', [path.join('lib', 'esm')]],
   ['domutils', [path.join('lib', 'esm')]],
-  ['entities', [path.join('lib', 'esm')]],
+  ['entities', [path.join('lib', 'esm'), path.join('dist', 'esm')]],
   ['htmlparser2', [path.join('lib', 'esm')]],
   ['nth-check', [path.join('lib', 'esm')]],
+  [
+    'parse5',
+    [
+      path.join('dist', 'common'),
+      path.join('dist', 'parser'),
+      path.join('dist', 'serializer'),
+      path.join('dist', 'tokenizer'),
+      path.join('dist', 'tree-adapters'),
+      path.join('dist', 'index.js')
+    ]
+  ],
   ['parse5-htmlparser2-tree-adapter', [path.join('dist', 'esm')]]
 ]);
 
@@ -253,7 +273,7 @@ function removeDefaultAmapKeyFromBundle(scraperRoot) {
     /const DEFAULT_AMAP_KEY = ['"][^'"]*['"];/,
     "const DEFAULT_AMAP_KEY = '';"
   );
-  if (nextConstantsSource === constantsSource) {
+  if (!/const DEFAULT_AMAP_KEY = ['"][^'"]*['"];/.test(constantsSource)) {
     throw new Error('未能从临时采集器资源中移除默认高德 Key');
   }
   fs.writeFileSync(constantsPath, nextConstantsSource, 'utf-8');
@@ -282,7 +302,7 @@ function applyAmapKeyModeToBundle({ scraperRoot, promptGuideFile, amapKeyMode })
   adjustPromptForNoAmapKeyBundle(scraperRoot, promptGuideFile);
 }
 
-function prepareFullBundle({ projectRoot, scraperDir, amapKeyMode = 'embedded' }) {
+function prepareFullBundle({ projectRoot, scraperDir, amapKeyMode = 'embedded', tempBaseDir }) {
   const promptGuideFile = findPromptGuideFile(scraperDir);
   if (!fs.existsSync(path.join(scraperDir, 'src', 'cli.js'))) {
     throw new Error(`未找到采集器入口: ${path.join(scraperDir, 'src', 'cli.js')}`);
@@ -291,7 +311,7 @@ function prepareFullBundle({ projectRoot, scraperDir, amapKeyMode = 'embedded' }
     throw new Error(`未在 ${scraperDir} 找到统一提示词文件`);
   }
 
-  const bundleRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hotel-full-bundle-'));
+  const bundleRoot = fs.mkdtempSync(path.join(tempBaseDir || os.tmpdir(), 'hotel-full-bundle-'));
   const manifest = getBundleManifest(bundleRoot);
 
   copyDirSync(path.join(scraperDir, 'src'), path.join(manifest.directories.scraperRoot, 'src'));

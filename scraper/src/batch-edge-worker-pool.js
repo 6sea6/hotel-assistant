@@ -2,7 +2,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { closeAutoEdge, launchAndWaitForEdge } = require('./cli/auto-edge');
+const { closeAutoEdge } = require('./cli/auto-edge');
 const { resolveEdgeProfileDirectory, resolveEdgeUserDataDir } = require('./edge-runtime');
 const { connectToDebugger, waitForDebuggerEndpoint } = require('./scraper/cdp-utils');
 
@@ -345,71 +345,16 @@ async function createBatchEdgeWorkerPool({
   args = {},
   effectiveTemplate = {},
   concurrency = 1,
-  existingWorker = null,
-  preparedUserDataDirs = []
+  existingWorker = null
 }) {
-  if (!args['auto-edge'] || concurrency <= 1) {
-    return null;
-  }
-
-  const sourceUserDataDir = resolveEdgeUserDataDir(effectiveTemplate.edge_user_data_dir);
-  const profileDirectory = resolveEdgeProfileDirectory(effectiveTemplate.edge_profile_directory);
-  const workers = [];
-
-  try {
-    if (existingWorker && existingWorker.port) {
-      return createSharedBrowserWorkerPool({
-        effectiveTemplate,
-        concurrency,
-        existingWorker
-      });
-    }
-
-    let preparedUserDataDirIndex = 0;
-    for (let index = workers.length; index < concurrency; index += 1) {
-      let userDataDir = preparedUserDataDirs[preparedUserDataDirIndex];
-      preparedUserDataDirIndex += 1;
-      if (!userDataDir) {
-        userDataDir = await copyProfileForWorkerAsync(sourceUserDataDir);
-      }
-      const port = await findAvailablePort();
-      try {
-        const launched = await launchAndWaitForEdge({
-          userDataDir,
-          profileDirectory,
-          browserPreference: effectiveTemplate.browser_preference,
-          port,
-          url: 'about:blank',
-          headless: effectiveTemplate.edge_headless,
-          timeoutMs: BATCH_EDGE_WORKER_LAUNCH_TIMEOUT_MS
-        });
-        const worker = {
-          id: index + 1,
-          pid: launched.pid,
-          port: Number(launched.port || port),
-          userDataDir,
-          profileDirectory,
-          browserExecutable: launched.browserExecutable || '',
-          browserName: launched.browserName || '',
-          cleanupUserDataDir: true,
-          shouldClose: true
-        };
-        worker.effectiveTemplate = buildWorkerTemplate(effectiveTemplate, worker);
-        workers.push(worker);
-      } catch (error) {
-        cleanupBatchEdgeWorkerProfileClones([userDataDir]);
-        throw error;
-      }
-    }
-  } catch (error) {
-    await closeBatchEdgeWorkerPool({ workers });
-    throw error;
-  }
-
-  return {
-    workers,
-    close: () => closeBatchEdgeWorkerPool({ workers })
-  };
+  if (!args['auto-edge'] || concurrency <= 1) return null;
+  if (!existingWorker?.port)
+    throw new Error('批量采集需要一个已准备好的共享浏览器，禁止复制登录资料启动后备进程。');
+  return createSharedBrowserWorkerPool({
+    effectiveTemplate,
+    concurrency: Math.min(3, concurrency),
+    existingWorker
+  });
 }
 
 module.exports = {

@@ -2,6 +2,7 @@ import { $, setText } from './dom-helpers.js';
 import { getElapsedText, normalizeTaskState } from './ai-task-state.js';
 import {
   renderCancelledView,
+  renderPausedView,
   renderErrorView,
   renderIdleView,
   renderRunningView,
@@ -65,6 +66,7 @@ export {
   getQueueStatusLabel,
   getQueueTaskTitle,
   renderCancelledView,
+  renderPausedView,
   renderErrorView,
   renderIdleView,
   renderProgressIcon,
@@ -161,6 +163,8 @@ export function renderAiTaskConsole(state) {
   const taskKind = currentConsole.taskKind || 'collect';
   const viewHtml = {
     idle: renderIdleView,
+    paused: () => renderPausedView(taskState),
+    partial: () => renderPausedView(taskState),
     running: () => renderRunningView(taskState, taskKind),
     success: () => renderSuccessView(taskState, taskKind),
     error: () => renderErrorView(taskState, taskKind),

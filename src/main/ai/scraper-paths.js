@@ -40,7 +40,7 @@ function resolveScraperPath(options = {}) {
     existsSync(path.join(candidate, 'src', 'task-runner.js'))
   );
   if (!resolved) {
-    throw new Error('未找到内置采集器，请确认项目内 scraper 目录或完整版采集资源存在。');
+    throw new Error('未找到内置采集器，请确认项目内 scraper 目录或内置采集资源存在。');
   }
 
   return resolved;

@@ -252,6 +252,9 @@ async function settleRoomListWithEdgeRetry({
   getTrackedUrlCount,
   getRoomTrackedUrlCount,
   getReadableRoomResponseCount,
+  beforeSettleStep,
+  isCaptureComplete,
+  centralizedRetry = false,
   settleRoomList = settleRoomListInEdgeSession,
   waitForPageReady = waitForEdgePageReadyAfterNavigate,
   waitForContextStable = waitForEdgeExecutionContextStable,
@@ -275,6 +278,8 @@ async function settleRoomListWithEdgeRetry({
       getRoomTrackedUrlCount,
       getReadableRoomResponseCount,
       splitMainScroll: true,
+      beforeSettleStep,
+      isCaptureComplete,
       signal,
       evaluateTimeoutMs: EDGE_SETTLE_EVALUATE_TIMEOUT_MS
     });
@@ -287,7 +292,12 @@ async function settleRoomListWithEdgeRetry({
       retryReason: ''
     };
   } catch (error) {
-    if (isAbortLikeError(error) || !isTransientEdgeExecutionContextError(error)) {
+    if (
+      centralizedRetry ||
+      error.accessIssue ||
+      isAbortLikeError(error) ||
+      !isTransientEdgeExecutionContextError(error)
+    ) {
       throw error;
     }
 

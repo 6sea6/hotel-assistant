@@ -35,6 +35,7 @@ async function fetchHtml(url, headers, options = {}) {
     headers,
     timeoutMs: 30000,
     responseType: 'text',
+    retries: /(^|\.)ctrip\.com$/i.test(new URL(url).hostname) ? 0 : undefined,
     signal: options.signal || null
   });
   const setCookieHeaders = Array.isArray(response.headers && response.headers['set-cookie'])

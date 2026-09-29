@@ -72,7 +72,7 @@ HOTEL_COLLECTOR_ENV=dev ENABLE_PERF_LOG=1 node scraper/src/cli.js --url "携程�
 
 ## 打包排除
 
-正式包使用 electron-builder。根包 `package.json` 和完整版采集器资源清单都会排除：
+正式包使用 electron-builder。根包 `package.json` 和内置采集器资源清单都会排除：
 
 - `devtools/`
 - `examples/`
@@ -156,15 +156,21 @@ enhanceCustomSelect(document.getElementById('mySelect'));
 需要保留浏览器原生外观时：
 
 ```html
-<select class="input" data-native-select="true">...</select>
+<select class="input" data-native-select="true">
+  ...
+</select>
 <!-- 或 -->
-<select class="input" data-custom-select="false">...</select>
+<select class="input" data-custom-select="false">
+  ...
+</select>
 ```
 
 ### 只排除自动增强，但允许手动 enhance
 
 ```html
-<select class="input" data-custom-select-auto="false">...</select>
+<select class="input" data-custom-select-auto="false">
+  ...
+</select>
 ```
 
 该 select 不会被 `setupCustomSelects(document, { auto: true })` 增强，但 `enhanceCustomSelect(select)` 仍可手动增强。
@@ -189,15 +195,15 @@ enhanceCustomSelect(select, {
 
 ### 公共 API
 
-| 函数 | 说明 |
-|------|------|
-| `setupCustomSelects(root, options)` | 增强 root 内目标 select。`options.auto` 为 true 时增强所有 `select.input` |
-| `enhanceCustomSelect(select, options)` | 增强单个 select，支持自定义 className 和复用已有 DOM |
+| 函数                                   | 说明                                                                                      |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `setupCustomSelects(root, options)`    | 增强 root 内目标 select。`options.auto` 为 true 时增强所有 `select.input`                 |
+| `enhanceCustomSelect(select, options)` | 增强单个 select，支持自定义 className 和复用已有 DOM                                      |
 | `refreshCustomSelect(select, options)` | 刷新单个 select 的菜单和按钮文本。`options.auto` 为 true 时对 `select.input` 自动 enhance |
-| `refreshCustomSelects(root, options)` | 刷新范围内所有已增强 select。`options.auto` 为 true 时也增强新发现的 `select.input` |
-| `destroyCustomSelect(select)` | 销毁增强，恢复原生 select |
-| `closeAllCustomSelects()` | 关闭当前打开的菜单 |
-| `getCustomSelectInstance(select)` | 获取 ctx 实例（调试用） |
+| `refreshCustomSelects(root, options)`  | 刷新范围内所有已增强 select。`options.auto` 为 true 时也增强新发现的 `select.input`       |
+| `destroyCustomSelect(select)`          | 销毁增强，恢复原生 select                                                                 |
+| `closeAllCustomSelects()`              | 关闭当前打开的菜单                                                                        |
+| `getCustomSelectInstance(select)`      | 获取 ctx 实例（调试用）                                                                   |
 
 ### 开发规范
 

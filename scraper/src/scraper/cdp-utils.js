@@ -414,7 +414,10 @@ async function waitForSessionCondition(
         return true;
       }
     } catch (error) {
-      if (error && (error.name === 'AbortError' || error.code === 'CDP_ABORTED')) {
+      if (
+        error &&
+        (error.accessIssue || error.name === 'AbortError' || error.code === 'CDP_ABORTED')
+      ) {
         throw error;
       }
       // Session may still be loading; retry until timeout.

@@ -9,16 +9,16 @@ function normalizeAmapKeyMode(mode) {
   const normalized = String(mode || '')
     .trim()
     .toLowerCase();
-  if (['none', 'no-key', 'without-key', 'without-amap-key'].includes(normalized)) {
-    return 'none';
+  if (['embedded', 'with-key', 'with-amap-key'].includes(normalized)) {
+    return 'embedded';
   }
-  return 'embedded';
+  return 'none';
 }
 
 function getSetupArtifactName(version, options = {}) {
   const amapKeyMode = normalizeAmapKeyMode(options.amapKeyMode);
-  const suffix = amapKeyMode === 'none' ? '-不含高德Key' : '';
-  return `宾馆比较终极版-完整版${suffix}-${version}.exe`;
+  const suffix = amapKeyMode === 'none' ? '不含高德Key' : '含高德Key';
+  return `宾馆比较助手-${suffix}-${version}.exe`;
 }
 
 function getBundleManifest(bundleRoot) {
@@ -40,6 +40,7 @@ function getBundleManifest(bundleRoot) {
           '!devtools/**',
           '!logs/**',
           '!README.md',
+          '!src/**/*.md',
           '!scripts/analyze_perf.py',
           '!src/devtools/**',
           '!state/**',
@@ -58,12 +59,26 @@ function getBundleManifest(bundleRoot) {
     expectations: {
       sharedResources: [
         path.join('shared', 'compare-app', 'constants.js'),
+        path.join('shared', 'compare-app', 'ctrip-url-filters.js'),
         path.join('shared', 'compare-app', 'data-folder.js'),
-        path.join('shared', 'compare-app', 'hotel-groups.js')
+        path.join('shared', 'compare-app', 'hotel-groups.js'),
+        path.join('shared', 'compare-app', 'prompt-contract.js'),
+        path.join('shared', 'compare-app', 'runtime-paths.js')
       ],
       fullOnlyResources: [
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'package.json'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'cli.js'),
+        path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'result-price-filter.js'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'task-runner.js'),
+        ...[
+          'ctrip-access-controller.js',
+          'task-capture-cache.js',
+          'task-checkpoint.js',
+          'capture-observability.js',
+          'scraper/ctrip-cdp-guard.js',
+          'scraper/room-response-completeness.js',
+          'cli/login-confirmation.js'
+        ].map((name) => path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', name)),
         path.join(
           BUNDLE_RESOURCE_MAP.scraperDirName,
           'src',
@@ -104,6 +119,12 @@ function getBundleManifest(bundleRoot) {
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'tests'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'scripts', 'analyze_perf.py'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'devtools'),
+        path.join(
+          BUNDLE_RESOURCE_MAP.scraperDirName,
+          'src',
+          'scraper',
+          'ROOM-TYPE-ARCHITECTURE.md'
+        ),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'src', 'runtime', 'perf_log.py'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'state'),
         path.join(BUNDLE_RESOURCE_MAP.scraperDirName, 'output'),
@@ -113,10 +134,14 @@ function getBundleManifest(bundleRoot) {
         path.join('src', 'main', 'main.js'),
         path.join('src', 'main', 'preload.js'),
         path.join('src', 'main', 'ai', 'ctrip-login-retry.js'),
+        path.join('src', 'main', 'ai', 'refresh-item-context.js'),
         path.join('src', 'renderer', 'index.html'),
         path.join('src', 'renderer', 'manual.html'),
+        path.join('src', 'renderer', 'modules', 'data-transfer-ui.js'),
         path.join('src', 'shared', 'app-info.generated.js'),
         path.join('node_modules', '@tanstack', 'virtual-core', 'dist', 'esm', 'index.js'),
+        path.join('node_modules', '@tanstack', 'virtual-core', 'LICENSE'),
+        path.join('node_modules', 'electron-store', 'license'),
         'package.json'
       ],
       neverAppAsarResources: [
@@ -126,6 +151,7 @@ function getBundleManifest(bundleRoot) {
         'tests',
         'scraper',
         'shared',
+        path.join('src', 'shared', 'contracts.js'),
         'output',
         'state',
         DEFAULT_COMPARE_APP_FILES.appFolderName,

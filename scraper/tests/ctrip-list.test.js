@@ -1172,6 +1172,7 @@ test('collectListPageCandidates uses static list API replay before Edge fallback
       fetchHtml: async () => ({
         html: buildListHtml([{ id: '6101', name: 'HTML 第一家' }])
       }),
+      enableStaticListApiReplay: true,
       fetchListApiPagesFromHtml: async () => {
         replayCalled = true;
         return {
@@ -1959,6 +1960,7 @@ test('captureListHtmlPagesWithEdge appends Ctrip list API replay responses to sn
       {},
       {
         desiredHotelCount: 21,
+        enableListApiReplay: true,
         maxScrollRounds: 1,
         stableRoundLimit: 1,
         initialSettleMs: 0
@@ -2115,6 +2117,7 @@ test('captureListHtmlPagesWithEdge can stop before slow DOM scan when API replay
       {},
       {
         desiredHotelCount: 2,
+        enableListApiReplay: true,
         maxScrollRounds: 1,
         stableRoundLimit: 1,
         initialSettleMs: 0,

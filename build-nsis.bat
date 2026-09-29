@@ -7,7 +7,7 @@ cd /d "%~dp0"
 set "NO_PAUSE=%NO_PAUSE%"
 set "EXIT_CODE=0"
 set "AMAP_KEY_ARG=--select-amap-key"
-if "%NO_PAUSE%"=="1" set "AMAP_KEY_ARG=--with-amap-key"
+if "%NO_PAUSE%"=="1" set "AMAP_KEY_ARG=--no-amap-key"
 
 title hotel-comparison-app packager
 

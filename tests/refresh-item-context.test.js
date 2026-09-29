@@ -58,14 +58,19 @@ test('refresh item context factory builds a no-write prepared detail context', a
         {
           id: 'hotel-1',
           name: '测试酒店',
-          template_id: 'tpl-1'
+          template_id: 'tpl-1',
+          check_in_date: '2026-05-10',
+          check_out_date: '2026-05-13',
+          days: 3,
+          room_count: 2,
+          destination: '上海'
         }
       ]
     ]
   ]);
 
   const createContext = createRefreshDetailContextFactory({
-    input: { amapKey: 'amap-key' },
+    input: { amapKey: 'amap-key', perPersonDailyPriceMax: 150 },
     taskContext: { taskId: 'refresh-task', signal: null },
     workDir: 'E:/tmp/hotel-work',
     hotelGroups,
@@ -91,7 +96,8 @@ test('refresh item context factory builds a no-write prepared detail context', a
   assert.equal(prepared.context.args.skipTransit, true);
   assert.equal(prepared.context.args['skip-report'], true);
   assert.equal(prepared.context.args['no-output-report'], true);
-  assert.equal(prepared.context.args.captureStrategy, 'edge_full');
+  assert.equal(prepared.context.args.captureStrategy, 'browser_first');
+  assert.equal(prepared.context.args['per-person-daily-price-max'], undefined);
   assert.equal(prepared.context.args['auto-edge'], false);
   assert.equal(prepared.context.args['edge-debugging-port'], 9555);
   assert.equal(prepared.context.writeAppData, false);
@@ -99,6 +105,12 @@ test('refresh item context factory builds a no-write prepared detail context', a
   assert.equal(prepared.context.taskId, 'refresh-task-2');
   assert.equal(prepared.context.hotelInput.source, 'refresh');
   assert.equal(prepared.meta.refreshItem.firstHotel.name, '测试酒店');
+  assert.equal(prepared.context.effectiveTemplate.check_in_date, '2026-05-10');
+  assert.equal(prepared.context.effectiveTemplate.check_out_date, '2026-05-13');
+  assert.equal(prepared.context.effectiveTemplate.days, 3);
+  assert.equal(prepared.context.effectiveTemplate.room_count, 2);
+  assert.equal(prepared.context.effectiveTemplate.room_type, '');
+  assert.equal(prepared.context.effectiveTemplate.destination, '上海');
 
   prepared.context.emit('transit:start', '不应转发');
   prepared.context.emit('scrape:start', '正在采集', { phase: 'scrape' });
@@ -166,6 +178,193 @@ test('refresh prepared result mapper preserves old room fields and counts delete
   assert.equal(result.updatedHotels[0].transport_time, '25');
   assert.equal(result.updatedHotels[0].is_favorite, 1);
   assert.equal(result.updatedHotels[0].notes, '');
+});
+
+test('refresh uses newly collected dates and template snapshot instead of stale stored values', async () => {
+  const existingHotel = {
+    name: '旧酒店',
+    room_type: '大床房',
+    original_room_type: '豪华大床房',
+    check_in_date: '2026-05-01',
+    check_out_date: '2026-05-02',
+    days: 1,
+    template_info: { check_in_date: '2026-05-01' },
+    is_favorite: 1
+  };
+  const currentTemplateInfo = { check_in_date: '2026-07-10' };
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 1,
+        eligibleHotels: [
+          {
+            name: '旧酒店',
+            room_type: '大床房',
+            original_room_type: '豪华大床房',
+            check_in_date: '2026-07-10',
+            check_out_date: '2026-07-13',
+            days: 3,
+            template_info: currentTemplateInfo,
+            daily_price: 300,
+            total_price: 900
+          }
+        ]
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/123.html',
+    hotelName: '旧酒店',
+    meta: { refreshItem: { existingHotels: [existingHotel], firstHotel: existingHotel } }
+  });
+
+  assert.equal(result.updatedHotels[0].check_in_date, '2026-07-10');
+  assert.equal(result.updatedHotels[0].check_out_date, '2026-07-13');
+  assert.equal(result.updatedHotels[0].days, 3);
+  assert.equal(result.updatedHotels[0].template_info, currentTemplateInfo);
+  assert.equal(result.updatedHotels[0].is_favorite, 1);
+});
+
+test('refresh does not delete an existing hotel group because prices exceed a collection ceiling', async () => {
+  const existingHotels = [
+    { name: '旧酒店', room_type: '大床房', daily_price: 280, room_count: 2 },
+    { name: '旧酒店', room_type: '双床房', daily_price: 300, room_count: 2 }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        eligibleHotels: [],
+        postFilter: {
+          active: true,
+          perPersonDailyPriceMax: 150,
+          removedCount: 2,
+          keptCount: 0
+        },
+        pageSnapshot: { login_required: false, room_price_visible: true }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/123.html',
+    hotelName: '旧酒店',
+    meta: { refreshItem: { existingHotels, firstHotel: existingHotels[0] } }
+  });
+
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.deleteExistingGroup, undefined);
+  assert.equal(result.deletedRoomTypeCount, 0);
+  assert.deepEqual(result.updatedHotels, []);
+});
+
+test('refresh never deletes old prices when a price-filtered result also carries a risk signal', async () => {
+  const existingHotels = [{ name: '旧酒店', room_type: '大床房', daily_price: 280, room_count: 2 }];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 0,
+        eligibleHotels: [],
+        postFilter: {
+          active: true,
+          perPersonDailyPriceMax: 150,
+          removedCount: 1,
+          keptCount: 0
+        },
+        pageSnapshot: {
+          login_required: false,
+          room_price_visible: true,
+          spider_error_codes: [203]
+        }
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/123.html',
+    hotelName: '旧酒店',
+    meta: { refreshItem: { existingHotels, firstHotel: existingHotels[0] } }
+  });
+
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.deleteExistingGroup, undefined);
+  assert.deepEqual(result.updatedHotels, []);
+});
+
+test('refresh retains an observed room whose current price is temporarily unavailable', async () => {
+  const existingHotels = [
+    {
+      name: '旧酒店',
+      room_type: '大床房',
+      original_room_type: '豪华大床房',
+      daily_price: 280
+    },
+    {
+      name: '旧酒店',
+      room_type: '双床房',
+      original_room_type: '江景双床房',
+      daily_price: 300
+    }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 1,
+        eligibleHotels: [
+          {
+            name: '旧酒店',
+            room_type: '大床房',
+            original_room_type: '豪华大床房',
+            daily_price: 360
+          }
+        ],
+        observedRooms: [
+          { room_type: '大床房', original_room_type: '豪华大床房', price_visible: true },
+          { room_type: '双床房', original_room_type: '江景双床房', price_visible: false }
+        ]
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/123.html',
+    hotelName: '旧酒店',
+    meta: { refreshItem: { existingHotels, firstHotel: existingHotels[0] } }
+  });
+
+  assert.equal(result.status, 'updated');
+  assert.equal(result.updatedHotels.length, 2);
+  assert.equal(result.updatedHotels[0].daily_price, 360);
+  assert.equal(result.updatedHotels[1].daily_price, 300);
+  assert.equal(result.updatedRoomTypeCount, 1);
+  assert.equal(result.retainedRoomTypeCount, 1);
+  assert.equal(result.deletedRoomTypeCount, 0);
+});
+
+test('refresh deletes only an old room identity that is no longer observed', async () => {
+  const existingHotels = [
+    { room_type: '大床房', original_room_type: '豪华大床房', daily_price: 280 },
+    { room_type: '双床房', original_room_type: '江景双床房', daily_price: 300 }
+  ];
+
+  const result = await mapRefreshPreparedResult({
+    preparedResult: {
+      result: {
+        success: true,
+        eligibleCount: 1,
+        eligibleHotels: [
+          { room_type: '大床房', original_room_type: '豪华大床房', daily_price: 360 }
+        ],
+        observedRooms: [
+          { room_type: '大床房', original_room_type: '豪华大床房', price_visible: true }
+        ]
+      }
+    },
+    url: 'https://hotels.ctrip.com/hotels/123.html',
+    hotelName: '旧酒店',
+    meta: { refreshItem: { existingHotels, firstHotel: existingHotels[0] } }
+  });
+
+  assert.equal(result.updatedHotels.length, 1);
+  assert.equal(result.updatedHotels[0].daily_price, 360);
+  assert.equal(result.deletedRoomTypeCount, 1);
 });
 
 test('refresh prepared result mapper drops stale no-price refresh notes after prices return', async () => {
@@ -352,7 +551,12 @@ test('refresh prepared result mapper keeps normal existing prices when current s
 
 test('refresh prepared result mapper does NOT clear existing prices when booking_unavailable is set but room_price_visible is true (e.g. tatami room with i18n false-positive)', async () => {
   const existingHotels = [
-    { name: '上海万信R酒店', original_room_type: '榻榻米亲子房', daily_price: 775, total_price: 2324 }
+    {
+      name: '上海万信R酒店',
+      original_room_type: '榻榻米亲子房',
+      daily_price: 775,
+      total_price: 2324
+    }
   ];
 
   const result = await mapRefreshPreparedResult({
@@ -388,7 +592,7 @@ test('refresh prepared result mapper does NOT clear existing prices when booking
   assert.equal(result.retryAfterLogin, false);
 });
 
-test('refresh prepared result mapper still clears when booking_unavailable=true and room_price_visible=false (real unbookable like 895608)', async () => {
+test('refresh prepared result mapper preserves existing data when unavailable and 203 signals coexist', async () => {
   const existingHotels = [
     { name: '恒夏酒店', original_room_type: '家庭房', daily_price: 249, total_price: 745 }
   ];
@@ -420,8 +624,7 @@ test('refresh prepared result mapper still clears when booking_unavailable=true 
     }
   });
 
-  assert.equal(result.status, 'cleared');
-  assert.equal(result.deleteExistingGroup, true);
-  assert.equal(result.deletedRoomTypeCount, 1);
-  assert.equal(result.clearReason, '当前日期不接受预订');
+  assert.equal(result.status, 'skipped');
+  assert.notEqual(result.deleteExistingGroup, true);
+  assert.equal(result.deletedRoomTypeCount, 0);
 });

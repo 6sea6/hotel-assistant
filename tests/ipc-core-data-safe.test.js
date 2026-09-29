@@ -352,6 +352,58 @@ test('data:export flushes pending hotel repository changes before reading store'
   assert.equal(exportedPayload.hotels[0].shared.name, added.name);
 });
 
+test('data:export validates selective export requests before opening the save dialog', async () => {
+  const store = createStore({ hotels: [], templates: [] });
+  const { handlers } = registerHandlers(registerDataHandlers, store);
+
+  assert.deepEqual(await handlers['data:export'](createEvent(), { mode: 'templates' }), {
+    success: false,
+    error: '请选择至少一个模板'
+  });
+  assert.deepEqual(await handlers['data:export'](createEvent(), { mode: 'rooms', roomIds: [] }), {
+    success: false,
+    error: '请选择至少一个房型'
+  });
+  assert.deepEqual(await handlers['data:export'](createEvent(), { mode: 'unknown' }), {
+    success: false,
+    error: '无效的导出范围'
+  });
+});
+
+test('data:export writes only specifically requested room records and referenced templates', async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-data-export-selection-'));
+  const exportPath = path.join(tempRoot, 'selected-hotels.json');
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+  const store = createStore({
+    hotels: [
+      { id: 1, name: '甲酒店', room_type: '大床房', template_id: 10 },
+      { id: 2, name: '乙酒店', room_type: '双床房', template_id: 20 }
+    ],
+    templates: [
+      { id: 10, name: '甲模板', destination: '上海', room_count: 2 },
+      { id: 20, name: '乙模板', destination: '北京', room_count: 2 }
+    ]
+  });
+  const { handlers } = registerHandlers(registerDataHandlers, store);
+  dialogState.save = { canceled: false, filePath: exportPath };
+
+  const result = await handlers['data:export'](createEvent(), {
+    mode: 'rooms',
+    roomIds: ['2']
+  });
+  const payload = JSON.parse(fs.readFileSync(exportPath, 'utf8'));
+
+  assert.equal(result.success, true);
+  assert.equal(result.hotelCount, 1);
+  assert.equal(result.roomCount, 1);
+  assert.equal(payload.hotels[0].shared.name, '乙酒店');
+  assert.deepEqual(
+    payload.templates.map((template) => template.name),
+    ['乙模板']
+  );
+  assert.equal(payload.meta.exportScope.mode, 'rooms');
+});
+
 test('data:import rejects invalid import mode before opening dialog', async () => {
   const store = createStore();
   const { handlers } = registerHandlers(registerDataHandlers, store);

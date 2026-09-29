@@ -1,10 +1,17 @@
+const { buildRoomSelectionDiagnostics, selectBestRoom } = require('./scraper/room-logic');
 const path = require('path');
+const { getCtripAccessController } = require('./ctrip-access-controller');
+const { captureKey, rawCaptureKey } = require('./task-capture-cache');
 const { DEFAULT_AMAP_KEY } = require('./constants');
 const { scrapeCtripHotel } = require('./ctrip-scraper');
 const { getCompareAppStorePath } = require('./compare-app-bridge');
 const { buildPageSnapshotSummary } = require('./cli/run-summary');
 const { getTransitInfo } = require('./amap');
 const { buildHotelRecord, buildEligibleRoomRecords } = require('./hotel-record');
+const {
+  filterHotelsByPerPersonDailyPrice,
+  summarizePriceFilter
+} = require('./result-price-filter');
 const {
   cleanupOutputArtifacts,
   sanitizeSensitiveData,
@@ -25,6 +32,16 @@ const { toBoolean } = require('./edge-runtime');
 
 function isScrapedLoginRequired(scraped = {}) {
   return Boolean(scraped && scraped.page_snapshot && scraped.page_snapshot.login_required);
+}
+
+function buildObservedRoomSummaries(scraped = {}) {
+  return (Array.isArray(scraped.room_candidates) ? scraped.room_candidates : [])
+    .map((room) => ({
+      room_type: String(room.standard_title || room.title || '').trim(),
+      original_room_type: String(room.original_title || room.title || '').trim(),
+      price_visible: room.price !== null && room.price !== undefined && !room.price_locked
+    }))
+    .filter((room) => room.room_type || room.original_room_type);
 }
 
 class SingleDetailRunner {
@@ -77,32 +94,86 @@ class SingleDetailRunner {
     } = context;
     const { itemTemplate, itemPerf, performance } = prepared;
 
+    const checkpointKey = captureKey(itemTemplate.ctrip_url, itemTemplate, 0, compareAppSettings);
+    prepared.checkpointKey = checkpointKey;
+    const restored = context.checkpoint?.get(checkpointKey);
+    if (restored) {
+      prepared.restored = restored;
+      return prepared;
+    }
     assertNotCancelled(signal);
     emit('scrape:start', '正在采集携程酒店页面');
     const scrapeStartedAt = Date.now();
-    const scraped = await scrapeCtripHotel(itemTemplate.ctrip_url, itemTemplate, {
-      htmlPath: args.html,
-      saveHtml: Boolean(args['save-html']),
-      snapshotDir: path.join(outputDir, 'raw-pages'),
-      matchingOptions: {
+    const accessController =
+      !args.html && (autoEdge || context.accessController)
+        ? context.accessController || getCtripAccessController(itemTemplate.edge_user_data_dir)
+        : null;
+    const collect = (attemptSignal) =>
+      scrapeCtripHotel(itemTemplate.ctrip_url, itemTemplate, {
+        htmlPath: args.html,
+        saveHtml: Boolean(args['save-html']),
+        snapshotDir: path.join(outputDir, 'raw-pages'),
+        matchingOptions: {
+          includeFourPersonRoomsForThreePersonTemplate: Boolean(
+            compareAppSettings.includeFourPersonRoomsForThreePersonTemplate
+          )
+        },
+        edgeSession: buildEdgeSessionOptions(itemTemplate),
+        autoEdge,
+        captureStrategy:
+          args.captureStrategy ||
+          args['capture-strategy'] ||
+          contextCaptureStrategy ||
+          (autoEdge ? 'browser_first' : null),
+        edgeParallelCancelPolicy:
+          args.edgeParallelCancelPolicy ||
+          args['edge-parallel-cancel-policy'] ||
+          contextEdgeParallelCancelPolicy ||
+          'none',
+        includeMobileHtml:
+          !autoEdge &&
+          !context.accessController &&
+          !isBatchItem &&
+          toBoolean(args.includeMobileHtml ?? args['include-mobile-html'], false),
+        directRoomReplay:
+          !autoEdge &&
+          !context.accessController &&
+          !isBatchItem &&
+          toBoolean(args.directRoomReplay ?? args['direct-room-replay'], false),
+        onEvent: scrapeEventForwarder,
+        perf: itemPerf.child({ url: itemTemplate.ctrip_url }),
+        accessController,
+        signal: attemptSignal || signal
+      });
+    const runCapture = () =>
+      accessController ? accessController.run(collect, { signal }) : collect(signal);
+    const cache = context.captureCache;
+    const scraped = cache
+      ? await cache.getOrCollect(
+          rawCaptureKey(itemTemplate.ctrip_url, itemTemplate, accessController?.epoch || 0),
+          runCapture
+        )
+      : await runCapture();
+    if (
+      cache &&
+      scraped.page_snapshot?.capture_complete &&
+      Array.isArray(scraped.raw_room_candidates)
+    ) {
+      const matchingOptions = {
         includeFourPersonRoomsForThreePersonTemplate: Boolean(
           compareAppSettings.includeFourPersonRoomsForThreePersonTemplate
         )
-      },
-      edgeSession: buildEdgeSessionOptions(itemTemplate),
-      autoEdge,
-      captureStrategy: args.captureStrategy || args['capture-strategy'] || contextCaptureStrategy,
-      edgeParallelCancelPolicy:
-        args.edgeParallelCancelPolicy ||
-        args['edge-parallel-cancel-policy'] ||
-        contextEdgeParallelCancelPolicy ||
-        'none',
-      includeMobileHtml: toBoolean(args.includeMobileHtml ?? args['include-mobile-html'], false),
-      directRoomReplay: toBoolean(args.directRoomReplay ?? args['direct-room-replay'], false),
-      onEvent: scrapeEventForwarder,
-      perf: itemPerf.child({ url: itemTemplate.ctrip_url }),
-      signal
-    });
+      };
+      scraped.room_selection_diagnostics = buildRoomSelectionDiagnostics(
+        scraped.raw_room_candidates,
+        itemTemplate,
+        matchingOptions
+      );
+      scraped.eligible_rooms = scraped.room_selection_diagnostics.eligibleRooms;
+      scraped.room = selectBestRoom(scraped.raw_room_candidates, itemTemplate, matchingOptions);
+      scraped.page_snapshot.eligible_room_count = scraped.eligible_rooms.length;
+      scraped.page_snapshot.room_price_visible = Boolean(scraped.room?.price != null);
+    }
     performance.scrapeMs = durationSince(scrapeStartedAt);
     performance.scrape = scraped.performance || null;
     prepared.scraped = scraped;
@@ -174,19 +245,24 @@ class SingleDetailRunner {
     const reportDisabled = isReportDisabled(reportLevel);
 
     assertNotCancelled(signal);
-    const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries } = await itemPerf.runPhase(
-      'parse_data',
-      { url: itemTemplate.ctrip_url },
-      async () => {
-        const nextEligibleRoomRecords = isScrapedLoginRequired(scraped)
+    const { eligibleRoomRecords, hotelRecord, eligibleRoomSummaries, postFilter } =
+      await itemPerf.runPhase('parse_data', { url: itemTemplate.ctrip_url }, async () => {
+        const collectedRoomRecords = isScrapedLoginRequired(scraped)
           ? []
           : buildEligibleRoomRecords(itemTemplate, scraped, transit, matchedTemplate);
+        const priceFilterResult = filterHotelsByPerPersonDailyPrice(
+          collectedRoomRecords,
+          args.perPersonDailyPriceMax ?? args['per-person-daily-price-max']
+        );
+        const nextEligibleRoomRecords = priceFilterResult.hotels;
+        const nextPostFilter = summarizePriceFilter(priceFilterResult);
         const nextHotelRecord =
           nextEligibleRoomRecords[0] ||
           buildHotelRecord(itemTemplate, scraped, transit, matchedTemplate);
         const nextEligibleRoomSummaries = nextEligibleRoomRecords.map((roomRecord, index) => {
+          const sourceIndex = priceFilterResult.keptIndexes[index] ?? index;
           const sourceRoom = Array.isArray(scraped.eligible_rooms)
-            ? scraped.eligible_rooms[index] || {}
+            ? scraped.eligible_rooms[sourceIndex] || {}
             : {};
           return {
             roomType: roomRecord.room_type,
@@ -201,10 +277,21 @@ class SingleDetailRunner {
         return {
           eligibleRoomRecords: nextEligibleRoomRecords,
           hotelRecord: nextHotelRecord,
-          eligibleRoomSummaries: nextEligibleRoomSummaries
+          eligibleRoomSummaries: nextEligibleRoomSummaries,
+          postFilter: nextPostFilter
         };
-      }
-    );
+      });
+
+    if (postFilter.removedCount > 0) {
+      const allRemoved = postFilter.keptCount === 0;
+      emit(
+        'filter:price-limit',
+        allRemoved
+          ? `采集到的房型均超过每日人均 ${postFilter.perPersonDailyPriceMax} 元，已全部自动剔除`
+          : `已自动剔除 ${postFilter.removedCount} 个超过每日人均 ${postFilter.perPersonDailyPriceMax} 元的房型`,
+        postFilter
+      );
+    }
 
     const outputPath = reportDisabled
       ? ''
@@ -230,7 +317,7 @@ class SingleDetailRunner {
     }
 
     let writeResult = null;
-    if (writeAppData) {
+    if (writeAppData && scraped.page_snapshot?.capture_complete !== false && !loginRequired) {
       emit('write:start', '正在写入宾馆比较数据');
       const appWriteStartedAt = Date.now();
       writeResult = await itemPerf.runPhase(
@@ -253,7 +340,17 @@ class SingleDetailRunner {
         async () =>
           sanitizeSensitiveData({
             hotels: eligibleRoomRecords,
-            hotel: hotelRecord,
+            hotel: eligibleRoomRecords[0] || (postFilter.removedCount > 0 ? null : hotelRecord),
+            post_filter: postFilter,
+            filtered_hotel_reference:
+              postFilter.removedCount > 0
+                ? {
+                    name: hotelRecord.name,
+                    address: hotelRecord.address,
+                    website: hotelRecord.website,
+                    template_id: hotelRecord.template_id
+                  }
+                : undefined,
             compare_app_store: getCompareAppStorePath(),
             matched_template: matchedTemplate,
             effective_template: itemTemplate,
@@ -320,19 +417,22 @@ class SingleDetailRunner {
       eligibleCount: eligibleRoomRecords.length,
       eligibleHotels: eligibleRoomRecords,
       eligibleRoomTypes: eligibleRoomSummaries,
-      roomType: hotelRecord.room_type,
+      observedRooms: buildObservedRoomSummaries(scraped),
+      roomType: eligibleRoomRecords[0] ? hotelRecord.room_type : '',
       roomOccupancy: scraped.room ? (scraped.room.occupancy ?? null) : null,
       roomPrices:
         !loginRequired && scraped.room && Array.isArray(scraped.room.prices)
           ? scraped.room.prices
           : [],
-      totalPrice: loginRequired ? null : hotelRecord.total_price,
+      totalPrice:
+        loginRequired || !eligibleRoomRecords[0] ? null : eligibleRoomRecords[0].total_price,
       ctripScore: hotelRecord.ctrip_score,
       distance: hotelRecord.distance,
       subwayDistance: hotelRecord.subway_distance,
       transportTime: hotelRecord.transport_time,
       busRoute: hotelRecord.bus_route,
       pageSnapshot: buildPageSnapshotSummary(scraped.page_snapshot),
+      postFilter,
       writeResult,
       reportLevel,
       performance
@@ -350,8 +450,19 @@ class SingleDetailRunner {
   }
 
   async completePreparedScrape(prepared) {
+    if (prepared.restored) return prepared.restored;
     const transit = await this.resolveTransit(prepared);
-    return this.buildPreparedResult(prepared, transit);
+    const completed = await this.buildPreparedResult(prepared, transit);
+    completed.result.collectedAt =
+      prepared.scraped.page_snapshot?.collected_at || new Date().toISOString();
+    completed.result.checkpointKey = prepared.checkpointKey;
+    completed.result.checkpointId = prepared.context.checkpoint?.id;
+    completed.result.writeCommitted = Boolean(
+      completed.result.writeResult && completed.result.writeResult.operation !== 'skipped'
+    );
+    prepared.context.checkpoint?.record(prepared.checkpointKey, completed);
+    prepared.context.metrics?.recordResult(completed.result);
+    return completed;
   }
 
   async run(context) {

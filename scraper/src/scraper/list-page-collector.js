@@ -30,10 +30,17 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     typeof options.fetchListApiPagesFromHtml === 'function'
       ? options.fetchListApiPagesFromHtml
       : fetchListApiPagesFromHtml;
-  const capturePagesWithEdge =
+  const capturePagesWithEdgeImpl =
     typeof options.captureListHtmlPagesWithEdge === 'function'
       ? options.captureListHtmlPagesWithEdge
       : captureListHtmlPagesWithEdge;
+  const capturePagesWithEdge = (urls, session, captureOptions) =>
+    options.accessController
+      ? options.accessController.run(
+          (signal) => capturePagesWithEdgeImpl(urls, session, { ...captureOptions, signal }),
+          { signal: options.signal }
+        )
+      : capturePagesWithEdgeImpl(urls, session, captureOptions);
   const performance = {
     htmlFetchMs: 0,
     staticApiReplayMs: 0,
@@ -48,7 +55,7 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
   let prefilter = filterListPageCandidates(candidates, filters);
   let previousSelectedCount = 0;
   let staleSelectedRounds = 0;
-  for (const pageUrl of pageUrls) {
+  for (const pageUrl of options.browserFirst ? [] : pageUrls) {
     const pageStartedAt = Date.now();
     try {
       const page = await fetchPageHtml(pageUrl, DESKTOP_HEADERS);
@@ -105,9 +112,9 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
 
   if (
     prefilter.selected.length < filters.desiredHotelCount &&
-    options.enableStaticListApiReplay !== false
+    options.enableStaticListApiReplay === true
   ) {
-    for (const pageUrl of pageUrls) {
+    for (const pageUrl of options.browserFirst ? [] : pageUrls) {
       if (prefilter.selected.length >= filters.desiredHotelCount) {
         break;
       }
@@ -203,6 +210,9 @@ async function collectListPageCandidates(listUrl, template = {}, rawFilters = {}
     edgeCapture =
       edgePageUrls.length > 0
         ? await capturePagesWithEdge(edgePageUrls, options.edgeSession || {}, {
+            accessController: options.accessController,
+            signal: options.signal,
+            enableListApiReplay: options.enableListApiReplay === true,
             onPage: (edgePage) => {
               applyEdgePage(edgePage);
               return {

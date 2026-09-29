@@ -38,22 +38,26 @@
   --topbar-button-hover: rgba(255, 255, 255, 0.26);
   --topbar-button-border: rgba(255, 255, 255, 0.22);
   --topbar-divider: transparent;
-  --danger-color: #f53f3f;
+  --danger-color: #c73737;
   --color-danger: var(--danger-color);
-  --color-danger-hover: #d93636;
+  --color-danger-hover: #aa2e2e;
   --color-on-danger: #ffffff;
   --color-success: #22c55e;
   --color-success-text: #166534;
-  --color-on-success: #ffffff;
+  --color-on-light-action: #0b0f14;
+  --color-on-primary: var(--color-on-light-action);
+  --color-on-accent: var(--color-on-light-action);
+  --color-on-success: var(--color-on-light-action);
   --color-warning: #ffb800;
   --color-warning-hover: #ff9500;
   --color-warning-text: #1d2129;
   --color-info: #165dff;
   --color-on-info: #ffffff;
-  --color-favorite: #ff7d00;
-  --color-favorite-border: #ffb800;
+  --color-favorite: #b45309;
+  --color-favorite-border: #9a4a08;
   --color-favorite-bg: rgba(255, 125, 0, 0.05);
   --color-template-badge: #00b42a;
+  --color-on-template-badge: var(--color-on-light-action);
   --color-running: #2f80ed;
   --color-pending: #7b8794;
   --color-cancelled: #64748b;
@@ -65,6 +69,7 @@
     var(--color-rank-top-from) 0%,
     var(--color-rank-top-to) 100%
   );
+  --color-on-rank-top: var(--color-on-light-action);
   --color-thanks-asagirl: #8a2be2;
   --color-thanks-moli: #1677ff;
   --gradient-thanks-sixpence: linear-gradient(
@@ -88,6 +93,8 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --modal-backdrop-color: rgb(11 15 20 / 56%);
+  --notification-shadow: 0 10px 24px rgb(11 15 20 / 18%);
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -110,12 +117,16 @@
     transform var(--duration-normal) var(--ease-spring),
     box-shadow var(--duration-normal) var(--ease-standard);
   --duration-motion-reduced: 0.01ms;
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary-color) 24%, transparent);
-  --field-focus-border: var(--primary-color);
+  --interactive-text-color: color-mix(in srgb, var(--primary-color) 35%, var(--text-primary) 65%);
+  --focus-color: var(--interactive-text-color);
+  --primary-action-hover: color-mix(in srgb, var(--primary-color) 88%, white 12%);
+  --accent-action-hover: color-mix(in srgb, var(--accent-color) 88%, white 12%);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--focus-color) 24%, transparent);
+  --field-focus-border: var(--focus-color);
   --field-focus-bg: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-secondary) 8%);
   --field-focus-shadow:
-    0 0 0 3px color-mix(in srgb, var(--primary-color) 24%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--primary-color) 14%, transparent);
+    0 0 0 3px color-mix(in srgb, var(--focus-color) 24%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--focus-color) 14%, transparent);
   --z-dropdown: 2600;
   --z-modal: 3000;
   --z-notification: 10001;

@@ -164,8 +164,8 @@ export function createHotelCard(hotel, index, visibleKeys = getCurrentHotelCardV
     ${notesHtml}
 
     <div class="hotel-actions">
-      <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${hotelIdAttr}">${iconHtml('edit')} 编辑</button>
-      <button class="btn btn-danger btn-sm" data-action="delete" data-id="${hotelIdAttr}" data-confirming="false">
+      <button type="button" class="btn btn-secondary btn-sm" data-action="edit" data-id="${hotelIdAttr}">${iconHtml('edit')} 编辑</button>
+      <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${hotelIdAttr}" data-confirming="false">
         ${iconHtml('trash')} 删除
       </button>
       ${actionItems.join('')}

@@ -61,7 +61,7 @@ test('collect runner aborts first batch as soon as hard Ctrip login lock is dete
           runInteractiveEdgeLoginPrep: async (options = {}) => {
             calls.loginPrep += 1;
             calls.loginPrepUrl = options.url;
-            return { loginConfirmed: true };
+            return { loginConfirmed: true, userConfirmed: true, pageVerified: true };
           }
         };
       }
@@ -163,10 +163,7 @@ test('collect runner aborts first batch as soon as hard Ctrip login lock is dete
       events.map((event) => event.type),
       ['batch:start', 'edge:login-required', 'edge:login-window', 'edge:login-done', 'scrape:retry']
     );
-    assert.equal(
-      events.filter((event) => event.type === 'edge:login-required').length,
-      1
-    );
+    assert.equal(events.filter((event) => event.type === 'edge:login-required').length, 1);
   } finally {
     restoreMock(scraperPathsMock);
     if (originalRunner) {
@@ -214,7 +211,7 @@ test('collect runner aborts retry instead of scanning full batch when Ctrip 203 
           runInteractiveEdgeLoginPrep: async (options = {}) => {
             calls.loginPrep += 1;
             calls.loginPrepUrl = options.url;
-            return { loginConfirmed: true };
+            return { loginConfirmed: true, userConfirmed: true, pageVerified: true };
           }
         };
       }

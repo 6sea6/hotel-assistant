@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const APP_INFO = Object.freeze({
   name: '宾馆比较助手',
   version: '8.9.3',
-  releaseDate: '2026-06-22',
+  releaseDate: '2026-07-11',
   author: 'Sea'
 });
 // </app-info-generated>
@@ -188,7 +188,7 @@ const electronAPI = {
     return ipcRenderer.invoke('settings:resetAll');
   },
 
-  exportData: () => ipcRenderer.invoke('data:export'),
+  exportData: (selection) => ipcRenderer.invoke('data:export', selection),
   importData: async (mode = 'replace') => {
     invalidateCache('');
     return ipcRenderer.invoke('data:import', mode);

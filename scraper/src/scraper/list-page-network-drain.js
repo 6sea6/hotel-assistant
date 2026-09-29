@@ -77,6 +77,7 @@ async function readNetworkResponseBody(connection, sessionId, requestId) {
         timeoutMs: attempt === 0 ? 900 : 1500
       });
     } catch (_error) {
+      if (_error.accessIssue) throw _error;
       if (attempt === 0) {
         await delay(250);
       }

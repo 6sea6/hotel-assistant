@@ -63,7 +63,7 @@ export function renderVirtualHotelListView(
   header.className = 'hotel-table-header';
   header.innerHTML = `
     <div class="table-col checkbox-col">
-      <input type="checkbox" id="selectAll" data-action="toggle-select-all" ${isAllSelected ? 'checked' : ''}>
+      <input type="checkbox" id="selectAll" data-action="toggle-select-all" aria-label="选择当前全部宾馆" ${isAllSelected ? 'checked' : ''}>
     </div>
     <div class="table-col rank-col">排名</div>
     <div class="table-col name-col">宾馆名称</div>

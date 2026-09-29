@@ -55,6 +55,20 @@ async function loadCrudModule() {
       export function getLocalHotelsRevision() { return globalThis.__localHotelsRevision ?? null; }
       export function setLocalHotelsRevision(meta) { globalThis.__localHotelsRevision = meta?.revision ?? null; }
       export function markLocalHotelsRevisionUnknown() { globalThis.__localHotelsRevision = null; }
+      export function setResourceLoadState(resource, status, error = '') {
+        state.resourceLoadStates[resource] = {
+          status,
+          error: error instanceof Error ? error.message : String(error || '')
+        };
+        return state.resourceLoadStates[resource];
+      }
+      export function getResourceLoadState(resource) { return state.resourceLoadStates[resource]; }
+      export function beginMutation(key) {
+        if (state.pendingMutations.has(key)) return false;
+        state.pendingMutations.add(key);
+        return true;
+      }
+      export function endMutation(key) { state.pendingMutations.delete(key); }
       `
     );
 
@@ -107,7 +121,10 @@ async function loadCrudModule() {
        export function resetBatchDeleteConfirmation() {}
        export function startBatchDeleteConfirmation() {}
        export function syncBatchDeleteButton() {}
-       export function scheduleHotelModalFocus() {}`
+       export function scheduleHotelModalFocus() {}
+       export function clearFormError() {}
+       export function showFormError() {}
+       export function setActionButtonBusy() {}`
     );
 
     // Stub: actions.js
@@ -143,7 +160,13 @@ function initTestState(hotels = []) {
       currentFilters: {},
       lastEditedPriceField: null,
       hotelTemplateSelectRenderVersion: 0,
-      _visibleHotelsDirty: false
+      _visibleHotelsDirty: false,
+      resourceLoadStates: {
+        hotels: { status: 'idle', error: '' },
+        templates: { status: 'idle', error: '' },
+        settings: { status: 'idle', error: '' }
+      },
+      pendingMutations: new Set()
     };
   }
   const s = globalThis.__testState;
@@ -155,6 +178,12 @@ function initTestState(hotels = []) {
   s.lastEditedPriceField = null;
   s.hotelTemplateSelectRenderVersion = 0;
   s._visibleHotelsDirty = false;
+  s.resourceLoadStates = {
+    hotels: { status: 'idle', error: '' },
+    templates: { status: 'idle', error: '' },
+    settings: { status: 'idle', error: '' }
+  };
+  s.pendingMutations = new Set();
   globalThis.__localHotelsRevision = null;
   globalThis.__formFields = {};
   globalThis.__notifications = [];
@@ -206,6 +235,38 @@ test('loadHotels reuses unchanged revision without console debug by default', as
     assert.deepEqual(debugLogs, []);
   } finally {
     console.debug = originalDebug;
+  }
+});
+
+test('loadHotels keeps existing data and exposes error state when both APIs fail', async () => {
+  const { loadHotels } = await loadCrudModule();
+  initTestState([{ id: 1, name: '保留宾馆', is_favorite: 0 }]);
+
+  window.electronAPI = {
+    getHotelsMeta: async () => {
+      throw new Error('meta failed');
+    },
+    getAllHotelsWithMeta: async () => {
+      throw new Error('primary failed');
+    },
+    getAllHotels: async () => {
+      throw new Error('fallback failed');
+    }
+  };
+
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  console.error = () => {};
+  console.warn = () => {};
+  try {
+    const hotels = await loadHotels();
+    assert.equal(hotels, globalThis.__testState.hotels);
+    assert.equal(hotels[0].name, '保留宾馆');
+    assert.equal(globalThis.__testState.resourceLoadStates.hotels.status, 'error');
+    assert.match(globalThis.__testState.resourceLoadStates.hotels.error, /fallback failed/);
+  } finally {
+    console.error = originalError;
+    console.warn = originalWarn;
   }
 });
 
@@ -423,6 +484,31 @@ test('toggleFavorite { success:false } rolls back to previousHotels', async () =
   assert.ok(errNotification, 'should show error notification');
 });
 
+test('toggleFavorite failure restores only favorite and preserves concurrent fields', async () => {
+  const { toggleFavorite } = await loadCrudModule();
+  initTestState([{ id: 1, name: 'A', notes: '旧备注', is_favorite: 0 }]);
+
+  let rejectUpdate;
+  window.electronAPI = {
+    updateHotel: () =>
+      new Promise((_resolve, reject) => {
+        rejectUpdate = reject;
+      })
+  };
+
+  const pending = toggleFavorite(1, 0);
+  await flushMicrotasks();
+  globalThis.__testState.hotels[0] = {
+    ...globalThis.__testState.hotels[0],
+    notes: '并发保存的新备注'
+  };
+  rejectUpdate(new Error('保存失败'));
+  await pending;
+
+  assert.equal(globalThis.__testState.hotels[0].is_favorite, 0);
+  assert.equal(globalThis.__testState.hotels[0].notes, '并发保存的新备注');
+});
+
 /* ---- deleteHotel ---- */
 
 test('deleteHotel success does not call getAllHotels', async () => {
@@ -455,4 +541,35 @@ test('deleteHotel success does not call getAllHotels', async () => {
   assert.equal(getAllCallCount, 0, 'getAllHotels should not be called on success');
   assert.equal(globalThis.__testState.hotels.length, 1);
   assert.equal(globalThis.__testState.hotels[0].id, 2);
+});
+
+test('deleteHotel failure restores deleted row without overwriting concurrent changes', async () => {
+  const { deleteHotel } = await loadCrudModule();
+  initTestState([
+    { id: 1, name: 'A', is_favorite: 0 },
+    { id: 2, name: 'B', notes: '旧备注', is_favorite: 0 }
+  ]);
+
+  let rejectDelete;
+  window.electronAPI = {
+    deleteHotel: () =>
+      new Promise((_resolve, reject) => {
+        rejectDelete = reject;
+      })
+  };
+
+  const pending = deleteHotel(1);
+  await flushMicrotasks();
+  globalThis.__testState.hotels[0] = {
+    ...globalThis.__testState.hotels[0],
+    notes: '并发保存的新备注'
+  };
+  rejectDelete(new Error('删除失败'));
+  await pending;
+
+  assert.deepEqual(
+    globalThis.__testState.hotels.map((hotel) => hotel.id),
+    [1, 2]
+  );
+  assert.equal(globalThis.__testState.hotels[1].notes, '并发保存的新备注');
 });

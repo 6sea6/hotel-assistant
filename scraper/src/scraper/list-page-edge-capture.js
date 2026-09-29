@@ -1,3 +1,6 @@
+const { detectCtripLoginPromptInSession } = require('./edge-capture-modules/login-detection');
+const { wait } = require('../ctrip-access-controller');
+const { attachCtripCdpGuard } = require('./ctrip-cdp-guard');
 const { evaluateInSession, waitForSessionCondition } = require('./cdp-utils');
 const { normalizeEdgePageDecision } = require('./list-page-prefilter-strategy');
 const {
@@ -16,8 +19,6 @@ const {
 } = require('./list-page-network-drain');
 const {
   buildListPageScrollExpression,
-  delay,
-  dispatchCdpWheelScroll,
   parseListPageScrollResult,
   waitForPromiseOrTimeout
 } = require('./list-page-scroll-policy');
@@ -101,6 +102,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
     };
   }
 
+  let detachAccessGuard = () => {};
   let browser = null;
   let browserExecutable = '';
   let browserPort = 0;
@@ -136,21 +138,31 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       };
     }
 
+    detachAccessGuard = attachCtripCdpGuard(
+      connection,
+      sessionId,
+      options.accessController,
+      options.signal
+    );
     await connection.send('Page.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
     const listNetworkResponses = [];
+    const pendingListRequests = new Set();
     const listNetworkRequests = [];
     const processedListNetworkResponses = new Set();
     stopNetworkListener = connection.addListener((message) => {
       if (!message || message.sessionId !== sessionId) {
         return;
       }
+      if (/^Network.loading(Finished|Failed)$/.test(message.method))
+        pendingListRequests.delete(message.params?.requestId);
       if (message.method === 'Network.requestWillBeSent') {
         const params = message.params || {};
         const request = params.request || {};
         if (!isCtripListNetworkResponse(request.url)) {
           return;
         }
+        pendingListRequests.add(params.requestId);
         listNetworkRequests.push({
           requestId: params.requestId,
           url: request.url,
@@ -209,7 +221,7 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       });
 
       await connection.send('Page.navigate', { url }, sessionId);
-      await waitForPromiseOrTimeout(loadEvent, 15000);
+      await waitForPromiseOrTimeout(loadEvent, 15000, options.signal);
       await waitForSessionCondition(
         connection,
         sessionId,
@@ -218,18 +230,32 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
         return document.readyState === 'complete' && /(酒店|宾馆|评分|点评|价格|携程)/.test(bodyText);
       })()`,
         5000,
-        250
+        250,
+        { signal: options.signal }
       );
+      if (options.accessController) {
+        const access = await detectCtripLoginPromptInSession(connection, sessionId, {
+          signal: options.signal
+        });
+        if (access.detected) {
+          options.accessController.report({
+            challenge: access.challenge,
+            login: !access.challenge,
+            source: 'list_page'
+          });
+          options.accessController.assertAllowed();
+        }
+      }
       const initialSettleMs =
         options.initialSettleMs === undefined
           ? captureDefaults.initialSettleMs
           : Math.max(0, Number(options.initialSettleMs) || 0);
       if (initialSettleMs > 0) {
-        await delay(initialSettleMs);
+        await wait(initialSettleMs, options.signal);
       }
       let listApiReplayDurationMs = 0;
       let pendingListApiSnapshot = { count: 0, html: '', pageIndexes: [], error: '' };
-      if (options.enableListApiReplay !== false) {
+      if (options.enableListApiReplay === true) {
         const listApiReplayStartedAt = Date.now();
         pendingListApiSnapshot = await fetchListApiPagesInEdgeSession(connection, sessionId, {
           desiredHotelCount: options.desiredHotelCount,
@@ -288,8 +314,13 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
           }
         );
         const parsed = parseListPageScrollResult(scrollResult);
-        await dispatchCdpWheelScroll(connection, sessionId);
-        await delay(350);
+        const loadingStarted = Date.now();
+        while (pendingListRequests.size > 0 && Date.now() - loadingStarted < 15000) {
+          options.accessController?.assertAllowed();
+          await wait(100, options.signal);
+        }
+        if (pendingListRequests.size > 0)
+          throw Object.assign(new Error('列表加载超时'), { code: 'ETIMEDOUT' });
         const networkSnapshot = await drainListNetworkResponses(
           connection,
           sessionId,
@@ -374,12 +405,19 @@ async function captureListHtmlPagesWithEdge(pageUrls = [], edgeSessionOptions = 
       error: ''
     };
   } catch (error) {
+    if (error.accessIssue || options.accessController?.issue) {
+      options.accessController?.assertAllowed();
+      throw error;
+    }
+    if (options.signal?.aborted || error.name === 'AbortError' || options.accessController)
+      throw error;
     return {
       pages: [],
       error:
         error && error.message ? error.message : 'edge-cdp list fallback failed with unknown error'
     };
   } finally {
+    detachAccessGuard();
     await cleanupListEdgeSession({
       stopNetworkListener,
       connection,

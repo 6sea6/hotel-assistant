@@ -28,13 +28,22 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Formatting
+        run: npm run format:release:check
+
+      - name: Type check
+        run: npm run typecheck
 
       - name: Lint
         run: npm run lint
 
       - name: Unit tests
         run: npm test
+
+      - name: Production dependency audit
+        run: npm run audit:prod
 
       - name: Coverage
         run: npm run coverage

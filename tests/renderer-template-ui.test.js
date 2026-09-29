@@ -86,7 +86,10 @@ async function loadTemplateUiModules() {
       path.join(tempRoot, 'ui-utils.js'),
       `export function setModalActive() {}
        export function resetDeleteConfirmation() {}
-       export function startDeleteConfirmation() {}`
+       export function startDeleteConfirmation() {}
+       export function clearFormError() {}
+       export function showFormError() {}
+       export function setActionButtonBusy() {}`
     );
 
     writeStub(
@@ -321,7 +324,9 @@ test('template list renders copy before delete and copies with a unique incremen
     'copy-template',
     'delete-template'
   ]);
-  assert.ok(html.indexOf('data-action="copy-template"') < html.indexOf('data-action="delete-template"'));
+  assert.ok(
+    html.indexOf('data-action="copy-template"') < html.indexOf('data-action="delete-template"')
+  );
 
   await module.copyTemplate('tpl-1');
 

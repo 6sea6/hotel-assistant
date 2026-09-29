@@ -10,10 +10,6 @@ const PRESERVED_FIELDS_ON_REFRESH = [
   'bus_route',
   'destination',
   'template_id',
-  'template_info',
-  'check_in_date',
-  'check_out_date',
-  'days',
   'is_favorite',
   'notes'
 ];
@@ -83,6 +79,8 @@ function shouldClearExistingHotelsForUnavailableRefresh(collectResult = {}, retr
   // 的酒店会被误删。真实"不接受预订"的酒店（如 hotelId=895608）页面无任何可见价格，
   // room_price_visible=false，仍会正确清空。
   const pageSnapshot = collectResult.pageSnapshot || collectResult.page_snapshot || {};
+  if (collectResult.accessIssue || pageSnapshot.login_required || hasSpiderRiskSignal(pageSnapshot))
+    return false;
   const hasVisiblePrice = Boolean(pageSnapshot.room_price_visible);
   if (!hasVisiblePrice && getBookingUnavailableSignal(collectResult).detected) {
     return true;
@@ -160,18 +158,21 @@ function buildRefreshCollectArgs({
   collectArgs.skipTransit = true;
   collectArgs['skip-report'] = true;
   collectArgs['no-output-report'] = true;
-  collectArgs.captureStrategy = 'edge_full';
+  collectArgs.captureStrategy = 'browser_first';
   if (worker && worker.port) {
     collectArgs['auto-edge'] = false;
     collectArgs['edge-user-data-dir'] = worker.userDataDir || baseEdgeUserDataDir;
-    collectArgs['edge-profile-directory'] =
-      worker.profileDirectory || baseEdgeProfileDirectory;
+    collectArgs['edge-profile-directory'] = worker.profileDirectory || baseEdgeProfileDirectory;
     collectArgs['edge-debugging-port'] = Number(worker.port);
   }
   return collectArgs;
 }
 
 function createRefreshDetailContextFactory({
+  accessController = null,
+  captureCache = null,
+  checkpoint = null,
+  metrics = null,
   input = {},
   taskContext = {},
   workDir,
@@ -208,14 +209,56 @@ function createRefreshDetailContextFactory({
       loadedTemplate.template_id,
       loadedTemplate.template_name || collectArgs.templateName
     );
-    const effectiveTemplate = applyMatchedTemplate(loadedTemplate, matchedTemplate);
-    validateTemplate(effectiveTemplate);
-    const effectiveDestination = normalizePlaceName(
-      (matchedTemplate && matchedTemplate.destination) || effectiveTemplate.destination
+    const currentEffectiveTemplate = applyMatchedTemplate(loadedTemplate, matchedTemplate);
+    const historicalTemplateInfo =
+      firstHotel.template_info && typeof firstHotel.template_info === 'object'
+        ? firstHotel.template_info
+        : {};
+    const historicalRoomCount = Number(
+      historicalTemplateInfo.room_count ||
+        firstHotel.room_count ||
+        currentEffectiveTemplate.room_count
     );
+    const effectiveTemplate = {
+      ...currentEffectiveTemplate,
+      check_in_date:
+        firstHotel.check_in_date ||
+        historicalTemplateInfo.check_in_date ||
+        currentEffectiveTemplate.check_in_date,
+      check_out_date:
+        firstHotel.check_out_date ||
+        historicalTemplateInfo.check_out_date ||
+        currentEffectiveTemplate.check_out_date,
+      days: Number(firstHotel.days || currentEffectiveTemplate.days) || undefined,
+      room_count:
+        Number.isFinite(historicalRoomCount) && historicalRoomCount > 0
+          ? historicalRoomCount
+          : currentEffectiveTemplate.room_count,
+      room_type: '',
+      destination:
+        firstHotel.destination ||
+        historicalTemplateInfo.destination ||
+        currentEffectiveTemplate.destination
+    };
+    const refreshMatchedTemplate = matchedTemplate
+      ? {
+          ...matchedTemplate,
+          check_in_date: effectiveTemplate.check_in_date,
+          check_out_date: effectiveTemplate.check_out_date,
+          room_count: effectiveTemplate.room_count,
+          destination: effectiveTemplate.destination
+        }
+      : matchedTemplate;
+    validateTemplate(effectiveTemplate);
+    const effectiveDestination = normalizePlaceName(effectiveTemplate.destination);
 
     return {
       context: {
+        accessController,
+        captureCache,
+        checkpoint,
+        metrics,
+        isBatchItem: true,
         args: collectArgs,
         startedAt: new Date().toISOString(),
         taskId: `${taskContext.taskId || 'refresh'}-${index}`,
@@ -223,7 +266,7 @@ function createRefreshDetailContextFactory({
         signal: taskContext.signal,
         outputDir: path.join(workDir, 'output'),
         template: loadedTemplate,
-        matchedTemplate,
+        matchedTemplate: refreshMatchedTemplate,
         effectiveTemplate,
         compareAppSettings,
         effectiveDestination,
@@ -284,6 +327,24 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
   const existingHotels = refreshItem.existingHotels || [];
   const firstHotel = refreshItem.firstHotel || existingHotels[0] || {};
   const collectResult = preparedResult.result;
+  if (collectResult?.resumedFromCheckpoint)
+    return {
+      hotelName,
+      url,
+      status: 'resumed',
+      collectedAt: collectResult.collectedAt,
+      updatedHotels: [],
+      skipReason: '沿用原采集时间，已完成项目无需再次写入'
+    };
+  if (collectResult?.accessIssue || collectResult?.pageSnapshot?.capture_complete === false) {
+    return {
+      hotelName,
+      url,
+      status: 'skipped',
+      updatedHotels: [],
+      skipReason: '采集结果不完整或访问受限，保留已有价格'
+    };
+  }
 
   if (
     !collectResult ||
@@ -320,9 +381,7 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
     };
   }
 
-  const newHotels = Array.isArray(collectResult.eligibleHotels)
-    ? collectResult.eligibleHotels
-    : [];
+  const newHotels = Array.isArray(collectResult.eligibleHotels) ? collectResult.eligibleHotels : [];
   if (newHotels.length === 0) {
     return {
       hotelName,
@@ -337,26 +396,53 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
     };
   }
 
-  const oldRoomTypes = new Set(
-    existingHotels.map((hotel) => (hotel.room_type || '').trim()).filter(Boolean)
-  );
+  const buildRoomIdentity = (hotel = {}) => {
+    const roomType = String(hotel.room_type || '').trim();
+    const originalRoomType = String(hotel.original_room_type || roomType).trim();
+    if (!roomType && !originalRoomType) return '';
+    return `${roomType}\u0000${originalRoomType}`;
+  };
+  const oldRoomIdentities = new Set(existingHotels.map(buildRoomIdentity).filter(Boolean));
+  const preservedByExactRoom = new Map();
   const preservedByRoomType = new Map();
   for (const oldHotel of existingHotels) {
     const roomType = (oldHotel.room_type || '').trim();
-    preservedByRoomType.set(roomType, oldHotel);
+    const originalRoomType = (oldHotel.original_room_type || '').trim();
+    if (roomType || originalRoomType) {
+      preservedByExactRoom.set(`${roomType}\u0000${originalRoomType}`, oldHotel);
+    }
+    if (!preservedByRoomType.has(roomType)) {
+      preservedByRoomType.set(roomType, oldHotel);
+    }
   }
 
   const refreshedHotels = newHotels.map((newHotel) => {
-    const oldHotel = preservedByRoomType.get((newHotel.room_type || '').trim()) || firstHotel;
+    const roomType = (newHotel.room_type || '').trim();
+    const originalRoomType = (newHotel.original_room_type || '').trim();
+    const oldHotel =
+      preservedByExactRoom.get(`${roomType}\u0000${originalRoomType}`) ||
+      preservedByRoomType.get(roomType) ||
+      firstHotel;
     return preserveRefreshFields(newHotel, oldHotel);
   });
 
-  const newRoomTypes = new Set(
-    refreshedHotels.map((hotel) => (hotel.room_type || '').trim()).filter(Boolean)
+  const refreshedRoomIdentities = new Set(refreshedHotels.map(buildRoomIdentity).filter(Boolean));
+  const observedRoomIdentities = new Set(
+    (Array.isArray(collectResult.observedRooms) ? collectResult.observedRooms : [])
+      .map(buildRoomIdentity)
+      .filter(Boolean)
+  );
+  const retainedUnavailablePriceHotels = existingHotels.filter((hotel) => {
+    const identity = buildRoomIdentity(hotel);
+    return observedRoomIdentities.has(identity) && !refreshedRoomIdentities.has(identity);
+  });
+  refreshedHotels.push(...retainedUnavailablePriceHotels);
+  retainedUnavailablePriceHotels.forEach((hotel) =>
+    refreshedRoomIdentities.add(buildRoomIdentity(hotel))
   );
   let deletedForThisHotel = 0;
-  for (const oldType of oldRoomTypes) {
-    if (!newRoomTypes.has(oldType)) {
+  for (const oldIdentity of oldRoomIdentities) {
+    if (!refreshedRoomIdentities.has(oldIdentity)) {
       deletedForThisHotel++;
     }
   }
@@ -366,7 +452,8 @@ async function mapRefreshPreparedResult({ preparedResult, url, hotelName, meta }
     url,
     status: 'updated',
     updatedHotels: refreshedHotels,
-    updatedRoomTypeCount: refreshedHotels.length,
+    updatedRoomTypeCount: newHotels.length,
+    retainedRoomTypeCount: retainedUnavailablePriceHotels.length,
     deletedRoomTypeCount: deletedForThisHotel,
     skipReason: '',
     error: '',

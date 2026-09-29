@@ -1,3 +1,5 @@
+const { attachCtripCdpGuard } = require('../ctrip-cdp-guard');
+const { evaluateInSession } = require('../cdp-utils');
 const { parseHotelIdFromUrl } = require('../../ctrip-url');
 const { mergeRoomCandidates, selectBestRoom, selectMatchingRooms } = require('../room-logic');
 const {
@@ -140,6 +142,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     };
   }
 
+  let detachAccessGuard = () => {};
   let browser = null;
   let browserExecutable = '';
   let browserPort = 0;
@@ -161,10 +164,16 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     stage: ''
   };
   const signal = options.signal || null;
-  const markLoginPromptDetected = ({ stage = '', reason = '' } = {}) => {
+  const markLoginPromptDetected = ({ stage = '', reason = '', challenge = false } = {}) => {
     if (loginPromptNotified) {
       return false;
     }
+    options.accessController?.report({
+      login: !challenge,
+      challenge,
+      source: stage || 'login_prompt'
+    });
+    options.accessController?.assertAllowed();
     loginPromptDetection.detected = true;
     loginPromptDetection.reason = reason || '检测到携程页面显示“登录看低价/解锁优惠”。';
     loginPromptDetection.stage = stage || '';
@@ -206,9 +215,11 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       }
       return markLoginPromptDetected({
         stage,
+        challenge: Boolean(detection.challenge),
         reason: detection.reason || '检测到携程页面显示“登录看低价/解锁优惠”。'
       });
     } catch (_error) {
+      if (_error.accessIssue) throw _error;
       // Login prompt detection is best-effort and must not affect collection.
       return false;
     }
@@ -246,6 +257,12 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     if (targetSession.errorResult) {
       return targetSession.errorResult;
     }
+    detachAccessGuard = attachCtripCdpGuard(
+      connection,
+      sessionId,
+      options.accessController,
+      options.signal
+    );
     const networkTracker = createEdgeNetworkResponseTracker({ connection, sessionId, signal });
     const { requestMeta, roomRequestMeta, trackedUrls } = networkTracker;
     const roomBlocks = [];
@@ -299,7 +316,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       onSettleStats: (nextSettleStats) => {
         settleStats = nextSettleStats;
       },
-      cacheDisabled: !reusedTarget,
+      centralizedRetry: Boolean(options.accessController),
+      cacheDisabled: false,
       navigateSignalTimeoutMs: reusedTarget ? 15000 : 12000,
       trackedLogLabel: reusedTarget ? 'tracked URLs' : 'new-tab tracked URLs',
       preNavigateLogMessage: reusedTarget
@@ -310,9 +328,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     edgeParseStats = targetCaptureResult.edgeParseStats;
     roomApiDebugIndex = targetCaptureResult.roomApiDebugIndex;
 
-    const matchingOptions = options.matchingOptions || {};
-    const edgeFastPathComplete = isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions);
-    if (spiderErrorCodes.has(203) && !edgeFastPathComplete) {
+    options.accessController?.assertAllowed();
+    if (spiderErrorCodes.has(203)) {
       const detectedLogin = await notifyLoginPromptIfDetected('edge_antispider_203');
       if (!detectedLogin) {
         markLoginPromptDetected({
@@ -326,7 +343,6 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     // once room API data has already produced candidates.
     const apiCaptureComplete = Boolean(
       edgeParseStats &&
-      edgeParseStats.roomResponseCount > 0 &&
       edgeParseStats.fastPathComplete &&
       isEdgeRoomFastPathComplete(roomBlocks, template)
     );
@@ -363,8 +379,16 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
         };
       }
     );
+    const html = await evaluateInSession(
+      connection,
+      sessionId,
+      'document.documentElement.outerHTML',
+      { signal }
+    );
     if (!selectedRoom) {
       return {
+        html,
+        captureComplete: Boolean(edgeParseStats?.captureComplete),
         roomBlocks: mergedBlocks,
         selectedRoom: null,
         trackedUrls: [...trackedUrls],
@@ -383,6 +407,8 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
     }
 
     return {
+      html,
+      captureComplete: Boolean(edgeParseStats?.captureComplete),
       roomBlocks: mergedBlocks,
       selectedRoom,
       trackedUrls: [...trackedUrls],
@@ -396,6 +422,16 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       error: ''
     };
   } catch (error) {
+    if (error.accessIssue || options.accessController?.issue) {
+      options.accessController?.assertAllowed();
+      throw error;
+    }
+    if (
+      options.accessController &&
+      ([502, 503, 504].includes(Number(error.status)) ||
+        /ETIMEDOUT|ECONNRESET|CDP_TIMEOUT/.test(String(error.code || '')))
+    )
+      throw error;
     if (isAbortLikeError(error)) {
       throw error;
     }
@@ -413,6 +449,7 @@ async function captureRoomCandidatesWithEdge(url, template, edgeSessionOptions =
       error: error && error.message ? error.message : 'edge-cdp fallback failed with unknown error'
     };
   } finally {
+    detachAccessGuard();
     await cleanupEdgeTargetSession({
       perf,
       url,

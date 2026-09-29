@@ -57,7 +57,7 @@ test('setupBundledModules deploys unified prompt into packaged paths', (t) => {
   const installDir = path.join(tempRoot, 'install-root');
   const appDataRoot = path.join(tempRoot, 'appdata-root');
   const homeRoot = path.join(tempRoot, 'home-root');
-  const fakeExecPath = path.join(installDir, '宾馆比较终极版.exe');
+  const fakeExecPath = path.join(installDir, '宾馆比较助手.exe');
 
   fs.mkdirSync(path.join(scraperDir, 'src'), { recursive: true });
   fs.mkdirSync(path.join(scraperDir, 'examples'), { recursive: true });

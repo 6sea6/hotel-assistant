@@ -1,4 +1,6 @@
 const fs = require('fs');
+const { monitorLoginConfirmation } = require('./login-confirmation');
+const { getCtripAccessController } = require('../ctrip-access-controller');
 const path = require('path');
 const { spawn } = require('child_process');
 const {
@@ -179,44 +181,51 @@ async function runInteractiveEdgeLoginPrep(options = {}) {
   fs.mkdirSync(userDataDir, { recursive: true });
 
   console.error(
-    `[auto-edge] 未检测到可复用的登录资料，已打开一次可见 ${browserName} 窗口。请先登录携程，完成后关闭该窗口，当前任务会继续。`
+    `[auto-edge] 未检测到可复用的登录资料，已打开一次可见 ${browserName} 窗口。请登录并确认房价，点击页面右下角的恢复采集按钮。若按钮无法确认，请手动刷新酒店页；关闭窗口不会恢复采集。`
   );
 
-  await new Promise((resolve, reject) => {
-    const child = spawn(
-      edgeExecutable,
-      [
-        '--no-first-run',
-        '--no-default-browser-check',
-        ...buildVisibleBrowserWindowArgs(),
-        `--remote-debugging-port=${port}`,
-        `--user-data-dir=${userDataDir}`,
-        `--profile-directory=${profileDirectory}`,
-        url
-      ],
-      {
-        stdio: 'ignore',
-        detached: false,
-        windowsHide: false
-      }
-    );
-
-    child.on('error', reject);
-    child.on('exit', () => resolve());
+  const abort = new AbortController();
+  const cancel = () => abort.abort();
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  if (options.signal?.aborted) abort.abort();
+  let confirmation = { userConfirmed: false, pageVerified: false, loginConfirmed: false };
+  const child = spawn(
+    edgeExecutable,
+    [
+      '--no-first-run',
+      '--no-default-browser-check',
+      ...buildVisibleBrowserWindowArgs(),
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${userDataDir}`,
+      `--profile-directory=${profileDirectory}`,
+      url
+    ],
+    { stdio: 'ignore', detached: false, windowsHide: false }
+  );
+  const closed = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', () => resolve(null));
   });
-
-  const loginConfirmed = hasReusableEdgeProfile(userDataDir, profileDirectory);
-  if (loginConfirmed) {
-    console.error('[auto-edge] 首次登录准备已完成，继续后台采集。');
-  } else {
-    console.error(
-      `[auto-edge] 可见 ${browserName} 窗口已关闭，但尚未检测到明确的可复用资料；若后续仍提示登录，请重新完成一次登录。`
-    );
+  try {
+    confirmation =
+      (await Promise.race([closed, monitorLoginConfirmation(port, abort.signal)])) || confirmation;
+    if (confirmation.loginConfirmed) {
+      getCtripAccessController(userDataDir).confirmRecovery(confirmation);
+      closeAutoEdge({ pid: child.pid, port, userDataDir, browserExecutable: edgeExecutable });
+    }
+  } finally {
+    abort.abort();
+    options.signal?.removeEventListener('abort', cancel);
+    if (options.signal?.aborted)
+      closeAutoEdge({ pid: child.pid, port, userDataDir, browserExecutable: edgeExecutable });
   }
+  const loginConfirmed = confirmation.loginConfirmed;
 
   return {
     success: true,
     loginConfirmed,
+    userConfirmed: confirmation.userConfirmed,
+    pageVerified: confirmation.pageVerified,
     browserName,
     userDataDir,
     profileDirectory

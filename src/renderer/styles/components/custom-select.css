@@ -46,6 +46,59 @@
   transform: rotate(180deg);
 }
 
+.hotel-name-combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.hotel-name-combobox-input {
+  min-height: 40px;
+  padding: 8px 44px 8px 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-primary) 94%, var(--bg-tertiary) 6%);
+}
+
+.hotel-name-combobox-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.hotel-name-combobox-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.hotel-name-combobox-toggle:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 1px;
+}
+
+.hotel-name-combobox-caret {
+  transition: transform var(--transition-fast);
+}
+
+.hotel-name-combobox.is-open .hotel-name-combobox-caret {
+  transform: rotate(180deg);
+}
+
+.hotel-name-combobox.is-open .hotel-name-combobox-input {
+  border-color: var(--field-focus-border);
+  background: var(--field-focus-bg);
+  box-shadow: var(--field-focus-shadow);
+}
+
 .custom-select.is-open .custom-select-button,
 .ai-template-picker.is-open .ai-template-picker-button,
 .custom-select-button:focus-visible,
@@ -82,6 +135,26 @@
   display: none;
 }
 
+.hotel-name-suggestion-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: min(360px, calc(100vh - 190px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: var(--z-dropdown);
+}
+
+.hotel-name-suggestion-empty {
+  padding: 12px 14px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .custom-select-option,
 .ai-template-picker-option {
   width: 100%;
@@ -109,7 +182,11 @@
   background: color-mix(in srgb, var(--primary-color) 10%, transparent);
 }
 
-.custom-select-option.is-selected,
+.custom-select-option.is-selected {
+  color: var(--color-on-primary);
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-action-hover));
+}
+
 .ai-template-picker-option.is-selected {
   color: #fff;
   background: linear-gradient(
@@ -133,6 +210,11 @@
 .custom-select.is-disabled .custom-select-button {
   cursor: not-allowed;
   opacity: 0.65;
+}
+
+[data-theme='colorful-mode'] .custom-select-option.is-selected {
+  background: var(--colorful-gradient-cool);
+  color: var(--color-on-primary);
 }
 
 .task-url-input-wrap {

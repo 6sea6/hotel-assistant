@@ -28,6 +28,7 @@ import {
   handleAiTaskInputChange,
   readCollectBrowser,
   readCollectBatchConcurrency,
+  readCollectionResultPolicy,
   readCtripUrlFilterSettings,
   readListFilterForm,
   syncAiCtripListUrlFromSettings,
@@ -243,7 +244,7 @@ function finishTaskConsole(result, reply, queueTask = null) {
     );
     queueTask.backendTaskId = consoleState.taskId || queueTask.backendTaskId || '';
     queueTask.finishedAt = consoleState.endedAt;
-    queueTask.status = 'completed';
+    queueTask.status = String(collectResult?.status || taskStatus.status || 'completed');
     queueTask.resultSummary = result.message || reply || '采集任务完成';
     queueTask.console = consoleState;
     if (String(state.aiSelectedQueueTaskId) === String(queueTask.id)) {
@@ -501,7 +502,7 @@ function isDuplicateActiveTaskInput(inputMode, inputValue) {
  * @param {string} url
  * @param {AiListFilters} [listFilters]
  * @param {AiListUrlFilters} [listUrlFilters]
- * @param {{inputMode?: 'url'|'address'|string, addressQuery?: string}} [options]
+ * @param {{inputMode?: 'url'|'address'|string, addressQuery?: string, collectionPolicy?: import('../../shared/contracts').AiCollectionPolicy}} [options]
  * @returns {AiTaskQueueItem|null}
  */
 function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}, options = {}) {
@@ -516,7 +517,8 @@ function addQueueTask(template, url, listFilters = {}, listUrlFilters = {}, opti
   }
   const task = createQueueTask(template, url, listFilters, listUrlFilters, 'collect', {
     inputMode,
-    addressQuery: options.addressQuery
+    addressQuery: options.addressQuery,
+    collectionPolicy: options.collectionPolicy
   });
   pushAiTaskQueueItem(task);
   if (!state.aiSelectedQueueTaskId) {
@@ -547,7 +549,9 @@ async function executeCollectTask(task) {
       result = await window.electronAPI.ai.refreshHotelData({
         amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
         collectBrowser: readCollectBrowser(),
-        batchConcurrency: readCollectBatchConcurrency()
+        batchConcurrency: readCollectBatchConcurrency(),
+        resumeTaskId: task.resumeTaskId,
+        confirmLoginRecovery: task.confirmLoginRecovery
       });
     } else {
       result = await window.electronAPI.ai.startTask(buildTaskPayload(task));
@@ -555,15 +559,24 @@ async function executeCollectTask(task) {
     assertSuccessfulAiTaskResult(result);
     const reply = result.message || '任务已处理。';
     finishTaskConsole(result, reply, task);
+    const paused = task.status === 'paused';
+    if (paused) {
+      shouldRunNextImmediately = false;
+      showNotification(
+        String(task.console?.collectResult?.error || '采集已暂停，请处理页面限制后点击重试继续'),
+        'warning'
+      );
+    }
 
     if (isRefresh || getQueueResultWrote(result)) {
       await actions.reloadAllData({ includeSettings: true, invalidateCache: true, verbose: false });
       actions.updateTemplateFilter({ interactionFirst: true });
       actions.renderHotelList({ interactionFirst: true });
-      showNotification(
-        isRefresh ? '更新数据完成，宾馆列表已刷新' : '采集结果已写入，宾馆列表已刷新',
-        'success'
-      );
+      if (!paused)
+        showNotification(
+          isRefresh ? '更新数据完成，宾馆列表已刷新' : '采集结果已写入，宾馆列表已刷新',
+          'success'
+        );
     }
   } catch (error) {
     if (isTaskCancellationError(error)) {
@@ -724,6 +737,7 @@ export async function enqueueAiCollectTask() {
 
   const listFilters = readListFilterForm();
   const listUrlFilters = readCtripUrlFilterSettings({ activeOnly: true, template });
+  const collectionPolicy = readCollectionResultPolicy();
   const submittedInput = detectSubmittedTaskInput();
   let task = null;
   if (submittedInput.inputMode === 'empty') {
@@ -733,7 +747,8 @@ export async function enqueueAiCollectTask() {
   if (submittedInput.inputMode === 'address') {
     task = addQueueTask(template, '', listFilters, listUrlFilters, {
       inputMode: 'address',
-      addressQuery: submittedInput.addressQuery
+      addressQuery: submittedInput.addressQuery,
+      collectionPolicy
     });
   } else {
     await syncAiCtripListUrlFromSettings({ template });
@@ -742,7 +757,7 @@ export async function enqueueAiCollectTask() {
       showNotification('请粘贴携程酒店详情页或列表页链接', 'warning');
       return;
     }
-    task = addQueueTask(template, url, listFilters, listUrlFilters);
+    task = addQueueTask(template, url, listFilters, listUrlFilters, { collectionPolicy });
   }
   if (!task) return;
   setValue('aiHotelUrlInput', '');
@@ -878,9 +893,14 @@ export function retryAiQueueTask(taskId) {
     sourceTask.taskKind || 'collect',
     {
       inputMode: sourceTask.inputMode,
-      addressQuery: sourceTask.addressQuery
+      addressQuery: sourceTask.addressQuery,
+      collectionPolicy: sourceTask.collectionPolicy
     }
   );
+  if (sourceTask.status === 'paused') {
+    task.resumeTaskId = String(sourceTask.console?.collectResult?.resumeTaskId || '');
+    task.confirmLoginRecovery = true;
+  }
   pushAiTaskQueueItem(task);
   setAiSelectedQueueTaskId(task.id || '');
   setAiQueueSelectionPinned(false);
