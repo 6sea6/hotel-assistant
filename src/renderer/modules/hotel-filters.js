@@ -70,13 +70,17 @@ export function applyFiltersToHotels(hotels, filters) {
 
     if (normalizedNameFilter) {
       const hotelNameKey = derived?.nameKey ?? normalizeFilterOptionKey(hotel.name);
-      if (hotelNameKey !== normalizedNameFilter) return false;
+      if (!hotelNameKey.includes(normalizedNameFilter)) return false;
     }
 
     if (filters.score && filters.score !== '') {
       const minScore = parseFloat(String(filters.score));
       if (Number.isFinite(minScore)) {
-        const hotelScore = derived?.scoreNumber ?? (Number.isFinite(Number(hotel.ctrip_score)) && Number(hotel.ctrip_score) > 0 ? Number(hotel.ctrip_score) : null);
+        const hotelScore =
+          derived?.scoreNumber ??
+          (Number.isFinite(Number(hotel.ctrip_score)) && Number(hotel.ctrip_score) > 0
+            ? Number(hotel.ctrip_score)
+            : null);
         if (hotelScore === null || hotelScore < minScore) {
           return false;
         }
@@ -120,7 +124,8 @@ export function applyFiltersToHotels(hotels, filters) {
     }
 
     if (filters.subwayDistance && filters.subwayDistance !== '') {
-      const hotelSubwayDistance = derived?.subwayDistanceNumber ?? extractDistanceNumber(hotel.subway_distance);
+      const hotelSubwayDistance =
+        derived?.subwayDistanceNumber ?? extractDistanceNumber(hotel.subway_distance);
 
       if (filters.subwayDistance === 'none') {
         if (hotelSubwayDistance !== 0) {
@@ -140,6 +145,27 @@ export function applyFiltersToHotels(hotels, filters) {
 
     return true;
   });
+}
+
+export const HOTEL_FILTER_KEYS = [
+  'name',
+  'score',
+  'diamondLevel',
+  'favorite',
+  'template',
+  'transportTime',
+  'subwayDistance'
+];
+
+/**
+ * @param {HotelFilters} filters
+ * @returns {number}
+ */
+export function getActiveHotelFilterCount(filters = {}) {
+  return HOTEL_FILTER_KEYS.filter((key) => {
+    const value = filters[key];
+    return value !== undefined && value !== null && String(value).trim() !== '';
+  }).length;
 }
 
 export const DEFAULT_SORT_MODE = 'price_low';
@@ -215,13 +241,25 @@ export function sortHotels(hotels = [], sortMode = DEFAULT_SORT_MODE) {
       switch (mode) {
         case 'price_low':
         default:
-          result = compareMissingLast(getTotalPriceNumber(a.hotel), getTotalPriceNumber(b.hotel), 'asc');
+          result = compareMissingLast(
+            getTotalPriceNumber(a.hotel),
+            getTotalPriceNumber(b.hotel),
+            'asc'
+          );
           break;
         case 'price_high':
-          result = compareMissingLast(getTotalPriceNumber(a.hotel), getTotalPriceNumber(b.hotel), 'desc');
+          result = compareMissingLast(
+            getTotalPriceNumber(a.hotel),
+            getTotalPriceNumber(b.hotel),
+            'desc'
+          );
           break;
         case 'distance_near':
-          result = compareMissingLast(getDistanceNumberForSort(a.hotel), getDistanceNumberForSort(b.hotel), 'asc');
+          result = compareMissingLast(
+            getDistanceNumberForSort(a.hotel),
+            getDistanceNumberForSort(b.hotel),
+            'asc'
+          );
           break;
         case 'review_high':
           result = compareMissingLast(getScoreNumber(a.hotel), getScoreNumber(b.hotel), 'desc');
@@ -252,16 +290,17 @@ export function getVisibleHotelSummary(sourceHotels = []) {
 
   sourceHotels.forEach((hotel, index) => {
     const derived = hotel?._derived;
-    const hotelIdentity = derived?.hotelIdentityKey
-      ?? (normalizeFilterOptionKey(hotel?.name) || `hotel:${String(hotel?.id ?? index)}`);
+    const hotelIdentity =
+      derived?.hotelIdentityKey ??
+      (normalizeFilterOptionKey(hotel?.name) || `hotel:${String(hotel?.id ?? index)}`);
 
     hotelKeys.add(hotelIdentity);
 
     const roomTypeKey =
-      derived?.originalRoomTypeKey
-      || derived?.roomTypeKey
-      || normalizeFilterOptionKey(hotel?.original_room_type)
-      || normalizeFilterOptionKey(hotel?.room_type);
+      derived?.originalRoomTypeKey ||
+      derived?.roomTypeKey ||
+      normalizeFilterOptionKey(hotel?.original_room_type) ||
+      normalizeFilterOptionKey(hotel?.room_type);
 
     if (roomTypeKey) {
       roomTypeKeys.add(`${hotelIdentity}::${roomTypeKey}`);

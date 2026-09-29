@@ -2,7 +2,6 @@ const { dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { APP_CONFIG, getPaths } = require('../config');
-const appIconManager = require('../app-icon-manager');
 const hotelStorage = require('../hotel-storage');
 const { normalizeHotelPayload } = require('../domain/hotel-normalizer');
 const {
@@ -26,6 +25,42 @@ const {
   prepareTargetFolder
 } = require('../services/data-folder-migration-service');
 
+const EXPORT_SELECTION_MODES = ['all', 'templates', 'rooms'];
+
+/**
+ * @param {unknown} value
+ * @returns {{selection?: import('../../shared/contracts').DataExportSelection, error?: string}}
+ */
+function normalizeExportSelection(value) {
+  if (value === undefined || value === null) {
+    return { selection: { mode: 'all' } };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: '无效的导出范围' };
+  }
+  const payload = /** @type {Record<string, unknown>} */ (value);
+  if (!EXPORT_SELECTION_MODES.includes(String(payload.mode || ''))) {
+    return { error: '无效的导出范围' };
+  }
+  const mode = /** @type {'all'|'templates'|'rooms'} */ (payload.mode);
+  const field = mode === 'templates' ? 'templateIds' : mode === 'rooms' ? 'roomIds' : '';
+  if (!field) {
+    return { selection: { mode } };
+  }
+  const ids = payload[field];
+  if (
+    !Array.isArray(ids) ||
+    ids.length === 0 ||
+    ids.length > 100000 ||
+    ids.some((id) => typeof id !== 'string' && typeof id !== 'number') ||
+    ids.some((id) => typeof id === 'string' && !id.trim()) ||
+    ids.some((id) => typeof id === 'number' && !Number.isFinite(id))
+  ) {
+    return { error: mode === 'templates' ? '请选择至少一个模板' : '请选择至少一个房型' };
+  }
+  return { selection: { mode, [field]: ids } };
+}
+
 /**
  * @param {{
  *   ipcMain: {handle: (channel: string, handler: Function) => void},
@@ -40,7 +75,11 @@ function registerDataHandlers({ ipcMain, services }) {
   const getMainWindow = () => windowService?.getMainWindow?.() || null;
 
   // 导出数据
-  safeHandle(ipcMain, 'data:export', async () => {
+  safeHandle(ipcMain, 'data:export', async (_event, requestedSelection) => {
+    const normalizedSelection = normalizeExportSelection(requestedSelection);
+    if (normalizedSelection.error) {
+      return { success: false, error: normalizedSelection.error };
+    }
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false };
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -53,12 +92,18 @@ function registerDataHandlers({ ipcMain, services }) {
     if (result.filePath) {
       const store = dataService.getStore();
       flushHotelRepositoryCache(store);
-      const exportPayload = buildExportPayload(store, { appIconManager });
+      const exportPayload = buildExportPayload(store, {
+        selection: normalizedSelection.selection
+      });
+      const exportScope = /** @type {{hotelCount?: number, roomCount?: number}} */ (
+        exportPayload.meta.exportScope
+      );
       fs.writeFileSync(result.filePath, JSON.stringify(exportPayload, null, 2));
       return {
         success: true,
         path: result.filePath,
-        hotelCount: exportPayload.hotels.length,
+        hotelCount: Number(exportScope.hotelCount || 0),
+        roomCount: Number(exportScope.roomCount || 0),
         templateCount: exportPayload.templates.length,
         meta: exportPayload.meta
       };
@@ -89,28 +134,13 @@ function registerDataHandlers({ ipcMain, services }) {
         templates: store.get('templates') || [],
         settings: store.get('settings') || {}
       };
-      const previousIconSnapshot = appIconManager.captureManagedIconSnapshot(
-        previousSnapshot.settings
-      );
-
       try {
         const rawText = fs.readFileSync(result.filePaths[0], 'utf-8');
         const importedPayload = normalizeImportedPayload(JSON.parse(rawText));
         const finalPayload =
           importMode === 'append'
             ? buildAppendImportPayload(previousSnapshot, importedPayload)
-            : buildReplaceImportPayload(importedPayload);
-
-        if (importMode === 'replace') {
-          if (importedPayload.customAppIcon) {
-            const restoredIcon = appIconManager.restoreExportedIcon(importedPayload.customAppIcon);
-            finalPayload.settings.app_icon_path = restoredIcon.path;
-            finalPayload.settings.app_icon_file_name = restoredIcon.fileName;
-          } else if (appIconManager.isManagedIconReference(finalPayload.settings.app_icon_path)) {
-            finalPayload.settings.app_icon_path = '';
-            finalPayload.settings.app_icon_file_name = '';
-          }
-        }
+            : buildReplaceImportPayload(importedPayload, previousSnapshot.settings);
 
         hotelStorage.setExpandedHotelsToStore(store, finalPayload.hotels, normalizeHotelPayload);
         resetHotelRepositoryCache(store);
@@ -134,7 +164,6 @@ function registerDataHandlers({ ipcMain, services }) {
       } catch (error) {
         restoreSnapshot(store, previousSnapshot);
         resetHotelRepositoryCache(store);
-        appIconManager.restoreManagedIconSnapshot(previousIconSnapshot);
         if (windowService) {
           windowService.applyThemeAppearance(previousSnapshot.settings.theme);
           windowService.applyWindowIcon(previousSnapshot.settings.app_icon_path || '');
@@ -290,3 +319,4 @@ function registerDataHandlers({ ipcMain, services }) {
 }
 
 module.exports = registerDataHandlers;
+module.exports.normalizeExportSelection = normalizeExportSelection;

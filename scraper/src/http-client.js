@@ -1,3 +1,4 @@
+const { wait: cancellableWait } = require('./ctrip-access-controller');
 const http = require('http');
 const https = require('https');
 const axios = require('axios');
@@ -113,12 +114,6 @@ function applyHeaderOptions(headers, options = {}) {
   return output;
 }
 
-function delay(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 function parseRetryAfterMs(headers = {}) {
   const retryAfterEntry = getHeaderEntry(headers, 'retry-after');
   if (!retryAfterEntry || retryAfterEntry.value === undefined || retryAfterEntry.value === null) {
@@ -138,6 +133,7 @@ function parseRetryAfterMs(headers = {}) {
     return Math.floor(seconds * 1000);
   }
 
+  if (!/GMT$/i.test(text)) return null;
   const timestamp = Date.parse(text);
   if (!Number.isNaN(timestamp)) {
     return Math.max(0, timestamp - Date.now());
@@ -289,7 +285,7 @@ function calculateRetryDelayMs(error, attempt, options = {}) {
       ? error.retryAfterMs
       : null;
   if (retryAfterMs !== null) {
-    return Math.min(maxDelayMs, retryAfterMs);
+    return retryAfterMs;
   }
 
   const status = Number(error && error.status);
@@ -338,7 +334,8 @@ function buildAxiosConfig(config = {}) {
 
 async function request(config = {}) {
   const axiosConfig = buildAxiosConfig(config);
-  const retries = Math.max(0, Number(config.retries ?? DEFAULT_RETRIES));
+  const isCtrip = /^https?:\/\/(?:[^/]+\.)?ctrip\.com(?:[/:]|$)/i.test(String(config.url || ''));
+  const retries = isCtrip ? 0 : Math.max(0, Number(config.retries ?? DEFAULT_RETRIES));
   let lastError = null;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -361,7 +358,7 @@ async function request(config = {}) {
         throw normalizedError;
       }
 
-      await delay(calculateRetryDelayMs(normalizedError, attempt, config));
+      await cancellableWait(calculateRetryDelayMs(normalizedError, attempt, config), config.signal);
     }
   }
 

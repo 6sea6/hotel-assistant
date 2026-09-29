@@ -306,7 +306,7 @@ test('hotel diamond badge uses current theme color for stars', () => {
 
   assert.match(badgeRule, /position:\s*relative/);
   assert.match(badgeRule, /isolation:\s*isolate/);
-  assert.match(badgeRule, /color:\s*var\(--primary-color\)/);
+  assert.match(badgeRule, /color:\s*var\(--interactive-text-color\)/);
   assert.match(badgeTextRule, /position:\s*relative/);
   assert.match(badgeTextRule, /z-index:\s*1/);
 });
@@ -319,8 +319,7 @@ test('colorful theme renders hotel diamond badge as a colorful badge', () => {
   const colorfulBadgeRule =
     css.match(/\[data-theme='colorful-mode'\] \.hotel-level-badge\s*{([\s\S]*?)}/)?.[1] || '';
   const colorfulBadgeTextRule =
-    css.match(/\[data-theme='colorful-mode'\] \.hotel-level-badge-text\s*{([\s\S]*?)}/)?.[1] ||
-    '';
+    css.match(/\[data-theme='colorful-mode'\] \.hotel-level-badge-text\s*{([\s\S]*?)}/)?.[1] || '';
   const colorfulBadgeLayerRule =
     css.match(/\[data-theme='colorful-mode'\] \.hotel-level-badge::before\s*{([\s\S]*?)}/)?.[1] ||
     '';

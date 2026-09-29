@@ -32,7 +32,8 @@ import {
 import { formatCtripDiamondLevel } from './hotel-card-fields.js';
 import {
   buildHotelNameFilterOptions,
-  syncHotelNameFilterOptions
+  syncHotelNameFilterOptions,
+  setupHotelNameCombobox
 } from './hotel-list-filter-options.js';
 import { renderHotelList, requestHotelListRender } from './hotel-list-render-orchestrator.js';
 import {
@@ -49,6 +50,7 @@ export { shouldFullRerender } from './hotel-render-decision.js';
 export {
   buildHotelNameFilterOptions,
   syncHotelNameFilterOptions,
+  setupHotelNameCombobox,
   renderHotelList,
   requestHotelListRender,
   closeRuleDeleteModal,
@@ -309,8 +311,11 @@ function getSelectedSortMode() {
   return checked instanceof HTMLInputElement ? checked.value : DEFAULT_SORT_MODE;
 }
 
-export function applyFilters() {
-  replaceCurrentFilters({
+/**
+ * @param {Event} [event]
+ */
+export function applyFilters(event) {
+  const nextFilters = {
     name: getValue('filterName'),
     score: getValue('filterScore'),
     diamondLevel: getValue('filterDiamondLevel'),
@@ -319,9 +324,16 @@ export function applyFilters() {
     transportTime: getValue('filterTransportTime'),
     subwayDistance: getValue('filterSubwayDistance'),
     sortMode: getSelectedSortMode()
-  });
+  };
+  if (!replaceCurrentFilters(nextFilters)) return;
+
   markVisibleHotelsCacheDirty();
-  requestHotelListRender({ reason: 'sort-change', forceFull: true });
+  const target = event?.target;
+  const reason =
+    target instanceof HTMLInputElement && target.name === 'sortMode'
+      ? 'sort-change'
+      : 'filter-change';
+  requestHotelListRender({ reason, forceFull: true });
 }
 
 export function clearFilters() {
@@ -338,13 +350,15 @@ export function clearFilters() {
     if (el) el.value = '';
   });
 
-  replaceCurrentFilters({
+  const changed = replaceCurrentFilters({
     sortMode: getSelectedSortMode()
   });
 
   refreshCustomSelects();
-  markVisibleHotelsCacheDirty();
-  requestHotelListRender({ reason: 'filter-change', forceFull: true });
+  if (changed) {
+    markVisibleHotelsCacheDirty();
+    requestHotelListRender({ reason: 'filter-change', forceFull: true });
+  }
 }
 
 /* ---- 注册到 actions ---- */

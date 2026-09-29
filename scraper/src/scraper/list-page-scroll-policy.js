@@ -2,16 +2,24 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForPromiseOrTimeout(promise, timeoutMs) {
+async function waitForPromiseOrTimeout(promise, timeoutMs, signal) {
   let timeoutId = null;
+  let cancel = () => {};
+  const cancelled = new Promise((_, reject) => {
+    cancel = () => reject(Object.assign(new Error('任务已取消'), { name: 'AbortError' }));
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener('abort', cancel, { once: true });
+  });
   try {
     await Promise.race([
       promise,
+      cancelled,
       new Promise((resolve) => {
         timeoutId = setTimeout(resolve, timeoutMs);
       })
     ]);
   } finally {
+    signal?.removeEventListener('abort', cancel);
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
@@ -353,17 +361,6 @@ function buildListPageScrollExpression(options = {}) {
               .slice(0, 8)
               .map((item) => item.element);
           };
-          const dispatchWheel = (target, deltaY) => {
-            try {
-              target.dispatchEvent(new WheelEvent('wheel', {
-                bubbles: true,
-                cancelable: true,
-                deltaY
-              }));
-            } catch (_error) {
-              // Some browser contexts can reject synthetic wheel events.
-            }
-          };
           const height = getHeight();
           const scrollYBefore = window.scrollY || window.pageYOffset || 0;
           const bodyScrollTopBefore = document.body ? document.body.scrollTop || 0 : 0;
@@ -375,21 +372,11 @@ function buildListPageScrollExpression(options = {}) {
             ...collectScrollableContainers()
           ].filter(Boolean);
           let scrollActions = 0;
-          for (let step = 0; step < 3; step += 1) {
-            const pageDelta = Math.max(Math.floor((window.innerHeight || 900) * 0.85), 700);
-            window.scrollBy(0, pageDelta);
-            dispatchWheel(document.scrollingElement || document.documentElement || document.body, pageDelta);
-            scrollActions += 1;
-            for (const container of containers) {
-              const before = container.scrollTop || 0;
-              const delta = Math.max(Math.floor((container.clientHeight || 600) * 0.9), 500);
-              container.scrollTop = Math.min(before + delta, container.scrollHeight || before + delta);
-              dispatchWheel(container, delta);
-              if ((container.scrollTop || 0) !== before) {
-                scrollActions += 1;
-              }
-            }
-            await sleep(180);
+          const container = collectScrollableContainers()[0] || document.scrollingElement || document.documentElement;
+          if (container) {
+            const before = container.scrollTop || 0;
+            container.scrollTop = Math.min(before + Math.max(container.clientHeight * 0.85, 700), container.scrollHeight);
+            scrollActions = container.scrollTop !== before ? 1 : 0;
           }
           await sleep(250);
           const nextHeight = getHeight();

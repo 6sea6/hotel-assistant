@@ -150,18 +150,92 @@ function deactivateModalFocus(modal) {
   }
   modalFocusState.delete(modalId);
   modal.setAttribute('aria-hidden', 'true');
-
-  if (
-    focusState?.previousFocus &&
-    (!('isConnected' in focusState.previousFocus) || focusState.previousFocus.isConnected !== false)
-  ) {
-    focusElement(focusState.previousFocus);
-  }
+  return focusState?.previousFocus || null;
 }
 
 export function syncModalBodyState() {
-  const hasActiveModal = document.querySelector('.modal.active');
-  document.body.classList.toggle('modal-open', Boolean(hasActiveModal));
+  const hasActiveModal = Boolean(document.querySelector('.modal.active'));
+  document.body.classList.toggle('modal-open', hasActiveModal);
+
+  for (const selector of ['.app-header', '.app-main']) {
+    const applicationRegion = /** @type {HTMLElement|null} */ (document.querySelector(selector));
+    if (!applicationRegion) continue;
+    applicationRegion.inert = hasActiveModal;
+    if (hasActiveModal) {
+      applicationRegion.setAttribute('aria-hidden', 'true');
+    } else {
+      applicationRegion.removeAttribute('aria-hidden');
+    }
+  }
+}
+
+/**
+ * @param {string} formId
+ * @returns {HTMLElement|null}
+ */
+function getFormErrorElement(formId) {
+  return document.getElementById(`${formId}Error`);
+}
+
+/**
+ * @param {string} formId
+ */
+export function clearFormError(formId) {
+  const form = document.getElementById(formId);
+  const errorElement = getFormErrorElement(formId);
+  if (errorElement) {
+    errorElement.textContent = '';
+    errorElement.hidden = true;
+  }
+  form?.querySelectorAll('[aria-invalid="true"]').forEach((element) => {
+    element.removeAttribute('aria-invalid');
+    element.removeAttribute('aria-describedby');
+  });
+}
+
+/**
+ * @param {string} formId
+ * @param {string} message
+ * @param {HTMLElement|null} [focusTarget]
+ */
+export function showFormError(formId, message, focusTarget = null) {
+  const errorElement = getFormErrorElement(formId);
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.hidden = false;
+  }
+  if (focusTarget) {
+    focusTarget.setAttribute('aria-invalid', 'true');
+    if (errorElement?.id) focusTarget.setAttribute('aria-describedby', errorElement.id);
+    focusElement(focusTarget);
+  } else if (errorElement) {
+    focusElement(errorElement);
+  }
+}
+
+/**
+ * @param {HTMLButtonElement|null} button
+ * @param {boolean} busy
+ * @param {{busyText?: string}} [options]
+ */
+export function setActionButtonBusy(button, busy, options = {}) {
+  if (!button) return;
+  if (busy) {
+    if (!button.dataset.busyOriginalHtml) button.dataset.busyOriginalHtml = button.innerHTML;
+    button.dataset.busyOriginalDisabled = button.disabled ? 'true' : 'false';
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    if (options.busyText) button.textContent = options.busyText;
+    return;
+  }
+
+  if (button.dataset.busyOriginalHtml) {
+    button.innerHTML = button.dataset.busyOriginalHtml;
+    delete button.dataset.busyOriginalHtml;
+  }
+  button.disabled = button.dataset.busyOriginalDisabled === 'true';
+  delete button.dataset.busyOriginalDisabled;
+  button.removeAttribute('aria-busy');
 }
 
 export function setModalActive(modalId, active) {
@@ -169,6 +243,7 @@ export function setModalActive(modalId, active) {
     document.getElementById(modalId) || (active ? ensureModalTemplateMounted(modalId) : null);
   if (!modal) return;
 
+  let focusToRestore = null;
   if (active) {
     prepareModalAccessibility(modal);
     modal.classList.add('active');
@@ -176,13 +251,20 @@ export function setModalActive(modalId, active) {
     clearModalZIndexOverride(modal);
     activateModalFocus(modal);
   } else {
-    deactivateModalFocus(modal);
+    focusToRestore = deactivateModalFocus(modal);
     modal.classList.remove('active');
     modal.style.display = '';
     clearModalZIndexOverride(modal);
   }
 
   syncModalBodyState();
+
+  if (
+    focusToRestore &&
+    (!('isConnected' in focusToRestore) || focusToRestore.isConnected !== false)
+  ) {
+    focusElement(focusToRestore);
+  }
 
   if (!active && modalId === 'hotelModal') {
     resumeDeferredHotelRender();

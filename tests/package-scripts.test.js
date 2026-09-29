@@ -79,16 +79,27 @@ async function writeAppAsarFixture(resourcesDir, options = {}) {
 test('package manifest keeps full bundle resource contracts stable', () => {
   const manifest = getBundleManifest('E:/temp/bundle-root');
 
-  assert.equal(getSetupArtifactName('7.8.0'), '宾馆比较终极版-完整版-7.8.0.exe');
+  assert.equal(getSetupArtifactName('7.8.0'), '宾馆比较助手-不含高德Key-7.8.0.exe');
   assert.equal(
-    getSetupArtifactName('7.8.0', { amapKeyMode: 'none' }),
-    '宾馆比较终极版-完整版-不含高德Key-7.8.0.exe'
+    getSetupArtifactName('7.8.0', { amapKeyMode: 'embedded' }),
+    '宾馆比较助手-含高德Key-7.8.0.exe'
   );
   assert.equal(normalizeAmapKeyMode('without-amap-key'), 'none');
   assert.equal('baseOnlyAbsentResources' in manifest.expectations, false);
   assert.deepEqual(manifest.expectations.fullOnlyResources, [
+    path.join('scraper', 'package.json'),
     path.join('scraper', 'src', 'cli.js'),
+    path.join('scraper', 'src', 'result-price-filter.js'),
     path.join('scraper', 'src', 'task-runner.js'),
+    ...[
+      'ctrip-access-controller.js',
+      'task-capture-cache.js',
+      'task-checkpoint.js',
+      'capture-observability.js',
+      'scraper/ctrip-cdp-guard.js',
+      'scraper/room-response-completeness.js',
+      'cli/login-confirmation.js'
+    ].map((name) => path.join('scraper', 'src', name)),
     path.join('scraper', 'src', 'scraper', 'list-page-address-search.js'),
     path.join('scraper', 'src', 'scraper', 'list-page-collector.js'),
     path.join('scraper', 'src', 'runtime', 'perf.js'),
@@ -106,6 +117,18 @@ test('package manifest keeps full bundle resource contracts stable', () => {
       path.join('node_modules', '@tanstack', 'virtual-core', 'dist', 'esm', 'index.js')
     ),
     'package smoke must verify TanStack Virtual Core ESM entry in app.asar'
+  );
+  assert.ok(
+    manifest.expectations.appAsarResources.includes(
+      path.join('node_modules', '@tanstack', 'virtual-core', 'LICENSE')
+    ),
+    'package smoke must retain production dependency licenses'
+  );
+  assert.ok(
+    manifest.expectations.neverAppAsarResources.includes(
+      path.join('src', 'shared', 'contracts.js')
+    ),
+    'JSDoc-only contracts must not be shipped'
   );
   [
     path.join('devtools'),
@@ -188,14 +211,17 @@ test('app version metadata is generated from package.json and reused by docs and
   const versionPattern = escapeRegExp(packageJson.version);
 
   assert.equal(APP_INFO.version, packageJson.version);
+  assert.equal(APP_INFO.releaseDate, packageJson.releaseDate);
   assert.equal(APP_CONFIG.VERSION, packageJson.version);
   assert.match(preload, new RegExp(`version:\\s*'${versionPattern}'`));
   assert.match(readme, new RegExp(`# 宾馆比较助手 v${versionPattern}`));
   assert.doesNotMatch(readme, /v8\.0\b/);
   assert.match(indexHtml, new RegExp(`id="aboutVersionText">v${versionPattern}<`));
+  assert.match(indexHtml, new RegExp(`id="aboutUpdateDateText">${packageJson.releaseDate}<`));
   assert.match(manualHtml, new RegExp(`id="manualVersionText">v${versionPattern}<`));
   assert.match(syncAppInfoScript, /app-info\.generated\.js/);
   assert.match(syncAppInfoScript, /packageJson\.version/);
+  assert.match(syncAppInfoScript, /packageJson\.releaseDate/);
   assert.match(syncBuildAssetsScript, /app-info\.generated/);
   assert.match(runBuildScript, /sync-app-info\.js/);
   assert.match(runBuildScript, /parseBuildOptions/);
@@ -245,7 +271,7 @@ test('electron-builder config excludes development perf tooling and JSONL logs',
     assert.ok(files.includes(pattern), `missing electron-builder exclude: ${pattern}`);
   });
   [
-    '!node_modules/@*/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history,LICENSE,license,license.md,license.txt}',
+    '!node_modules/@*/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history}',
     '!node_modules/@*/*/{.github,.travis.yml,.gitignore,.eslintrc,.eslintrc.js,.eslintrc.json,.npmignore}',
     '!node_modules/@*/*/test/**/*',
     '!node_modules/@*/*/tests/**/*',
@@ -266,13 +292,17 @@ test('electron-builder config excludes development perf tooling and JSONL logs',
     false,
     'build.files must not use broad !**/*token* that would exclude parse5 tokenizer'
   );
+  assert.equal(
+    files.some((pattern) => /LICENSE|license\.txt|license\.md/.test(pattern)),
+    false,
+    'production dependency licenses must not be excluded'
+  );
+  assert.ok(files.includes('!src/shared/contracts.js'));
 });
 
 test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', () => {
   const projectRoot = path.resolve(__dirname, '..');
-  const packageJson = JSON.parse(
-    fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8')
-  );
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   const installerInclude = fs.readFileSync(
     path.join(projectRoot, 'build', 'installer.nsh'),
     'utf-8'
@@ -290,11 +320,12 @@ test('NSIS installer uses simplified Chinese with unicode to avoid mojibake', ()
   assert.match(installerInclude, /创建桌面快捷方式/);
   assert.match(installerInclude, /customInstall/);
   assert.match(installerInclude, /Delete "\$newDesktopLink"/);
-  assert.equal(packageJson.build.productName, '宾馆比较终极版');
+  assert.equal(packageJson.build.productName, '宾馆比较助手');
   assert.equal(packageJson.build.afterExtract, 'scripts/package/edit-extracted-exe-resources.js');
   assert.equal(packageJson.build.win.signAndEditExecutable, false);
-  assert.equal(nsis.shortcutName, '宾馆比较终极版');
-  assert.equal(nsis.uninstallDisplayName, '宾馆比较终极版');
+  assert.equal(nsis.shortcutName, '宾馆比较助手');
+  assert.equal(nsis.uninstallDisplayName, '宾馆比较助手');
+  assert.deepEqual(packageJson.build.extraFiles, [{ from: 'build/icon.ico', to: 'icon.ico' }]);
 });
 
 test('Windows exe resources are edited before asar integrity is added', () => {
@@ -319,11 +350,11 @@ test('Windows exe resources are edited before asar integrity is added', () => {
     'C:\\tmp\\electron.exe',
     '--set-version-string',
     'FileDescription',
-    '宾馆比较终极版'
+    '宾馆比较助手'
   ]);
   assert.ok(args.includes('--set-icon'));
   assert.equal(args[args.indexOf('--set-icon') + 1], 'C:\\tmp\\icon.ico');
-  assert.equal(args[args.indexOf('ProductName') + 1], '宾馆比较终极版');
+  assert.equal(args[args.indexOf('ProductName') + 1], '宾馆比较助手');
   assert.equal(args[args.indexOf('--set-file-version') + 1], packageJson.version);
   assert.equal(
     args[args.indexOf('--set-product-version') + 1],
@@ -334,8 +365,8 @@ test('Windows exe resources are edited before asar integrity is added', () => {
   assert.equal(resourceOptions.iconPath, iconPath);
   assert.equal(resourceOptions.fileVersion, packageJson.version);
   assert.equal(resourceOptions.productVersion, toWindowsProductVersion(packageJson.version));
-  assert.equal(resourceOptions.versionStrings.FileDescription, '宾馆比较终极版');
-  assert.equal(resourceOptions.versionStrings.ProductName, '宾馆比较终极版');
+  assert.equal(resourceOptions.versionStrings.FileDescription, '宾馆比较助手');
+  assert.equal(resourceOptions.versionStrings.ProductName, '宾馆比较助手');
   assert.equal(resourceOptions.versionStrings.CompanyName, 'Sea');
 });
 
@@ -611,6 +642,21 @@ test('prepareFullBundle can remove the default AMap key from temporary bundle on
   assert.doesNotMatch(bundledConstants, /fixture-default-key/);
   assert.match(sourceConstants, /fixture-default-key/);
   assert.match(bundledPrompt, /不使用内置默认 Key/);
+
+  fs.writeFileSync(sourceConstantsPath, bundledConstants, 'utf-8');
+  const alreadyEmpty = prepareFullBundle({
+    projectRoot: tempRoot,
+    scraperDir,
+    amapKeyMode: 'none'
+  });
+  t.after(() => fs.rmSync(alreadyEmpty.bundleRoot, { recursive: true, force: true }));
+  assert.equal(
+    fs.readFileSync(
+      path.join(alreadyEmpty.manifest.directories.scraperRoot, 'src', 'constants.js'),
+      'utf-8'
+    ),
+    bundledConstants
+  );
 });
 
 test('prepareFullBundle prunes copied vendor development assets', (t) => {
@@ -742,7 +788,8 @@ test('prepareFullBundle prunes unused vendor runtime variants but keeps CommonJS
         dependencies: {
           axios: '^1.0.0',
           cheerio: '^1.0.0',
-          htmlparser2: '^9.0.0'
+          htmlparser2: '^9.0.0',
+          parse5: '^7.0.0'
         }
       },
       null,
@@ -760,9 +807,12 @@ test('prepareFullBundle prunes unused vendor runtime variants but keeps CommonJS
   fs.mkdirSync(path.join(axiosDir, 'dist', 'node'), { recursive: true });
   fs.mkdirSync(path.join(axiosDir, 'dist', 'browser'), { recursive: true });
   fs.mkdirSync(path.join(axiosDir, 'dist', 'esm'), { recursive: true });
+  fs.mkdirSync(path.join(axiosDir, 'lib'), { recursive: true });
   fs.writeFileSync(path.join(axiosDir, 'dist', 'node', 'axios.cjs'), 'module.exports = {};');
   fs.writeFileSync(path.join(axiosDir, 'dist', 'browser', 'axios.cjs'), 'module.exports = {};');
   fs.writeFileSync(path.join(axiosDir, 'dist', 'esm', 'axios.js'), 'export default {};');
+  fs.writeFileSync(path.join(axiosDir, 'dist', 'axios.js'), 'window.axios = {};');
+  fs.writeFileSync(path.join(axiosDir, 'lib', 'axios.js'), 'export default {};');
 
   const cheerioDir = writePackageFixture(nodeModulesDir, 'cheerio');
   fs.mkdirSync(path.join(cheerioDir, 'dist', 'commonjs'), { recursive: true });
@@ -776,6 +826,23 @@ test('prepareFullBundle prunes unused vendor runtime variants but keeps CommonJS
   fs.mkdirSync(path.join(htmlparserDir, 'lib', 'esm'), { recursive: true });
   fs.writeFileSync(path.join(htmlparserDir, 'lib', 'index.js'), 'module.exports = {};');
   fs.writeFileSync(path.join(htmlparserDir, 'lib', 'esm', 'index.js'), 'export default {};');
+
+  const parse5Dir = writePackageFixture(nodeModulesDir, 'parse5');
+  fs.mkdirSync(path.join(parse5Dir, 'dist', 'cjs', 'parser'), { recursive: true });
+  fs.mkdirSync(path.join(parse5Dir, 'dist', 'parser'), { recursive: true });
+  fs.writeFileSync(
+    path.join(parse5Dir, 'dist', 'cjs', 'parser', 'index.js'),
+    'module.exports = {};'
+  );
+  fs.writeFileSync(path.join(parse5Dir, 'dist', 'parser', 'index.js'), 'export default {};');
+  const nestedEntitiesDir = writePackageFixture(path.join(parse5Dir, 'node_modules'), 'entities');
+  fs.mkdirSync(path.join(nestedEntitiesDir, 'dist', 'commonjs'), { recursive: true });
+  fs.mkdirSync(path.join(nestedEntitiesDir, 'dist', 'esm'), { recursive: true });
+  fs.writeFileSync(
+    path.join(nestedEntitiesDir, 'dist', 'commonjs', 'index.js'),
+    'module.exports = {};'
+  );
+  fs.writeFileSync(path.join(nestedEntitiesDir, 'dist', 'esm', 'index.js'), 'export default {};');
 
   const prepared = prepareFullBundle({
     projectRoot: tempRoot,
@@ -791,6 +858,8 @@ test('prepareFullBundle prunes unused vendor runtime variants but keeps CommonJS
   assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'node', 'axios.cjs')), true);
   assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'browser')), false);
   assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'esm')), false);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'dist', 'axios.js')), false);
+  assert.equal(fs.existsSync(path.join(vendorDir, 'axios', 'lib')), false);
   assert.equal(
     fs.existsSync(path.join(vendorDir, 'cheerio', 'dist', 'commonjs', 'index.js')),
     true
@@ -799,6 +868,15 @@ test('prepareFullBundle prunes unused vendor runtime variants but keeps CommonJS
   assert.equal(fs.existsSync(path.join(vendorDir, 'cheerio', 'dist', 'esm')), false);
   assert.equal(fs.existsSync(path.join(vendorDir, 'htmlparser2', 'lib', 'index.js')), true);
   assert.equal(fs.existsSync(path.join(vendorDir, 'htmlparser2', 'lib', 'esm')), false);
+  assert.equal(
+    fs.existsSync(path.join(vendorDir, 'parse5', 'dist', 'cjs', 'parser', 'index.js')),
+    true
+  );
+  assert.equal(fs.existsSync(path.join(vendorDir, 'parse5', 'dist', 'parser')), false);
+  assert.equal(
+    fs.existsSync(path.join(vendorDir, 'parse5', 'node_modules', 'entities', 'dist', 'esm')),
+    false
+  );
 });
 
 test('verifyPackageLayout requires full resource layout', async (t) => {
@@ -815,11 +893,7 @@ test('verifyPackageLayout requires full resource layout', async (t) => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  [
-    path.join('shared', 'compare-app', 'constants.js'),
-    path.join('shared', 'compare-app', 'data-folder.js'),
-    path.join('shared', 'compare-app', 'hotel-groups.js')
-  ].forEach((relativePath) => {
+  getBundleManifest('_unused').expectations.sharedResources.forEach((relativePath) => {
     writeFile(fullResourcesDir, relativePath);
   });
 
@@ -876,11 +950,7 @@ test('package layout rejects local data and login state resources', (t) => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  [
-    path.join('shared', 'compare-app', 'constants.js'),
-    path.join('shared', 'compare-app', 'data-folder.js'),
-    path.join('shared', 'compare-app', 'hotel-groups.js')
-  ].forEach(writeFile);
+  getBundleManifest('_unused').expectations.sharedResources.forEach(writeFile);
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeFile);
   writeFile(path.join('宾馆比较助手', 'hotel-data.json'));
 
@@ -904,11 +974,7 @@ test('package layout rejects unexpected app.asar resources', async (t) => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  [
-    path.join('shared', 'compare-app', 'constants.js'),
-    path.join('shared', 'compare-app', 'data-folder.js'),
-    path.join('shared', 'compare-app', 'hotel-groups.js')
-  ].forEach(writeResourceFile);
+  getBundleManifest('_unused').expectations.sharedResources.forEach(writeResourceFile);
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
   await writeAppAsarFixture(resourcesDir, { extra: ['README.md'] });
 
@@ -940,11 +1006,7 @@ test('package layout requires TanStack Virtual Core ESM entry in app.asar', asyn
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  [
-    path.join('shared', 'compare-app', 'constants.js'),
-    path.join('shared', 'compare-app', 'data-folder.js'),
-    path.join('shared', 'compare-app', 'hotel-groups.js')
-  ].forEach(writeResourceFile);
+  getBundleManifest('_unused').expectations.sharedResources.forEach(writeResourceFile);
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
   await writeAppAsarFixture(resourcesDir, { omit: [tanstackVirtualCoreEntry] });
 
@@ -974,11 +1036,7 @@ test('package layout rejects unexpected Electron locale packs', async (t) => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  [
-    path.join('shared', 'compare-app', 'constants.js'),
-    path.join('shared', 'compare-app', 'data-folder.js'),
-    path.join('shared', 'compare-app', 'hotel-groups.js')
-  ].forEach(writeResourceFile);
+  getBundleManifest('_unused').expectations.sharedResources.forEach(writeResourceFile);
   getBundleManifest('_unused').expectations.fullOnlyResources.forEach(writeResourceFile);
   await writeAppAsarFixture(resourcesDir);
   writeLocale('zh-CN');
@@ -1001,13 +1059,17 @@ test('scraper unified prompt asset remains present in workspace', () => {
   assert.equal(fs.existsSync(promptGuidePath), true);
 });
 
-test('CI workflow and package scripts cover lint, tests, coverage and packaging smoke', () => {
+test('CI workflow and release scripts cover formatting, types, audit, tests and packaging smoke', () => {
   const projectRoot = path.resolve(__dirname, '..');
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
   const workflowPath = path.join(projectRoot, '.github', 'workflows', 'ci.yml');
   const workflow = fs.readFileSync(workflowPath, 'utf-8');
 
   assert.equal(typeof packageJson.scripts.lint, 'string');
+  assert.equal(typeof packageJson.scripts.typecheck, 'string');
+  assert.equal(typeof packageJson.scripts['format:release:check'], 'string');
+  assert.equal(typeof packageJson.scripts['audit:prod'], 'string');
+  assert.equal(typeof packageJson.scripts['release:check'], 'string');
   assert.equal(typeof packageJson.scripts.coverage, 'string');
   assert.equal(packageJson.scripts.build, 'node scripts/package/run-build.js');
   assert.equal(
@@ -1028,9 +1090,12 @@ test('CI workflow and package scripts cover lint, tests, coverage and packaging 
   );
   assert.match(workflow, /on:\s*\n\s+push:/);
   assert.match(workflow, /pull_request:/);
-  assert.match(workflow, /npm install/);
+  assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npm run format:release:check/);
+  assert.match(workflow, /npm run typecheck/);
   assert.match(workflow, /npm run lint/);
   assert.match(workflow, /npm test/);
+  assert.match(workflow, /npm run audit:prod/);
   assert.match(workflow, /npm run coverage/);
   assert.match(workflow, /npm run package:smoke/);
 });
@@ -1188,9 +1253,9 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.match(runBuildScript, /请选择高德 API Key 打包模式/);
   assert.match(runBuildScript, /包含默认高德 Key/);
   assert.match(runBuildScript, /不包含默认高德 Key/);
-  assert.match(runBuildScript, /宾馆比较终极版打包工具/);
+  assert.match(runBuildScript, /宾馆比较助手打包工具/);
   assert.match(runBuildScript, /正在同步构建资源/);
-  assert.match(runBuildScript, /正在准备完整版采集模块资源/);
+  assert.match(runBuildScript, /正在准备内置采集模块资源/);
   assert.match(runBuildScript, /高德 Key 模式/);
   assert.match(runBuildScript, /正在运行 electron-builder/);
   assert.match(runBuildScript, /正在校验安装包资源/);
@@ -1204,11 +1269,9 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.doesNotMatch(runBuildScript, /Hotel Comparison Packager/);
   assert.equal(parseBuildOptions(['--no-amap-key']).amapKeyMode, 'none');
   assert.equal(parseBuildOptions(['--with-amap-key']).amapKeyMode, 'embedded');
+  assert.equal(parseBuildOptions([]).amapKeyMode, 'none');
   assert.equal(parseBuildOptions(['--select-amap-key']).selectAmapKeyMode, true);
-  assert.equal(
-    parseBuildOptions(['--select-amap-key', '--no-amap-key']).selectAmapKeyMode,
-    false
-  );
+  assert.equal(parseBuildOptions(['--select-amap-key', '--no-amap-key']).selectAmapKeyMode, false);
   assert.equal(
     parseBuildOptions([], { HOTEL_PACKAGE_AMAP_KEY_MODE: 'without-amap-key' }).amapKeyMode,
     'none'
@@ -1216,26 +1279,36 @@ test('run-build script uses Chinese UI text and does not contain English menu st
   assert.equal(typeof createTempBuildDir, 'function');
 });
 
-test('run-build uses project-local ASCII temporary NSIS output paths', (t) => {
+test('run-build uses an ASCII-only workspace for NSIS even when the project path is Unicode', (t) => {
   const projectRoot = path.resolve(__dirname, '..');
   const runBuildScript = fs.readFileSync(
     path.join(projectRoot, 'scripts', 'package', 'run-build.js'),
     'utf-8'
   );
-  const { createTempBuildDir } = require('../scripts/package/run-build');
-  const tempBuildDir = createTempBuildDir(projectRoot);
+  const {
+    createAsciiBuildWorkspace,
+    createTempBuildDir,
+    isAsciiPath,
+    removeAsciiBuildWorkspace
+  } = require('../scripts/package/run-build');
+  const tempBuildDir = createTempBuildDir();
+  const workspace = createAsciiBuildWorkspace(projectRoot);
 
   t.after(() => {
     fs.rmSync(tempBuildDir, { recursive: true, force: true });
+    removeAsciiBuildWorkspace(workspace);
   });
 
-  assert.doesNotMatch(runBuildScript, /require\('os'\)/);
-  assert.doesNotMatch(runBuildScript, /os\.tmpdir\(\)/);
-  assert.ok(tempBuildDir.startsWith(path.join(projectRoot, 'dist-verify-build-')));
-  assert.ok(
-    [...path.relative(projectRoot, tempBuildDir)].every((char) => char.charCodeAt(0) <= 0x7f)
-  );
-  assert.match(runBuildScript, /dist-verify-build-/);
+  assert.equal(isAsciiPath(tempBuildDir), true);
+  assert.equal(isAsciiPath(workspace.workspaceRoot), true);
+  assert.equal(isAsciiPath(workspace.projectAliasRoot), true);
+  assert.equal(isAsciiPath(workspace.tempBuildDir), true);
+  assert.equal(fs.realpathSync(workspace.projectAliasRoot), fs.realpathSync(projectRoot));
+  assert.equal(workspace.workspaceRoot.startsWith(projectRoot), false);
+  assert.match(runBuildScript, /hotel-comparison-build-/);
+  assert.match(runBuildScript, /projectAliasRoot/);
+  assert.match(runBuildScript, /maxAttempts = 2/);
+  assert.match(runBuildScript, /清理临时输出后重试/);
   assert.match(runBuildScript, /useAsciiInstallerArtifactName/);
   assert.match(runBuildScript, /hotel-comparison-app-\$\{version\}-setup\.\\\$\{ext\}/);
   assert.match(runBuildScript, /getSetupArtifactName\(version,\s*\{\s*amapKeyMode\s*\}\)/);
@@ -1250,6 +1323,7 @@ test('build-nsis.bat bootstraps packaging under UTF-8 codepage with ASCII-safe t
   assert.ok(asciiPart.includes('chcp 65001'), 'bat file must use UTF-8 codepage');
   assert.doesNotMatch(asciiPart, /chcp 936/, 'bat file must not force GBK codepage');
   assert.match(asciiPart, /AMAP_KEY_ARG=--select-amap-key/);
+  assert.match(asciiPart, /if "%NO_PAUSE%"=="1" set "AMAP_KEY_ARG=--no-amap-key"/);
   assert.match(asciiPart, /AMAP_KEY_ARG=--with-amap-key/);
   assert.match(asciiPart, /AMAP_KEY_ARG=--no-amap-key/);
   assert.match(asciiPart, /node scripts\\package\\run-build\.js %AMAP_KEY_ARG%/);

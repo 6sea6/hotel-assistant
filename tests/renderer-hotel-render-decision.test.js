@@ -32,7 +32,6 @@ test('hotel render decision marks structural changes as full rerender reasons', 
     'filter-change',
     'sort-change',
     'hotel-add',
-    'hotel-delete',
     'batch-delete',
     'template-sync',
     'view-mode-change'
@@ -46,6 +45,7 @@ test('hotel render decision allows narrow hotel mutations to try patching', asyn
 
   assert.equal(shouldFullRerender('favorite'), false);
   assert.equal(shouldFullRerender('hotel-update'), false);
+  assert.equal(shouldFullRerender('hotel-delete'), false);
 
   assert.deepEqual(
     getHotelListRenderDecision({
@@ -100,6 +100,6 @@ test('hotel render decision falls back to full render when patching is unsafe', 
       renderScheduled: false,
       hasPendingRenderResume: false
     }).mode,
-    'full'
+    'patch'
   );
 });

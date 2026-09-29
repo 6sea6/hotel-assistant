@@ -13,6 +13,15 @@
  */
 
 /**
+ * Data scope selected by the renderer for a JSON export.
+ *
+ * @typedef {object} DataExportSelection
+ * @property {'all'|'templates'|'rooms'} mode
+ * @property {EntityId[]} [templateIds]
+ * @property {EntityId[]} [roomIds]
+ */
+
+/**
  * Renderer-visible AI task kind. The first two values are the known queue
  * modes; string keeps compatibility with backend experiments.
  *
@@ -109,6 +118,7 @@
  *   amapKey?: string,
  *   priceMin?: number|null,
  *   priceMax?: number|'max'|null,
+ *   perPersonDailyPriceMax?: number|null,
  *   starLevels?: number[],
  *   sortMode?: string|null,
  *   freeCancel?: boolean,
@@ -122,6 +132,13 @@
  *   enableCollectPerfLog?: boolean,
  *   batchConcurrency?: number
  * }} AiTaskPayload
+ */
+
+/**
+ * Final result rules frozen when a collection or refresh task enters the queue.
+ *
+ * @typedef {object} AiCollectionPolicy
+ * @property {number|null} [perPersonDailyPriceMax]
  */
 
 /**
@@ -360,6 +377,8 @@
  * Item stored in the renderer AI task queue.
  *
  * @typedef {object} AiTaskQueueItem
+ * @property {string} [resumeTaskId]
+ * @property {boolean} [confirmLoginRecovery]
  * @property {string} [id]
  * @property {string} [displayIndex]
  * @property {string} [url]
@@ -372,6 +391,7 @@
  * @property {TemplateRecord|null} [template]
  * @property {AiListFilters} [listFilters]
  * @property {AiListUrlFilters} [listUrlFilters]
+ * @property {AiCollectionPolicy} [collectionPolicy]
  * @property {AiTaskKind} [taskKind]
  * @property {AiTaskQueueStatus} [status]
  * @property {string} [currentStep]
@@ -464,7 +484,7 @@
  * @property {() => Promise<IpcPathResult & {activePath?: string, originalPath?: string, fileName?: string, state?: Record<string, unknown>}>} chooseAppIcon
  * @property {() => Promise<IpcResult<unknown> & {state?: Record<string, unknown>}>} resetAppIcon
  * @property {() => Promise<IpcResult<unknown> & {settings?: AppSettings, iconState?: Record<string, unknown>}>} resetAllSettings
- * @property {() => Promise<IpcPathResult & {hotelCount?: number, templateCount?: number, meta?: Record<string, unknown>}>} exportData
+ * @property {(selection?: DataExportSelection) => Promise<IpcPathResult & {hotelCount?: number, roomCount?: number, templateCount?: number, meta?: Record<string, unknown>}>} exportData
  * @property {(mode?: 'replace'|'append'|string) => Promise<IpcResult<unknown> & {mode?: string, hotelCount?: number, templateCount?: number, skippedHotelCount?: number, skippedTemplateCount?: number, meta?: Record<string, unknown>}>} importData
  * @property {(imageBuffer: string) => Promise<IpcPathResult>} exportRankingImage
  * @property {() => Promise<unknown>} openCtrip

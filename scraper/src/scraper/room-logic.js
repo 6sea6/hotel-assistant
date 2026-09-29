@@ -182,8 +182,31 @@ function isThreePersonEquivalentRoom(room) {
   );
 }
 
+function normalizeTemplateRoomType(template = {}) {
+  const rawRoomType = normalizeText(template.room_type || template.roomType);
+  if (!rawRoomType) {
+    return '';
+  }
+
+  return deriveStandardRoomType({ title: rawRoomType }) || rawRoomType;
+}
+
+function doesRoomTypeStrictlyMatch(room, template = {}) {
+  const desiredRoomType = normalizeTemplateRoomType(template);
+  if (!desiredRoomType) {
+    return true;
+  }
+
+  const roomTitle = normalizeText(room.standard_title || room.title);
+  if (roomTitle === desiredRoomType || roomTitle.includes(desiredRoomType)) {
+    return true;
+  }
+
+  return /三人房/.test(desiredRoomType) && isThreePersonEquivalentRoom(room);
+}
+
 function rankRoomTypeMatch(room, template) {
-  const roomType = normalizeText(template.room_type);
+  const roomType = normalizeTemplateRoomType(template);
   if (!roomType) {
     return 0;
   }
@@ -270,12 +293,15 @@ function selectBestRoom(roomBlocks, template, options = {}) {
           isAllowedOccupancy(room, desiredOccupancy, options)
       )
     : rooms.filter((room) => isEffectivelyWindowed(room.windowStatus));
+  const roomTypeMatchedCandidates = candidateRooms.filter((room) =>
+    doesRoomTypeStrictlyMatch(room, template)
+  );
 
-  if (candidateRooms.length === 0) {
+  if (roomTypeMatchedCandidates.length === 0) {
     return null;
   }
 
-  return candidateRooms
+  return roomTypeMatchedCandidates
     .map((room) => ({ room, score: rankRoomMatch(room, template) }))
     .sort((left, right) => {
       if (right.score !== left.score) {
@@ -326,6 +352,7 @@ const REJECT_REASON_TEXT = {
   price_missing_or_locked: '价格缺失或需要登录/解锁后才显示价格。',
   no_effective_window: '房型窗户信息不符合当前筛选规则。',
   occupancy_mismatch: '入住人数不匹配。',
+  room_type_mismatch: '标准房型与模板指定房型不一致。',
   cancel_policy_excluded: '取消规则不符合写入规则。',
   duplicate_room: '与已保留候选房型重复。',
   score_below_threshold: '房型匹配分数低于当前规则。'
@@ -367,6 +394,9 @@ function createRoomEvaluation(room, template, options, seen) {
   }
   if (!isAllowedOccupancy(room, desiredOccupancy, options)) {
     return reject('occupancy_mismatch', 'rejected', ['occupancy', 'room_count']);
+  }
+  if (!doesRoomTypeStrictlyMatch(room, template)) {
+    return reject('room_type_mismatch', 'rejected', ['standard_title', 'room_type']);
   }
   if (!shouldCollectRoomByCancelPolicy(room.cancelPolicy)) {
     return reject('cancel_policy_excluded', 'rejected', ['cancelPolicy']);
@@ -423,6 +453,7 @@ module.exports = {
   buildRoomSelectionDiagnostics,
   classifyCancelPolicy,
   deriveStandardRoomType,
+  doesRoomTypeStrictlyMatch,
   mergeRoomCandidates,
   normalizeRoomCandidate,
   isPersistableRoomCandidate,

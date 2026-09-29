@@ -540,7 +540,13 @@
 }
 
 .switch-label input:checked + .switch-slider {
-  background-color: var(--primary-color);
+  background-color: var(--focus-color);
+}
+
+.switch-label input:focus-visible + .switch-slider {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
 }
 
 .switch-label input:checked + .switch-slider::before {

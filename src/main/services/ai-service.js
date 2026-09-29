@@ -17,6 +17,10 @@ const AI_CONFIG_SETTING_KEY = 'ai_provider_config';
 function compactRefreshResult(result = {}) {
   return {
     success: Boolean(result.success),
+    status: result.status || (result.success ? 'completed' : 'failed'),
+    accessIssue: result.accessIssue || null,
+    resumeTaskId: result.resumeTaskId || '',
+    performance: result.performance || null,
     totalHotelCount: result.totalHotelCount ?? 0,
     updatedHotelCount: result.updatedHotelCount ?? 0,
     updatedRoomTypeCount: result.updatedRoomTypeCount ?? 0,
@@ -46,6 +50,10 @@ function compactTaskResult(result = {}) {
 
   return {
     success: Boolean(result.success),
+    status: result.status || (result.success ? 'completed' : 'failed'),
+    accessIssue: result.accessIssue || null,
+    resumeTaskId: result.resumeTaskId || '',
+    performance: result.performance || null,
     hotelName: result.hotelName || '',
     eligibleCount: result.eligibleCount ?? 0,
     totalPrice,
@@ -275,14 +283,17 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         signal: controller.signal,
         onTaskEvent: emitTaskEvent
       });
-      task.status = 'completed';
+      task.status = result.status || (result.success === false ? 'failed' : 'completed');
       task.result = result;
       task.finishedAt = new Date().toISOString();
       emitTaskEvent({
-        type: 'task:done',
-        message: result.writeSkipped
-          ? result.writeSkipReason || '任务完成但未写入'
-          : '采集任务完成',
+        type: task.status === 'paused' ? 'task:paused' : 'task:done',
+        message:
+          task.status === 'paused'
+            ? result.error || '采集已暂停，已保留完成的结果'
+            : result.writeSkipped
+              ? result.writeSkipReason || '任务完成但未写入'
+              : '采集任务完成',
         taskId: task.id,
         details: compactTaskResult(result)
       });
@@ -346,7 +357,9 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
           featureThemes: payload.featureThemes,
           enableCollectPerfLog: payload.enableCollectPerfLog,
           collectBrowser: payload.collectBrowser,
-          batchConcurrency: payload.batchConcurrency
+          batchConcurrency: payload.batchConcurrency,
+          resumeTaskId: payload.resumeTaskId,
+          confirmLoginRecovery: payload.confirmLoginRecovery
         },
         {
           taskId,
@@ -432,7 +445,9 @@ function createAiService({ dataService, windowService, hotelTaskRunner = null })
         {
           amapKey: payload.amapKey,
           collectBrowser: payload.collectBrowser,
-          batchConcurrency: payload.batchConcurrency
+          batchConcurrency: payload.batchConcurrency,
+          resumeTaskId: payload.resumeTaskId,
+          confirmLoginRecovery: payload.confirmLoginRecovery
         },
         {
           taskId,

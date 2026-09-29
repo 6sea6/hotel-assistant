@@ -529,3 +529,39 @@ test('selectMatchingRooms accepts exact four-person template rooms', () => {
     ['四人家庭房']
   );
 });
+
+test('template room type is a strict constraint for matching and best-room selection', () => {
+  const rooms = [
+    {
+      title: '豪华大床房',
+      standard_title: '大床房',
+      original_title: '豪华大床房',
+      occupancy: 2,
+      price: 420,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    },
+    {
+      title: '特价双床房',
+      standard_title: '双床房',
+      original_title: '特价双床房',
+      occupancy: 2,
+      price: 260,
+      price_locked: false,
+      windowStatus: '有窗',
+      cancelPolicy: '免费取消'
+    }
+  ];
+  const template = { room_count: 2, room_type: '大床房' };
+
+  assert.deepEqual(
+    selectMatchingRooms(rooms, template).map((room) => room.title),
+    ['豪华大床房']
+  );
+  assert.equal(selectBestRoom(rooms, template).title, '豪华大床房');
+  assert.equal(
+    buildRoomSelectionDiagnostics(rooms, template).evaluations[1].reasonCode,
+    'room_type_mismatch'
+  );
+});

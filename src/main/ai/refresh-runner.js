@@ -1,3 +1,4 @@
+const { finishDesktopCaptureTiming } = require('./capture-timing');
 const path = require('path');
 const {
   ensureScraperRuntimeDirs,
@@ -113,6 +114,7 @@ function normalizeRefreshItemResult(result = {}, fallback = {}) {
     status,
     updatedHotels,
     updatedRoomTypeCount: Number(result.updatedRoomTypeCount || updatedHotels.length || 0),
+    retainedRoomTypeCount: Number(result.retainedRoomTypeCount || 0),
     deletedRoomTypeCount: Number(result.deletedRoomTypeCount || 0),
     skipReason: result.skipReason || '',
     error: result.error || '',
@@ -129,6 +131,7 @@ function toPublicRefreshItem(item = {}) {
     url: item.url || '',
     status: item.status || 'skipped',
     updatedRoomTypeCount: Number(item.updatedRoomTypeCount || 0),
+    retainedRoomTypeCount: Number(item.retainedRoomTypeCount || 0),
     deletedRoomTypeCount: Number(item.deletedRoomTypeCount || 0),
     skipReason: item.skipReason || '',
     error: item.error || '',
@@ -300,7 +303,7 @@ async function runRefreshHotelBatch({
   };
 
   const storeRefreshError = (error, meta) => {
-    if (isTaskCancelled(error, signal)) {
+    if (error.accessIssue || isTaskCancelled(error, signal)) {
       throw error;
     }
     const errorMessage = error && error.message ? error.message : String(error || '未知错误');
@@ -331,140 +334,157 @@ async function runRefreshHotelBatch({
     return item;
   };
 
-  if (
-    typeof runPreparedDetails === 'function' &&
-    typeof createDetailContext === 'function' &&
-    typeof mapPreparedResult === 'function'
-  ) {
-    await runPreparedDetails({
-      items: urls,
-      requestedConcurrency: normalizedRequestedConcurrency,
-      workerContexts,
-      maxConcurrency: effectiveConcurrency,
-      signal,
-      createDetailContext: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
-        let schedulerStarted = false;
-        if (detailScheduler) {
-          await detailScheduler.beforeStart({ index, total, signal });
-          schedulerStarted = true;
-        }
-        const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
-        emitItemStart(meta);
-        let preparedContext = null;
-        try {
-          preparedContext = await createDetailContext({
-            url,
-            index,
-            total,
-            hotelName: meta.hotelName,
-            worker
-          });
-        } catch (error) {
-          if (schedulerStarted) {
-            detailScheduler.recordError(error, { index, total });
+  let accessIssue = null;
+  try {
+    if (
+      typeof runPreparedDetails === 'function' &&
+      typeof createDetailContext === 'function' &&
+      typeof mapPreparedResult === 'function'
+    ) {
+      await runPreparedDetails({
+        items: urls,
+        requestedConcurrency: normalizedRequestedConcurrency,
+        workerContexts,
+        maxConcurrency: effectiveConcurrency,
+        signal,
+        createDetailContext: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
+          let schedulerStarted = false;
+          if (detailScheduler) {
+            await detailScheduler.beforeStart({ index, total, signal });
+            schedulerStarted = true;
           }
-          throw error;
-        }
-        const schedulerMeta = {
-          schedulerStarted,
-          schedulerRecorded: false
-        };
-        if (preparedContext && Object.prototype.hasOwnProperty.call(preparedContext, 'context')) {
+          const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+          emitItemStart(meta);
+          let preparedContext = null;
+          try {
+            preparedContext = await createDetailContext({
+              url,
+              index,
+              total,
+              hotelName: meta.hotelName,
+              worker
+            });
+          } catch (error) {
+            if (schedulerStarted) {
+              detailScheduler.recordError(error, { index, total });
+            }
+            throw error;
+          }
+          const schedulerMeta = {
+            schedulerStarted,
+            schedulerRecorded: false
+          };
+          if (preparedContext && Object.prototype.hasOwnProperty.call(preparedContext, 'context')) {
+            return {
+              context: preparedContext.context,
+              meta: {
+                ...meta,
+                ...(preparedContext.meta || {}),
+                ...schedulerMeta
+              }
+            };
+          }
           return {
-            context: preparedContext.context,
+            context: preparedContext,
             meta: {
               ...meta,
-              ...(preparedContext.meta || {}),
               ...schedulerMeta
             }
           };
-        }
-        return {
-          context: preparedContext,
-          meta: {
-            ...meta,
-            ...schedulerMeta
-          }
-        };
-      },
-      mapPreparedResult: async ({ preparedResult, meta }) => {
-        if (detailScheduler) {
-          const schedulerSnapshot = detailScheduler.recordOutcome(preparedResult.result || {}, {
-            index: meta.index,
-            total: meta.total
-          });
-          meta.schedulerRecorded = true;
-          if (schedulerSnapshot && schedulerSnapshot.circuit_open) {
-            throw createRefreshRiskControlAbortError(schedulerSnapshot.circuit_reason);
-          }
-        }
-        const rawResult = await mapPreparedResult({
-          preparedResult,
-          url: meta.url,
-          index: meta.index,
-          total: meta.total,
-          hotelName: meta.hotelName,
-          worker: meta.worker,
-          meta
-        });
-        return storeRefreshItem(rawResult, meta);
-      },
-      mapDetailError: async ({ error, item: url, zeroBasedIndex, index, total, worker, meta }) => {
-        const safeMeta = meta || buildItemMeta({ url, zeroBasedIndex, index, total, worker });
-        if (detailScheduler && safeMeta.schedulerStarted && !safeMeta.schedulerRecorded) {
-          detailScheduler.recordError(error, { index, total });
-          safeMeta.schedulerRecorded = true;
-        }
-        return storeRefreshError(error, safeMeta);
-      }
-    });
-  } else {
-    await runBoundedWorkers({
-      items: urls,
-      requestedConcurrency: normalizedRequestedConcurrency,
-      workerContexts,
-      maxConcurrency: effectiveConcurrency,
-      signal,
-      runItem: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
-        assertNotCancelled(signal);
-        let schedulerStarted = false;
-        let schedulerRecorded = false;
-        if (detailScheduler) {
-          await detailScheduler.beforeStart({ index, total, signal });
-          schedulerStarted = true;
-        }
-        const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
-        emitItemStart(meta);
-
-        try {
-          const rawResult = await processHotel({
-            url,
-            index,
-            total,
-            hotelName: meta.hotelName,
-            worker
-          });
+        },
+        mapPreparedResult: async ({ preparedResult, meta }) => {
           if (detailScheduler) {
-            const schedulerSnapshot = detailScheduler.recordOutcome(rawResult || {}, {
-              index,
-              total
+            const schedulerSnapshot = detailScheduler.recordOutcome(preparedResult.result || {}, {
+              index: meta.index,
+              total: meta.total
             });
-            schedulerRecorded = true;
+            meta.schedulerRecorded = true;
             if (schedulerSnapshot && schedulerSnapshot.circuit_open) {
               throw createRefreshRiskControlAbortError(schedulerSnapshot.circuit_reason);
             }
           }
+          const rawResult = await mapPreparedResult({
+            preparedResult,
+            url: meta.url,
+            index: meta.index,
+            total: meta.total,
+            hotelName: meta.hotelName,
+            worker: meta.worker,
+            meta
+          });
           return storeRefreshItem(rawResult, meta);
-        } catch (error) {
-          if (detailScheduler && schedulerStarted && !schedulerRecorded) {
+        },
+        mapDetailError: async ({
+          error,
+          item: url,
+          zeroBasedIndex,
+          index,
+          total,
+          worker,
+          meta
+        }) => {
+          const safeMeta = meta || buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+          if (detailScheduler && safeMeta.schedulerStarted && !safeMeta.schedulerRecorded) {
             detailScheduler.recordError(error, { index, total });
+            safeMeta.schedulerRecorded = true;
           }
-          return storeRefreshError(error, meta);
+          return storeRefreshError(error, safeMeta);
         }
-      }
+      });
+    } else {
+      await runBoundedWorkers({
+        items: urls,
+        requestedConcurrency: normalizedRequestedConcurrency,
+        workerContexts,
+        maxConcurrency: effectiveConcurrency,
+        signal,
+        runItem: async ({ item: url, zeroBasedIndex, index, total, worker }) => {
+          assertNotCancelled(signal);
+          let schedulerStarted = false;
+          let schedulerRecorded = false;
+          if (detailScheduler) {
+            await detailScheduler.beforeStart({ index, total, signal });
+            schedulerStarted = true;
+          }
+          const meta = buildItemMeta({ url, zeroBasedIndex, index, total, worker });
+          emitItemStart(meta);
+
+          try {
+            const rawResult = await processHotel({
+              url,
+              index,
+              total,
+              hotelName: meta.hotelName,
+              worker
+            });
+            if (detailScheduler) {
+              const schedulerSnapshot = detailScheduler.recordOutcome(rawResult || {}, {
+                index,
+                total
+              });
+              schedulerRecorded = true;
+              if (schedulerSnapshot && schedulerSnapshot.circuit_open) {
+                throw createRefreshRiskControlAbortError(schedulerSnapshot.circuit_reason);
+              }
+            }
+            return storeRefreshItem(rawResult, meta);
+          } catch (error) {
+            if (detailScheduler && schedulerStarted && !schedulerRecorded) {
+              detailScheduler.recordError(error, { index, total });
+            }
+            return storeRefreshError(error, meta);
+          }
+        }
+      });
+    }
+  } catch (error) {
+    if (!error.accessIssue) throw error;
+    accessIssue = error.accessIssue;
+    emit('task:paused', error.message, {
+      accessIssue,
+      completedCount: collectedItems.filter(Boolean).length
     });
   }
-
   const internalItems = collectedItems.filter(Boolean);
   const updatedItems = internalItems.filter((item) => isRefreshAppliedStatus(item.status));
   const skippedItems = internalItems.filter((item) => !isRefreshAppliedStatus(item.status));
@@ -504,6 +524,8 @@ async function runRefreshHotelBatch({
   return {
     requestedConcurrency: normalizedRequestedConcurrency,
     effectiveConcurrency,
+    status: accessIssue ? 'paused' : skippedItems.length ? 'partial' : 'completed',
+    accessIssue,
     totalHotelCount,
     updatedHotelCount: updatedItems.length,
     updatedRoomTypeCount,
@@ -516,6 +538,8 @@ async function runRefreshHotelBatch({
 }
 
 async function refreshExistingCtripHotels(input, context = {}) {
+  const desktopStartedAt = Date.now();
+  const manualWaitIntervals = [];
   const dataFolderPath = context.dataFolderPath;
   if (!dataFolderPath) {
     throw new Error('缺少比较助手数据目录，无法读取宾馆数据。');
@@ -525,7 +549,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
   const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
   ensureScraperRuntimeDirs(workDir);
 
-  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
+  const desktopResult = await withScraperEnvironment(dataFolderPath, scraperPath, async () => {
     const rollbackState = {};
     const emit = (type, message, details = {}) => {
       if (typeof context.onEvent !== 'function') return;
@@ -575,6 +599,7 @@ async function refreshExistingCtripHotels(input, context = {}) {
         });
         return {
           success: true,
+          status: 'completed',
           totalHotelCount: 0,
           updatedHotelCount: 0,
           updatedRoomTypeCount: 0,
@@ -610,6 +635,27 @@ async function refreshExistingCtripHotels(input, context = {}) {
       const { applyMatchedTemplate, mergeTemplateWithArgs, validateTemplate } =
         await loadScraperModule(scraperPath, 'template-loader.js');
       const { normalizePlaceName } = await loadScraperModule(scraperPath, 'utils.js');
+      const { TaskCheckpoint } = await loadScraperModule(scraperPath, 'task-checkpoint.js');
+      const checkpoint = new TaskCheckpoint(
+        path.join(workDir, 'output', 'task-progress'),
+        input.resumeTaskId || context.taskId || `refresh-${Date.now()}`,
+        {
+          kind: 'refresh',
+          settings: compareAppSettings,
+          queries: hotelUrls.map((url) => {
+            const hotel = hotelGroups.get(url)[0];
+            return {
+              url,
+              template: hotel.template_id,
+              checkIn: hotel.check_in_date,
+              checkOut: hotel.check_out_date,
+              rooms: hotel.room_count,
+              destination: hotel.destination
+            };
+          })
+        },
+        Boolean(input.resumeTaskId)
+      );
       let edgeSession = null;
 
       try {
@@ -619,6 +665,11 @@ async function refreshExistingCtripHotels(input, context = {}) {
           collectBrowser,
           requestedConcurrency,
           totalHotelCount,
+          signal: context.signal,
+          confirmLoginRecovery: input.confirmLoginRecovery === true,
+          recordManualWait: (ms, start) => {
+            manualWaitIntervals.push([start, start + ms]);
+          },
           firstHotelUrl: hotelUrls[0] || 'https://hotels.ctrip.com/',
           emit,
           getEffectiveBoundedConcurrency
@@ -644,7 +695,24 @@ async function refreshExistingCtripHotels(input, context = {}) {
         assertNotCancelled(context.signal);
         await createWriteRollbackSnapshot(scraperPath, rollbackState);
 
+        const { getCtripAccessController } = await loadScraperModule(
+          scraperPath,
+          'ctrip-access-controller.js'
+        );
+        const { TaskCaptureCache } = await loadScraperModule(scraperPath, 'task-capture-cache.js');
+        const accessController = getCtripAccessController(baseEdgeTemplate.edge_user_data_dir);
+        const captureCache = new TaskCaptureCache();
+        const { createTaskMetrics } = await loadScraperModule(
+          scraperPath,
+          'capture-observability.js'
+        );
+        const metrics = createTaskMetrics(accessController, captureCache);
+        metrics.restoreCheckpoint(checkpoint);
         const createRefreshDetailContext = createRefreshDetailContextFactory({
+          accessController,
+          captureCache,
+          checkpoint,
+          metrics,
           input,
           taskContext: context,
           workDir,
@@ -712,18 +780,27 @@ async function refreshExistingCtripHotels(input, context = {}) {
           detailScheduler: createDetailScheduler(edgeEffectiveConcurrency)
         });
 
+        for (const [key, entry] of checkpoint.completed) {
+          if (
+            batchResult.items.some(
+              (item) => item.url === entry.result.resolvedUrl && isRefreshAppliedStatus(item.status)
+            )
+          )
+            checkpoint.markWritten(key);
+        }
+        if (batchResult.status === 'paused') checkpoint.pause();
         const loginRetryUrls = batchResult.items
           .filter((item) => item.retryAfterLogin)
           .map((item) => item.url)
           .filter(Boolean);
-        if (loginRetryUrls.length > 0) {
+        if (loginRetryUrls.length > 0 && input.confirmLoginRecovery === true) {
           emit(
             'edge:login-required',
             `有 ${loginRetryUrls.length} 家宾馆价格被携程隐藏，正在打开浏览器重新确认登录态`,
             {
               retryHotelCount: loginRetryUrls.length,
               instruction:
-                '请在打开的采集浏览器中登录携程，并确认目标酒店页能看到具体房价；关闭窗口后会自动重试这些宾馆。'
+                '请在打开的采集浏览器中登录携程，并确认目标酒店页能看到具体房价；点击页面上的恢复采集按钮并通过页面状态检查后，才会继续。'
             }
           );
 
@@ -734,26 +811,37 @@ async function refreshExistingCtripHotels(input, context = {}) {
             scraperPath,
             'cli/auto-edge.js'
           );
+          const manualStartedAt = Date.now();
           const loginPrepResult = await runInteractiveEdgeLoginPrep({
+            signal: context.signal,
             userDataDir: baseEdgeTemplate.edge_user_data_dir,
             profileDirectory: baseEdgeTemplate.edge_profile_directory,
             browserPreference: collectBrowser,
             port: baseEdgeTemplate.edge_debugging_port || 9222,
             url: loginRetryUrls[0] || hotelUrls[0] || 'https://hotels.ctrip.com/'
           });
+          manualWaitIntervals.push([manualStartedAt, Date.now()]);
           assertNotCancelled(context.signal);
 
-          if (loginPrepResult && loginPrepResult.loginConfirmed) {
+          if (
+            loginPrepResult &&
+            loginPrepResult.loginConfirmed &&
+            loginPrepResult.userConfirmed &&
+            loginPrepResult.pageVerified
+          ) {
             emit('edge:login-done', '携程登录窗口已关闭，正在重试价格不可见的宾馆', {
               retryHotelCount: loginRetryUrls.length
             });
           } else {
             emit('edge:login-unconfirmed', '携程登录窗口已关闭，但尚未确认登录态', {
               retryHotelCount: loginRetryUrls.length,
-              instruction: '仍会重试一次；如果继续跳过，请重新登录携程后再次更新数据。'
+              instruction: '未确认恢复，已停止重试。'
             });
           }
 
+          if (!loginPrepResult?.userConfirmed || !loginPrepResult?.pageVerified) {
+            throw new Error('登录尚未确认，未自动重试。');
+          }
           edgeSession = await createManagedRefreshEdgeWorkerSession({
             scraperPath,
             workDir,
@@ -776,7 +864,12 @@ async function refreshExistingCtripHotels(input, context = {}) {
             effectiveConcurrency: retryEdgeEffectiveConcurrency
           });
 
+          captureCache.clear();
           const retryCreateRefreshDetailContext = createRefreshDetailContextFactory({
+            accessController,
+            captureCache,
+            checkpoint,
+            metrics,
             input,
             taskContext: context,
             workDir,
@@ -825,11 +918,13 @@ async function refreshExistingCtripHotels(input, context = {}) {
         } = batchResult;
 
         const message =
-          totalHotelCount === 0
-            ? '当前没有找到带携程链接的宾馆，未执行更新。'
-            : updatedHotelCount === 0 && skippedHotelCount > 0
-              ? `本次没有成功更新的宾馆，已跳过 ${skippedHotelCount} 家。请检查携程登录态或稍后重试。`
-              : `更新完成，本次更新 ${updatedHotelCount} 家宾馆信息，更新 ${updatedRoomTypeCount} 种房型价格，删除 ${deletedRoomTypeCount} 种已下架房型，跳过 ${skippedHotelCount} 家。`;
+          batchResult.status === 'paused'
+            ? `更新已暂停，已完成 ${updatedHotelCount} 家，待处理 ${totalHotelCount - batchResult.items.length} 家。处理限制后可恢复。`
+            : totalHotelCount === 0
+              ? '当前没有找到带携程链接的宾馆，未执行更新。'
+              : updatedHotelCount === 0 && skippedHotelCount > 0
+                ? `本次没有成功更新的宾馆，已跳过 ${skippedHotelCount} 家。请检查携程登录态或稍后重试。`
+                : `更新完成，本次更新 ${updatedHotelCount} 家宾馆信息，更新 ${updatedRoomTypeCount} 种房型价格，删除 ${deletedRoomTypeCount} 种已下架房型，跳过 ${skippedHotelCount} 家。`;
 
         emit('refresh:summary', message, {
           totalHotelCount,
@@ -842,7 +937,11 @@ async function refreshExistingCtripHotels(input, context = {}) {
         });
 
         return {
-          success: true,
+          success: batchResult.status !== 'paused',
+          status: batchResult.status,
+          accessIssue: batchResult.accessIssue,
+          resumeTaskId: batchResult.status === 'paused' ? checkpoint.id : '',
+          performance: metrics.finish({ ...batchResult, batchMode: true }).performance,
           totalHotelCount,
           updatedHotelCount,
           updatedRoomTypeCount,
@@ -869,21 +968,34 @@ async function refreshExistingCtripHotels(input, context = {}) {
         }
       }
     } catch (error) {
+      if (error.accessIssue)
+        return {
+          success: false,
+          status: 'paused',
+          accessIssue: error.accessIssue,
+          resumeTaskId: input.resumeTaskId || '',
+          error: error.message,
+          message: error.message
+        };
       if (isTaskCancelled(error, context.signal)) {
         restoreWriteRollbackSnapshot(rollbackState, context);
       }
       throw error;
     }
   });
+  return finishDesktopCaptureTiming(desktopResult, desktopStartedAt, manualWaitIntervals);
 }
 
 async function createManagedRefreshEdgeWorkerSession({
+  recordManualWait = () => {},
   scraperPath,
   workDir,
   collectBrowser,
   requestedConcurrency,
   totalHotelCount,
   firstHotelUrl,
+  signal = null,
+  confirmLoginRecovery = false,
   emit = () => {},
   getEffectiveBoundedConcurrency
 } = {}) {
@@ -911,6 +1023,30 @@ async function createManagedRefreshEdgeWorkerSession({
     baseEdgeTemplate.edge_user_data_dir = autoEdgeRuntime.userDataDir;
     baseEdgeTemplate.edge_profile_directory = autoEdgeRuntime.profileDirectory;
   }
+
+  const { getCtripAccessController } = await loadScraperModule(
+    scraperPath,
+    'ctrip-access-controller.js'
+  );
+  const accessController = getCtripAccessController(baseEdgeTemplate.edge_user_data_dir);
+  if (confirmLoginRecovery) {
+    const { runInteractiveEdgeLoginPrep } = await loadScraperModule(
+      scraperPath,
+      'cli/auto-edge.js'
+    );
+    const manualStartedAt = Date.now();
+    const confirmation = await runInteractiveEdgeLoginPrep({
+      userDataDir: baseEdgeTemplate.edge_user_data_dir,
+      profileDirectory: baseEdgeTemplate.edge_profile_directory,
+      browserPreference: collectBrowser,
+      url: firstHotelUrl,
+      signal
+    });
+    recordManualWait(Date.now() - manualStartedAt, manualStartedAt);
+    if (!confirmation?.loginConfirmed || !confirmation.userConfirmed || !confirmation.pageVerified)
+      accessController.report({ login: true, source: 'refresh_login_unconfirmed' });
+  }
+  if (accessController.issue?.requiresUserAction) accessController.assertAllowed();
 
   const plannedEffectiveConcurrency = getEffectiveRefreshConcurrency(
     requestedConcurrency,
@@ -950,7 +1086,7 @@ async function createManagedRefreshEdgeWorkerSession({
       profileDirectory: baseEdgeTemplate.edge_profile_directory,
       browserPreference: collectBrowser,
       port: baseEdgeDebuggingPort,
-      url: firstHotelUrl || 'https://hotels.ctrip.com/',
+      url: 'about:blank',
       headless: baseEdgeTemplate.edge_headless
     });
     primaryEdgeProcess = primaryEdge;
@@ -990,11 +1126,12 @@ async function createManagedRefreshEdgeWorkerSession({
             ? edgeWorkerPool.workers
             : workerContexts;
       } catch (error) {
-        emit('edge:parallel-disabled', '并发 Edge 会话准备失败，已回退为串行更新', {
+        emit('edge:parallel-disabled', '共享浏览器标签页准备失败，已停止更新', {
           reason: error && error.message ? error.message : String(error || ''),
           requestedConcurrency,
           effectiveConcurrency: 1
         });
+        throw error;
       }
     }
 

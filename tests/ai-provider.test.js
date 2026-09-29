@@ -629,7 +629,8 @@ test('scraper runner maps batch concurrency to scraper arguments', () => {
       url: 'https://hotels.ctrip.com/hotels/detail/?hotelId=1',
       templateId: '100',
       collectBrowser: '360',
-      batchConcurrency: 3
+      batchConcurrency: 3,
+      perPersonDailyPriceMax: 150
     },
     path.join(os.tmpdir(), 'hotel-scraper-workdir')
   );
@@ -643,6 +644,7 @@ test('scraper runner maps batch concurrency to scraper arguments', () => {
   assert.equal(args['direct-room-replay'], false);
   assert.equal(args['include-mobile-html'], false);
   assert.equal(args['risk-control-retries'], 0);
+  assert.equal(args['per-person-daily-price-max'], 150);
 
   const addressArgs = buildScraperArgs(
     {
@@ -1486,6 +1488,41 @@ test('AI scraper write guard rejects login-required results even when price exis
 
   assert.equal(safety.ok, false);
   assert.match(safety.reason, /登录看低价/);
+});
+
+test('AI scraper write guard requests exact-group deletion after all rooms exceed the ceiling', () => {
+  const safety = assertSafeWriteResult({
+    success: true,
+    eligibleCount: 0,
+    totalPrice: null,
+    postFilter: {
+      perPersonDailyPriceMax: 150,
+      removedCount: 3,
+      keptCount: 0
+    }
+  });
+
+  assert.equal(safety.ok, true);
+  assert.equal(safety.deleteFilteredGroup, true);
+});
+
+test('AI scraper write guard does not delete filtered old data when risk signals coexist', () => {
+  const safety = assertSafeWriteResult({
+    success: true,
+    eligibleCount: 0,
+    totalPrice: null,
+    postFilter: {
+      perPersonDailyPriceMax: 150,
+      removedCount: 2,
+      keptCount: 0
+    },
+    pageSnapshot: {
+      spider_error_codes: [203]
+    }
+  });
+
+  assert.equal(safety.ok, false);
+  assert.match(safety.reason, /避免误删旧数据/);
 });
 
 test('AI scraper write guard preserves login-required reason for aborted results', () => {

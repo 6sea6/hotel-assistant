@@ -230,7 +230,12 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
 
   for (const event of events || []) {
     const type = String(event && event.type ? event.type : '');
-    if (type === 'task:done' || type === 'task:error' || type === 'task:cancel') {
+    if (
+      type === 'task:paused' ||
+      type === 'task:done' ||
+      type === 'task:error' ||
+      type === 'task:cancel'
+    ) {
       waitingForLoginRetry = false;
     }
     if (type === 'edge:login-required' && !isSoftCtripLoginPromptEvent(event)) {
@@ -275,8 +280,7 @@ export function buildProgressStats(events = [], taskKind = 'collect') {
 
   const completed = [...itemStatus.values()].filter((status) => status === 'completed').length;
   const rawRunning = [...itemStatus.values()].filter((status) => status === 'running').length;
-  let running =
-    effectiveConcurrency > 0 ? Math.min(rawRunning, effectiveConcurrency) : rawRunning;
+  let running = effectiveConcurrency > 0 ? Math.min(rawRunning, effectiveConcurrency) : rawRunning;
   if (waitingForLoginRetry && completed === 0 && running === 0) {
     running = Math.min(total, 1);
   }

@@ -29,6 +29,32 @@
   border-color: var(--color-favorite-border);
 }
 
+[data-theme='colorful-mode'] .hotel-card::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
+  background: var(--colorful-gradient-rainbow);
+  pointer-events: none;
+}
+
+[data-theme='colorful-mode'] .hotel-card:hover {
+  box-shadow: var(--colorful-shadow-card);
+}
+
+[data-theme='colorful-mode'] .hotel-card.favorite::before {
+  background: var(--colorful-gradient-warm);
+}
+
+[data-theme='colorful-mode'] .hotel-favorite-star.is-active,
+[data-theme='colorful-mode'] .hotel-favorite-star:hover {
+  color: var(--colorful-pink);
+  text-shadow: 0 1px 7px color-mix(in srgb, var(--colorful-orange) 34%, transparent);
+}
+
 .hotel-card-header {
   display: flex;
   justify-content: space-between;
@@ -136,10 +162,10 @@
   align-items: center;
   max-width: 100%;
   padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--primary-color) 34%, var(--border-color));
+  border: 1px solid color-mix(in srgb, var(--focus-color) 34%, var(--border-color));
   border-radius: 6px;
   background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-primary));
-  color: var(--primary-color);
+  color: var(--interactive-text-color);
   font-size: 13px;
   line-height: 1.35;
   font-weight: 500;
@@ -264,7 +290,7 @@
 
 .hotel-rank {
   background: var(--primary-color);
-  color: white;
+  color: var(--color-on-primary);
   font-weight: 600;
   padding: 6px 12px;
   border-radius: 0 var(--radius-lg) 0 var(--radius-lg);
@@ -273,11 +299,22 @@
 
 .hotel-rank.top3 {
   background: var(--gradient-rank-top);
+  color: var(--color-on-rank-top);
+}
+
+[data-theme='colorful-mode'] .hotel-rank {
+  background: var(--colorful-gradient-cool);
+  color: var(--color-on-primary);
+}
+
+[data-theme='colorful-mode'] .hotel-rank.top3 {
+  background: var(--gradient-rank-top);
+  color: var(--color-on-rank-top);
 }
 
 .hotel-template-badge {
   background: var(--color-template-badge);
-  color: white;
+  color: var(--color-on-template-badge);
   font-weight: 500;
   padding: 4px 10px;
   border-radius: 4px;

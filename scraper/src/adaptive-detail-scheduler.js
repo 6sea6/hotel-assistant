@@ -71,7 +71,7 @@ function summarizeRiskSignals(result = {}) {
 
 function isHardRiskControlResult(result = {}) {
   const signals = summarizeRiskSignals(result);
-  return Boolean(signals.hasSpider203 && !signals.roomPriceVisible);
+  return Boolean(signals.hasSpider203);
 }
 
 function isSoftPriceFailureResult(result = {}) {

@@ -32,7 +32,8 @@ import {
   calculateTotalPrice,
   onDaysChange,
   validateScore,
-  formatScoreOnBlur
+  formatScoreOnBlur,
+  retryLoadHotels
 } from './modules/hotel-crud.js';
 
 import {
@@ -49,7 +50,8 @@ import {
   updateRuleDeletePreview,
   confirmRuleDelete,
   applyFilters,
-  clearFilters
+  clearFilters,
+  setupHotelNameCombobox
 } from './modules/hotel-list.js';
 
 import {
@@ -91,6 +93,12 @@ import {
   openDataTransfer,
   closeDataTransfer,
   handleExportData,
+  closeDataExport,
+  confirmDataExport,
+  handleDataExportChange,
+  handleDataExportSearch,
+  selectAllExportItems,
+  clearExportItems,
   handleImportData,
   openCtripWebsite,
   openFliggyWebsite,
@@ -131,6 +139,7 @@ let rankingImageModulePromise = null;
 let delegatedContentEventsBound = false;
 let delegatedInputEventsBound = false;
 let delegatedChangeEventsBound = false;
+let hotelNameFilterTimer = 0;
 
 function loadAiAssistantModule() {
   aiAssistantModulePromise ||= import('./modules/ai-assistant.js');
@@ -206,6 +215,9 @@ const ACTION_HANDLERS = {
   'window-toggle-maximize': () => toggleMaximizeWindow(),
   'window-close': () => closeWindow(),
   'clear-filters': () => clearFilters(),
+  'retry-load-hotels': async () => {
+    await retryLoadHotels();
+  },
   'open-add-hotel': () => openAddHotelModal(),
   'export-ranking-image': () => callRankingImage('openRankingImageExportModal'),
   'toggle-view-mode': () => toggleViewMode(),
@@ -273,6 +285,10 @@ const ACTION_HANDLERS = {
   'confirm-ranking-export': () => callRankingImage('confirmRankingImageExport'),
   'close-data-transfer': () => closeDataTransfer(),
   'export-data': () => handleExportData(),
+  'close-data-export': () => closeDataExport(),
+  'confirm-data-export': (event) => confirmDataExport(event),
+  'select-all-export-items': () => selectAllExportItems(),
+  'clear-export-items': () => clearExportItems(),
   'import-data': (_event, element) => handleImportData(element.dataset.importMode),
   'close-about': () => closeAbout(),
   'close-manual': () => closeManual(),
@@ -336,6 +352,10 @@ function handleDelegatedInput(event) {
   const target = event.target instanceof HTMLInputElement ? event.target : null;
   if (!target) return;
 
+  if (handleDataExportSearch(event)) {
+    return;
+  }
+
   if (
     target.id === 'ruleDeletePrice' ||
     target.id === 'ruleDeleteCtripScore' ||
@@ -357,6 +377,10 @@ function handleDelegatedChange(event) {
       ? event.target
       : null;
   if (!target) return;
+
+  if (handleDataExportChange(event)) {
+    return;
+  }
 
   if (target.name === 'themeOption') {
     changeTheme(target.value);
@@ -422,6 +446,7 @@ function handleGlobalKeydown(e) {
     ['ruleDeleteModal', closeRuleDeleteModal],
     ['hotelModal', closeHotelModal],
     ['templateModal', closeTemplateModal],
+    ['dataExportModal', closeDataExport],
     ['dataTransferModal', closeDataTransfer],
     ['manualModal', closeManual],
     ['personalizationModal', closePersonalizationModal],
@@ -452,6 +477,11 @@ function setupStaticFormListeners() {
 
   document.querySelectorAll('input[name="sortMode"]').forEach((input) => {
     input.addEventListener('change', applyFilters);
+  });
+
+  addEvent('hotelForm', 'submit', (event) => {
+    event.preventDefault();
+    saveHotel();
   });
 
   addEvent('aiHotelUrlInput', 'input', (event) =>
@@ -510,7 +540,25 @@ function setupEventListeners() {
     }
   }
 
-  addEvent('filterName', 'change', applyFilters);
+  setupHotelNameCombobox();
+  addEvent('filterName', 'input', (event) => {
+    if (event instanceof InputEvent && event.isComposing) return;
+    window.clearTimeout(hotelNameFilterTimer);
+    hotelNameFilterTimer = window.setTimeout(() => applyFilters(event), 140);
+  });
+  addEvent('filterName', 'change', (event) => {
+    window.clearTimeout(hotelNameFilterTimer);
+    applyFilters(event);
+  });
+  addEvent('filterName', 'keydown', (event) => {
+    if (!(event instanceof KeyboardEvent) || event.key !== 'Escape') return;
+    const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement) || !input.value) return;
+    event.preventDefault();
+    input.value = '';
+    window.clearTimeout(hotelNameFilterTimer);
+    applyFilters(event);
+  });
   addEvent('filterScore', 'change', applyFilters);
   addEvent('filterDiamondLevel', 'change', applyFilters);
   addEvent('filterFavorite', 'change', applyFilters);

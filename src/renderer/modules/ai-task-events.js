@@ -117,6 +117,7 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
   const isRefresh = taskKind === 'refresh-data';
 
   if (type === 'task:start') return 'received';
+  if (type === 'task:paused') return 'error';
   if (type === 'task:done') return 'done';
   if (type === 'task:error') return 'error';
   if (type === 'task:cancel') return 'cancel';
@@ -150,6 +151,7 @@ export function getEventStepKey(event = {}, taskKind = 'collect') {
   if (type.startsWith('edge:')) return 'edge';
   if (toolName === 'collect_and_write_ctrip_hotel' && type === 'tool:start') return 'received';
   if (type === 'scrape:retry') return 'scrape';
+  if (type.startsWith('filter:')) return 'scrape';
   if (type.startsWith('batch:') || type.startsWith('list:')) return 'scrape';
   if (toolName === 'collect_and_write_ctrip_hotel' || type.startsWith('scrape:')) return 'scrape';
   if (type.startsWith('template:')) return 'template';
@@ -169,6 +171,7 @@ export function getReadableEventTitle(event = {}, taskKind = 'collect') {
   const isRefresh = taskKind === 'refresh-data';
 
   if (type === 'task:start') return '已接收任务';
+  if (type === 'task:paused') return event.message || '采集已暂停';
   if (type === 'task:done') return isRefresh ? '更新任务完成' : '采集任务完成';
   if (type === 'task:error') return '任务执行失败';
   if (type === 'task:cancel') return '任务已取消';
@@ -188,6 +191,7 @@ export function getReadableEventTitle(event = {}, taskKind = 'collect') {
   if (type === 'edge:login-unconfirmed')
     return event.message || '携程登录窗口已关闭，但尚未确认登录态';
   if (type === 'scrape:retry') return event.message || '正在使用新的携程登录态重新采集酒店页面';
+  if (type === 'filter:price-limit') return event.message || '正在按每日人均价格上限复核房型';
   if (type.startsWith('batch:') || type.startsWith('list:'))
     return event.message || '正在处理批量采集任务';
   if (toolName) {

@@ -1,3 +1,4 @@
+const { finishDesktopCaptureTiming } = require('./capture-timing');
 const path = require('path');
 const {
   ensureScraperRuntimeDirs,
@@ -171,6 +172,13 @@ async function runCollectTask(scraperPath, input, workDir, context, options = {}
     if (loginRequiredEvent && !(context.signal && context.signal.aborted)) {
       return buildLoginInterruptedCollectResult(loginRequiredEvent);
     }
+    if (error.accessIssue)
+      return {
+        success: false,
+        status: 'paused',
+        accessIssue: error.accessIssue,
+        error: error.message
+      };
     throw error;
   } finally {
     cleanup();
@@ -185,6 +193,9 @@ async function runApplyTask(scraperPath, outputPath, workDir, context, options =
   };
   if (options.overwriteExistingGroup) {
     args['overwrite-existing-group'] = true;
+  }
+  if (options.deleteFilteredGroup) {
+    args['delete-filtered-group'] = true;
   }
 
   return runHotelImportTask(args, {
@@ -202,6 +213,10 @@ async function applyBatchItemOutputs(scraperPath, collectResult, workDir, contex
   for (const item of items) {
     assertNotCancelled(context.signal);
 
+    if (item?.resumedFromCheckpoint) {
+      itemResults.push({ item, skipped: true, reason: '恢复任务保留已完成项目。' });
+      continue;
+    }
     if (!item || item.success !== true) {
       itemResults.push({
         item,
@@ -232,9 +247,18 @@ async function applyBatchItemOutputs(scraperPath, collectResult, workDir, contex
 
     await createWriteRollbackSnapshot(scraperPath, rollbackState);
     const applyResult = await runApplyTask(scraperPath, item.outputPath, workDir, context, {
-      latestRunPath: path.join(workDir, 'output', 'apply-latest-run.json')
+      latestRunPath: path.join(workDir, 'output', 'apply-latest-run.json'),
+      deleteFilteredGroup: Boolean(writeSafety.deleteFilteredGroup)
     });
     assertNotCancelled(context.signal);
+    if (item.checkpointId && item.checkpointKey) {
+      const { markCheckpointWritten } = await loadScraperModule(scraperPath, 'task-checkpoint.js');
+      markCheckpointWritten(
+        path.join(workDir, 'output', 'task-progress'),
+        item.checkpointId,
+        item.checkpointKey
+      );
+    }
     itemResults.push({
       item,
       skipped: false,
@@ -252,6 +276,8 @@ async function applyBatchItemOutputs(scraperPath, collectResult, workDir, contex
 }
 
 async function collectAndWriteCtripHotel(input, context = {}) {
+  const desktopStartedAt = Date.now();
+  const manualWaitIntervals = [];
   const dataFolderPath = context.dataFolderPath;
   if (!dataFolderPath) {
     throw new Error('缺少比较助手数据目录，无法写入。');
@@ -271,11 +297,26 @@ async function collectAndWriteCtripHotel(input, context = {}) {
   const workDir = resolveScraperWorkDir(dataFolderPath, scraperPath);
   ensureScraperRuntimeDirs(workDir);
 
-  return withScraperEnvironment(dataFolderPath, scraperPath, async () => {
+  const desktopResult = await withScraperEnvironment(dataFolderPath, scraperPath, async () => {
     const rollbackState = {};
 
     try {
       assertNotCancelled(context.signal);
+      if (input.confirmLoginRecovery === true) {
+        const manualStartedAt = Date.now();
+        const confirmation = await openVisibleEdgeLogin(
+          { ...input, url: getLoginRetryUrl(input) },
+          context
+        );
+        manualWaitIntervals.push([manualStartedAt, Date.now()]);
+        if (!confirmation.success)
+          return {
+            success: false,
+            status: 'paused',
+            resumeTaskId: input.resumeTaskId || '',
+            error: confirmation.message
+          };
+      }
       let collectResult = await runCollectTask(scraperPath, input, workDir, context, {
         abortOnLoginRequired: true
       });
@@ -291,7 +332,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
           emitScraperEvent(context, 'edge:login-required', '需要确认携程登录或完成验证后继续采集', {
             reason: retryNeed.reason,
             instruction:
-              '程序会打开出问题的携程酒店页。请确认页面已登录且能看到具体房价，必要时完成携程验证，然后关闭窗口，采集会自动重试一次。'
+              '程序会打开出问题的携程酒店页。请确认页面已登录且能看到具体房价，必要时完成携程验证，然后点击页面上的恢复采集按钮；通过页面状态检查后才会继续。'
           });
         }
         emitScraperEvent(
@@ -301,7 +342,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
           {
             url: loginRetryUrl,
             instruction:
-              '请在打开的酒店页确认能看到具体房价；确认后关闭浏览器窗口，程序会继续采集，不需要重新发送链接。'
+              '请在打开的酒店页确认能看到具体房价；点击页面上的恢复采集按钮后，程序会检查并继续采集，不需要重新发送链接。'
           }
         );
 
@@ -310,16 +351,24 @@ async function collectAndWriteCtripHotel(input, context = {}) {
           scraperPath,
           'cli/auto-edge.js'
         );
+        const manualStartedAt = Date.now();
         const loginPrepResult = await runInteractiveEdgeLoginPrep({
+          signal: context.signal,
           userDataDir: edgeProfilePath,
           profileDirectory: 'Default',
           browserPreference: input.collectBrowser,
           port: 9222,
           url: loginRetryUrl
         });
+        manualWaitIntervals.push([manualStartedAt, Date.now()]);
         assertNotCancelled(context.signal);
 
-        if (loginPrepResult && loginPrepResult.loginConfirmed) {
+        if (
+          loginPrepResult &&
+          loginPrepResult.loginConfirmed &&
+          loginPrepResult.userConfirmed &&
+          loginPrepResult.pageVerified
+        ) {
           emitScraperEvent(context, 'edge:login-done', '携程登录窗口已关闭，正在重新采集价格', {
             reason: retryNeed.reason
           });
@@ -330,9 +379,22 @@ async function collectAndWriteCtripHotel(input, context = {}) {
             '携程登录窗口已关闭，但尚未确认登录态',
             {
               reason: retryNeed.reason,
-              instruction: '请重新执行采集，并在弹出的浏览器窗口中完成携程登录后再关闭窗口。'
+              instruction:
+                '请重新执行采集，并在弹出的浏览器窗口中完成登录并点击页面上的恢复采集按钮。'
             }
           );
+        }
+        if (
+          !loginPrepResult?.userConfirmed ||
+          !loginPrepResult?.pageVerified ||
+          !loginPrepResult?.loginConfirmed
+        ) {
+          return {
+            ...collectResult,
+            success: false,
+            status: 'paused',
+            error: '登录尚未确认，未自动重试。'
+          };
         }
         emitScraperEvent(context, 'scrape:retry', '正在使用新的携程登录态重新采集酒店页面');
 
@@ -344,6 +406,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         collectResult.loginRetry = buildLoginRetrySummary(previousCollectResult, retryNeed);
       }
 
+      if (collectResult.status === 'paused' && !collectResult.batchMode) return collectResult;
       if (collectResult.batchMode) {
         const batchApplyResult = await applyBatchItemOutputs(
           scraperPath,
@@ -384,7 +447,8 @@ async function collectAndWriteCtripHotel(input, context = {}) {
         scraperPath,
         collectResult.outputPath,
         workDir,
-        context
+        context,
+        { deleteFilteredGroup: Boolean(writeSafety.deleteFilteredGroup) }
       );
       assertNotCancelled(context.signal);
 
@@ -400,6 +464,7 @@ async function collectAndWriteCtripHotel(input, context = {}) {
       throw error;
     }
   });
+  return finishDesktopCaptureTiming(desktopResult, desktopStartedAt, manualWaitIntervals);
 }
 
 async function openVisibleEdgeLogin(input, context = {}) {
@@ -418,6 +483,7 @@ async function openVisibleEdgeLogin(input, context = {}) {
       'cli/auto-edge.js'
     );
     const loginPrepResult = await runInteractiveEdgeLoginPrep({
+      signal: context.signal,
       userDataDir: path.join(workDir, 'state', 'edge-profile'),
       profileDirectory: 'Default',
       browserPreference: input.collectBrowser,

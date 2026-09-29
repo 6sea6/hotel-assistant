@@ -10,6 +10,7 @@ let taskConsoleModuleUrl = '';
 let aiAssistantModuleUrl = '';
 let aiAssistantStateModuleUrl = '';
 let aiAssistantActionsModuleUrl = '';
+let aiTaskPayloadModuleUrl = '';
 let listPrefilterModuleUrl = '';
 let listPrefilterStateModuleUrl = '';
 
@@ -91,20 +92,23 @@ async function loadAiAssistantModules() {
     aiAssistantModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-assistant.js')).href;
     aiAssistantStateModuleUrl = pathToFileURL(path.join(tempRoot, 'state.js')).href;
     aiAssistantActionsModuleUrl = pathToFileURL(path.join(tempRoot, 'actions.js')).href;
+    aiTaskPayloadModuleUrl = pathToFileURL(path.join(tempRoot, 'ai-task-payload.js')).href;
     process.on('exit', () => {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     });
   }
 
-  const [module, stateModule, actionsModule] = await Promise.all([
+  const [module, stateModule, actionsModule, payloadModule] = await Promise.all([
     import(aiAssistantModuleUrl),
     import(aiAssistantStateModuleUrl),
-    import(aiAssistantActionsModuleUrl)
+    import(aiAssistantActionsModuleUrl),
+    import(aiTaskPayloadModuleUrl)
   ]);
   return {
     module,
     state: stateModule.state,
-    actions: actionsModule.actions
+    actions: actionsModule.actions,
+    payloadModule
   };
 }
 
@@ -1795,7 +1799,8 @@ test('AI collect task payload includes saved batch concurrency setting', async (
   state.templates = [{ id: 'tpl-1', name: '武汉模板' }];
   state.settings = {
     collectBrowser: '360',
-    collectBatchConcurrency: 3
+    collectBatchConcurrency: 3,
+    aiCtripPriceMax: 150
   };
   state.aiTaskQueue = [];
   state.aiTaskQueueCounter = 0;
@@ -1835,6 +1840,7 @@ test('AI collect task payload includes saved batch concurrency setting', async (
 
   assert.equal(capturedPayload.collectBrowser, '360');
   assert.equal(capturedPayload.batchConcurrency, 3);
+  assert.equal(capturedPayload.perPersonDailyPriceMax, 150);
 });
 
 test('AI collect task auto-detects plain text as address query with active prefilters', async () => {
@@ -1961,6 +1967,36 @@ test('AI collect task sends per-person daily list prefilter prices as stay total
   });
   assert.equal(capturedPayload.priceMin, 120);
   assert.equal(capturedPayload.priceMax, 600);
+  assert.equal(capturedPayload.perPersonDailyPriceMax, 300);
+});
+
+test('queued task keeps its frozen per-person ceiling after settings change', async () => {
+  const { state, payloadModule } = await loadAiAssistantModules();
+  state.settings = {
+    aiCtripPriceMax: 220,
+    collectBatchConcurrency: 1,
+    collectBrowser: 'edge'
+  };
+  const payload = payloadModule.buildTaskPayload({
+    templateId: 'tpl-1',
+    templateName: '快照模板',
+    template: { id: 'tpl-1', room_count: 2 },
+    listUrlFilters: { priceMax: 300 },
+    collectionPolicy: { perPersonDailyPriceMax: 150 },
+    url: 'https://hotels.ctrip.com/hotels/123.html'
+  });
+
+  assert.equal(payload.priceMax, 300);
+  assert.equal(payload.perPersonDailyPriceMax, 150);
+
+  const noLimitPayload = payloadModule.buildTaskPayload({
+    templateId: 'tpl-2',
+    template: { id: 'tpl-2', room_count: 2 },
+    listUrlFilters: {},
+    collectionPolicy: { perPersonDailyPriceMax: null },
+    url: 'https://hotels.ctrip.com/hotels/456.html'
+  });
+  assert.equal(noLimitPayload.perPersonDailyPriceMax, undefined);
 });
 
 test('AI collect task auto-detects Ctrip URL inside mixed text as URL input', async () => {
@@ -2246,7 +2282,8 @@ test('AI refresh task payload includes saved batch concurrency setting', async (
 
   state.settings = {
     collectBrowser: '360',
-    collectBatchConcurrency: 3
+    collectBatchConcurrency: 3,
+    aiCtripPriceMax: 150
   };
   state.aiTaskQueue = [];
   state.aiTaskQueueCounter = 0;
@@ -2296,6 +2333,7 @@ test('AI refresh task payload includes saved batch concurrency setting', async (
 
   assert.equal(capturedPayload.collectBrowser, '360');
   assert.equal(capturedPayload.batchConcurrency, 3);
+  assert.equal(capturedPayload.perPersonDailyPriceMax, undefined);
 });
 
 test('AI collect enqueue uses saved list prefilter settings instead of stale list URL filters', async () => {

@@ -20,22 +20,22 @@
           </h1>
         </div>
         <div class="header-right">
-          <button class="btn btn-secondary" data-action="open-ai-assistant">
+          <button type="button" class="btn btn-secondary" data-action="open-ai-assistant">
             <span class="app-icon app-icon-bot" aria-hidden="true"></span> 采集助手
           </button>
-          <button class="btn btn-secondary" data-action="open-template-manager">
+          <button type="button" class="btn btn-secondary" data-action="open-template-manager">
             <span class="app-icon app-icon-clipboard" aria-hidden="true"></span> 模板管理
           </button>
-          <button class="btn btn-secondary" data-action="open-data-transfer">
+          <button type="button" class="btn btn-secondary" data-action="open-data-transfer">
             <span class="app-icon app-icon-database" aria-hidden="true"></span> 数据管理
           </button>
-          <button class="btn btn-secondary" data-action="open-personalization">
+          <button type="button" class="btn btn-secondary" data-action="open-personalization">
             <span class="app-icon app-icon-palette" aria-hidden="true"></span> 个性化
           </button>
-          <button class="btn btn-secondary" data-action="open-settings">
+          <button type="button" class="btn btn-secondary" data-action="open-settings">
             <span class="app-icon app-icon-settings" aria-hidden="true"></span> 设置
           </button>
-          <button class="btn btn-secondary" data-action="open-about">
+          <button type="button" class="btn btn-secondary" data-action="open-about">
             <span class="app-icon app-icon-info" aria-hidden="true"></span> 关于
           </button>
         </div>
@@ -76,14 +76,44 @@
             <h2 class="section-title">搜索筛选</h2>
             <div class="filter-grid">
               <div class="filter-group filter-group-full">
-                <label>宾馆名称</label>
-                <select id="filterName" class="input" data-custom-select="true">
-                  <option value="">全部</option>
-                </select>
+                <label for="filterName">宾馆名称</label>
+                <div id="hotelNameCombobox" class="hotel-name-combobox">
+                  <input
+                    id="filterName"
+                    class="input filter-name-input hotel-name-combobox-input"
+                    type="search"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="hotelNameSuggestions"
+                    placeholder="输入名称关键词"
+                  />
+                  <button
+                    id="hotelNameComboboxToggle"
+                    class="hotel-name-combobox-toggle"
+                    type="button"
+                    aria-label="显示宾馆名称建议"
+                    aria-controls="hotelNameSuggestions"
+                    aria-expanded="false"
+                  >
+                    <span class="custom-select-caret hotel-name-combobox-caret" aria-hidden="true"
+                      >⌄</span
+                    >
+                  </button>
+                  <div
+                    id="hotelNameSuggestions"
+                    class="custom-select-menu hotel-name-suggestion-menu"
+                    role="listbox"
+                    aria-label="宾馆名称建议"
+                    hidden
+                  ></div>
+                </div>
               </div>
 
               <div class="filter-group">
-                <label>携程评分</label>
+                <label for="filterScore">携程评分</label>
                 <select id="filterScore" class="input" data-custom-select="true">
                   <option value="">全部</option>
                   <option value="4.7">4.7分以上</option>
@@ -93,7 +123,7 @@
               </div>
 
               <div class="filter-group">
-                <label>携程星级</label>
+                <label for="filterDiamondLevel">携程星级</label>
                 <select id="filterDiamondLevel" class="input" data-custom-select="true">
                   <option value="">全部</option>
                   <option value="5">5星以上</option>
@@ -104,7 +134,7 @@
               </div>
 
               <div class="filter-group">
-                <label>收藏状态</label>
+                <label for="filterFavorite">收藏状态</label>
                 <select id="filterFavorite" class="input" data-custom-select="true">
                   <option value="">全部</option>
                   <option value="1">已收藏</option>
@@ -113,7 +143,7 @@
               </div>
 
               <div class="filter-group">
-                <label>公共交通时间</label>
+                <label for="filterTransportTime">公共交通时间</label>
                 <select id="filterTransportTime" class="input" data-custom-select="true">
                   <option value="">全部</option>
                   <option value="20">20分钟以内</option>
@@ -125,7 +155,7 @@
               </div>
 
               <div class="filter-group">
-                <label>最近地铁站距离</label>
+                <label for="filterSubwayDistance">最近地铁站距离</label>
                 <select id="filterSubwayDistance" class="input" data-custom-select="true">
                   <option value="">全部</option>
                   <option value="none">无</option>
@@ -137,15 +167,36 @@
               </div>
 
               <div class="filter-group">
-                <label>按模板筛选</label>
+                <label for="filterTemplate">按模板筛选</label>
                 <select id="filterTemplate" class="input" data-custom-select="true">
                   <option value="">全部</option>
                 </select>
               </div>
             </div>
 
-            <div class="filter-spacer"></div>
-            <button class="btn btn-secondary btn-full" data-action="clear-filters">清除筛选</button>
+            <div class="filter-status-panel">
+              <div class="filter-status-summary" aria-hidden="true">
+                <span
+                  >命中 <strong id="filterMatchCount">0</strong>/<span id="filterTotalCount"
+                    >0</span
+                  >
+                  家</span
+                >
+                <span class="filter-active-badge"
+                  ><strong id="filterActiveCount">0</strong> 项生效</span
+                >
+              </div>
+              <p id="filterStatus" class="sr-only" role="status" aria-live="polite">尚未启用筛选</p>
+              <button
+                id="clearFiltersBtn"
+                class="btn btn-secondary btn-full"
+                type="button"
+                data-action="clear-filters"
+                disabled
+              >
+                清除全部筛选
+              </button>
+            </div>
 
             <div class="sort-mode-section">
               <h2 class="section-title">排序方式</h2>
@@ -171,10 +222,14 @@
           </div>
 
           <div class="panel-section">
-            <button class="btn btn-primary btn-full" data-action="open-add-hotel">
+            <button type="button" class="btn btn-primary btn-full" data-action="open-add-hotel">
               <span class="app-icon app-icon-plus" aria-hidden="true"></span> 添加宾馆
             </button>
-            <button class="btn btn-accent btn-full" data-action="export-ranking-image">
+            <button
+              type="button"
+              class="btn btn-accent btn-full"
+              data-action="export-ranking-image"
+            >
               <span class="app-icon app-icon-camera" aria-hidden="true"></span> 导出排名图片
             </button>
           </div>
@@ -223,6 +278,7 @@
               <button
                 id="ruleDeleteBtn"
                 class="btn btn-danger btn-sm"
+                type="button"
                 data-action="open-rule-delete"
               >
                 <span class="app-icon app-icon-trash" aria-hidden="true"></span> 规则删除
@@ -230,6 +286,7 @@
               <button
                 id="batchDeleteBtn"
                 class="btn btn-danger btn-sm"
+                type="button"
                 hidden
                 data-action="confirm-batch-delete"
               >
@@ -383,14 +440,29 @@
         <div class="modal-content">
           <div class="modal-header">
             <h2 id="modalTitle">添加宾馆</h2>
-            <button class="modal-close" data-action="close-hotel-modal">&times;</button>
+            <button
+              class="modal-close"
+              type="button"
+              data-action="close-hotel-modal"
+              aria-label="关闭宾馆表单"
+            >
+              &times;
+            </button>
           </div>
           <div class="modal-body">
             <form id="hotelForm">
               <input type="hidden" id="hotelId" />
+              <p
+                id="hotelFormError"
+                class="form-error"
+                role="alert"
+                aria-live="assertive"
+                tabindex="-1"
+                hidden
+              ></p>
 
               <div class="form-group">
-                <label>选择模板（可选）</label>
+                <label for="hotelTemplateSelect">选择模板（可选）</label>
                 <select id="hotelTemplateSelect" class="input" data-custom-select="true">
                   <option value="">不使用模板</option>
                 </select>
@@ -580,7 +652,14 @@
             <button type="button" class="btn btn-secondary" data-action="close-hotel-modal">
               取消
             </button>
-            <button type="button" class="btn btn-primary" data-action="save-hotel">保存</button>
+            <button
+              id="saveHotelBtn"
+              type="button"
+              class="btn btn-primary"
+              data-action="save-hotel"
+            >
+              保存
+            </button>
           </div>
         </div>
       </div>
@@ -590,7 +669,14 @@
           <div class="modal-content modal-small">
             <div class="modal-header">
               <h2>规则删除</h2>
-              <button class="modal-close" data-action="close-rule-delete">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-rule-delete"
+                aria-label="关闭规则删除"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body rule-delete-body">
               <div class="form-row">
@@ -683,11 +769,18 @@
           <div class="modal-content modal-large">
             <div class="modal-header">
               <h2>模板管理</h2>
-              <button class="modal-close" data-action="close-template-modal">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-template-modal"
+                aria-label="关闭模板管理"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div class="template-actions">
-                <button class="btn btn-primary" data-action="open-add-template-form">
+                <button type="button" class="btn btn-primary" data-action="open-add-template-form">
                   <span class="app-icon app-icon-plus" aria-hidden="true"></span> 新建模板
                 </button>
               </div>
@@ -697,6 +790,14 @@
                 <hr class="divider" />
                 <h3 id="templateFormTitle">新建模板</h3>
                 <input type="hidden" id="templateId" />
+                <p
+                  id="templateFormError"
+                  class="form-error"
+                  role="alert"
+                  aria-live="assertive"
+                  tabindex="-1"
+                  hidden
+                ></p>
                 <div class="form-row">
                   <div class="form-group">
                     <label for="templateName">模板名称 *</label>
@@ -745,7 +846,12 @@
                   >
                     取消
                   </button>
-                  <button type="button" class="btn btn-primary" data-action="save-template">
+                  <button
+                    id="saveTemplateBtn"
+                    type="button"
+                    class="btn btn-primary"
+                    data-action="save-template"
+                  >
                     保存模板
                   </button>
                 </div>
@@ -1117,14 +1223,25 @@
           <div class="modal-content">
             <div class="modal-header">
               <h2>设置</h2>
-              <button class="modal-close" data-action="close-settings">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-settings"
+                aria-label="关闭设置"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div class="form-group">
                 <label>采集偏好</label>
                 <div class="setting-switch-container">
                   <label class="switch-label">
-                    <input type="checkbox" id="includeFourPersonRoomsForThreePersonTemplate" />
+                    <input
+                      type="checkbox"
+                      id="includeFourPersonRoomsForThreePersonTemplate"
+                      aria-label="三人模板包含四人房型"
+                    />
                     <span class="switch-slider"></span>
                   </label>
                   <span class="switch-text" id="includeFourPersonRoomsForThreePersonTemplateText"
@@ -1140,7 +1257,11 @@
                 <label>采集性能日志</label>
                 <div class="setting-switch-container">
                   <label class="switch-label">
-                    <input type="checkbox" id="enableCollectPerfLog" />
+                    <input
+                      type="checkbox"
+                      id="enableCollectPerfLog"
+                      aria-label="记录采集性能日志"
+                    />
                     <span class="switch-slider"></span>
                   </label>
                   <span class="switch-text" id="enableCollectPerfLogText">关闭</span>
@@ -1185,7 +1306,11 @@
                     autocomplete="off"
                   />
                   <div class="data-path-actions">
-                    <button class="btn btn-secondary btn-sm" data-action="save-amap-api-key">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-action="save-amap-api-key"
+                    >
                       保存 Key
                     </button>
                   </div>
@@ -1206,10 +1331,18 @@
                     placeholder="加载中..."
                   />
                   <div class="data-path-actions">
-                    <button class="btn btn-secondary btn-sm" data-action="show-data-folder">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-action="show-data-folder"
+                    >
                       <span class="app-icon app-icon-folder" aria-hidden="true"></span> 查看位置
                     </button>
-                    <button class="btn btn-secondary btn-sm" data-action="change-data-path">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-action="change-data-path"
+                    >
                       <span class="app-icon app-icon-folder-open" aria-hidden="true"></span>
                       更改位置
                     </button>
@@ -1219,11 +1352,12 @@
               </div>
               <div class="form-group">
                 <label>快捷链接</label>
-                <button class="btn btn-primary btn-full" data-action="open-ctrip">
+                <button type="button" class="btn btn-primary btn-full" data-action="open-ctrip">
                   <span class="app-icon app-icon-globe" aria-hidden="true"></span> 访问携程官网
                 </button>
                 <button
                   class="btn btn-primary btn-full"
+                  type="button"
                   data-action="open-fliggy"
                   style="margin-top: 8px"
                 >
@@ -1232,14 +1366,18 @@
               </div>
               <div class="form-group">
                 <label>应用说明书</label>
-                <button class="btn btn-primary btn-full" data-action="open-manual">
+                <button type="button" class="btn btn-primary btn-full" data-action="open-manual">
                   <span class="app-icon app-icon-book-open" aria-hidden="true"></span>
                   查看完整功能说明
                 </button>
                 <small class="help-text">了解应用的所有功能和使用方法</small>
               </div>
               <div class="form-group">
-                <button class="btn btn-secondary btn-full" data-action="reset-settings">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-full"
+                  data-action="reset-settings"
+                >
                   恢复默认设置
                 </button>
               </div>
@@ -1253,7 +1391,14 @@
           <div class="modal-content modal-medium">
             <div class="modal-header">
               <h2>个性化</h2>
-              <button class="modal-close" data-action="close-personalization">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-personalization"
+                aria-label="关闭个性化"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div class="personalization-section">
@@ -1410,10 +1555,18 @@
                   </label>
                 </div>
                 <div class="card-field-actions">
-                  <button class="btn btn-primary btn-sm" data-action="save-hotel-card-fields">
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    data-action="save-hotel-card-fields"
+                  >
                     保存卡片展示
                   </button>
-                  <button class="btn btn-secondary btn-sm" data-action="reset-hotel-card-fields">
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    data-action="reset-hotel-card-fields"
+                  >
                     恢复默认
                   </button>
                 </div>
@@ -1430,10 +1583,18 @@
                     placeholder="当前使用默认图标"
                   />
                   <div class="data-path-actions">
-                    <button class="btn btn-secondary btn-sm" data-action="choose-app-icon">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-action="choose-app-icon"
+                    >
                       <span class="app-icon app-icon-image" aria-hidden="true"></span> 更换图标
                     </button>
-                    <button class="btn btn-secondary btn-sm" data-action="reset-app-icon">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      data-action="reset-app-icon"
+                    >
                       <span class="app-icon app-icon-reset" aria-hidden="true"></span> 恢复默认
                     </button>
                   </div>
@@ -1441,8 +1602,7 @@
                 <small class="help-text" id="appIconStatus">当前使用内置默认图标</small>
                 <small class="help-text"
                   >支持选择 .ico、.png、.jpg、.jpeg、.bmp、.webp
-                  文件；选择后会复制到当前数据目录内，删除原图不会影响窗口图标，导出 JSON
-                  时也会一并带上当前自定义图标。</small
+                  文件；选择后会复制到当前数据目录内，删除原图不会影响窗口图标。数据导出不会附带自定义图标。</small
                 >
               </div>
             </div>
@@ -1456,7 +1616,14 @@
           <div class="modal-content">
             <div class="modal-header">
               <h2>宾馆详情</h2>
-              <button class="modal-close" data-action="close-hotel-details">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-hotel-details"
+                aria-label="关闭宾馆详情"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div id="hotelDetailsContent"></div>
@@ -1475,7 +1642,14 @@
           <div class="modal-content modal-small">
             <div class="modal-header">
               <h2>导出排名图片</h2>
-              <button class="modal-close" data-action="close-ranking-export">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-ranking-export"
+                aria-label="关闭排名图片导出"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div class="ranking-export-summary">
@@ -1528,17 +1702,24 @@
           <div class="modal-content modal-small">
             <div class="modal-header">
               <h2>数据管理</h2>
-              <button class="modal-close" data-action="close-data-transfer">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-data-transfer"
+                aria-label="关闭数据管理"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div class="data-transfer-options">
-                <div class="transfer-option" data-action="export-data">
+                <button type="button" class="transfer-option" data-action="export-data">
                   <div class="transfer-icon app-icon app-icon-upload" aria-hidden="true"></div>
                   <div class="transfer-info">
                     <h3>导出数据</h3>
-                    <p>将所有宾馆、模板和设置导出到 JSON 文件</p>
+                    <p>导出全部数据，或按多个模板、具体房型选择导出范围</p>
                   </div>
-                </div>
+                </button>
                 <div class="transfer-option transfer-option-static" id="importTransferOption">
                   <div class="transfer-icon app-icon app-icon-download" aria-hidden="true"></div>
                   <div class="transfer-info">
@@ -1550,6 +1731,7 @@
                     <div class="transfer-option-actions">
                       <button
                         class="btn btn-primary"
+                        type="button"
                         data-action="import-data"
                         data-import-mode="replace"
                       >
@@ -1557,6 +1739,7 @@
                       </button>
                       <button
                         class="btn btn-primary"
+                        type="button"
                         data-action="import-data"
                         data-import-mode="append"
                       >
@@ -1564,11 +1747,114 @@
                       </button>
                     </div>
                     <div class="transfer-option-note">
-                      覆盖会替换当前数据；追加会保留当前设置和图标，并自动跳过重复宾馆与模板。
+                      覆盖会替换宾馆、模板和业务设置，但保留当前个性化；追加会保留全部当前设置，并自动跳过重复宾馆与模板。
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template data-modal-template="dataExportModal">
+        <div id="dataExportModal" class="modal">
+          <div class="modal-content modal-medium data-export-modal-content">
+            <div class="modal-header">
+              <h2>选择导出范围</h2>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-data-export"
+                aria-label="关闭导出范围"
+              >
+                &times;
+              </button>
+            </div>
+            <div class="modal-body data-export-body">
+              <p class="data-export-intro">
+                导出的 JSON 保持原有格式，但不包含主题、卡片字段和自定义图标等个性化设置。
+              </p>
+              <fieldset class="data-export-scope" aria-label="导出范围">
+                <label class="data-export-scope-option">
+                  <input type="radio" name="dataExportScope" value="all" checked />
+                  <span>
+                    <strong>全部数据</strong>
+                    <small>全部宾馆、房型、模板和非个性化业务设置</small>
+                  </span>
+                </label>
+                <label class="data-export-scope-option">
+                  <input type="radio" name="dataExportScope" value="templates" />
+                  <span>
+                    <strong>按模板选择</strong>
+                    <small>可同时选择多个模板及其房型</small>
+                  </span>
+                </label>
+                <label class="data-export-scope-option">
+                  <input type="radio" name="dataExportScope" value="rooms" />
+                  <span>
+                    <strong>按房型选择</strong>
+                    <small>按价格从低到高选择具体房型</small>
+                  </span>
+                </label>
+              </fieldset>
+
+              <section id="dataExportTemplatePanel" class="data-export-selection-panel" hidden>
+                <div class="data-export-panel-toolbar">
+                  <strong>选择模板</strong>
+                  <div class="data-export-panel-actions">
+                    <button type="button" class="btn-link" data-action="select-all-export-items">
+                      全选
+                    </button>
+                    <button type="button" class="btn-link" data-action="clear-export-items">
+                      清空
+                    </button>
+                  </div>
+                </div>
+                <div id="dataExportTemplateList" class="data-export-check-list"></div>
+              </section>
+
+              <section id="dataExportRoomPanel" class="data-export-selection-panel" hidden>
+                <div class="data-export-panel-toolbar">
+                  <label for="dataExportRoomSearch">选择具体房型（价格从低到高）</label>
+                  <div class="data-export-panel-actions">
+                    <button type="button" class="btn-link" data-action="select-all-export-items">
+                      全选当前结果
+                    </button>
+                    <button type="button" class="btn-link" data-action="clear-export-items">
+                      清空
+                    </button>
+                  </div>
+                </div>
+                <input
+                  id="dataExportRoomSearch"
+                  class="input data-export-search"
+                  type="search"
+                  autocomplete="off"
+                  placeholder="搜索宾馆、房型、地址或模板"
+                />
+                <div id="dataExportRoomList" class="data-export-check-list"></div>
+              </section>
+
+              <div
+                id="dataExportSummary"
+                class="data-export-summary"
+                role="status"
+                aria-live="polite"
+              ></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-action="close-data-export">
+                取消
+              </button>
+              <button
+                id="confirmDataExportBtn"
+                type="button"
+                class="btn btn-primary"
+                data-action="confirm-data-export"
+              >
+                导出 JSON
+              </button>
             </div>
           </div>
         </div>
@@ -1579,7 +1865,14 @@
           <div class="modal-content">
             <div class="modal-header">
               <h2>关于</h2>
-              <button class="modal-close" data-action="close-about">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-about"
+                aria-label="关闭关于"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div class="author-info-modal">
@@ -1611,7 +1904,7 @@
                   </div>
                   <div class="version-item">
                     <span>更新日期：</span>
-                    <span id="aboutUpdateDateText">2026-06-22</span>
+                    <span id="aboutUpdateDateText">2026-07-11</span>
                   </div>
                 </div>
               </div>
@@ -1628,7 +1921,14 @@
                 <span class="app-icon app-icon-book-open" aria-hidden="true"></span>
                 应用说明书
               </h2>
-              <button class="modal-close" data-action="close-manual">&times;</button>
+              <button
+                class="modal-close"
+                type="button"
+                data-action="close-manual"
+                aria-label="关闭应用说明书"
+              >
+                &times;
+              </button>
             </div>
             <div class="modal-body">
               <div id="manualContent" class="manual-content" aria-live="polite">

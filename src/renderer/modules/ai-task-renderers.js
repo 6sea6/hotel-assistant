@@ -14,6 +14,8 @@ export function renderStatusBadge(status, label) {
 export function getQueueStatusLabel(task = {}) {
   if (task.status === 'running') return '运行中';
   if (task.status === 'waiting') return '等待中';
+  if (task.status === 'paused') return '已暂停';
+  if (task.status === 'partial') return '部分完成';
   if (task.status === 'completed') return '已完成';
   if (task.status === 'cancelled') return '已取消';
   if (task.status === 'failed') return '失败';
@@ -92,7 +94,10 @@ export function renderTaskQueue(queue = [], options = {}) {
   const selectedId = options.selectedId || '';
   const running = queue.filter((task) => task.status === 'running');
   const waiting = queue.filter((task) => task.status === 'waiting');
-  const completed = queue.filter((task) => task.status === 'completed');
+  const completed = queue.filter(
+    (task) => task.status === 'completed' || task.status === 'partial'
+  );
+  const paused = queue.filter((task) => task.status === 'paused');
   const failed = queue.filter((task) => task.status === 'failed' || task.status === 'cancelled');
 
   return `
@@ -109,6 +114,7 @@ export function renderTaskQueue(queue = [], options = {}) {
         ${renderQueueGroup('运行中', running, selectedId)}
         ${renderQueueGroup('等待中', waiting, selectedId, '暂无等待任务')}
         ${renderQueueGroup('已完成', completed, selectedId)}
+        ${renderQueueGroup('已暂停', paused, selectedId)}
         ${renderQueueGroup('失败', failed, selectedId)}
       </div>
     </div>
@@ -407,4 +413,17 @@ export function renderCancelledView(taskState, taskKind = 'collect') {
       </div>
     </div>
   `;
+}
+
+export function renderPausedView(taskState) {
+  const partial = taskState.status === 'partial';
+  return `<div class="task-finished-view">
+    <div class="task-result-hero task-result-hero-cancelled"><span aria-hidden="true">Ⅱ</span><div>
+      <h3>${partial ? '任务部分完成' : '采集已暂停'}</h3>
+      <p>${escapeHtml(partial ? '已保存有效结果，其余项目未完成。' : taskState.error.message)}</p>
+    </div></div>
+    ${renderTaskMeta(taskState)}
+    ${renderTaskTimeline(taskState.steps, { compact: true })}
+    <div class="task-panel-actions"><button class="task-primary-inline-button" type="button" data-action="rerun-current-ai-task">${partial ? '重新尝试' : '人工确认后恢复未完成项目'}</button></div>
+  </div>`;
 }

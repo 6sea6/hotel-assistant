@@ -1,3 +1,4 @@
+const { attachCtripCdpGuard } = require('./ctrip-cdp-guard');
 const {
   buildDesktopUrl,
   buildUrlOverridesFromTemplate,
@@ -484,12 +485,7 @@ function createAddressKeywordCapture(connection, sessionId) {
     const url = requestUrls.get(requestId);
     requestUrls.delete(requestId);
     const bodyPromise = connection
-      .send(
-        'Network.getResponseBody',
-        { requestId },
-        sessionId,
-        { timeoutMs: 8000 }
-      )
+      .send('Network.getResponseBody', { requestId }, sessionId, { timeoutMs: 8000 })
       .then((payload) => {
         responses.push({
           url,
@@ -552,10 +548,7 @@ function normalizeResolvedListUrl(value) {
     const parsed = new URL(url);
     const hostname = String(parsed.hostname || '').toLowerCase();
     const pathname = String(parsed.pathname || '').toLowerCase();
-    if (
-      !/(^|\.)hotels\.ctrip\.com$/.test(hostname) ||
-      !/^\/hotels\/list\/?$/.test(pathname)
-    ) {
+    if (!/(^|\.)hotels\.ctrip\.com$/.test(hostname) || !/^\/hotels\/list\/?$/.test(pathname)) {
       return '';
     }
     return url;
@@ -581,9 +574,7 @@ function decodeKeywordResponseBody(response = {}) {
   if (!rawBody) {
     return null;
   }
-  const body = response.base64Encoded
-    ? Buffer.from(rawBody, 'base64').toString('utf8')
-    : rawBody;
+  const body = response.base64Encoded ? Buffer.from(rawBody, 'base64').toString('utf8') : rawBody;
   try {
     return JSON.parse(body);
   } catch (_error) {
@@ -623,9 +614,7 @@ function normalizeAddressKeywordCandidate(source = {}, query = '') {
     (source.keywordFilterItem && source.keywordFilterItem.data) ||
     {};
   const filterId = normalizeText(keywordFilterItem.filterID || '');
-  const filterType =
-    normalizeText(keywordFilterItem.type || filterId.split('|')[0]) ||
-    '13';
+  const filterType = normalizeText(keywordFilterItem.type || filterId.split('|')[0]) || '13';
   const keywordId =
     normalizeText(
       keywordContentInfo.keywordId ||
@@ -635,10 +624,7 @@ function normalizeAddressKeywordCandidate(source = {}, query = '') {
         ''
     ) || '';
   const keyword = normalizeText(
-    keywordContentInfo.keyword ||
-      keywordContentInfo.keywordDesc ||
-      keywordFilterItem.title ||
-      ''
+    keywordContentInfo.keyword || keywordContentInfo.keywordDesc || keywordFilterItem.title || ''
   );
   const filterValue = normalizeText(keywordFilterItem.value || '');
   const tripType = normalizeText(keywordContentInfo.tripType || '') || 'LM';
@@ -748,8 +734,7 @@ function buildAddressKeywordListUrlFromResponses(baseUrl, addressQuery, keywordR
 }
 
 function getAddressSearchRetryCount(edgeSessionOptions = {}, options = {}) {
-  const explicit =
-    options.addressSearchRetryCount ?? options.retryCount ?? options.retries;
+  const explicit = options.addressSearchRetryCount ?? options.retryCount ?? options.retries;
   if (explicit !== null && explicit !== undefined && explicit !== '') {
     const parsed = Number(explicit);
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
@@ -787,6 +772,7 @@ async function resolveCtripListUrlFromAddressOnce({
   let sessionId = '';
   let shouldCloseTarget = false;
   let keywordCapture = null;
+  let detachAccessGuard = () => {};
 
   try {
     const connectedSession = await deps.connectListEdgeSession(
@@ -809,6 +795,12 @@ async function resolveCtripListUrlFromAddressOnce({
       throw new Error(targetSession.error);
     }
 
+    detachAccessGuard = attachCtripCdpGuard(
+      connection,
+      sessionId,
+      options.accessController,
+      options.signal
+    );
     await connection.send('Page.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
     await connection.send('Network.enable', {}, sessionId).catch(() => undefined);
@@ -935,6 +927,7 @@ async function resolveCtripListUrlFromAddressOnce({
     }
     return normalizedResolvedUrl;
   } finally {
+    detachAccessGuard();
     if (keywordCapture && keywordCapture.stop) {
       keywordCapture.stop();
     }
@@ -983,7 +976,9 @@ async function resolveCtripListUrlFromAddress(addressQuery, template = {}, optio
     throw new Error('地址搜索需要可用的 Edge 或 360 浏览器。');
   }
 
-  const retryCount = getAddressSearchRetryCount(edgeSessionOptions, options);
+  const retryCount = options.accessController
+    ? 0
+    : getAddressSearchRetryCount(edgeSessionOptions, options);
   let lastError = null;
   for (let attempt = 0; attempt <= retryCount; attempt += 1) {
     try {

@@ -1,3 +1,4 @@
+const { isCompleteRoomPayload } = require('../room-response-completeness');
 const { mergeRoomCandidates, selectBestRoom, selectMatchingRooms } = require('../room-logic');
 const { findRoomBlocksFromStructuredText, safeJsonParse } = require('../html-parser');
 const { collectRoomCandidatesFromPayload } = require('../structured-extractor');
@@ -135,6 +136,8 @@ async function parseEdgeNetworkResponses({
   spiderErrorCodes,
   debugHotelId,
   roomApiDebugIndex = 0,
+  processedRequestIds = new Set(),
+  incremental = false,
   responseBodyTimeoutMs = null,
   roomResponseBodyMaxAttempts = 2,
   matchingOptions = {},
@@ -209,6 +212,8 @@ async function parseEdgeNetworkResponses({
 
   for (let entryIndex = 0; entryIndex < readPlan.length; entryIndex += 1) {
     const [requestId, meta] = readPlan[entryIndex];
+    if (processedRequestIds.has(requestId)) continue;
+    if (incremental && !meta.cachedBodyResult?.body) continue;
     assertEdgeNotAborted(signal, 'edge_response_parse');
     if (Date.now() - startedAt >= maxElapsedMs && stats.roomResponseCount > 0) {
       stats.responseParseStoppedReason = 'max_elapsed_after_room_response';
@@ -221,7 +226,7 @@ async function parseEdgeNetworkResponses({
     }
     try {
       const isRoomResponse = isRoomListNetworkResponse(meta.url);
-      const roomResponseUrl = isRoomResponse ? String(meta.url || '') : '';
+      const roomResponseUrl = isRoomResponse ? requestId : '';
       if (isRoomResponse && successfulRoomResponseUrls.has(roomResponseUrl)) {
         stats.duplicateRoomResponseSkippedCount += 1;
         stats.skippedResponseCount += 1;
@@ -307,7 +312,9 @@ async function parseEdgeNetworkResponses({
         stats.nonRoomResponseBodyReadCount += 1;
       }
       const parseStartedAt = Date.now();
-      const parsed = safeJsonParse(bodyResult.body);
+      const parsed =
+        meta.parsedPayload || bodyResult.parsedPayload || safeJsonParse(bodyResult.body);
+      meta.parsedPayload = parsed;
       const parseElapsedMs = Date.now() - parseStartedAt;
       stats.responseBodyParseElapsedMs += parseElapsedMs;
       stats.responseBodyParseMaxMs = Math.max(stats.responseBodyParseMaxMs, parseElapsedMs);
@@ -317,6 +324,8 @@ async function parseEdgeNetworkResponses({
         }
         continue;
       }
+      processedRequestIds.add(requestId);
+      meta.captureComplete = isRoomResponse && isCompleteRoomPayload(parsed);
       stats.parsedResponseCount += 1;
       if (isRoomResponse) {
         stats.roomResponseCount += 1;
@@ -365,11 +374,15 @@ async function parseEdgeNetworkResponses({
           `[edge-cdp] API ${meta.url.substring(0, 80)} → extracted ${extractedCount} rooms, has 套房: ${bodyResult.body.includes('套房')}, has 开放: ${bodyResult.body.includes('开放')}`
         );
       }
-      if (isRoomResponse && isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions)) {
+      if (
+        isRoomResponse &&
+        meta.captureComplete &&
+        isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions)
+      ) {
         state.fastPathComplete = true;
       }
     } catch (error) {
-      if (isAbortLikeError(error)) {
+      if (error.accessIssue || isAbortLikeError(error)) {
         throw error;
       }
       /* skip */
@@ -385,7 +398,14 @@ async function parseEdgeNetworkResponses({
     );
     state.fastPathComplete = isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions);
   }
-  stats.fastPathComplete = state.fastPathComplete;
+  stats.captureComplete =
+    [...requestMeta.values()].some((meta) => meta.captureComplete) &&
+    [...requestMeta]
+      .filter(([, meta]) => isRoomListNetworkResponse(meta.url))
+      .every(([id]) => processedRequestIds.has(id)) &&
+    !spiderErrorCodes.has(203);
+  stats.fastPathComplete =
+    stats.captureComplete && isEdgeRoomFastPathComplete(roomBlocks, template, matchingOptions);
   stats.responseParseElapsedMs = Date.now() - startedAt;
   if (roomEntryCount > 0 && !state.fastPathComplete) {
     stats.fallbackFullParseUsed = true;

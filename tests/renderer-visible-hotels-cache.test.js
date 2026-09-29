@@ -354,3 +354,26 @@ test('多个筛选条件同时变化', async () => {
   modelMod.getSortedVisibleHotels();
   assert.equal(visibleHotelsCache.missCount, missBefore + 1, 'score 变化应导致 miss');
 });
+
+test('500 条数据筛选排序计算的 P95 小于 100ms', async () => {
+  const { stateMod, modelMod } = await loadModules();
+  const { state, setHotels } = stateMod;
+  setHotels(makeHotels(500));
+
+  const durations = [];
+  for (let index = 0; index < 60; index++) {
+    state.currentFilters = {
+      name: `宾馆${index % 50}`,
+      score: index % 2 === 0 ? '3.5' : '',
+      sortMode: index % 3 === 0 ? 'review_high' : 'price_low'
+    };
+    const startedAt = performance.now();
+    const result = modelMod.getSortedVisibleHotels();
+    result.length;
+    durations.push(performance.now() - startedAt);
+  }
+
+  durations.sort((a, b) => a - b);
+  const p95 = durations[Math.ceil(durations.length * 0.95) - 1];
+  assert.ok(p95 < 100, `expected P95 < 100ms, received ${p95.toFixed(2)}ms`);
+});

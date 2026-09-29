@@ -72,3 +72,40 @@ export function removeHotelById(hotels, id) {
   next.splice(idx, 1);
   return { list: next, removed: true };
 }
+
+/**
+ * Restore a removed item without replacing unrelated concurrent changes.
+ * @template {EntityWithOptionalId} T
+ * @param {T[]} hotels
+ * @param {T} hotel
+ * @param {number} index
+ * @returns {T[]}
+ */
+export function insertHotelAtIndex(hotels, hotel, index) {
+  if (findHotelIndexById(hotels, hotel.id) >= 0) return hotels;
+  const next = hotels.slice();
+  const safeIndex = Math.max(0, Math.min(Number(index) || 0, next.length));
+  next.splice(safeIndex, 0, hotel);
+  return next;
+}
+
+/**
+ * Restore selected fields on the latest record so another completed mutation is preserved.
+ * @template {EntityWithOptionalId} T
+ * @param {T[]} hotels
+ * @param {any} id
+ * @param {T} snapshot
+ * @param {string[]} fields
+ * @returns {T[]}
+ */
+export function restoreHotelFields(hotels, id, snapshot, fields) {
+  const index = findHotelIndexById(hotels, id);
+  if (index < 0) return hotels;
+  const restored = /** @type {Record<string, any>} */ ({ ...hotels[index] });
+  for (const field of fields) {
+    restored[field] = snapshot[field];
+  }
+  const next = hotels.slice();
+  next[index] = /** @type {T} */ (restored);
+  return next;
+}

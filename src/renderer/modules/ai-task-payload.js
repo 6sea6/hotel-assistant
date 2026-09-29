@@ -313,6 +313,14 @@ export function readCtripUrlFilterSettings(options = {}) {
   return options.activeOnly ? compactActiveCtripUrlFilters(resolvedFilters) : resolvedFilters;
 }
 
+export function readCollectionResultPolicy() {
+  const perPersonDailyPriceMax = parsePriceMaxSetting(state.settings.aiCtripPriceMax);
+  return {
+    perPersonDailyPriceMax:
+      typeof perPersonDailyPriceMax === 'number' ? perPersonDailyPriceMax : null
+  };
+}
+
 function applyChoiceButtonsToDom(settingKey, values = []) {
   const selected = new Set((Array.isArray(values) ? values : []).map((item) => String(item)));
   document
@@ -480,7 +488,17 @@ export function buildTaskPayload(task) {
     task.listUrlFilters ||
     readCtripUrlFilterSettings({ activeOnly: true, template: task.template });
   const inputMode = task.inputMode === 'address' ? 'address' : 'url';
+  const hasFrozenCollectionPolicy =
+    task.collectionPolicy &&
+    typeof task.collectionPolicy === 'object' &&
+    Object.prototype.hasOwnProperty.call(task.collectionPolicy, 'perPersonDailyPriceMax');
+  const collectionPolicy = hasFrozenCollectionPolicy
+    ? task.collectionPolicy
+    : readCollectionResultPolicy();
+  const perPersonDailyPriceMax = collectionPolicy.perPersonDailyPriceMax;
   return omitUndefinedFields({
+    resumeTaskId: task.resumeTaskId || undefined,
+    confirmLoginRecovery: task.confirmLoginRecovery || undefined,
     templateId: task.templateId,
     templateName: task.templateName || '',
     inputMode: inputMode === 'address' ? inputMode : undefined,
@@ -492,6 +510,8 @@ export function buildTaskPayload(task) {
     amapKey: String(state.settings.amapApiKey || '').trim() || undefined,
     priceMin: listUrlFilters ? listUrlFilters.priceMin : undefined,
     priceMax: listUrlFilters ? listUrlFilters.priceMax : undefined,
+    perPersonDailyPriceMax:
+      typeof perPersonDailyPriceMax === 'number' ? perPersonDailyPriceMax : undefined,
     starLevels: listUrlFilters ? listUrlFilters.starLevels : undefined,
     sortMode: listUrlFilters ? listUrlFilters.sortMode : undefined,
     freeCancel: listUrlFilters ? listUrlFilters.freeCancel : undefined,

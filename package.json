@@ -1,7 +1,8 @@
 {
   "name": "hotel-comparison-app",
   "version": "8.9.3",
-  "description": "宾馆比较终极版应用程序",
+  "releaseDate": "2026-07-11",
+  "description": "宾馆比较助手本地桌面应用",
   "main": "src/main/main.js",
   "workspaces": [
     "scraper"
@@ -22,10 +23,13 @@
     "typecheck": "tsc -p jsconfig.json --noEmit",
     "format": "prettier --write \"*.json\" \"scraper/*.json\" \"scraper/examples/*.json\" \"src/**/*.js\" \"shared/**/*.js\" \"scripts/**/*.js\" \"tests/**/*.js\" \"scraper/src/**/*.js\" \"scraper/tests/**/*.js\" \"src/renderer/styles.css\" \"src/renderer/manual.html\"",
     "format:check": "prettier --check \"*.json\" \"scraper/*.json\" \"scraper/examples/*.json\" \"src/**/*.js\" \"shared/**/*.js\" \"scripts/**/*.js\" \"tests/**/*.js\" \"scraper/src/**/*.js\" \"scraper/tests/**/*.js\" \"src/renderer/styles.css\" \"src/renderer/manual.html\"",
+    "format:release:check": "prettier --check \"package.json\" \"README.md\" \"README_DEV.md\" \".github/workflows/*.yml\" \"src/renderer/**/*.html\" \"src/renderer/**/*.css\" \"scripts/package/*.js\" \"scripts/sync-app-info.js\"",
     "test": "npm run test:app && npm run test:scraper",
     "test:app": "node scripts/run-node-tests.js tests",
     "test:scraper": "node scripts/run-node-tests.js scraper/tests",
-    "coverage": "c8 npm test"
+    "coverage": "c8 npm test",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "release:check": "npm run sync-app-info && npm run format:release:check && npm run typecheck && npm run lint && npm test && npm run audit:prod && npm run package:smoke"
   },
   "keywords": [
     "hotel",
@@ -53,7 +57,8 @@
   },
   "build": {
     "appId": "com.hotel.comparison.desktop",
-    "productName": "宾馆比较终极版",
+    "productName": "宾馆比较助手",
+    "copyright": "Copyright © 2026 Sea",
     "artifactName": "${productName} Setup ${version}.${ext}",
     "directories": {
       "buildResources": "build",
@@ -62,8 +67,8 @@
     "files": [
       "src/**/*",
       "package.json",
-      "!node_modules/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history,LICENSE,license,license.md,license.txt}",
-      "!node_modules/@*/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history,LICENSE,license,license.md,license.txt}",
+      "!node_modules/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history}",
+      "!node_modules/@*/*/{README,readme,readme.md,readme.txt,CHANGELOG,changelog,changelog.md,CHANGELOG.md,NEWS,news,HISTORY,history}",
       "!node_modules/*/{.github,.travis.yml,.gitignore,.eslintrc,.eslintrc.js,.eslintrc.json,.npmignore}",
       "!node_modules/@*/*/{.github,.travis.yml,.gitignore,.eslintrc,.eslintrc.js,.eslintrc.json,.npmignore}",
       "!node_modules/*/test/**/*",
@@ -115,7 +120,8 @@
       "!**/*api*key*",
       "!**/*.md",
       "!**/*.ts",
-      "!**/*.map"
+      "!**/*.map",
+      "!src/shared/contracts.js"
     ],
     "extraResources": [
       {
@@ -130,10 +136,6 @@
       {
         "from": "build/icon.ico",
         "to": "icon.ico"
-      },
-      {
-        "from": "build/uninstallerIcon.ico",
-        "to": "uninstallerIcon.ico"
       }
     ],
     "asar": true,
@@ -161,8 +163,8 @@
       "installerHeaderIcon": "icon.ico",
       "installerSidebar": "installerSidebar.bmp",
       "uninstallerSidebar": "installerSidebar.bmp",
-      "shortcutName": "宾馆比较终极版",
-      "uninstallDisplayName": "宾馆比较终极版",
+      "shortcutName": "宾馆比较助手",
+      "uninstallDisplayName": "宾馆比较助手",
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "installerLanguages": [

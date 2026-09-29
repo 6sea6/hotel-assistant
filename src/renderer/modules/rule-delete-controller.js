@@ -2,7 +2,7 @@
  * 卡片视图规则删除 —— 阈值解析、预览和批量删除确认流程。
  */
 
-import { state, setHotels, markVisibleHotelsCacheDirty } from './state.js';
+import { state, setHotels } from './state.js';
 import { $, getValue, getSelectionKey, iconHtml, idsEqual } from './dom-helpers.js';
 import { showNotification } from './notification.js';
 import {
@@ -184,12 +184,7 @@ export function isSubwayDistanceRuleMatched(subwayDistance, threshold) {
 }
 
 export function isCtripScoreRuleMatched(score, threshold) {
-  return (
-    hasRuleThreshold(threshold) &&
-    Number.isFinite(score) &&
-    score > 0 &&
-    score < threshold
-  );
+  return hasRuleThreshold(threshold) && Number.isFinite(score) && score > 0 && score < threshold;
 }
 
 /**
@@ -354,7 +349,6 @@ export async function confirmRuleDelete() {
     }
 
     setHotels(previousHotels.filter((hotel) => !deleteIdSet.has(getSelectionKey(hotel.id))));
-    markVisibleHotelsCacheDirty();
     requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     closeRuleDeleteModal(true);
     showNotification(`成功删除 ${candidates.length} 个命中规则的宾馆房型`, 'success');
@@ -362,7 +356,6 @@ export async function confirmRuleDelete() {
     console.error('规则删除失败:', error);
     if (previousHotels) {
       setHotels(previousHotels);
-      markVisibleHotelsCacheDirty();
       requestHotelListRender({ reason: 'rule-delete', forceFull: true });
     }
     showNotification('规则删除失败，请重试', 'error');

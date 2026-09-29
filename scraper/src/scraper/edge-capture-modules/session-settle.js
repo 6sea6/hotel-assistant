@@ -226,6 +226,7 @@ function getRoomApiFastTrackedThreshold(options = {}) {
 }
 
 function shouldSkipRemainingSettleAfterRoomApi(stepPhase, options = {}) {
+  if (typeof options.isCaptureComplete === 'function') return options.isCaptureComplete();
   if (options.roomApiFastSettle === false) {
     return false;
   }
@@ -656,6 +657,8 @@ async function settleRoomListInEdgeSession(connection, sessionId, options = {}) 
 
   for (const step of steps) {
     assertNotAborted();
+    if (options.beforeSettleStep) await options.beforeSettleStep();
+    if (options.isCaptureComplete) aggregate.apiFastPathSettleActive = options.isCaptureComplete();
     if (aggregate.apiFastPathSettleActive) {
       const trackedUrlCount = getTrackedUrlCount();
       const roomTrackedUrlCount =

@@ -9,16 +9,21 @@ import {
   setTemplates,
   setSettings,
   clearSelectedHotels,
-  markVisibleHotelsCacheDirty,
   getLocalHotelsRevision,
   setLocalHotelsRevision,
-  markLocalHotelsRevisionUnknown
+  markLocalHotelsRevisionUnknown,
+  setResourceLoadState,
+  getResourceLoadState,
+  beginMutation,
+  endMutation
 } from './state.js';
 import {
   appendHotelToList,
   replaceHotelInList,
   removeHotelById,
-  assertSavedHotelResult
+  assertSavedHotelResult,
+  insertHotelAtIndex,
+  restoreHotelFields
 } from './hotel-state-helpers.js';
 import {
   $,
@@ -36,7 +41,10 @@ import {
   resetBatchDeleteConfirmation,
   startBatchDeleteConfirmation,
   syncBatchDeleteButton,
-  scheduleHotelModalFocus
+  scheduleHotelModalFocus,
+  clearFormError,
+  showFormError,
+  setActionButtonBusy
 } from './ui-utils.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
@@ -85,6 +93,7 @@ function requestHotelRender(options = {}) {
 export async function loadHotels(options = {}) {
   const { force = false } = options;
   perfStart('loadHotels');
+  setResourceLoadState('hotels', 'loading');
 
   try {
     // 强制刷新时直接拉全量
@@ -92,6 +101,7 @@ export async function loadHotels(options = {}) {
       const result = await window.electronAPI.getAllHotelsWithMeta();
       const hotels = attachDerivedFields(result.hotels || []);
       setLocalHotelsRevision({ revision: result.revision, count: result.count });
+      setResourceLoadState('hotels', hotels.length ? 'ready' : 'empty');
       perfEnd('loadHotels');
       return hotels;
     }
@@ -104,6 +114,7 @@ export async function loadHotels(options = {}) {
         if (meta.revision === localRevision && meta.count === state.hotels.length) {
           // revision 未变化，复用本地数据
           logRendererDebug('[hotels] revision unchanged, skip full load', meta);
+          setResourceLoadState('hotels', state.hotels.length ? 'ready' : 'empty');
           perfEnd('loadHotels');
           return state.hotels;
         }
@@ -118,6 +129,7 @@ export async function loadHotels(options = {}) {
     const result = await window.electronAPI.getAllHotelsWithMeta();
     const hotels = attachDerivedFields(result.hotels || []);
     setLocalHotelsRevision({ revision: result.revision, count: result.count });
+    setResourceLoadState('hotels', hotels.length ? 'ready' : 'empty');
     if (localRev !== null) {
       logRendererDebug('[hotels] revision changed, reload full hotels', {
         localRevision: localRev,
@@ -132,10 +144,13 @@ export async function loadHotels(options = {}) {
     // 降级到旧 API
     try {
       const result = await window.electronAPI.getAllHotels();
-      return attachDerivedFields(result || []);
+      const hotels = attachDerivedFields(result || []);
+      setResourceLoadState('hotels', hotels.length ? 'ready' : 'empty');
+      return hotels;
     } catch (fallbackError) {
       console.error('加载宾馆失败（降级）:', fallbackError);
-      return [];
+      setResourceLoadState('hotels', 'error', fallbackError || error);
+      return state.hotels;
     }
   }
 }
@@ -144,11 +159,15 @@ export async function loadHotels(options = {}) {
  * @returns {Promise<NormalizedTemplateRecord[]>}
  */
 export async function loadTemplates() {
+  setResourceLoadState('templates', 'loading');
   try {
-    return (await window.electronAPI.getAllTemplates()) || [];
+    const templates = (await window.electronAPI.getAllTemplates()) || [];
+    setResourceLoadState('templates', templates.length ? 'ready' : 'empty');
+    return templates;
   } catch (error) {
     console.error('加载模板失败:', error);
-    return [];
+    setResourceLoadState('templates', 'error', error);
+    return state.templates;
   }
 }
 
@@ -156,12 +175,28 @@ export async function loadTemplates() {
  * @returns {Promise<AppSettings>}
  */
 export async function loadSettings() {
+  setResourceLoadState('settings', 'loading');
   try {
-    return await window.electronAPI.getAllSettings();
+    const settings = (await window.electronAPI.getAllSettings()) || {};
+    setResourceLoadState('settings', 'ready');
+    return settings;
   } catch (error) {
     console.error('加载设置失败:', error);
-    return {};
+    setResourceLoadState('settings', 'error', error);
+    return state.settings;
   }
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+export async function retryLoadHotels() {
+  setResourceLoadState('hotels', 'loading');
+  requestHotelRender({ reason: 'data-reload', forceFull: true });
+  const hotels = await loadHotels({ force: true });
+  setHotels(hotels || []);
+  requestHotelRender({ reason: 'data-reload', forceFull: true });
+  return getResourceLoadState('hotels').status !== 'error';
 }
 
 /**
@@ -186,8 +221,8 @@ export async function reloadAllData(options = {}) {
   /** @type {[Promise<NormalizedHotelRecord[]>, Promise<NormalizedTemplateRecord[]>, Promise<AppSettings|null>]} */
   const requests = [
     loadHotels({ force: shouldForceHotels }),
-    window.electronAPI.getAllTemplates(),
-    includeSettings ? window.electronAPI.getAllSettings() : Promise.resolve(null)
+    loadTemplates(),
+    includeSettings ? loadSettings() : Promise.resolve(null)
   ];
 
   try {
@@ -254,6 +289,7 @@ export function openAddHotelModal(templateId = null) {
 
   modalTitle.textContent = '添加宾馆';
   hotelForm.reset();
+  clearFormError('hotelForm');
   hotelIdInput.value = '';
 
   const selectedTemplate = templateId ? findTemplateById(templateId) : null;
@@ -299,6 +335,7 @@ export function editHotel(id) {
 
   const modalTitle = $('modalTitle');
   if (modalTitle) modalTitle.textContent = '编辑宾馆';
+  clearFormError('hotelForm');
   setElementValue('hotelId', hotel.id);
   setElementValue('hotelName', hotel.name || '');
   setElementValue('hotelAddress', hotel.address || '');
@@ -417,6 +454,7 @@ export function applyTemplateToForm() {
 /* ---- 保存宾馆 ---- */
 
 export async function saveHotel() {
+  clearFormError('hotelForm');
   /**
    * @param {string} id
    * @returns {string}
@@ -483,37 +521,57 @@ export async function saveHotel() {
 
   if (!hotel.name) {
     const nameInput = /** @type {HTMLInputElement|null} */ ($('hotelName'));
-    if (nameInput) {
-      nameInput.focus();
-      nameInput.style.borderColor = '#F53F3F';
-      setTimeout(() => {
-        nameInput.style.borderColor = '';
-      }, 2000);
-    }
+    showFormError('hotelForm', '请填写宾馆名称。', nameInput);
     return;
   }
 
-  let previousHotels = null;
+  const normalizedId = id ? normalizeIdValue(id) : null;
+  const mutationKey = normalizedId === null ? 'hotel:add' : `hotel:${String(normalizedId)}`;
+  if (!beginMutation(mutationKey)) return;
+
+  const saveButton = /** @type {HTMLButtonElement|null} */ ($('saveHotelBtn'));
+  setActionButtonBusy(saveButton, true, { busyText: '正在保存…' });
+
+  const temporaryId = `pending:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const previousHotel =
+    normalizedId === null
+      ? null
+      : state.hotels.find((item) => idsEqual(item.id, normalizedId)) || null;
+  const optimisticHotel = attachDerivedFieldsToHotel(
+    /** @type {NormalizedHotelRecord} */ ({
+      ...(previousHotel || {}),
+      ...hotel,
+      id: normalizedId ?? temporaryId
+    })
+  );
+
   try {
-    previousHotels = state.hotels.slice();
-    if (id) {
-      hotel.id = normalizeIdValue(id);
+    if (normalizedId !== null) {
+      hotel.id = normalizedId;
+      setHotels(replaceHotelInList(state.hotels, optimisticHotel, normalizedId).list);
+      requestHotelRender({ reason: 'hotel-update', changedIds: [normalizedId] });
+
       const savedHotel = attachDerivedFieldsToHotel(
         assertSavedHotelResult(await window.electronAPI.updateHotel(hotel), '更新宾馆失败')
       );
-      setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
-      markVisibleHotelsCacheDirty();
+      setHotels(replaceHotelInList(state.hotels, savedHotel, normalizedId).list);
       markLocalHotelsRevisionUnknown();
       requestHotelRender({
         reason: 'hotel-update',
-        changedIds: [savedHotel.id || id]
+        changedIds: [savedHotel.id || normalizedId]
       });
     } else {
+      setHotels(appendHotelToList(state.hotels, optimisticHotel));
+      requestHotelRender({
+        reason: 'hotel-add',
+        changedIds: [temporaryId],
+        forceFull: true
+      });
+
       const savedHotel = attachDerivedFieldsToHotel(
         assertSavedHotelResult(await window.electronAPI.addHotel(hotel), '新增宾馆失败')
       );
-      setHotels(appendHotelToList(state.hotels, savedHotel));
-      markVisibleHotelsCacheDirty();
+      setHotels(appendHotelToList(removeHotelById(state.hotels, temporaryId).list, savedHotel));
       markLocalHotelsRevisionUnknown();
       requestHotelRender({
         reason: 'hotel-add',
@@ -524,14 +582,33 @@ export async function saveHotel() {
     closeHotelModal();
   } catch (error) {
     console.error('保存宾馆失败:', error);
-    try {
-      setHotels(previousHotels || (await loadHotels()));
-      markVisibleHotelsCacheDirty();
-      requestHotelRender({ reason: 'fallback', forceFull: true });
-    } catch (recoveryError) {
-      console.error('恢复宾馆数据失败:', recoveryError);
+    if (normalizedId === null) {
+      setHotels(removeHotelById(state.hotels, temporaryId).list);
+    } else if (previousHotel) {
+      const restoredHotels = restoreHotelFields(
+        state.hotels,
+        normalizedId,
+        previousHotel,
+        Object.keys(hotel)
+      );
+      const restoredHotel = restoredHotels.find((item) => idsEqual(item.id, normalizedId));
+      setHotels(
+        restoredHotel
+          ? replaceHotelInList(
+              restoredHotels,
+              attachDerivedFieldsToHotel(restoredHotel),
+              normalizedId
+            ).list
+          : restoredHotels
+      );
     }
-    showNotification(`保存失败：${error.message}`, 'error');
+    requestHotelRender({ reason: 'fallback', forceFull: true });
+    const message = `保存失败：${error.message}。原数据已恢复，可以重试。`;
+    showFormError('hotelForm', message);
+    showNotification(message, 'error');
+  } finally {
+    endMutation(mutationKey);
+    setActionButtonBusy(saveButton, false);
   }
 }
 
@@ -539,89 +616,85 @@ export async function saveHotel() {
 
 export async function deleteHotel(id) {
   perfStart('deleteHotel');
-  let previousHotels = null;
+  const mutationKey = `hotel:${String(id)}`;
+  if (!beginMutation(mutationKey)) {
+    perfEnd('deleteHotel');
+    return;
+  }
+
+  const previousIndex = state.hotels.findIndex((hotel) => idsEqual(hotel.id, id));
+  const previousHotel = previousIndex >= 0 ? state.hotels[previousIndex] : null;
   try {
-    previousHotels = state.hotels.slice();
     const { list: nextHotels, removed } = removeHotelById(state.hotels, id);
     if (removed) {
       setHotels(nextHotels);
-      markVisibleHotelsCacheDirty();
-      markLocalHotelsRevisionUnknown();
       requestHotelRender({ reason: 'hotel-delete', changedIds: [id] });
     }
 
-    (async () => {
-      try {
-        const result = await window.electronAPI.deleteHotel(id);
-        if (!result || !result.success) {
-          throw new Error(result?.error || '删除失败');
-        }
-        showNotification('删除成功', 'success');
-        perfEnd('deleteHotel');
-      } catch (err) {
-        perfEnd('deleteHotel');
-        console.error('后台删除失败:', err);
-        try {
-          setHotels(previousHotels || (await loadHotels()));
-          markVisibleHotelsCacheDirty();
-          requestHotelRender({ reason: 'fallback', forceFull: true });
-        } catch (recoveryErr) {
-          console.error('恢复宾馆列表失败:', recoveryErr);
-        }
-        showNotification('删除失败，请重试', 'error');
-      }
-    })();
+    const result = await window.electronAPI.deleteHotel(id);
+    if (!result || !result.success) {
+      throw new Error(result?.error || '删除失败');
+    }
+    markLocalHotelsRevisionUnknown();
+    showNotification('删除成功', 'success');
   } catch (error) {
-    perfEnd('deleteHotel');
     console.error('删除宾馆失败:', error);
-    showNotification('删除失败，请重试', 'error');
+    if (previousHotel) {
+      setHotels(insertHotelAtIndex(state.hotels, previousHotel, previousIndex));
+      requestHotelRender({ reason: 'fallback', forceFull: true });
+    }
+    showNotification(`删除失败：${error.message || '请重试'}，原数据已恢复`, 'error');
+  } finally {
+    endMutation(mutationKey);
+    perfEnd('deleteHotel');
   }
 }
 
 /* ---- 收藏 ---- */
 
 export async function toggleFavorite(id, currentStatus) {
-  let previousHotels = null;
+  const mutationKey = `hotel:${String(id)}`;
+  if (!beginMutation(mutationKey)) return;
+
+  let operationStarted = false;
+  /** @type {0|1} */
+  let previousFavorite = currentStatus ? 1 : 0;
   try {
     const hotel = state.hotels.find((h) => idsEqual(h.id, id));
     if (!hotel) return;
 
     perfStart('toggleFavorite');
-    previousHotels = state.hotels.slice();
-    const nextFavorite = currentStatus ? 0 : 1;
+    operationStarted = true;
+    previousFavorite = hotel.is_favorite ? 1 : 0;
+    const nextFavorite = previousFavorite ? 0 : 1;
     const updatedLocalHotel = attachDerivedFieldsToHotel({ ...hotel, is_favorite: nextFavorite });
     setHotels(replaceHotelInList(state.hotels, updatedLocalHotel, id).list);
     requestHotelRender({ reason: 'favorite', changedIds: [id] });
 
-    (async () => {
-      try {
-        const savedHotel = attachDerivedFieldsToHotel(
-          assertSavedHotelResult(
-            await window.electronAPI.updateHotel(stripDerivedFieldsFromHotel(updatedLocalHotel)),
-            '更新收藏状态失败'
-          )
-        );
-        setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
-        markVisibleHotelsCacheDirty();
-        markLocalHotelsRevisionUnknown();
-        requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
-        perfEnd('toggleFavorite');
-      } catch (err) {
-        perfEnd('toggleFavorite');
-        console.error('更新收藏状态失败（后台）:', err);
-        try {
-          setHotels(previousHotels || (await loadHotels()));
-          markVisibleHotelsCacheDirty();
-          requestHotelRender({ reason: 'fallback', forceFull: true });
-        } catch (recoveryErr) {
-          console.error('恢复宾馆列表失败:', recoveryErr);
-        }
-        showNotification('操作失败，请重试', 'error');
-      }
-    })();
+    const savedHotel = attachDerivedFieldsToHotel(
+      assertSavedHotelResult(
+        await window.electronAPI.updateHotel(stripDerivedFieldsFromHotel(updatedLocalHotel)),
+        '更新收藏状态失败'
+      )
+    );
+    setHotels(replaceHotelInList(state.hotels, savedHotel, id).list);
+    markLocalHotelsRevisionUnknown();
+    requestHotelRender({ reason: 'favorite', changedIds: [savedHotel.id || id] });
   } catch (error) {
     console.error('更新收藏状态失败:', error);
-    showNotification('操作失败，请重试', 'error');
+    const currentHotel = state.hotels.find((hotel) => idsEqual(hotel.id, id));
+    if (currentHotel) {
+      setHotels(
+        restoreHotelFields(state.hotels, id, { ...currentHotel, is_favorite: previousFavorite }, [
+          'is_favorite'
+        ])
+      );
+      requestHotelRender({ reason: 'favorite', changedIds: [id] });
+    }
+    showNotification('收藏状态更新失败，原状态已恢复，可以重试', 'error');
+  } finally {
+    endMutation(mutationKey);
+    if (operationStarted) perfEnd('toggleFavorite');
   }
 }
 
@@ -644,27 +717,34 @@ export async function confirmBatchDelete() {
     return;
   }
 
-  let previousHotels = null;
+  const hotelIds = Array.from(state.selectedHotels);
+  const mutationKeys = hotelIds.map((id) => `hotel:${String(id)}`);
+  if (mutationKeys.some((key) => state.pendingMutations.has(key))) return;
+  mutationKeys.forEach((key) => beginMutation(key));
+
+  /** @type {Array<{hotel: NormalizedHotelRecord, index: number}>} */
+  let removedHotels = [];
   try {
-    const deletedCount = state.selectedHotels.size;
-    const hotelIds = Array.from(state.selectedHotels);
-    const hotelIdSet = new Set(hotelIds);
-    previousHotels = state.hotels.slice();
+    const deletedCount = hotelIds.length;
+    const hotelIdSet = new Set(hotelIds.map((id) => getSelectionKey(id)));
+    removedHotels = state.hotels
+      .map((hotel, index) => ({ hotel, index }))
+      .filter(({ hotel }) => hotelIdSet.has(getSelectionKey(hotel.id)));
     state.batchDeleteInProgress = true;
 
     batchDeleteBtn.disabled = true;
     batchDeleteBtn.innerHTML = `${iconHtml('loader')} 正在删除...`;
+
+    setHotels(state.hotels.filter((hotel) => !hotelIdSet.has(getSelectionKey(hotel.id))));
+    requestHotelRender({ reason: 'batch-delete', forceFull: true });
 
     const result = await window.electronAPI.deleteMultipleHotels(hotelIds);
     if (!result || !result.success) {
       throw new Error('批量删除失败');
     }
 
-    setHotels(previousHotels.filter((h) => !hotelIdSet.has(getSelectionKey(h.id))));
     clearSelectedHotels();
-    markVisibleHotelsCacheDirty();
     markLocalHotelsRevisionUnknown();
-    requestHotelRender({ reason: 'batch-delete', forceFull: true });
 
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -676,11 +756,16 @@ export async function confirmBatchDelete() {
   } catch (error) {
     console.error('批量删除失败:', error);
     state.batchDeleteInProgress = false;
-    setHotels(previousHotels || state.hotels);
-    markVisibleHotelsCacheDirty();
+    let restoredHotels = state.hotels;
+    for (const snapshot of removedHotels.sort((a, b) => a.index - b.index)) {
+      restoredHotels = insertHotelAtIndex(restoredHotels, snapshot.hotel, snapshot.index);
+    }
+    setHotels(restoredHotels);
     requestHotelRender({ reason: 'batch-delete', forceFull: true });
     resetBatchDeleteConfirmation({ count: state.selectedHotels.size, disabled: false });
-    showNotification('删除失败，请重试', 'error');
+    showNotification('批量删除失败，原数据已恢复，可以重试', 'error');
+  } finally {
+    mutationKeys.forEach((key) => endMutation(key));
   }
 }
 

@@ -68,6 +68,14 @@ function deriveUncollectedHotelReason(childResult = {}) {
     };
   }
 
+  const postFilter = childResult.postFilter || childResult.post_filter || {};
+  if (Number(postFilter.removedCount || 0) > 0 && Number(childResult.eligibleCount || 0) === 0) {
+    return {
+      reason: 'price_above_maximum',
+      detail: `已采到有价格房型，但均超过每日人均价格上限 ${postFilter.perPersonDailyPriceMax} 元。`
+    };
+  }
+
   if (roomCandidateCount > 0 && (roomPriceVisible || sourcePriceVisible)) {
     return {
       reason: 'no_eligible_rooms',
@@ -180,6 +188,10 @@ function buildBatchItems(childResults = [], failedItems = []) {
     ...childResults.map((result, index) => ({
       index: result.inputIndex || index + 1,
       success: result.success === true,
+      resumedFromCheckpoint: Boolean(result.resumedFromCheckpoint),
+      checkpointKey: result.checkpointKey,
+      checkpointId: result.checkpointId,
+      collectedAt: result.collectedAt,
       url: result.resolvedUrl || result.requestedUrl || '',
       requestedUrl: result.requestedUrl || '',
       resolvedUrl: result.resolvedUrl || '',
@@ -193,6 +205,7 @@ function buildBatchItems(childResults = [], failedItems = []) {
       pageSnapshot: result.pageSnapshot || null,
       outputPath: result.outputPath || '',
       writeResult: result.writeResult || null,
+      postFilter: result.postFilter || null,
       error: result.error || ''
     })),
     ...failedItems.map((item, index) => ({

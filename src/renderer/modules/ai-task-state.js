@@ -418,6 +418,10 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false 
 
   if (task.cancelled || task.status === 'cancelled' || hasCancelEvent || cancellationError) {
     status = 'cancelled';
+  } else if (getTaskCollectResult(task)?.status === 'paused') {
+    status = 'paused';
+  } else if (getTaskCollectResult(task)?.status === 'partial') {
+    status = 'partial';
   } else if (task.error) {
     status = 'error';
   } else if (inProgress) {
@@ -446,6 +450,17 @@ export function normalizeTaskState({ task = {}, events = [], inProgress = false 
     steps,
     progressStats: buildProgressStats(events, taskKind),
     result: buildTaskResult(task),
-    error: buildTaskError(task, events)
+    error: buildTaskError(
+      status === 'paused'
+        ? {
+            ...task,
+            error: String(
+              getTaskCollectResult(task)?.error ||
+                '携程访问受限，已保留完成结果。请人工处理后恢复。'
+            )
+          }
+        : task,
+      events
+    )
   };
 }

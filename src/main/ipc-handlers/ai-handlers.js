@@ -57,7 +57,7 @@ function validateAiListFilters(filters) {
 function validateCtripUrlFilterSettings(filters, errorMessage) {
   const payloadError = assertPlainObjectPayload(filters, errorMessage);
   if (payloadError) return payloadError;
-  for (const field of ['priceMin', 'reviewCountMin', 'ctripScoreMin']) {
+  for (const field of ['priceMin', 'perPersonDailyPriceMax', 'reviewCountMin', 'ctripScoreMin']) {
     const numberError = assertNumberField(filters, field, errorMessage, { optional: true, min: 0 });
     if (numberError) return numberError;
   }

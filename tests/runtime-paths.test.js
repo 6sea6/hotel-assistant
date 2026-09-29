@@ -49,10 +49,10 @@ test('resolveCompareAppDataFolder respects explicit, workspace, pointer, install
   const appDataRoot = path.join(tempRoot, 'appdata');
   const workspaceDir = path.join(tempRoot, 'workspace', DEFAULT_COMPARE_APP_FILES.appFolderName);
   const pointerDir = path.join(tempRoot, 'pointer-data');
-  const installedRoot = path.join(tempRoot, 'Program Files', '宾馆比较终极版');
+  const installedRoot = path.join(tempRoot, 'Program Files', '宾馆比较助手');
   const installedDir = path.join(installedRoot, DEFAULT_COMPARE_APP_FILES.appFolderName);
   const legacyDir = path.join(appDataRoot, DEFAULT_COMPARE_APP_FILES.appFolderName);
-  const execPath = path.join(installedRoot, '宾馆比较终极版.exe');
+  const execPath = path.join(installedRoot, '宾馆比较助手.exe');
 
   fs.mkdirSync(appDataRoot, { recursive: true });
   fs.mkdirSync(workspaceDir, { recursive: true });

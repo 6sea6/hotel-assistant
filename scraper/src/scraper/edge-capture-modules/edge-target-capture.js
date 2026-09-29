@@ -144,6 +144,7 @@ async function runEdgeTargetCapture({
   debugHotelId,
   roomApiDebugIndex = 0,
   matchingOptions = {},
+  centralizedRetry = false,
   signal = null,
   notifyLoginPromptIfDetected = async () => {},
   onSettleStats = null,
@@ -218,14 +219,32 @@ async function runEdgeTargetCapture({
 
     const getReadableRoomResponseCount = () =>
       [...roomRequestMeta.values()].filter((meta) =>
-        Boolean(
-          meta && ((meta.cachedBodyResult && meta.cachedBodyResult.body) || meta.cachedBody)
-        )
+        Boolean(meta && ((meta.cachedBodyResult && meta.cachedBodyResult.body) || meta.cachedBody))
       ).length;
+    const processedRequestIds = new Set();
+    let earlyParseStats = null;
+    const parseReadableResponses = async () => {
+      earlyParseStats = await parseEdgeNetworkResponses({
+        connection,
+        sessionId,
+        requestMeta,
+        template,
+        roomBlocks,
+        spiderErrorCodes,
+        debugHotelId,
+        matchingOptions,
+        signal,
+        processedRequestIds,
+        incremental: true
+      });
+      return earlyParseStats;
+    };
+    await parseReadableResponses();
     const settlePhase = perf.phase('edge_settle_room_list', { url, captureMethod, targetMode });
     let settleStats = null;
     try {
       const settleResult = await settleRoomListWithEdgeRetry({
+        centralizedRetry,
         perf,
         connection,
         sessionId,
@@ -237,6 +256,8 @@ async function runEdgeTargetCapture({
         getTrackedUrlCount: () => trackedUrls.size,
         getRoomTrackedUrlCount: () => roomRequestMeta.size,
         getReadableRoomResponseCount,
+        beforeSettleStep: parseReadableResponses,
+        isCaptureComplete: () => Boolean(earlyParseStats?.fastPathComplete),
         signal
       });
       settleStats = settleResult.stats;
@@ -285,6 +306,7 @@ async function runEdgeTargetCapture({
         spiderErrorCodes,
         debugHotelId,
         roomApiDebugIndex,
+        processedRequestIds,
         matchingOptions,
         signal
       });

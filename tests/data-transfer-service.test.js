@@ -49,28 +49,96 @@ test('buildExportPayload keeps export schema and redacts sensitive settings', ()
         apiKey: 'secret-ai-key',
         enabled: true
       },
-      app_icon_path: '/icons/app.ico'
+      theme: 'colorful-mode',
+      activeTheme: 'colorful-mode',
+      hotelCardVisibleFields: ['name', 'daily_price'],
+      app_icon_path: '/icons/app.ico',
+      app_icon_file_name: 'app.ico'
     }
   });
-  const appIconManager = {
-    readCustomIconExportPayload(settings) {
-      assert.equal(settings.app_icon_path, '/icons/app.ico');
-      return { fileName: 'app.ico' };
-    }
-  };
 
-  const payload = buildExportPayload(store, { appIconManager });
+  const payload = buildExportPayload(store);
 
   assert.equal(payload.schemaVersion, 3);
   assert.equal(payload.meta.sourceApp, '宾馆比较助手');
   assert.equal(payload.meta.schemaVersion, 3);
-  assert.equal(payload.meta.customAppIcon.fileName, 'app.ico');
+  assert.equal(Object.hasOwn(payload.meta, 'customAppIcon'), false);
   assert.equal(payload.settings.amapApiKey, '[REDACTED]');
   assert.equal(payload.settings.ai_provider_config.apiKey, '');
   assert.equal(payload.settings.ai_provider_config.hasApiKey, true);
+  for (const key of [
+    'theme',
+    'activeTheme',
+    'hotelCardVisibleFields',
+    'app_icon_path',
+    'app_icon_file_name'
+  ]) {
+    assert.equal(Object.hasOwn(payload.settings, key), false, key);
+  }
   assert.equal(payload.hotels.length, 1);
   assert.equal(payload.hotels[0].rooms.length, 2);
   assert.equal(payload.templateCount, undefined);
+});
+
+test('buildExportPayload can export hotel rooms from several selected templates', () => {
+  const store = createStore({
+    hotels: [
+      { id: 11, name: '甲酒店', room_type: '大床房', template_id: 1 },
+      { id: 12, name: '甲酒店', room_type: '双床房', template_id: 1 },
+      { id: 21, name: '乙酒店', room_type: '套房', template_id: 2 },
+      { id: 31, name: '丙酒店', room_type: '家庭房', template_id: 3 }
+    ],
+    templates: [
+      { id: 1, name: '模板一', destination: '上海', room_count: 2 },
+      { id: 2, name: '模板二', destination: '北京', room_count: 2 },
+      { id: 3, name: '模板三', destination: '广州', room_count: 3 }
+    ]
+  });
+
+  const payload = buildExportPayload(store, {
+    selection: { mode: 'templates', templateIds: ['1', 3] }
+  });
+
+  assert.deepEqual(
+    payload.templates.map((template) => template.id),
+    [1, 3]
+  );
+  assert.equal(payload.hotels.length, 2);
+  assert.equal(payload.hotels[0].rooms.length, 2);
+  assert.equal(payload.hotels[1].rooms.length, 1);
+  assert.deepEqual(payload.meta.exportScope, {
+    mode: 'templates',
+    hotelCount: 2,
+    roomCount: 3,
+    templateCount: 2
+  });
+});
+
+test('buildExportPayload exports only specifically selected room records and referenced templates', () => {
+  const store = createStore({
+    hotels: [
+      { id: 11, name: '甲酒店', room_type: '大床房', template_id: 1 },
+      { id: 12, name: '甲酒店', room_type: '双床房', template_id: 1 },
+      { id: 21, name: '乙酒店', room_type: '套房', template_id: 2 }
+    ],
+    templates: [
+      { id: 1, name: '模板一', destination: '上海', room_count: 2 },
+      { id: 2, name: '模板二', destination: '北京', room_count: 2 }
+    ]
+  });
+
+  const payload = buildExportPayload(store, {
+    selection: { mode: 'rooms', roomIds: ['12'] }
+  });
+
+  assert.equal(payload.hotels.length, 1);
+  assert.equal(payload.hotels[0].rooms.length, 1);
+  assert.equal(payload.hotels[0].rooms[0].id, 12);
+  assert.deepEqual(
+    payload.templates.map((template) => template.id),
+    [1]
+  );
+  assert.equal(payload.meta.exportScope.roomCount, 1);
 });
 
 test('normalizeImportedPayload validates recognizable payload and item shapes', () => {
@@ -126,10 +194,16 @@ test('buildReplaceImportPayload remaps imported hotel template snapshots', () =>
       }
     ],
     templates: [{ id: 7, name: '导入模板', destination: '上海', room_count: 2 }],
-    settings: { theme: 'totoro-blue' }
+    settings: { theme: 'totoro-blue', amapApiKey: 'imported-map-key' }
   });
 
-  const payload = buildReplaceImportPayload(importedPayload);
+  const payload = buildReplaceImportPayload(importedPayload, {
+    theme: 'colorful-mode',
+    activeTheme: 'colorful-mode',
+    hotelCardVisibleFields: ['name', 'daily_price'],
+    app_icon_path: 'managed:assets/app-icon.png',
+    app_icon_file_name: 'my-icon.png'
+  });
 
   assert.equal(payload.templates.length, 1);
   assert.equal(payload.hotels.length, 1);
@@ -148,6 +222,12 @@ test('buildReplaceImportPayload remaps imported hotel template snapshots', () =>
     addedTemplateCount: 1,
     skippedTemplateCount: 0
   });
+  assert.equal(payload.settings.theme, 'colorful-mode');
+  assert.equal(payload.settings.activeTheme, 'colorful-mode');
+  assert.deepEqual(payload.settings.hotelCardVisibleFields, ['name', 'daily_price']);
+  assert.equal(payload.settings.app_icon_path, 'managed:assets/app-icon.png');
+  assert.equal(payload.settings.app_icon_file_name, 'my-icon.png');
+  assert.equal(payload.settings.amapApiKey, 'imported-map-key');
 });
 
 test('buildAppendImportPayload skips duplicate hotels and templates while preserving existing data', () => {

@@ -162,7 +162,7 @@ function normalizeCaptureStrategy(value) {
   const normalized = String(value || 'auto')
     .trim()
     .toLowerCase();
-  return ['auto', 'html_first', 'parallel_edge', 'edge_full'].includes(normalized)
+  return ['auto', 'html_first', 'parallel_edge', 'edge_full', 'browser_first'].includes(normalized)
     ? normalized
     : 'auto';
 }
@@ -475,6 +475,7 @@ async function runEdgeCapture({
         }),
         captureMethod,
         captureStrategy,
+        accessController: options.accessController,
         onEvent: options.onEvent,
         matchingOptions: options.matchingOptions || {},
         signal
@@ -781,7 +782,43 @@ async function scrapeCtripHotel(url, template, options = {}) {
     }
   };
 
-  if (useParallelEdge) {
+  const browserFirst = captureStrategy === 'browser_first' && !options.htmlPath;
+  if (browserFirst) {
+    const edgeCapture = await runEdgeCapture({
+      desktopUrl,
+      template,
+      options,
+      perf,
+      retryCount: 0,
+      waitReason: '',
+      captureMethod: 'browser_first',
+      captureStrategy
+    });
+    fallbackCapture = edgeCapture.result;
+    performance.edgeNavigationCount = 1;
+    performance.edgeCaptureMs = edgeCapture.elapsedMs;
+    performance.waitDataMs = edgeCapture.elapsedMs;
+    captureSteps.push('edge_cdp');
+    applyCaptureResultToState(captureState, fallbackCapture);
+    if (fallbackCapture.html) {
+      parsedSources = [
+        {
+          source: 'browser-document',
+          url: desktopUrl,
+          html: fallbackCapture.html,
+          meta: extractHotelMetaFromHtml(fallbackCapture.html, desktopUrl),
+          roomBlocks: []
+        }
+      ];
+    }
+    if (
+      fallbackCapture.error &&
+      !normalizedRoomBlocks.length &&
+      !fallbackCapture.bookingUnavailable &&
+      !fallbackCapture.captureComplete
+    )
+      throw new Error(fallbackCapture.error);
+  } else if (useParallelEdge) {
     assertNotCancelled(options.signal);
     htmlEdgeParallelUsed = true;
     const edgeAbortControl = createLinkedAbortControl(options.signal || null);
@@ -885,7 +922,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
     await runHtmlCaptureStep(captureState);
   }
 
-  if (!useParallelEdge) {
+  if (!useParallelEdge && !browserFirst) {
     await runSequentialCapturePlan(
       captureState,
       preferEdgeCapture ? CAPTURE_STRATEGY_PLANS.edgePreferred : CAPTURE_STRATEGY_PLANS.htmlFirst
@@ -923,7 +960,7 @@ async function scrapeCtripHotel(url, template, options = {}) {
   );
   const eligibleRooms = selectionDiagnostics.eligibleRooms;
   performance.totalMs = durationSince(totalStartedAt);
-  const captureMethod = deriveCaptureMethod(captureSteps);
+  const captureMethod = browserFirst ? 'browser_first' : deriveCaptureMethod(captureSteps);
   const qualityFields = buildScrapeQualityFields({
     selectedRoom,
     normalizedRoomBlocks,
@@ -940,6 +977,12 @@ async function scrapeCtripHotel(url, template, options = {}) {
     warnings
   });
   Object.assign(qualityFields, {
+    capture_complete: Boolean(
+      fallbackCapture?.captureComplete ||
+      (fallbackCapture?.bookingUnavailable && !fallbackCapture?.spiderErrorCodes?.includes(203)) ||
+      options.htmlPath
+    ),
+    collected_at: new Date().toISOString(),
     mobile_html_enabled: options.includeMobileHtml === true,
     direct_room_replay_enabled: options.directRoomReplay === true,
     html_request_count: performance.htmlRequestCount,

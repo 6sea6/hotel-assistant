@@ -50,6 +50,7 @@ async function loadHotelListModule() {
     export function setRenderScheduled(value) { state.renderScheduled = value; }
     export function setPendingRenderInteractionFirst(value) { state.pendingRenderInteractionFirst = value; }
     export function setHotelNameFilterOptionSignature(value) { state.hotelNameFilterOptionSignature = value; }
+    export function getResourceLoadState(resource) { return state.resourceLoadStates[resource]; }
     export function buildVisibleHotelsFiltersKey() { return JSON.stringify(state.currentFilters || {}); }
     export function saveScrollMemory() {}
     export function getScrollBehaviorForReason() { return 'top'; }
@@ -105,6 +106,7 @@ async function loadHotelListModule() {
     export function applyFiltersToHotels(hotels) { return hotels || []; }
     export function sortHotels(hotels) { return hotels || []; }
     export function getVisibleHotelSummary(hotels) { return { hotelCount: hotels.length, roomTypeCount: hotels.length }; }
+    export function getActiveHotelFilterCount() { return 0; }
     export function formatSubwayInfo() { return '-'; }
     export function formatDistanceValue(value) { return value; }
     export function formatTransportValue(value) { return value; }
@@ -173,6 +175,9 @@ function createElementMock(id) {
     querySelector: () => null,
     querySelectorAll: () => [],
     appendChild() {},
+    setAttribute(name, value) {
+      this[name] = String(value);
+    },
     addEventListener() {},
     removeEventListener() {}
   };
@@ -214,6 +219,11 @@ test('renderHotelList: empty hotel state opens AI assistant instead of manual ad
     pendingRenderInteractionFirst: false,
     pendingHotelRenderResume: null,
     hotelNameFilterOptionSignature: '',
+    resourceLoadStates: {
+      hotels: { status: 'empty', error: '' },
+      templates: { status: 'idle', error: '' },
+      settings: { status: 'idle', error: '' }
+    },
     visibleHotelsCache: {
       data: null,
       hotelsVersion: -1,

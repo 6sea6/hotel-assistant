@@ -77,9 +77,6 @@ function summarizeSnapshotRiskSignals(pageSnapshot = {}) {
 
 function isCtripRiskControlSnapshot(pageSnapshot = {}) {
   const signals = summarizeSnapshotRiskSignals(pageSnapshot);
-  if (pageSnapshot.room_price_visible || signals.hasVisiblePriceSource) {
-    return false;
-  }
 
   return Boolean(
     signals.hasSpider203 ||
@@ -101,7 +98,10 @@ function isCtripRiskControlResult(childResult = {}) {
     Array.isArray(childResult.eligible_rooms) ? childResult.eligible_rooms.length : 0
   );
   const signals = summarizeSnapshotRiskSignals(pageSnapshot);
-  if (eligibleCount > 0 || pageSnapshot.room_price_visible || signals.hasVisiblePriceSource) {
+  if (
+    !signals.hasSpider203 &&
+    (eligibleCount > 0 || pageSnapshot.room_price_visible || signals.hasVisiblePriceSource)
+  ) {
     return false;
   }
 
@@ -328,6 +328,56 @@ class BatchOrchestrator {
   }
 
   async run() {
+    this.runStartedAt = Date.now();
+    const unsubscribeRecovery = this.context.accessController?.onRecovery(() => {
+      if (this.detailScheduler) {
+        this.detailScheduler.mode = 'degraded';
+        this.detailScheduler.cleanAfterDegrade = 0;
+      }
+    });
+    try {
+      return await this.runInternal();
+    } catch (error) {
+      if (!error.accessIssue) throw error;
+      this.context.metrics?.recordFailure(error.accessIssue.kind);
+      const checkpoint = this.context.checkpoint;
+      checkpoint?.pause(this.context.expandedInputs);
+      const completed = [...(checkpoint?.completed.values() || [])];
+      const items = completed.map((entry) => entry.result);
+      const result = {
+        success: false,
+        status: 'paused',
+        batchMode: true,
+        accessIssue: error.accessIssue,
+        resumeTaskId: checkpoint?.id || '',
+        items,
+        eligibleHotels: items.flatMap((item) => item.eligibleHotels || []),
+        eligibleCount: items.reduce((sum, item) => sum + (item.eligibleCount || 0), 0),
+        error: error.message,
+        startedAt: this.context.startedAt,
+        finishedAt: new Date().toISOString(),
+        batchSummary: {
+          succeededCount: items.length,
+          pendingCount: this.context.expandedInputs.hotelInputs.length - items.length
+        },
+        performance: {
+          totalMs: Date.now() - this.runStartedAt,
+          access: this.context.accessController?.metrics
+        }
+      };
+      this.context.emit('task:paused', error.message, {
+        accessIssue: error.accessIssue,
+        resumeTaskId: result.resumeTaskId,
+        completedCount: items.length,
+        pendingCount: result.batchSummary.pendingCount
+      });
+      return result;
+    } finally {
+      unsubscribeRecovery?.();
+    }
+  }
+
+  async runInternal() {
     const batchOptions = this.getBatchOptions();
     const concurrency = normalizeBatchConcurrency(this.context.args, batchOptions);
     this.detailScheduler = this.createDetailScheduler(concurrency, batchOptions);
@@ -423,12 +473,7 @@ class BatchOrchestrator {
         preparedUserDataDirs: this.context.preparedEdgeWorkerProfileDirs || []
       });
     } catch (error) {
-      return this.runSequential({
-        concurrency,
-        batchOptions,
-        parallelRequestedButDisabled: true,
-        parallelDisabledReason: error && error.message ? error.message : String(error)
-      });
+      throw new Error(`共享采集浏览器初始化失败：${error.message}`, { cause: error });
     }
 
     try {
@@ -672,6 +717,10 @@ class BatchOrchestrator {
     return {
       context: {
         args,
+        metrics: this.context.metrics,
+        accessController: this.context.accessController,
+        captureCache: this.context.captureCache,
+        checkpoint: this.context.checkpoint,
         startedAt,
         taskId: `${taskId}-${index}`,
         emit,
@@ -1046,6 +1095,10 @@ class BatchOrchestrator {
       spiderErrorCodes: signals.spiderErrorCodes
     });
 
+    if (this.context.accessController) {
+      this.context.accessController.report({ businessCode: 203, source: 'detail_result' });
+      this.context.accessController.assertAllowed();
+    }
     throw createCtripRiskControlAbortError({
       childResult,
       preparedScrape,
@@ -1054,6 +1107,7 @@ class BatchOrchestrator {
   }
 
   async mapPreparedBatchError({ error, index, total, meta, batchStats }) {
+    this.context.metrics?.recordFailure(error.code || error.name || 'unknown');
     const { taskId, emit, expandedInputs } = this.context;
     const hotelInput = (meta && meta.hotelInput) || expandedInputs.hotelInputs[index - 1] || {};
     const failedItem = {
@@ -1112,6 +1166,7 @@ class BatchOrchestrator {
       return resultPromise;
     };
 
+    let scrapeError = null;
     const scrapeRun = await runBoundedWorkers({
       items: expandedInputs.hotelInputs,
       requestedConcurrency: concurrency,
@@ -1183,9 +1238,13 @@ class BatchOrchestrator {
           return { index, resultPromise };
         }
       }
+    }).catch((error) => {
+      scrapeError = error;
+      return null;
     });
 
     const settledResults = await Promise.all(resultSettlements);
+    if (scrapeError) throw scrapeError;
     const rejected = settledResults.find((result) => result.status === 'rejected');
     if (rejected) {
       throw rejected.reason;
@@ -1305,7 +1364,9 @@ class BatchOrchestrator {
     batchPerf,
     signal
   }) {
-    const maxRetries = normalizeUncollectedRetryCount(this.context.args, batchOptions);
+    const maxRetries = this.context.args['auto-edge']
+      ? 0
+      : normalizeUncollectedRetryCount(this.context.args, batchOptions);
     if (maxRetries <= 0 || !detailContext || !isRetryableUncollectedResult(preparedResult.result)) {
       return preparedResult;
     }
@@ -1515,6 +1576,12 @@ class BatchOrchestrator {
       reportLevel
     });
 
+    result.status =
+      failedItems.length ||
+      childResults.some((item) => item.pageSnapshot?.capture_complete === false)
+        ? 'partial'
+        : 'completed';
+    result.performance.access = this.context.accessController?.metrics || null;
     await writeBatchLatestRunSummary({
       batchPerf,
       latestRunPath,

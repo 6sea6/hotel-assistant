@@ -61,7 +61,7 @@ export function findQueueTaskByBackendTaskId(taskId) {
  * @param {AiListFilters} [listFilters]
  * @param {AiListUrlFilters} [listUrlFilters]
  * @param {AiTaskKind} [taskKind]
- * @param {{inputMode?: 'url'|'address'|string, addressQuery?: string}} [options]
+ * @param {{inputMode?: 'url'|'address'|string, addressQuery?: string, collectionPolicy?: import('../../shared/contracts').AiCollectionPolicy}} [options]
  * @returns {AiTaskQueueItem}
  */
 export function createQueueTask(
@@ -95,6 +95,10 @@ export function createQueueTask(
     addressQuery,
     listFilters,
     listUrlFilters,
+    collectionPolicy:
+      options.collectionPolicy && typeof options.collectionPolicy === 'object'
+        ? { ...options.collectionPolicy }
+        : {},
     taskKind,
     status: 'waiting',
     currentStep: '',

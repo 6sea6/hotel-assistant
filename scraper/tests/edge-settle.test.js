@@ -1,3 +1,13 @@
+function completeRoomPayload() {
+  return {
+    data: {
+      roomCount: 1,
+      roomList: [{ key: 'physical', subRoomList: [{ skey: 'sale' }] }],
+      saleRoomMap: { sale: {} },
+      physicRoomMap: { physical: {} }
+    }
+  };
+}
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -1441,7 +1451,7 @@ test('edge response parse retries room response body reads before dropping room 
             throw new Error('No data found for resource with given identifier');
           }
           return {
-            body: JSON.stringify({ roomName: '标准大床房' }),
+            body: JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' }),
             base64Encoded: false
           };
         }
@@ -1516,9 +1526,9 @@ test('edge response parse uses prefetched room body when delayed CDP body reads 
           {
             url: 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList',
             mimeType: 'application/json',
-            cachedBody: JSON.stringify({ roomName: '标准大床房' }),
+            cachedBody: JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' }),
             cachedBodyResult: {
-              body: JSON.stringify({ roomName: '标准大床房' }),
+              body: JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' }),
               retryCount: 0,
               timeoutCount: 0,
               elapsedMs: 4,
@@ -1579,12 +1589,12 @@ test('edge response parse stops reading non-room responses after room API fast p
           readRequestIds.push(params.requestId);
           if (params.requestId === 'room-request') {
             return {
-              body: JSON.stringify({ roomName: '标准大床房' }),
+              body: JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' }),
               base64Encoded: false
             };
           }
           return {
-            body: JSON.stringify({ roomName: '不应读取的补充房型' }),
+            body: JSON.stringify({ ...completeRoomPayload(), roomName: '不应读取的补充房型' }),
             base64Encoded: false
           };
         }
@@ -1622,7 +1632,7 @@ test('edge response parse stops reading non-room responses after room API fast p
   }
 });
 
-test('edge response parse reads latest duplicate room response first and skips stale duplicate after success', async () => {
+test('edge response parse reads distinct request IDs even when their room API URL is identical', async () => {
   const roomUrl = 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList';
   const extractorPath = installMock('../src/scraper/structured-extractor', {
     collectRoomCandidatesFromPayload: (payload) =>
@@ -1656,11 +1666,11 @@ test('edge response parse reads latest duplicate room response first and skips s
       connection: {
         send: async (_method, params) => {
           readRequestIds.push(params.requestId);
-          if (params.requestId === 'stale-room-request') {
-            throw new Error('No data found for resource with given identifier');
-          }
           return {
-            body: JSON.stringify({ roomName: '标准大床房' }),
+            body: JSON.stringify({
+              ...completeRoomPayload(),
+              roomName: params.requestId === 'stale-room-request' ? '特价大床房' : '标准大床房'
+            }),
             base64Encoded: false
           };
         }
@@ -1688,15 +1698,15 @@ test('edge response parse reads latest duplicate room response first and skips s
       debugHotelId: '112433891'
     });
 
-    assert.deepEqual(readRequestIds, ['fresh-room-request']);
+    assert.deepEqual(readRequestIds, ['fresh-room-request', 'stale-room-request']);
     assert.equal(stats.responseParseEntryCount, 2);
     assert.equal(stats.duplicateResponseUrlCount, 1);
     assert.equal(stats.roomResponseEntryCount, 2);
-    assert.equal(stats.roomResponseCount, 1);
-    assert.equal(stats.duplicateRoomResponseSkippedCount, 1);
+    assert.equal(stats.roomResponseCount, 2);
+    assert.equal(stats.duplicateRoomResponseSkippedCount, 0);
     assert.equal(stats.roomResponseUrlFallbackCount, 0);
     assert.equal(stats.roomResponseBodyErrorCount, 0);
-    assert.equal(roomBlocks.length, 1);
+    assert.equal(roomBlocks.length, 2);
   } finally {
     clearModules([networkCapturePath, extractorPath, debugPath]);
   }
@@ -1740,7 +1750,7 @@ test('edge response parse falls back to older duplicate room response when lates
             throw new Error('No data found for resource with given identifier');
           }
           return {
-            body: JSON.stringify({ roomName: '标准大床房' }),
+            body: JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' }),
             base64Encoded: false
           };
         }
@@ -1772,7 +1782,7 @@ test('edge response parse falls back to older duplicate room response when lates
     assert.deepEqual(readRequestIds, ['fresh-room-request', 'stale-room-request']);
     assert.equal(stats.roomResponseCount, 1);
     assert.equal(stats.duplicateRoomResponseSkippedCount, 0);
-    assert.equal(stats.roomResponseUrlFallbackCount, 1);
+    assert.equal(stats.roomResponseUrlFallbackCount, 0);
     assert.equal(stats.roomResponseBodyErrorCount, 1);
     assert.equal(roomBlocks.length, 1);
   } finally {
@@ -1783,7 +1793,7 @@ test('edge response parse falls back to older duplicate room response when lates
 test('edge response parse reports response entry, duplicate URL, and body byte diagnostics', async () => {
   const roomUrl = 'https://m.ctrip.com/restapi/soa2/30103/getHotelRoomList';
   const detailUrl = 'https://m.ctrip.com/restapi/soa2/99999/getHotelDetail';
-  const roomBody = JSON.stringify({ roomName: '标准大床房' });
+  const roomBody = JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' });
   const extractorPath = installMock('../src/scraper/structured-extractor', {
     collectRoomCandidatesFromPayload: (payload) =>
       payload && payload.roomName
@@ -1851,13 +1861,13 @@ test('edge response parse reports response entry, duplicate URL, and body byte d
       debugHotelId: '112433891'
     });
 
-    assert.deepEqual(readRequestIds, ['room-request-2']);
+    assert.deepEqual(readRequestIds, ['room-request-2', 'room-request-1']);
     assert.equal(stats.responseParseEntryCount, 3);
     assert.equal(stats.uniqueResponseUrlCount, 2);
     assert.equal(stats.duplicateResponseUrlCount, 1);
     assert.equal(stats.roomResponseEntryCount, 2);
     assert.equal(stats.nonRoomResponseEntryCount, 1);
-    assert.equal(stats.duplicateRoomResponseSkippedCount, 1);
+    assert.equal(stats.duplicateRoomResponseSkippedCount, 0);
     assert.equal(stats.responseBodyReadCount, readRequestIds.length);
     assert.equal(stats.responseBodyTotalBytes, Buffer.byteLength(roomBody) * readRequestIds.length);
     assert.equal(stats.responseBodyMaxBytes, Buffer.byteLength(roomBody));
@@ -1918,7 +1928,7 @@ test('edge response parse skips raw text fallback when structured room data comp
     const stats = await parseEdgeNetworkResponses({
       connection: {
         send: async () => ({
-          body: JSON.stringify({ roomName: '标准大床房' }),
+          body: JSON.stringify({ ...completeRoomPayload(), roomName: '标准大床房' }),
           base64Encoded: false
         })
       },
@@ -2001,7 +2011,7 @@ test('edge response parse skips raw fallback when structured room data has room 
     const stats = await parseEdgeNetworkResponses({
       connection: {
         send: async () => ({
-          body: JSON.stringify({ roomName: '商务单人房' }),
+          body: JSON.stringify({ ...completeRoomPayload(), roomName: '商务单人房' }),
           base64Encoded: false
         })
       },
@@ -2085,7 +2095,7 @@ test('edge response parse skips raw fallback when structured room data already h
     const stats = await parseEdgeNetworkResponses({
       connection: {
         send: async () => ({
-          body: JSON.stringify({ roomName: '商务单人房' }),
+          body: JSON.stringify({ ...completeRoomPayload(), roomName: '商务单人房' }),
           base64Encoded: false
         })
       },
@@ -2173,6 +2183,7 @@ test('edge response parse prunes earlier raw fallback after structured prices ar
       connection: {
         send: async (_method, params) => ({
           body: JSON.stringify({
+            ...(params.requestId === 'structured-request' ? completeRoomPayload() : {}),
             stage: params.requestId === 'structured-request' ? 'structured' : 'raw'
           }),
           base64Encoded: false
@@ -2257,7 +2268,7 @@ test('edge response parse skips raw fallback when structured data matches occupa
     const stats = await parseEdgeNetworkResponses({
       connection: {
         send: async () => ({
-          body: JSON.stringify({ roomName: '舒适双床房' }),
+          body: JSON.stringify({ ...completeRoomPayload(), roomName: '舒适双床房' }),
           base64Encoded: false
         })
       },

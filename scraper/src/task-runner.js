@@ -1,4 +1,8 @@
+const { appVersion, createTaskMetrics } = require('./capture-observability');
 const path = require('path');
+const { POLICY_VERSION, getCtripAccessController } = require('./ctrip-access-controller');
+const { TaskCheckpoint } = require('./task-checkpoint');
+const { TaskCaptureCache } = require('./task-capture-cache');
 const { requireSharedCompareAppModule } = require('./compare-app/shared-module');
 const { BASE_COMPARE_APP_SETTINGS } = requireSharedCompareAppModule('constants.js');
 const { findTemplateInStore, loadCompareAppStore } = require('./compare-app-bridge');
@@ -78,6 +82,8 @@ function buildFailureResult(error, latestRunPath, startedAt) {
   const failedAt = new Date().toISOString();
   return {
     success: false,
+    status: error?.accessIssue ? 'paused' : error?.name === 'AbortError' ? 'cancelled' : 'failed',
+    accessIssue: error?.accessIssue || null,
     startedAt,
     finishedAt: failedAt,
     latestRunPath,
@@ -355,7 +361,8 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       if (args['apply-output']) {
         emit('apply:start', '正在回写已复核的采集结果');
         applyReviewedOutput(args['apply-output'], latestRunPath, startedAt, {
-          overwriteExistingGroup: Boolean(args['overwrite-existing-group'])
+          overwriteExistingGroup: Boolean(args['overwrite-existing-group']),
+          deleteFilteredGroup: Boolean(args['delete-filtered-group'])
         });
         emit('apply:done', '已完成回写');
         return buildRunSummary(
@@ -413,13 +420,6 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
       });
       void store;
 
-      const outputDir = path.resolve('output');
-      ensureDir(outputDir);
-
-      const listFilters = normalizeListFiltersFromArgs(args);
-      let autoEdgeProcess = null;
-      let autoEdgePid = null;
-      let edgeParallelDisabledReason = '';
       const autoEdge = Boolean(args['auto-edge']);
       const autoEdgeRuntime = autoEdge
         ? resolveAutoEdgeRuntime({
@@ -428,6 +428,57 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
             browserPreference: effectiveTemplate.browser_preference
           })
         : null;
+      if (autoEdgeRuntime?.userDataDir) {
+        effectiveTemplate.edge_user_data_dir = autoEdgeRuntime.userDataDir;
+        effectiveTemplate.edge_profile_directory = autoEdgeRuntime.profileDirectory;
+      }
+      const captureCache = new TaskCaptureCache();
+      const accessController =
+        args['auto-edge'] && !args.html
+          ? getCtripAccessController(effectiveTemplate.edge_user_data_dir)
+          : null;
+      const metrics = createTaskMetrics(accessController, captureCache, startedAt);
+      emit('capture:policy', '采集模块已加载', {
+        policyVersion: POLICY_VERSION,
+        modulePath: __filename,
+        appVersion: appVersion(),
+        captureStrategy: args['capture-strategy'] || 'browser_first'
+      });
+      if (accessController?.issue?.requiresUserAction) accessController.assertAllowed();
+      perf.event('capture_policy', {
+        policy_version: POLICY_VERSION,
+        scraper_module: __filename,
+        app_version: appVersion(),
+        capture_strategy: args['capture-strategy'] || 'browser_first',
+        max_concurrency: normalizeBatchConcurrency(args, options),
+        detail_start_interval_ms: args['detail-start-interval-ms'] ?? 2000
+      });
+      const outputDir = path.resolve('output');
+      ensureDir(outputDir);
+      const resumeId = args['resume-task-id'] || args.resumeTaskId || '';
+      const checkpoint = new TaskCheckpoint(
+        path.join(outputDir, 'task-progress'),
+        resumeId || taskId,
+        {
+          template: Object.fromEntries(
+            Object.entries(effectiveTemplate).filter(([key]) => !/^(edge_|browser_)/.test(key))
+          ),
+          url: args.url || '',
+          urls: args.urls || '',
+          text: args.text || '',
+          address: args.addressQuery || '',
+          filters: normalizeListFiltersFromArgs(args),
+          settings: compareAppSettings,
+          roomRules: effectiveTemplate.room_types || effectiveTemplate.roomTypes || []
+        },
+        Boolean(resumeId)
+      );
+
+      metrics.restoreCheckpoint(checkpoint);
+      const listFilters = normalizeListFiltersFromArgs(args);
+      let autoEdgeProcess = null;
+      let autoEdgePid = null;
+      let edgeParallelDisabledReason = '';
 
       try {
         assertNotCancelled(signal);
@@ -457,19 +508,30 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
                 instruction:
                   '程序会打开一个可见浏览器窗口。请在窗口中登录携程，确认酒店页能看到价格后关闭该窗口，当前采集任务会自动继续。'
               });
+              const manualStarted = Date.now();
               const loginPrepResult = await runInteractiveEdgeLoginPrep({
+                signal,
                 userDataDir: effectiveTemplate.edge_user_data_dir,
                 profileDirectory: effectiveTemplate.edge_profile_directory,
                 browserPreference: effectiveTemplate.browser_preference,
                 port: effectiveTemplate.edge_debugging_port || 9222,
                 url: effectiveTemplate.ctrip_url || 'https://hotels.ctrip.com/'
               });
-              if (loginPrepResult && loginPrepResult.loginConfirmed) {
+              metrics.recordManualWait(Date.now() - manualStarted);
+              if (
+                loginPrepResult &&
+                loginPrepResult.loginConfirmed &&
+                loginPrepResult.userConfirmed &&
+                loginPrepResult.pageVerified
+              ) {
                 emit('edge:login-done', '携程登录窗口已关闭，继续后台采集');
               } else {
                 emit('edge:login-unconfirmed', '携程登录窗口已关闭，但尚未确认登录态', {
                   instruction: '请重新执行采集，并在弹出的浏览器窗口中完成携程登录后再关闭窗口。'
                 });
+                accessController?.report({ login: true, source: 'login_prep_unconfirmed' });
+                accessController?.assertAllowed();
+                throw new Error('登录尚未确认，已停止采集。');
               }
             }
           });
@@ -499,10 +561,21 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         if (addressQuery) {
           emit('address-search:start', `正在用地址搜索携程列表页：${addressQuery}`);
           const resolvedAddressUrl = await perf.runPhase('address_search', { taskId }, async () =>
-            resolveCtripListUrlFromAddress(addressQuery, effectiveTemplate, {
-              edgeSession: buildEdgeSessionOptions(effectiveTemplate),
-              signal
-            })
+            accessController
+              ? accessController.run(
+                  (attemptSignal) =>
+                    resolveCtripListUrlFromAddress(addressQuery, effectiveTemplate, {
+                      accessController,
+                      edgeSession: buildEdgeSessionOptions(effectiveTemplate),
+                      signal: attemptSignal,
+                      retryCount: 0
+                    }),
+                  { signal }
+                )
+              : resolveCtripListUrlFromAddress(addressQuery, effectiveTemplate, {
+                  edgeSession: buildEdgeSessionOptions(effectiveTemplate),
+                  signal
+                })
           );
           args.url = resolvedAddressUrl;
           args.urls = '';
@@ -522,8 +595,14 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           maxListApiReplayConcurrency: resolveListApiReplayConcurrency(args, options)
         });
         const expandedInputs = await perf.runPhase('build_url', { taskId }, async () => {
+          if (checkpoint.expandedInputs) return checkpoint.expandedInputs;
           return expandCtripHotelInputs(args, effectiveTemplate, listFilters, {
             autoEdge,
+            browserFirst: autoEdge,
+            accessController,
+            signal,
+            enableStaticListApiReplay: false,
+            enableListApiReplay: false,
             edgeSession: buildEdgeSessionOptions(effectiveTemplate),
             maxListApiReplayConcurrency: resolveListApiReplayConcurrency(args, options),
             listCandidateCacheTtlMs:
@@ -615,8 +694,12 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
         }
 
         if (expandedInputs.inputMode !== 'detail' || expandedInputs.hotelInputs.length !== 1) {
-          return await runBatchHotelImportTask({
+          const batchResult = await runBatchHotelImportTask({
+            metrics,
             args,
+            accessController,
+            captureCache,
+            checkpoint,
             startedAt,
             taskId,
             emit,
@@ -647,10 +730,17 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
                   }
                 : null
           });
+          const measuredResult = metrics.finish(batchResult);
+          await writeLatestRunFileAsync(latestRunPath, buildRunSummary(measuredResult));
+          return measuredResult;
         }
 
         const preparedResult = await runPreparedSingleDetailImport({
+          metrics,
           args,
+          accessController,
+          captureCache,
+          checkpoint,
           startedAt,
           taskId,
           emit,
@@ -673,7 +763,7 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           edgeParallelCancelPolicy: options.edgeParallelCancelPolicy,
           scrapeEventForwarder
         });
-        const result = preparedResult.result;
+        const result = metrics.finish(preparedResult.result);
 
         await perf.runPhase(
           'write_latest_run',
@@ -694,7 +784,25 @@ async function runHotelImportTask(rawArgs = {}, options = {}) {
           wrote: Boolean(result.writeResult)
         });
         return result;
+      } catch (error) {
+        if (!error.accessIssue) throw error;
+        checkpoint.pause();
+        metrics.recordFailure(error.accessIssue.kind);
+        const paused = metrics.finish({
+          success: false,
+          status: 'paused',
+          accessIssue: error.accessIssue,
+          resumeTaskId: checkpoint.id,
+          error: error.message
+        });
+        await writeLatestRunFileAsync(latestRunPath, buildRunSummary(paused));
+        emit('task:paused', error.message, {
+          accessIssue: error.accessIssue,
+          resumeTaskId: checkpoint.id
+        });
+        return paused;
       } finally {
+        captureCache.clear();
         if (autoEdge && autoEdgePid) {
           await perf.runPhase('close_resource', { taskId }, async () => {
             closeAutoEdge(autoEdgePid, autoEdgeProcess);

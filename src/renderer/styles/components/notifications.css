@@ -13,7 +13,7 @@
   border-radius: 10px;
   color: var(--notification-text, var(--color-on-info));
   background: var(--notification-bg, var(--color-info));
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--notification-shadow);
   animation: slideInRight 0.22s ease;
   white-space: pre-line;
   font-family: var(--font-family-primary);
@@ -47,7 +47,7 @@
   justify-content: center;
   border-radius: 50%;
   color: var(--notification-bg, var(--color-info));
-  background: color-mix(in srgb, var(--notification-text, #fff) 92%, transparent);
+  background: color-mix(in srgb, var(--notification-text, var(--color-on-info)) 92%, transparent);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-extrabold);
   line-height: 1;

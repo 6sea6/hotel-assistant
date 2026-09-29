@@ -128,7 +128,7 @@
   overflow: hidden;
 }
 .detail-link {
-  color: var(--primary-color);
+  color: var(--interactive-text-color);
   text-decoration: none;
   display: block;
   max-width: 100%;
@@ -157,7 +157,17 @@
 
 .rank-badge.top3 {
   background: var(--gradient-rank-top);
-  color: white;
+  color: var(--color-on-rank-top);
+}
+
+[data-theme='colorful-mode'] .rank-badge {
+  background: var(--colorful-gradient-cool);
+  color: var(--color-on-primary);
+}
+
+[data-theme='colorful-mode'] .rank-badge.top3 {
+  background: var(--gradient-rank-top);
+  color: var(--color-on-rank-top);
 }
 
 .hotel-table-row .hotel-name {
@@ -203,7 +213,7 @@
 .template-badge {
   display: inline-block;
   background: var(--color-template-badge);
-  color: white;
+  color: var(--color-on-template-badge);
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 3px;

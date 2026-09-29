@@ -22,7 +22,10 @@ import { getSortedVisibleHotels } from './hotel-list-model.js';
 import { syncHotelNameFilterOptions } from './hotel-list-filter-options.js';
 import { patchHotelCards, updateVisibleHotelSummary } from './hotel-list-patch.js';
 import { shouldUseVirtualHotelList, getVirtualScrollThreshold } from './hotel-virtual-list.js';
-import { renderHotelListPreparingState } from './hotel-list-empty-state.js';
+import {
+  renderHotelListPreparingState,
+  renderHotelListResourceState
+} from './hotel-list-empty-state.js';
 import { renderHotelListView } from './hotel-list-table-renderer.js';
 import { renderHotelCardGrid } from './hotel-list-card-renderer.js';
 import {
@@ -86,10 +89,18 @@ export function renderHotelList(options = {}) {
       perfEnd(perfLabel);
       return;
     }
+    container.setAttribute('aria-busy', 'true');
 
     if (interactionFirst && isHotelInputPriorityActive()) {
       setRenderScheduled(true);
       scheduleHotelRenderTask(runRender, 120);
+      perfEnd(perfLabel);
+      return;
+    }
+
+    if (renderHotelListResourceState()) {
+      updateVisibleHotelSummary([]);
+      state.renderedHotelNodeMap?.clear?.();
       perfEnd(perfLabel);
       return;
     }
@@ -104,8 +115,9 @@ export function renderHotelList(options = {}) {
     updateVisibleHotelSummary(sortedHotels);
 
     if (sortedHotels.length === 0) {
-      const hasActiveFilters = Object.values(state.currentFilters).some(
-        (value) => value !== undefined && value !== null && value !== ''
+      const hasActiveFilters = Object.entries(state.currentFilters).some(
+        ([key, value]) =>
+          key !== 'sortMode' && value !== undefined && value !== null && value !== ''
       );
       state.renderedHotelNodeMap?.clear?.();
       const isFilterEmptyState = state.hotels.length > 0 && hasActiveFilters;
@@ -118,6 +130,7 @@ export function renderHotelList(options = {}) {
           <button class="btn ${isFilterEmptyState ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="${emptyAction}">${emptyActionText}</button>
         </div>
       `;
+      container.setAttribute('aria-busy', 'false');
       perfEnd(perfLabel);
       return;
     }
@@ -188,6 +201,7 @@ function finishHotelRender(taskVersion, perfLabel) {
     perfEnd(perfLabel);
     return;
   }
+  document.getElementById('hotelList')?.setAttribute('aria-busy', 'false');
   perfEnd(perfLabel);
 }
 

@@ -21,20 +21,20 @@
     'totoro-blue': '#EEF4F9',
     'sweet-lime': '#EEF7F3',
     'grass-green': '#F2F7EB',
-    'pineapple-yellow': '#FCF5DE',
+    'pineapple-yellow': '#FFFBE8',
     'oak-brown': '#F8F0E9',
     'cloud-white': '#FFFFFF',
     'autumn-gold': '#FFF8E7',
     'diehard-pink': '#FEF2F7',
     'grape-purple': '#F4F0FF',
-    'colorful-mode': '#FFF7FB'
+    'colorful-mode': '#F8FAFF'
   });
 
   const THEME_TITLEBAR_COLORS = Object.freeze({
     'totoro-blue': '#6B8FB5',
     'sweet-lime': '#4E8C80',
     'grass-green': '#6A934A',
-    'pineapple-yellow': '#C39A23',
+    'pineapple-yellow': '#F2CA45',
     'oak-brown': '#8A6344',
     'cloud-white': '#FFFFFF',
     'autumn-gold': '#DDB457',
@@ -47,13 +47,13 @@
     'totoro-blue': '#FFFFFF',
     'sweet-lime': '#FFFFFF',
     'grass-green': '#FFFFFF',
-    'pineapple-yellow': '#FFFBEF',
+    'pineapple-yellow': '#3D351C',
     'oak-brown': '#FFFFFF',
     'cloud-white': '#5A5F66',
     'autumn-gold': '#FFFCEF',
     'diehard-pink': '#FFFDFE',
     'grape-purple': '#FFFEFF',
-    'colorful-mode': '#FFFDFE'
+    'colorful-mode': '#111827'
   });
 
   const SUPPORTED_THEME_SET = new Set(SUPPORTED_THEMES);

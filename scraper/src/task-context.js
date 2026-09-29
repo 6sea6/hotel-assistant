@@ -43,7 +43,7 @@ function isCancellationError(error, signal = null) {
     return false;
   }
 
-  if (error.name === 'AbortError') {
+  if (error.accessIssue || error.name === 'AbortError') {
     return true;
   }
 
@@ -97,7 +97,7 @@ function resolveBatchCaptureStrategy(args = {}, options = {}, _autoEdge = false)
     return explicitCaptureStrategy;
   }
 
-  return null;
+  return _autoEdge ? 'browser_first' : null;
 }
 
 function shouldCleanupOutputArtifactsForRun(reportLevel, args = {}) {

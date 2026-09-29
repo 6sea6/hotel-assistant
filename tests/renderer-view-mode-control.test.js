@@ -89,6 +89,7 @@ async function loadControllerModule() {
     `
     export function buildHotelNameFilterOptions() { return []; }
     export function syncHotelNameFilterOptions() { return ''; }
+    export function setupHotelNameCombobox() {}
     `
   );
   writeFile(

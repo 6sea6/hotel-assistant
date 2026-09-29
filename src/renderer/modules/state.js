@@ -35,6 +35,8 @@ const templateChangeListeners = new Set();
  * @property {AppSettings} settings
  * @property {CurrentFilters} currentFilters
  * @property {boolean} isInitialized
+ * @property {Record<'hotels'|'templates'|'settings', ResourceLoadState>} resourceLoadStates
+ * @property {Set<string>} pendingMutations
  * @property {boolean} renderScheduled
  * @property {ViewMode} viewMode
  * @property {Set<EntityId>} selectedHotels
@@ -73,6 +75,11 @@ const templateChangeListeners = new Set();
  */
 
 /**
+ * @typedef {'idle'|'loading'|'empty'|'ready'|'error'} ResourceLoadStatus
+ * @typedef {{status: ResourceLoadStatus, error: string}} ResourceLoadState
+ */
+
+/**
  * @returns {AiTaskConsoleState}
  */
 function createDefaultAiTaskConsole() {
@@ -99,6 +106,12 @@ export const state = {
   settings: {},
   currentFilters: {},
   isInitialized: false,
+  resourceLoadStates: {
+    hotels: { status: 'idle', error: '' },
+    templates: { status: 'idle', error: '' },
+    settings: { status: 'idle', error: '' }
+  },
+  pendingMutations: new Set(),
   renderScheduled: false,
   viewMode: 'card', // 'card' | 'list'
   selectedHotels: new Set(),
@@ -212,6 +225,48 @@ export function setInitialized(value) {
 }
 
 /**
+ * @param {'hotels'|'templates'|'settings'} resource
+ * @param {ResourceLoadStatus} status
+ * @param {unknown} [error]
+ * @returns {ResourceLoadState}
+ */
+export function setResourceLoadState(resource, status, error = '') {
+  const nextState = {
+    status,
+    error: error instanceof Error ? error.message : String(error || '')
+  };
+  state.resourceLoadStates[resource] = nextState;
+  return nextState;
+}
+
+/**
+ * @param {'hotels'|'templates'|'settings'} resource
+ * @returns {ResourceLoadState}
+ */
+export function getResourceLoadState(resource) {
+  return state.resourceLoadStates[resource];
+}
+
+/**
+ * Prevent duplicate renderer mutations without coupling buttons to IPC calls.
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function beginMutation(key) {
+  if (state.pendingMutations.has(key)) return false;
+  state.pendingMutations.add(key);
+  return true;
+}
+
+/**
+ * @param {string} key
+ * @returns {void}
+ */
+export function endMutation(key) {
+  state.pendingMutations.delete(key);
+}
+
+/**
  * @param {CurrentFilters} patch
  * @returns {void}
  */
@@ -224,10 +279,14 @@ export function updateCurrentFilters(patch) {
 
 /**
  * @param {CurrentFilters} filters
- * @returns {void}
+ * @returns {boolean}
  */
 export function replaceCurrentFilters(filters) {
+  const previousKey = JSON.stringify(state.currentFilters || {});
+  const nextKey = JSON.stringify(filters || {});
+  if (previousKey === nextKey) return false;
   state.currentFilters = filters;
+  return true;
 }
 
 /**

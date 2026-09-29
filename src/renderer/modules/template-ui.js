@@ -22,7 +22,14 @@ import {
   iconHtml
 } from './dom-helpers.js';
 import { showNotification } from './notification.js';
-import { setModalActive, resetDeleteConfirmation, startDeleteConfirmation } from './ui-utils.js';
+import {
+  setModalActive,
+  resetDeleteConfirmation,
+  startDeleteConfirmation,
+  clearFormError,
+  showFormError,
+  setActionButtonBusy
+} from './ui-utils.js';
 import { isHotelInputPriorityActive } from './render-scheduler.js';
 import { actions } from './actions.js';
 import { refreshCustomSelects } from './custom-select.js';
@@ -150,7 +157,6 @@ function patchAffectedHotels(affectedHotels) {
   if (!patched) return false;
 
   setHotels(nextHotels);
-  markVisibleHotelsCacheDirty();
   return true;
 }
 
@@ -195,7 +201,6 @@ async function reloadHotelsForTemplateMutation(options) {
 
   const hotels = await actions.loadHotels({ force: true });
   setHotels(hotels || []);
-  markVisibleHotelsCacheDirty();
   return true;
 }
 
@@ -283,7 +288,7 @@ export function renderTemplateList() {
   const buildTemplateActionButton = (label, action, templateId, extraClass = 'btn-secondary') => {
     const idAttr = escapeHtml(String(templateId));
     const actionAttr = escapeHtml(action);
-    return `<button class="btn ${extraClass} btn-sm" data-action="${actionAttr}" data-id="${idAttr}">${label}</button>`;
+    return `<button type="button" class="btn ${extraClass} btn-sm" data-action="${actionAttr}" data-id="${idAttr}">${label}</button>`;
   };
 
   container.innerHTML = state.templates
@@ -347,6 +352,7 @@ export function handleTemplateListClick(event) {
 /* ---- 新建/编辑表单 ---- */
 
 export function openAddTemplateForm() {
+  clearFormError('templateForm');
   setText('templateFormTitle', '新建模板');
   setValue('templateId', '');
   setValue('templateName', '');
@@ -362,6 +368,7 @@ export function openAddTemplateForm() {
 export function editTemplate(id) {
   const template = actions.findTemplateById(id);
   if (!template) return;
+  clearFormError('templateForm');
 
   setText('templateFormTitle', '编辑模板');
   setValue('templateId', template.id);
@@ -376,6 +383,7 @@ export function editTemplate(id) {
 }
 
 export function cancelTemplateForm() {
+  clearFormError('templateForm');
   setStyle('templateForm', 'display', 'none');
   setValue('templateId', '');
   setValue('templateName', '');
@@ -388,6 +396,7 @@ export function cancelTemplateForm() {
 /* ---- 保存模板 ---- */
 
 export async function saveTemplate() {
+  clearFormError('templateForm');
   const id = getValue('templateId');
 
   /** @type {Partial<RawTemplateRecord>} */
@@ -401,15 +410,22 @@ export async function saveTemplate() {
 
   if (!template.name) {
     const nameInput = /** @type {HTMLInputElement|null} */ ($('templateName'));
-    if (nameInput) {
-      nameInput.focus();
-      nameInput.style.borderColor = '#F53F3F';
-      setTimeout(() => {
-        nameInput.style.borderColor = '';
-      }, 2000);
-    }
+    showFormError('templateForm', '请填写模板名称。', nameInput);
     return;
   }
+
+  if (
+    template.check_in_date &&
+    template.check_out_date &&
+    new Date(template.check_out_date) <= new Date(template.check_in_date)
+  ) {
+    const checkOutInput = /** @type {HTMLInputElement|null} */ ($('templateCheckOut'));
+    showFormError('templateForm', '离店日期必须晚于入住日期。', checkOutInput);
+    return;
+  }
+
+  const saveButton = /** @type {HTMLButtonElement|null} */ ($('saveTemplateBtn'));
+  setActionButtonBusy(saveButton, true, { busyText: '正在保存…' });
 
   try {
     if (id) {
@@ -447,7 +463,11 @@ export async function saveTemplate() {
     } catch (recoveryError) {
       console.error('恢复数据状态失败:', recoveryError);
     }
-    showNotification(`保存模板失败: ${error.message}`, 'error');
+    const message = `保存模板失败：${error.message || '请重试'}`;
+    showFormError('templateForm', message);
+    showNotification(message, 'error');
+  } finally {
+    setActionButtonBusy(saveButton, false);
   }
 }
 

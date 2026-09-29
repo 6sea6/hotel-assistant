@@ -13,10 +13,10 @@ const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared
  * @typedef {import('../../shared/contracts').NormalizedHotelRecord} HotelRecord
  * @typedef {import('../../shared/contracts').TemplateInfo} TemplateInfo
  * @typedef {import('../../shared/contracts').NormalizedTemplateRecord} TemplateRecord
+ * @typedef {import('../../shared/contracts').DataExportSelection} DataExportSelection
  *
  * @typedef {{get: (key: string) => unknown, set: (key: string, value: unknown) => void}} DataTransferStore
  * @typedef {{hotels: unknown[], templates: unknown[], settings: AppSettings|Record<string, unknown>}} DataSnapshot
- * @typedef {{readCustomIconExportPayload?: (settings: AppSettings) => Record<string, unknown>|null}} ExportAppIconManager
  *
  * @typedef {object} NormalizedImportPayload
  * @property {HotelRecord[]} hotels
@@ -39,6 +39,66 @@ const { allocateUniqueId: allocateImportedId, getIdKey } = require('../../shared
  */
 
 const EXPORT_SCHEMA_VERSION = 3;
+const PERSONALIZATION_SETTING_KEYS = [
+  'theme',
+  'activeTheme',
+  'hotelCardVisibleFields',
+  'app_icon_path',
+  'app_icon_file_name'
+];
+
+/**
+ * @param {HotelRecord} hotel
+ * @returns {string}
+ */
+function getExportHotelIdentityKey(hotel) {
+  const website = String(hotel.website || '')
+    .trim()
+    .toLocaleLowerCase('zh-CN');
+  if (website) return `website:${website}`;
+  const name = String(hotel.name || '')
+    .trim()
+    .toLocaleLowerCase('zh-CN');
+  const address = String(hotel.address || '')
+    .trim()
+    .toLocaleLowerCase('zh-CN');
+  return name || address ? `hotel:${name}\u0000${address}` : `id:${String(hotel.id ?? '')}`;
+}
+
+/**
+ * @param {HotelRecord[]} allHotels
+ * @param {TemplateRecord[]} allTemplates
+ * @param {DataExportSelection|undefined} selection
+ * @returns {{hotels: HotelRecord[], templates: TemplateRecord[], mode: 'all'|'templates'|'rooms'}}
+ */
+function selectDataForExport(allHotels, allTemplates, selection) {
+  const mode = selection?.mode || 'all';
+  if (mode === 'templates') {
+    const selectedTemplateIds = new Set((selection?.templateIds || []).map(getIdKey));
+    return {
+      hotels: allHotels.filter((hotel) => selectedTemplateIds.has(getIdKey(hotel.template_id))),
+      templates: allTemplates.filter((template) => selectedTemplateIds.has(getIdKey(template.id))),
+      mode
+    };
+  }
+
+  if (mode === 'rooms') {
+    const selectedRoomIds = new Set((selection?.roomIds || []).map(getIdKey));
+    const hotels = allHotels.filter((hotel) => selectedRoomIds.has(getIdKey(hotel.id)));
+    const referencedTemplateIds = new Set(
+      hotels.map((hotel) => getIdKey(hotel.template_id)).filter(Boolean)
+    );
+    return {
+      hotels,
+      templates: allTemplates.filter((template) =>
+        referencedTemplateIds.has(getIdKey(template.id))
+      ),
+      mode
+    };
+  }
+
+  return { hotels: allHotels, templates: allTemplates, mode: 'all' };
+}
 
 /**
  * @param {unknown} settings
@@ -78,6 +138,9 @@ function redactSettingsForExport(settings) {
   }
   if (exportedSettings.amapApiKey) {
     exportedSettings.amapApiKey = '[REDACTED]';
+  }
+  for (const key of PERSONALIZATION_SETTING_KEYS) {
+    delete exportedSettings[key];
   }
 
   return exportedSettings;
@@ -313,7 +376,7 @@ function processImportedHotels(importedHotels, existingHotels = [], options = {}
 
 /**
  * @param {DataTransferStore} store
- * @param {{appIconManager?: ExportAppIconManager}} [options]
+ * @param {{selection?: DataExportSelection}} [options]
  * @returns {{
  *   hotels: unknown[],
  *   templates: TemplateRecord[],
@@ -326,19 +389,15 @@ function processImportedHotels(importedHotels, existingHotels = [], options = {}
  */
 function buildExportPayload(store, options = {}) {
   const exportedAt = new Date().toISOString();
-  const hotels = hotelStorage.compactHotels(
-    hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload),
-    normalizeHotelPayload
-  );
-  const templates = /** @type {Array<Partial<TemplateRecord>>} */ (
+  const allHotels = hotelStorage.getExpandedHotelsFromStore(store, normalizeHotelPayload);
+  const allTemplates = /** @type {Array<Partial<TemplateRecord>>} */ (
     store.get('templates') || []
   ).map((template) => normalizeTemplatePayload(template));
+  const selectedData = selectDataForExport(allHotels, allTemplates, options.selection);
+  const hotels = hotelStorage.compactHotels(selectedData.hotels, normalizeHotelPayload);
+  const templates = selectedData.templates;
   const settings = normalizeImportedSettings(store.get('settings'));
   const exportedSettings = redactSettingsForExport(settings);
-  const customAppIcon =
-    typeof options.appIconManager?.readCustomIconExportPayload === 'function'
-      ? options.appIconManager.readCustomIconExportPayload(settings)
-      : null;
 
   return {
     hotels,
@@ -352,7 +411,12 @@ function buildExportPayload(store, options = {}) {
       appVersion: APP_CONFIG.VERSION,
       schemaVersion: EXPORT_SCHEMA_VERSION,
       exportedAt,
-      customAppIcon
+      exportScope: {
+        mode: selectedData.mode,
+        hotelCount: new Set(selectedData.hotels.map(getExportHotelIdentityKey)).size,
+        roomCount: selectedData.hotels.length,
+        templateCount: templates.length
+      }
     }
   };
 }
@@ -457,9 +521,10 @@ function restoreSnapshot(store, snapshot) {
 
 /**
  * @param {{hotels: HotelRecord[], templates: TemplateRecord[], settings: AppSettings}} importedPayload
+ * @param {AppSettings|Record<string, unknown>} [currentSettings]
  * @returns {BuiltImportPayload}
  */
-function buildReplaceImportPayload(importedPayload) {
+function buildReplaceImportPayload(importedPayload, currentSettings = {}) {
   const nextIdState = { value: Date.now() };
   const templateProcessingResult = processImportedTemplates(importedPayload.templates, [], {
     skipDuplicates: false,
@@ -472,10 +537,20 @@ function buildReplaceImportPayload(importedPayload) {
     templateByDuplicateKey: templateProcessingResult.templateByDuplicateKey
   });
 
+  const settings = normalizeImportedSettings(importedPayload.settings);
+  const normalizedCurrentSettings = normalizeImportedSettings(currentSettings);
+  for (const key of PERSONALIZATION_SETTING_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(normalizedCurrentSettings, key)) {
+      settings[key] = normalizedCurrentSettings[key];
+    } else {
+      delete settings[key];
+    }
+  }
+
   return {
     hotels: hotelProcessingResult.processedHotels,
     templates: templateProcessingResult.processedTemplates,
-    settings: normalizeImportedSettings(importedPayload.settings),
+    settings,
     importStats: {
       addedHotelCount: hotelProcessingResult.processedHotels.length,
       skippedHotelCount: 0,
@@ -531,6 +606,9 @@ module.exports = {
   buildAppendImportPayload,
   buildExportPayload,
   buildReplaceImportPayload,
+  getExportHotelIdentityKey,
   normalizeImportedPayload,
+  PERSONALIZATION_SETTING_KEYS,
+  selectDataForExport,
   restoreSnapshot
 };
