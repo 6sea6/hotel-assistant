@@ -78,7 +78,7 @@ node scripts/check-ctrip-fixtures.js
 
 公开源码中的默认高德 Key 已清空，用户需要在设置中填写自己的 Key；构建保持“不含 Key”模式。此前 Git 历史未改写，旧 Key 的停用或轮换需由所有者在高德控制台处理。
 
-本版以 `v8.9.3-ctrip-preview.1` 预发布，不标记为 Latest。真实环境小样本、严格端到端速度验收仍待完成。
+本版以 `v8.9.3-ctrip-preview.2` 预发布，不标记为 Latest。真实环境小样本、严格端到端速度验收仍待完成。
 
 ## 安装包交付与内容核验
 
